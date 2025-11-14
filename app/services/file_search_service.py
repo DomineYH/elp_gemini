@@ -187,15 +187,17 @@ class FileSearchService:
             logger.error(f"문서 업로드 실패: {str(e)}")
             raise
 
-    async def delete_document(self, document_id: str) -> None:
+    async def delete_document(self, file_id: str) -> None:
         """
         File Search Store에서 문서 삭제
 
         Args:
-            document_id: 문서 ID
+            file_id: 문서 전체 경로 (예: fileSearchStores/xxx/documents/yyy)
         """
         try:
-            self.client.file_search_stores.delete_document(name=document_id)
-            logger.info(f"문서 삭제 완료: {document_id}")
+            # Google API: files.delete 또는 file_search_stores의 documents 삭제
+            # file_id는 이미 전체 경로 형식
+            self.client.files.delete(name=file_id)
+            logger.info(f"문서 삭제 완료: {file_id}")
         except Exception as e:
             logger.warning(f"문서 삭제 실패 (이미 삭제되었을 수 있음): {str(e)}")
