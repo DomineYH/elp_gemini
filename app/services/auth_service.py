@@ -27,32 +27,42 @@ class AuthService:
         사용자 인증 또는 생성
 
         사용자 식별 로직:
-        - username이 존재하면 해당 사용자로 로그인 (nickname은 업데이트)
-        - username이 없으면 새로운 사용자 생성 후 로그인
+        - username과 nickname이 모두 일치하는 사용자가 있으면 해당 사용자로 로그인
+        - 둘 중 하나라도 다르면 새로운 사용자로 간주하여 생성 후 로그인
+        - DB username 필드는 username_nickname 형식으로 고유하게 저장
 
         Args:
-            username: 사용자 ID (고유 식별자)
-            nickname: 닉네임 (변경 가능)
+            username: 사용자 ID (원본)
+            nickname: 닉네임
 
         Returns:
             인증된 User 객체 (기존 또는 새로 생성)
         """
-        # 1. username으로 사용자 검색
-        existing_user = await self.get_user_by_username(username)
+        # 1. username과 nickname으로 사용자 검색
+        existing_user = await self.get_user_by_username_and_nickname(username, nickname)
 
-        # 2. username이 존재하는 경우 → 기존 사용자로 로그인
+        # 2. username과 nickname이 모두 일치하는 경우 → 기존 사용자로 로그인
         if existing_user:
-            # nickname이 다르면 업데이트
-            if existing_user.nickname != nickname:
-                existing_user.nickname = nickname
-                await self.db.commit()
             return existing_user
 
-        # 3. username이 없는 경우 → 새로운 사용자 생성
+        # 3. 일치하는 사용자가 없는 경우 → 새로운 사용자 생성
+        # DB의 username 필드에는 고유한 값(username_nickname)을 저장
+        import secrets
+
+        # 고유한 DB username 생성: username_nickname 형식
+        db_username = f"{username}_{nickname}"
+
+        # 만약 동일한 조합이 이미 있다면 (nickname에 언더스코어 포함 케이스) 고유 suffix 추가
+        db_username_exists = await self.get_user_by_username(db_username)
+        if db_username_exists:
+            unique_suffix = secrets.token_hex(4)
+            db_username = f"{username}_{nickname}_{unique_suffix}"
+
+        # 새 사용자 생성
         from app.schemas.users import UserCreate
 
         user_data = UserCreate(
-            username=username,
+            username=db_username,  # DB에는 고유한 username 저장
             nickname=nickname,
             email=None,  # 이메일은 선택 사항
             password=None,  # 비밀번호는 선택 사항 (간단한 로그인)
@@ -63,6 +73,30 @@ class AuthService:
         await self.db.commit()
 
         return new_user
+
+    async def get_user_by_username_and_nickname(
+        self, username: str, nickname: str
+    ) -> Optional[User]:
+        """
+        사용자 ID와 닉네임으로 사용자 조회
+        DB의 username 필드는 username_nickname 형식으로 저장됨
+
+        Args:
+            username: 사용자 ID (원본)
+            nickname: 닉네임
+
+        Returns:
+            User 객체 또는 None
+        """
+        # DB에서는 username_nickname 형식으로 저장되므로
+        db_username = f"{username}_{nickname}"
+        result = await self.db.execute(
+            select(User).where(
+                User.username == db_username,
+                User.nickname == nickname
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def get_user_by_username(
         self, username: str
