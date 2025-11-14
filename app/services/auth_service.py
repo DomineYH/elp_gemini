@@ -27,12 +27,12 @@ class AuthService:
         사용자 인증 또는 생성
 
         사용자 식별 로직:
-        - username과 nickname이 모두 일치하는 사용자가 있으면 해당 사용자로 로그인
-        - 둘 중 하나라도 다르면 새로운 사용자로 간주하여 생성 후 로그인
+        - username이 존재하면 해당 사용자로 로그인 (nickname은 업데이트)
+        - username이 없으면 새로운 사용자 생성 후 로그인
 
         Args:
-            username: 사용자 ID
-            nickname: 닉네임
+            username: 사용자 ID (고유 식별자)
+            nickname: 닉네임 (변경 가능)
 
         Returns:
             인증된 User 객체 (기존 또는 새로 생성)
@@ -40,20 +40,15 @@ class AuthService:
         # 1. username으로 사용자 검색
         existing_user = await self.get_user_by_username(username)
 
-        # 2. username과 nickname이 모두 일치하는 경우 → 기존 사용자로 로그인
-        if existing_user and existing_user.nickname == nickname:
+        # 2. username이 존재하는 경우 → 기존 사용자로 로그인
+        if existing_user:
+            # nickname이 다르면 업데이트
+            if existing_user.nickname != nickname:
+                existing_user.nickname = nickname
+                await self.db.commit()
             return existing_user
 
-        # 3. 둘 중 하나라도 다른 경우 → 새로운 사용자 생성
-        # username이 이미 존재하는 경우 고유한 username 생성
-        if existing_user:
-            # username이 이미 존재하지만 nickname이 다른 경우
-            # → 새로운 고유한 username 생성
-            import secrets
-            unique_suffix = secrets.token_hex(4)
-            username = f"{username}_{unique_suffix}"
-
-        # 새 사용자 생성
+        # 3. username이 없는 경우 → 새로운 사용자 생성
         from app.schemas.users import UserCreate
 
         user_data = UserCreate(
