@@ -1,0 +1,978 @@
+openapi: 3.0.3
+info:
+  title: AI RAG-Based Document Evaluation & QnA Platform API
+  description: API for document upload, RAG-based QnA, and automated evaluation
+  version: 0.1.0
+  contact:
+    name: ELP Gemini Team
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: https://api.example.com
+    description: Production server
+
+tags:
+  - name: auth
+    description: Authentication and session management
+  - name: documents
+    description: Document upload and management
+  - name: qna
+    description: Question-answering on documents
+  - name: evaluation
+    description: Automated document evaluation
+  - name: admin
+    description: Admin dashboard and management
+
+paths:
+  # ==================== Authentication ====================
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: User login
+      description: Authenticate user and create session
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  example: SecurePass123
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Login successful
+                  user:
+                    $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: User logout
+      description: End user session
+      operationId: logout
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Logout successful
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Get current user
+      description: Retrieve authenticated user information
+      operationId: getCurrentUser
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Current user information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ==================== Documents ====================
+  /docs:
+    get:
+      tags: [documents]
+      summary: List user documents
+      description: Get all documents owned by current user
+      operationId: listDocuments
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [uploading, indexing, ready, failed, deleted]
+          description: Filter by document status
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: Document list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DocumentResponse'
+                  total:
+                    type: integer
+                    example: 15
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /docs/upload:
+    post:
+      tags: [documents]
+      summary: Upload document
+      description: Upload a PDF document for analysis
+      operationId: uploadDocument
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, title]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PDF file (max 50MB)
+                title:
+                  type: string
+                  maxLength: 255
+                  example: My Research Paper
+      responses:
+        '201':
+          description: Document uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: File too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /docs/{document_id}:
+    get:
+      tags: [documents]
+      summary: Get document details
+      description: Retrieve specific document information
+      operationId: getDocument
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Document details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetailResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [documents]
+      summary: Delete document
+      description: Delete a document (soft delete)
+      operationId: deleteDocument
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Document deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Document deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ==================== Question & Answer ====================
+  /qna/{document_id}:
+    post:
+      tags: [qna]
+      summary: Ask question
+      description: Ask a question about the document content
+      operationId: askQuestion
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question:
+                  type: string
+                  maxLength: 5000
+                  example: What is the main conclusion in Chapter 3?
+      responses:
+        '200':
+          description: Answer generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QAResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    get:
+      tags: [qna]
+      summary: Get QnA history
+      description: Retrieve question-answer history for a document
+      operationId: getQAHistory
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: QnA history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qa_logs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/QALogResponse'
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ==================== Evaluation ====================
+  /evaluate/{document_id}:
+    post:
+      tags: [evaluation]
+      summary: Generate evaluation report
+      description: Create automated evaluation report for document
+      operationId: generateEvaluation
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                template_id:
+                  type: integer
+                  description: Evaluation template ID (optional, uses default if not provided)
+                  example: 1
+      responses:
+        '202':
+          description: Evaluation started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id:
+                    type: integer
+                    example: 42
+                  status:
+                    type: string
+                    example: pending
+                  message:
+                    type: string
+                    example: Evaluation started
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    get:
+      tags: [evaluation]
+      summary: List evaluations
+      description: Get evaluation history for a document
+      operationId: listEvaluations
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Evaluation list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  evaluations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EvaluationRunResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /evaluate/run/{run_id}:
+    get:
+      tags: [evaluation]
+      summary: Get evaluation report
+      description: Retrieve specific evaluation report
+      operationId: getEvaluationReport
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Evaluation run ID
+      responses:
+        '200':
+          description: Evaluation report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationReportResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ==================== Admin ====================
+  /admin/dashboard:
+    get:
+      tags: [admin]
+      summary: Admin dashboard metrics
+      description: Get aggregate platform metrics
+      operationId: getAdminDashboard
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Dashboard metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDashboardResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/users:
+    get:
+      tags: [admin]
+      summary: List all users
+      description: Get list of platform users
+      operationId: listAllUsers
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: User list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminUserResponse'
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/users/{user_id}:
+    get:
+      tags: [admin]
+      summary: Get user details
+      description: Retrieve specific user information and activity
+      operationId: getUserDetails
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserDetailResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/qna-logs:
+    get:
+      tags: [admin]
+      summary: List QnA logs
+      description: Get all QnA interactions across platform
+      operationId: listQALogs
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+        - name: document_id
+          in: query
+          schema:
+            type: integer
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: QnA logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qa_logs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminQALogResponse'
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/prompts:
+    get:
+      tags: [admin]
+      summary: List system prompts
+      description: Get all system prompts with versions
+      operationId: listSystemPrompts
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [qna, evaluation]
+      responses:
+        '200':
+          description: System prompts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prompts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SystemPromptResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags: [admin]
+      summary: Create system prompt
+      description: Create new version of system prompt
+      operationId: createSystemPrompt
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, content]
+              properties:
+                type:
+                  type: string
+                  enum: [qna, evaluation]
+                content:
+                  type: string
+                  maxLength: 10000
+                is_active:
+                  type: boolean
+                  default: false
+      responses:
+        '201':
+          description: Prompt created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemPromptResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/prompts/{prompt_id}/activate:
+    post:
+      tags: [admin]
+      summary: Activate system prompt
+      description: Set prompt version as active
+      operationId: activateSystemPrompt
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: prompt_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Prompt activated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Prompt activated successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: session
+
+  parameters:
+    DocumentId:
+      name: document_id
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Document ID
+
+  schemas:
+    # ==================== User Schemas ====================
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        is_admin:
+          type: boolean
+          example: false
+        created_at:
+          type: string
+          format: date-time
+
+    # ==================== Document Schemas ====================
+    DocumentResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 42
+        title:
+          type: string
+          example: My Research Paper
+        status:
+          type: string
+          enum: [uploading, indexing, ready, failed, deleted]
+          example: ready
+        file_size:
+          type: integer
+          example: 2457600
+        uploaded_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DocumentDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/DocumentResponse'
+        - type: object
+          properties:
+            qa_count:
+              type: integer
+              example: 15
+            evaluation_count:
+              type: integer
+              example: 2
+
+    # ==================== QnA Schemas ====================
+    QAResponse:
+      type: object
+      properties:
+        question:
+          type: string
+          example: What is the main conclusion?
+        answer:
+          type: string
+          example: The main conclusion is...
+        model_name:
+          type: string
+          example: gemini-2.0-flash-exp
+        latency_ms:
+          type: integer
+          example: 1250
+        created_at:
+          type: string
+          format: date-time
+
+    QALogResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        question:
+          type: string
+        answer:
+          type: string
+        model_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    # ==================== Evaluation Schemas ====================
+    EvaluationRunResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 5
+        status:
+          type: string
+          enum: [pending, running, success, failed]
+          example: success
+        template_id:
+          type: integer
+          example: 1
+        model_name:
+          type: string
+          example: gemini-2.0-flash-thinking-exp
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    EvaluationReportResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        run_id:
+          type: integer
+        overall_score:
+          type: number
+          format: float
+          nullable: true
+          example: 85.5
+        criteria_scores:
+          type: object
+          nullable: true
+          additionalProperties:
+            type: object
+            properties:
+              score:
+                type: number
+              max_score:
+                type: number
+              feedback:
+                type: string
+        feedback:
+          type: string
+        improvement_suggestions:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    # ==================== Admin Schemas ====================
+    AdminDashboardResponse:
+      type: object
+      properties:
+        total_users:
+          type: integer
+          example: 150
+        total_documents:
+          type: integer
+          example: 1250
+        documents_last_7_days:
+          type: integer
+          example: 75
+        total_qna_requests:
+          type: integer
+          example: 8500
+        qna_requests_last_7_days:
+          type: integer
+          example: 320
+        total_evaluation_runs:
+          type: integer
+          example: 450
+        evaluation_runs_last_7_days:
+          type: integer
+          example: 28
+
+    AdminUserResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        is_admin:
+          type: boolean
+        document_count:
+          type: integer
+        qna_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    AdminUserDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/AdminUserResponse'
+        - type: object
+          properties:
+            documents:
+              type: array
+              items:
+                $ref: '#/components/schemas/DocumentResponse'
+            recent_qna:
+              type: array
+              items:
+                $ref: '#/components/schemas/QALogResponse'
+            recent_evaluations:
+              type: array
+              items:
+                $ref: '#/components/schemas/EvaluationRunResponse'
+
+    AdminQALogResponse:
+      allOf:
+        - $ref: '#/components/schemas/QALogResponse'
+        - type: object
+          properties:
+            user_id:
+              type: integer
+            document_id:
+              type: integer
+            document_title:
+              type: string
+            prompt_version:
+              type: integer
+
+    SystemPromptResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          enum: [qna, evaluation]
+        version:
+          type: integer
+        content:
+          type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    # ==================== Error Schemas ====================
+    Error:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          example: Error description
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Forbidden:
+      description: Access denied
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

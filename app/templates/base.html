@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+    <title>
+        {% block title %}AI 문서 평가 플랫폼{% endblock %}
+    </title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    {% block head %}{% endblock %}
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- 네비게이션 -->
+    <nav class="bg-white shadow-sm">
+        <div
+            class="container mx-auto px-4 py-4 flex
+            justify-between items-center"
+        >
+            <div class="flex items-center space-x-4">
+                <a
+                    href="/"
+                    class="text-xl font-bold text-blue-600"
+                >
+                    AI 문서 평가 플랫폼
+                </a>
+            </div>
+
+            <div class="flex items-center space-x-4">
+                {% block nav_links %}
+                <!-- 로그인 전 -->
+                <a
+                    href="/login"
+                    class="text-gray-600 hover:text-blue-600"
+                >
+                    로그인
+                </a>
+                {% endblock %}
+            </div>
+        </div>
+    </nav>
+
+    <!-- 메인 컨텐츠 -->
+    <main class="container mx-auto px-4 py-8">
+        {% block content %}
+        {% endblock %}
+    </main>
+
+    <!-- 푸터 -->
+    <footer class="bg-white border-t mt-auto py-6">
+        <div class="container mx-auto px-4 text-center">
+            <p class="text-gray-600 text-sm">
+                &copy; 2025 AI 문서 평가 플랫폼.
+                All rights reserved.
+            </p>
+        </div>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

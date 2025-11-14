@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}관리자 대시보드 - AI 문서 평가 플랫폼{% endblock %}
+
+{% block nav_links %}
+{% if user.is_admin %}
+<a href="/admin/dashboard" class="text-blue-600 font-medium">대시보드</a>
+<a href="/admin/users" class="text-gray-600 hover:text-blue-600">사용자</a>
+<a href="/admin/qna-logs" class="text-gray-600 hover:text-blue-600">QnA 로그</a>
+<a href="/admin/prompts" class="text-gray-600 hover:text-blue-600">프롬프트</a>
+<a href="/" class="text-gray-600 hover:text-blue-600">일반 모드</a>
+{% endif %}
+<span class="text-gray-600">{{ user.email }}</span>
+<form method="POST" action="/auth/logout" class="inline">
+    <button type="submit" class="text-gray-600 hover:text-red-600">로그아웃</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <h1 class="text-3xl font-bold mb-6">관리자 대시보드</h1>
+
+    <!-- 메트릭 카드 -->
+    <div class="grid grid-cols-4 gap-4 mb-6">
+        <div class="bg-white shadow-md rounded-lg p-4">
+            <p class="text-sm text-gray-600">전체 사용자</p>
+            <p class="text-2xl font-bold text-blue-600">{{ metrics.total_users }}</p>
+        </div>
+        <div class="bg-white shadow-md rounded-lg p-4">
+            <p class="text-sm text-gray-600">전체 문서</p>
+            <p class="text-2xl font-bold text-green-600">{{ metrics.total_documents }}</p>
+            <p class="text-xs text-gray-500 mt-1">최근 7일: {{ metrics.documents_last_7days }}</p>
+        </div>
+        <div class="bg-white shadow-md rounded-lg p-4">
+            <p class="text-sm text-gray-600">QnA 요청</p>
+            <p class="text-2xl font-bold text-purple-600">{{ metrics.total_qna_logs }}</p>
+            <p class="text-xs text-gray-500 mt-1">최근 7일: {{ metrics.qna_logs_last_7days }}</p>
+        </div>
+        <div class="bg-white shadow-md rounded-lg p-4">
+            <p class="text-sm text-gray-600">평가 실행</p>
+            <p class="text-2xl font-bold text-orange-600">{{ metrics.total_evaluation_runs }}</p>
+            <p class="text-xs text-gray-500 mt-1">최근 7일: {{ metrics.evaluation_runs_last_7days }}</p>
+        </div>
+    </div>
+
+    <!-- 빠른 링크 -->
+    <div class="bg-white shadow-md rounded-lg p-6">
+        <h2 class="text-xl font-semibold mb-4">빠른 링크</h2>
+        <div class="grid grid-cols-3 gap-4">
+            <a href="/admin/users" class="block p-4 border rounded-lg hover:bg-gray-50">
+                <h3 class="font-medium text-blue-600">사용자 관리</h3>
+                <p class="text-sm text-gray-600 mt-1">사용자 목록 및 활동 조회</p>
+            </a>
+            <a href="/admin/qna-logs" class="block p-4 border rounded-lg hover:bg-gray-50">
+                <h3 class="font-medium text-blue-600">QnA 로그</h3>
+                <p class="text-sm text-gray-600 mt-1">질문답변 기록 확인</p>
+            </a>
+            <a href="/admin/prompts" class="block p-4 border rounded-lg hover:bg-gray-50">
+                <h3 class="font-medium text-blue-600">프롬프트 관리</h3>
+                <p class="text-sm text-gray-600 mt-1">시스템 프롬프트 설정</p>
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

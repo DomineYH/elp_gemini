@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}QnA 로그 - 관리자{% endblock %}
+
+{% block nav_links %}
+{% if user.is_admin %}
+<a href="/admin/dashboard" class="text-gray-600 hover:text-blue-600">대시보드</a>
+<a href="/admin/users" class="text-gray-600 hover:text-blue-600">사용자</a>
+<a href="/admin/qna-logs" class="text-blue-600 font-medium">QnA 로그</a>
+<a href="/admin/prompts" class="text-gray-600 hover:text-blue-600">프롬프트</a>
+{% endif %}
+<span class="text-gray-600">{{ user.email }}</span>
+<form method="POST" action="/auth/logout" class="inline">
+    <button type="submit" class="text-gray-600 hover:text-red-600">로그아웃</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <h1 class="text-3xl font-bold mb-6">QnA 로그</h1>
+
+    <div id="logList" class="space-y-4">
+        <p class="text-gray-500">로딩 중...</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadLogs() {
+    try {
+        const response = await fetch('/admin/api/qna-logs?page_size=20');
+        const logs = await response.json();
+
+        const container = document.getElementById('logList');
+        if (logs.length === 0) {
+            container.innerHTML = '<p class="text-gray-500">로그가 없습니다</p>';
+            return;
+        }
+
+        container.innerHTML = logs.map(log => `
+            <div class="bg-white shadow-md rounded-lg p-4">
+                <div class="flex justify-between items-start mb-2">
+                    <div>
+                        <p class="font-medium text-gray-900">${log.user_email}</p>
+                        <p class="text-sm text-gray-500">${log.document_title}</p>
+                    </div>
+                    <span class="text-xs text-gray-500">${new Date(log.created_at).toLocaleString('ko-KR')}</span>
+                </div>
+                <div class="mt-3">
+                    <p class="text-sm font-medium text-gray-700">질문:</p>
+                    <p class="text-sm text-gray-600 mt-1">${log.question}</p>
+                </div>
+                <div class="mt-3">
+                    <p class="text-sm font-medium text-gray-700">답변:</p>
+                    <p class="text-sm text-gray-600 mt-1">${log.answer.substring(0, 200)}${log.answer.length > 200 ? '...' : ''}</p>
+                </div>
+                <div class="mt-2 text-xs text-gray-500">
+                    프롬프트 버전: v${log.prompt_version} | 응답시간: ${log.latency_ms}ms
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('로그 로드 실패:', error);
+        document.getElementById('logList').innerHTML = '<p class="text-red-500">로그를 불러올 수 없습니다</p>';
+    }
+}
+
+loadLogs();
+</script>
+{% endblock %}

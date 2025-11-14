@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}사용자 관리 - 관리자{% endblock %}
+
+{% block nav_links %}
+{% if user.is_admin %}
+<a href="/admin/dashboard" class="text-gray-600 hover:text-blue-600">대시보드</a>
+<a href="/admin/users" class="text-blue-600 font-medium">사용자</a>
+<a href="/admin/qna-logs" class="text-gray-600 hover:text-blue-600">QnA 로그</a>
+<a href="/admin/prompts" class="text-gray-600 hover:text-blue-600">프롬프트</a>
+{% endif %}
+<span class="text-gray-600">{{ user.email }}</span>
+<form method="POST" action="/auth/logout" class="inline">
+    <button type="submit" class="text-gray-600 hover:text-red-600">로그아웃</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <h1 class="text-3xl font-bold mb-6">사용자 관리</h1>
+
+    <div class="bg-white shadow-md rounded-lg overflow-hidden">
+        <table class="w-full">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">이메일</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">관리자</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">문서 수</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">QnA 수</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">가입일</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">작업</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+                {% for u in users %}
+                <tr>
+                    <td class="px-6 py-4 text-sm">{{ u.email }}</td>
+                    <td class="px-6 py-4 text-sm">
+                        {% if u.is_admin %}
+                        <span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">관리자</span>
+                        {% else %}
+                        <span class="text-gray-500">일반</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 text-sm">{{ u.document_count }}</td>
+                    <td class="px-6 py-4 text-sm">{{ u.qna_count }}</td>
+                    <td class="px-6 py-4 text-sm text-gray-500">{{ u.created_at.strftime('%Y-%m-%d') }}</td>
+                    <td class="px-6 py-4 text-sm">
+                        <a href="/admin/users/{{ u.id }}" class="text-blue-600 hover:underline">상세보기</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

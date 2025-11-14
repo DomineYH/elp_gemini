@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}{{ document.title }} - AI 문서 평가 플랫폼
+{% endblock %}
+
+{% block nav_links %}
+<a href="/" class="text-gray-600 hover:text-blue-600">
+    내 문서
+</a>
+<span class="text-gray-600">{{ user.email }}</span>
+<form method="POST" action="/auth/logout" class="inline">
+    <button
+        type="submit"
+        class="text-gray-600 hover:text-red-600"
+    >
+        로그아웃
+    </button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <!-- 문서 정보 -->
+    <div class="bg-white shadow-md rounded-lg p-6 mb-6">
+        <h1 class="text-3xl font-bold mb-4">
+            {{ document.title }}
+        </h1>
+        <div class="grid grid-cols-2 gap-4 text-sm text-gray-600">
+            <div>
+                <span class="font-medium">크기:</span>
+                {{ (document.file_size / 1024 / 1024)|round(2) }}
+                MB
+            </div>
+            <div>
+                <span class="font-medium">업로드:</span>
+                {{ document.uploaded_at.strftime('%Y-%m-%d
+                %H:%M') }}
+            </div>
+            <div>
+                <span class="font-medium">상태:</span>
+                <span
+                    class="px-2 py-1 rounded text-xs
+                    {% if document.status == 'ready' %}
+                    bg-green-100 text-green-800
+                    {% elif document.status == 'failed' %}
+                    bg-red-100 text-red-800
+                    {% else %}
+                    bg-yellow-100 text-yellow-800
+                    {% endif %}"
+                >
+                    {{ document.status }}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- QnA 인터페이스 -->
+    {% if document.status == 'ready' %}
+    <div class="bg-white shadow-md rounded-lg p-6">
+        <h2 class="text-2xl font-bold mb-4">
+            문서에 질문하기
+        </h2>
+
+        <!-- 질문 폼 -->
+        <form id="qnaForm" class="mb-6">
+            <div class="mb-4">
+                <textarea
+                    id="question"
+                    name="question"
+                    rows="3"
+                    required
+                    class="w-full px-3 py-2 border rounded-md
+                    focus:outline-none focus:ring-2
+                    focus:ring-blue-500"
+                    placeholder="문서에 대해 질문해주세요..."
+                ></textarea>
+            </div>
+            <button
+                type="submit"
+                class="bg-blue-600 text-white px-6 py-2
+                rounded-lg hover:bg-blue-700 transition-colors"
+            >
+                질문하기
+            </button>
+        </form>
+
+        <!-- 답변 영역 -->
+        <div id="answerArea" class="hidden">
+            <h3 class="text-lg font-semibold mb-2">답변:</h3>
+            <div
+                id="answer"
+                class="bg-gray-50 p-4 rounded-md
+                border border-gray-200"
+            ></div>
+            <p id="latency" class="text-sm text-gray-500 mt-2">
+            </p>
+        </div>
+
+        <!-- QnA 히스토리 -->
+        <div id="history" class="mt-8">
+            <h3 class="text-lg font-semibold mb-4">
+                이전 질문답변
+            </h3>
+            <div
+                id="historyList"
+                class="space-y-4"
+            ></div>
+        </div>
+    </div>
+    {% else %}
+    <div class="bg-yellow-50 border border-yellow-200
+    rounded-lg p-6 text-center">
+        <p class="text-yellow-800">
+            문서가 아직 준비되지 않았습니다.
+            상태: {{ document.status }}
+        </p>
+    </div>
+    {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('qnaForm')
+.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const question = document.getElementById('question').value;
+    const button = e.target.querySelector('button');
+
+    button.disabled = true;
+    button.textContent = '처리 중...';
+
+    try {
+        const response = await fetch(
+            '/qna/{{ document.id }}',
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ question }),
+            }
+        );
+
+        if (!response.ok) throw new Error('요청 실패');
+
+        const data = await response.json();
+
+        // 답변 표시
+        document.getElementById('answerArea')
+        .classList.remove('hidden');
+        document.getElementById('answer').textContent =
+        data.answer;
+        document.getElementById('latency').textContent =
+        `응답 시간: ${data.latency_ms}ms`;
+
+        // 폼 초기화
+        document.getElementById('question').value = '';
+
+        // 히스토리 새로고침
+        loadHistory();
+    } catch (error) {
+        alert('질문 처리 중 오류가 발생했습니다.');
+    } finally {
+        button.disabled = false;
+        button.textContent = '질문하기';
+    }
+});
+
+async function loadHistory() {
+    try {
+        const response = await fetch('/qna/{{ document.id }}');
+        const logs = await response.json();
+
+        const historyList = document.getElementById('historyList');
+        historyList.innerHTML = logs.map(log => `
+            <div class="bg-gray-50 p-4 rounded-md border">
+                <p class="font-medium mb-2">Q: ${log.question}</p>
+                <p class="text-gray-700">A: ${log.answer}</p>
+                <p class="text-xs text-gray-500 mt-2">
+                    ${new Date(log.created_at)
+                    .toLocaleString('ko-KR')}
+                    (${log.latency_ms}ms)
+                </p>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('히스토리 로드 실패:', error);
+    }
+}
+
+// 페이지 로드 시 히스토리 로드
+{% if document.status == 'ready' %}
+loadHistory();
+{% endif %}
+</script>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}사용자 상세 - 관리자{% endblock %}
+
+{% block nav_links %}
+{% if user.is_admin %}
+<a href="/admin/dashboard" class="text-gray-600 hover:text-blue-600">대시보드</a>
+<a href="/admin/users" class="text-blue-600 font-medium">사용자</a>
+<a href="/admin/qna-logs" class="text-gray-600 hover:text-blue-600">QnA 로그</a>
+<a href="/admin/prompts" class="text-gray-600 hover:text-blue-600">프롬프트</a>
+{% endif %}
+<span class="text-gray-600">{{ user.email }}</span>
+<form method="POST" action="/auth/logout" class="inline">
+    <button type="submit" class="text-gray-600 hover:text-red-600">로그아웃</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="mb-4">
+        <a href="/admin/users" class="text-blue-600 hover:underline">← 사용자 목록</a>
+    </div>
+
+    <h1 class="text-3xl font-bold mb-6">{{ target_user.email }}</h1>
+
+    <div class="grid gap-6">
+        <!-- 문서 목록 -->
+        <div class="bg-white shadow-md rounded-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">문서 ({{ target_user.documents|length }})</h2>
+            <div class="space-y-2">
+                {% for doc in target_user.documents %}
+                <div class="flex justify-between items-center p-3 border rounded">
+                    <div>
+                        <p class="font-medium">{{ doc.title }}</p>
+                        <p class="text-sm text-gray-500">{{ doc.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                    </div>
+                    <span class="px-2 py-1 rounded text-xs {% if doc.status == 'ready' %}bg-green-100 text-green-800{% else %}bg-yellow-100 text-yellow-800{% endif %}">{{ doc.status }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- 최근 QnA -->
+        <div class="bg-white shadow-md rounded-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">최근 QnA ({{ target_user.recent_qna_logs|length }})</h2>
+            <div class="space-y-2">
+                {% for log in target_user.recent_qna_logs %}
+                <div class="p-3 border rounded">
+                    <p class="text-sm font-medium">{{ log.question }}</p>
+                    <p class="text-xs text-gray-500 mt-1">{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

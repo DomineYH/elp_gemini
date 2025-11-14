@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}프롬프트 관리 - 관리자{% endblock %}
+
+{% block nav_links %}
+{% if user.is_admin %}
+<a href="/admin/dashboard" class="text-gray-600 hover:text-blue-600">대시보드</a>
+<a href="/admin/users" class="text-gray-600 hover:text-blue-600">사용자</a>
+<a href="/admin/qna-logs" class="text-gray-600 hover:text-blue-600">QnA 로그</a>
+<a href="/admin/prompts" class="text-blue-600 font-medium">프롬프트</a>
+{% endif %}
+<span class="text-gray-600">{{ user.email }}</span>
+<form method="POST" action="/auth/logout" class="inline">
+    <button type="submit" class="text-gray-600 hover:text-red-600">로그아웃</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold">시스템 프롬프트 관리</h1>
+        <button onclick="openCreateModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">+ 새 프롬프트</button>
+    </div>
+
+    <div class="space-y-6">
+        <!-- QnA 프롬프트 -->
+        <div class="bg-white shadow-md rounded-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">QnA 프롬프트</h2>
+            {% for prompt in prompts %}
+                {% if prompt.type == 'qna' %}
+                <div class="border rounded-lg p-4 mb-3 {% if prompt.is_active %}bg-green-50 border-green-300{% endif %}">
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <p class="font-medium">버전 {{ prompt.version }}</p>
+                            <p class="text-sm text-gray-600 mt-2">{{ prompt.content[:200] }}{% if prompt.content|length > 200 %}...{% endif %}</p>
+                            <p class="text-xs text-gray-500 mt-2">생성: {{ prompt.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                        </div>
+                        <div class="ml-4">
+                            {% if prompt.is_active %}
+                            <span class="px-3 py-1 bg-green-100 text-green-800 rounded text-sm">활성</span>
+                            {% else %}
+                            <button onclick="activatePrompt({{ prompt.id }})" class="px-3 py-1 bg-gray-100 text-gray-700 rounded text-sm hover:bg-gray-200">활성화</button>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+
+        <!-- 평가 프롬프트 -->
+        <div class="bg-white shadow-md rounded-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">평가 프롬프트</h2>
+            {% for prompt in prompts %}
+                {% if prompt.type == 'evaluation' %}
+                <div class="border rounded-lg p-4 mb-3 {% if prompt.is_active %}bg-green-50 border-green-300{% endif %}">
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <p class="font-medium">버전 {{ prompt.version }}</p>
+                            <p class="text-sm text-gray-600 mt-2">{{ prompt.content[:200] }}{% if prompt.content|length > 200 %}...{% endif %}</p>
+                            <p class="text-xs text-gray-500 mt-2">생성: {{ prompt.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                        </div>
+                        <div class="ml-4">
+                            {% if prompt.is_active %}
+                            <span class="px-3 py-1 bg-green-100 text-green-800 rounded text-sm">활성</span>
+                            {% else %}
+                            <button onclick="activatePrompt({{ prompt.id }})" class="px-3 py-1 bg-gray-100 text-gray-700 rounded text-sm hover:bg-gray-200">활성화</button>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- 생성 모달 -->
+<div id="createModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 w-full max-w-2xl">
+        <h2 class="text-2xl font-bold mb-4">새 프롬프트 생성</h2>
+        <form id="createForm">
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-1">타입</label>
+                <select id="promptType" class="w-full px-3 py-2 border rounded-md">
+                    <option value="qna">QnA</option>
+                    <option value="evaluation">평가</option>
+                </select>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-1">프롬프트 내용</label>
+                <textarea id="promptContent" rows="8" class="w-full px-3 py-2 border rounded-md"></textarea>
+            </div>
+            <div class="flex justify-end space-x-2">
+                <button type="button" onclick="closeCreateModal()" class="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">취소</button>
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">생성</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openCreateModal() {
+    document.getElementById('createModal').classList.remove('hidden');
+}
+
+function closeCreateModal() {
+    document.getElementById('createModal').classList.add('hidden');
+    document.getElementById('createForm').reset();
+}
+
+document.getElementById('createForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const type = document.getElementById('promptType').value;
+    const content = document.getElementById('promptContent').value;
+
+    try {
+        const response = await fetch('/admin/api/prompts', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({type, content})
+        });
+
+        if (!response.ok) throw new Error('생성 실패');
+
+        alert('프롬프트가 생성되었습니다');
+        window.location.reload();
+    } catch (error) {
+        alert('프롬프트 생성 중 오류가 발생했습니다');
+    }
+});
+
+async function activatePrompt(promptId) {
+    if (!confirm('이 프롬프트를 활성화하시겠습니까?')) return;
+
+    try {
+        const response = await fetch(`/admin/api/prompts/${promptId}/activate`, {
+            method: 'POST'
+        });
+
+        if (!response.ok) throw new Error('활성화 실패');
+
+        alert('프롬프트가 활성화되었습니다');
+        window.location.reload();
+    } catch (error) {
+        alert('프롬프트 활성화 중 오류가 발생했습니다');
+    }
+}
+</script>
+{% endblock %}
