@@ -269,8 +269,7 @@ async def delete_document(
         try:
             fs_service = FileSearchService()
             await fs_service.delete_document(
-                file_id=document.file_search_file_id,
-                document_id=document.store_id,
+                file_id=document.file_search_file_id
             )
         except Exception as e:
             logger.warning(f"File Search 삭제 실패: {str(e)}")
