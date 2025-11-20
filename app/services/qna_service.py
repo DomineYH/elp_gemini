@@ -54,10 +54,14 @@ class QnAService:
             if not prompt:
                 raise ValueError("활성 QnA 프롬프트를 찾을 수 없습니다")
 
-            # FileSearch용 메타데이터 필터 생성
-            metadata_filter = (
-                f'user_id={user_id} AND '
-                f'document_id=\\"{document.file_search_file_id}\\"'
+            # FileSearch 호출 로그 (store_id 기반 검색)
+            logger.info(
+                f"QnA FileSearch 호출 (store_id 기반)",
+                extra={
+                    "user_id": user_id,
+                    "document_id": document.id,
+                    "store_id": document.store_id,
+                }
             )
 
             # 컨텍스트 구성 (문서 정보 제외, FileSearch가 자동 처리)
@@ -65,7 +69,7 @@ class QnAService:
                 prompt.content, conversation_history
             )
 
-            # FileSearch 도구와 함께 질문 전송
+            # FileSearch 도구와 함께 질문 전송 (store_id만 사용)
             response = self.client.models.generate_content(
                 model=self.qna_model_name,
                 contents=f"{context}\n\n질문: {question}",
@@ -73,8 +77,7 @@ class QnAService:
                     tools=[
                         types.Tool(
                             file_search=types.FileSearch(
-                                file_search_store_names=[document.store_id],
-                                metadata_filter=metadata_filter
+                                file_search_store_names=[document.store_id]
                             )
                         )
                     ],
@@ -85,11 +88,46 @@ class QnAService:
             answer = response.text
 
             # Citation 정보 추출
-            citations = []
+            citations = None
+            sources_count = 0
+
             if response.candidates and response.candidates[0].grounding_metadata:
                 grounding = response.candidates[0].grounding_metadata
-                citations = grounding
-                logger.info(f"검색된 Citations: {len(citations) if citations else 0}개")
+
+                # GroundingMetadata 객체를 JSON serializable dict로 변환
+                try:
+                    # 재귀적으로 객체를 dict로 변환하는 함수
+                    def to_serializable(obj):
+                        if hasattr(obj, 'to_dict'):
+                            return obj.to_dict()
+                        elif hasattr(obj, '__dict__'):
+                            result = {}
+                            for key, value in vars(obj).items():
+                                if isinstance(value, list):
+                                    result[key] = [to_serializable(item) for item in value]
+                                elif hasattr(value, '__dict__') or hasattr(value, 'to_dict'):
+                                    result[key] = to_serializable(value)
+                                else:
+                                    result[key] = value
+                            return result
+                        else:
+                            return str(obj)
+
+                    citations = to_serializable(grounding)
+
+                    # sources_count 계산
+                    if isinstance(citations, dict) and 'grounding_chunks' in citations:
+                        sources_count = len(citations.get('grounding_chunks', []))
+                    elif isinstance(citations, dict):
+                        sources_count = len(citations)
+                    else:
+                        sources_count = 1 if citations else 0
+
+                    logger.info(f"검색된 Citations: {sources_count}개")
+                except Exception as e:
+                    logger.error(f"Citations 추출 실패: {str(e)}")
+                    citations = {"error": str(e), "raw": str(grounding)}
+                    sources_count = 0
 
             latency_ms = int((time.time() - start_time) * 1000)
 
@@ -103,12 +141,12 @@ class QnAService:
                 model_name=self.qna_model_name,
                 latency_ms=latency_ms,
                 citations=citations,
-                sources_count=len(citations) if citations else 0,
+                sources_count=sources_count,
             )
 
             logger.info(
                 f"QnA 완료: doc={document.id}, "
-                f"latency={latency_ms}ms, sources={len(citations) if citations else 0}"
+                f"latency={latency_ms}ms, sources={sources_count}"
             )
 
             return {
@@ -118,7 +156,7 @@ class QnAService:
                 "citations": citations,
                 "grounding_metadata": {
                     "search_performed": bool(citations),
-                    "sources_count": len(citations) if citations else 0
+                    "sources_count": sources_count
                 }
             }
 

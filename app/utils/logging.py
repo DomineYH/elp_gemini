@@ -77,30 +77,74 @@ def log_api_call(
 
 
 def log_user_action(
-    logger: logging.Logger,
     user_id: int,
     action: str,
-    resource: str = None,
+    details: Dict[str, Any] = None,
     success: bool = True,
+    logger_name: str = "app.audit",
 ) -> None:
     """
-    사용자 액션 로깅
+    사용자 액션 감사 로깅
 
     Args:
-        logger: 로거 인스턴스
         user_id: 사용자 ID
         action: 액션 타입
-        resource: 대상 리소스
+        details: 추가 정보 (딕셔너리)
         success: 성공 여부
+        logger_name: 로거 이름 (기본: app.audit)
     """
-    status = "성공" if success else "실패"
-    log_msg = (
-        f"사용자 액션 - "
-        f"user_id={user_id}, "
-        f"action={action}, "
-        f"resource={resource}, "
-        f"status={status}"
-    )
+    logger = logging.getLogger(logger_name)
+    status = "SUCCESS" if success else "FAILURE"
+
+    log_data = {
+        "user_id": user_id,
+        "action": action,
+        "status": status,
+    }
+
+    if details:
+        log_data["details"] = details
+
+    log_msg = f"[AUDIT] {log_data}"
+
+    if success:
+        logger.info(log_msg)
+    else:
+        logger.warning(log_msg)
+
+
+def log_auth_event(
+    event_type: str,
+    user_id: int = None,
+    username: str = None,
+    success: bool = True,
+    reason: str = None,
+) -> None:
+    """
+    인증 이벤트 감사 로깅
+
+    Args:
+        event_type: 이벤트 타입 (login, logout,
+            permission_denied)
+        user_id: 사용자 ID
+        username: 사용자명
+        success: 성공 여부
+        reason: 실패 이유
+    """
+    logger = logging.getLogger("app.auth")
+    status = "SUCCESS" if success else "FAILURE"
+
+    log_data = {
+        "event": event_type,
+        "status": status,
+        "user_id": user_id,
+        "username": username,
+    }
+
+    if not success and reason:
+        log_data["reason"] = reason
+
+    log_msg = f"[AUTH] {log_data}"
 
     if success:
         logger.info(log_msg)

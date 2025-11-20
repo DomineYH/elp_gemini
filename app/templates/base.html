@@ -33,6 +33,53 @@
 
             <div class="flex items-center space-x-4">
                 {% block nav_links %}
+                {% if request.session.get("user_id") %}
+                <!-- 로그인 후 -->
+                {% if request.session.get("is_admin") %}
+                <!-- 관리자 메뉴 -->
+                <a
+                    href="/admin/dashboard"
+                    class="text-gray-600 hover:text-blue-600"
+                >
+                    대시보드
+                </a>
+                <a
+                    href="/admin/users"
+                    class="text-gray-600 hover:text-blue-600"
+                >
+                    사용자 관리
+                </a>
+                {% else %}
+                <!-- 일반 사용자 메뉴 -->
+                <a
+                    href="/docs/upload"
+                    class="text-gray-600 hover:text-blue-600"
+                >
+                    문서 업로드
+                </a>
+                <a
+                    href="/docs/viewer"
+                    class="text-gray-600 hover:text-blue-600"
+                >
+                    문서 뷰어
+                </a>
+                {% endif %}
+                <span class="text-gray-600">
+                    {{ request.session.get("nickname") }}님
+                </span>
+                <form
+                    action="/auth/logout"
+                    method="post"
+                    class="inline"
+                >
+                    <button
+                        type="submit"
+                        class="text-gray-600 hover:text-red-600"
+                    >
+                        로그아웃
+                    </button>
+                </form>
+                {% else %}
                 <!-- 로그인 전 -->
                 <a
                     href="/login"
@@ -40,6 +87,7 @@
                 >
                     로그인
                 </a>
+                {% endif %}
                 {% endblock %}
             </div>
         </div>

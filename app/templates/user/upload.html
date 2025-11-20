@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}문서 업로드 - AI 문서 평가 플랫폼{% endblock %}
+
+{% block content %}
+<div class="flex flex-col items-center justify-center min-h-[60vh]">
+    <div class="w-full max-w-2xl text-center">
+        <h1 class="text-3xl font-bold text-gray-800 mb-2">문서 업로드</h1>
+        <p class="text-gray-600 mb-8">평가할 PDF 문서를 업로드하세요.</p>
+
+        <form id="uploadForm" method="POST" action="/docs/upload" enctype="multipart/form-data" class="relative">
+            <input type="text" name="title" value="Uploaded Document" class="hidden" />
+
+            <div id="dropZone"
+                class="border-2 border-dashed border-gray-300 rounded-xl p-12 bg-white hover:bg-gray-50 transition-colors cursor-pointer">
+                <div class="space-y-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto text-gray-400" fill="none"
+                        viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <div class="text-lg text-gray-600">
+                        <span class="font-semibold text-blue-600 hover:text-blue-700">파일 선택</span>
+                        또는 여기로 드래그하세요
+                    </div>
+                    <p class="text-sm text-gray-500">PDF 파일 (최대 50MB)</p>
+                </div>
+                <input type="file" name="file" id="fileInput" accept=".pdf"
+                    class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" required />
+            </div>
+            <div id="fileName" class="mt-4 text-gray-700 font-medium hidden"></div>
+        </form>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white p-8 rounded-lg shadow-xl text-center">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <h3 class="text-xl font-bold text-gray-800 mb-2">문서 처리 중...</h3>
+        <p class="text-gray-600">AI가 문서를 분석하고 있습니다. 잠시만 기다려주세요.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const uploadForm = document.getElementById('uploadForm');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const fileNameDisplay = document.getElementById('fileName');
+
+    // Drag & Drop effects
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, highlight, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, unhighlight, false);
+    });
+
+    function highlight(e) {
+        dropZone.classList.add('border-blue-500', 'bg-blue-50');
+    }
+
+    function unhighlight(e) {
+        dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+    }
+
+    // Handle file selection
+    fileInput.addEventListener('change', handleFiles);
+    dropZone.addEventListener('drop', handleDrop, false);
+
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        fileInput.files = files;
+        handleFiles();
+    }
+
+    function handleFiles() {
+        const files = fileInput.files;
+        if (files.length > 0) {
+            const file = files[0];
+            if (file.type !== 'application/pdf') {
+                alert('PDF 파일만 업로드 가능합니다.');
+                fileInput.value = '';
+                return;
+            }
+            fileNameDisplay.textContent = `선택된 파일: ${file.name}`;
+            fileNameDisplay.classList.remove('hidden');
+
+            // Auto submit on selection? Or wait for user?
+            // User flow says "Upload complete -> Start File Search Tool embedding"
+            // Let's auto-submit for smoother experience or show a button.
+            // Minimalist usually implies less clicks. Let's auto submit.
+            submitForm();
+        }
+    }
+
+    function submitForm() {
+        loadingOverlay.classList.remove('hidden');
+        uploadForm.submit();
+    }
+</script>
+{% endblock %}

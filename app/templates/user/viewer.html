@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}{{ document.title }} - AI 문서 평가 플랫폼{% endblock %}
+
+{% block nav_links %}
+<span class="text-gray-600 mr-4">{{ user.email }}</span>
+<form method="POST" action="/auth/logout" class="inline">
+    <button type="submit" class="text-gray-600 hover:text-red-600">로그아웃</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col h-[calc(100vh-12rem)]">
+    <!-- Header with Upload New -->
+    <div class="flex justify-between items-center mb-4">
+        <h1 class="text-2xl font-bold text-gray-800 truncate max-w-2xl">
+            {{ document.title }}
+        </h1>
+        <button onclick="confirmNewUpload()"
+            class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24"
+                stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            새 문서 업로드
+        </button>
+    </div>
+
+    <!-- PDF Viewer -->
+    <div id="pdf-container"
+        class="flex-1 bg-gray-100 rounded-lg shadow-inner overflow-auto relative flex flex-col items-center py-4">
+        <!-- Canvas will be injected here by JS -->
+    </div>
+</div>
+
+<!-- Floating Action Buttons -->
+<div class="fixed bottom-8 right-8 flex flex-col space-y-4 z-40">
+    <a href="/feedback"
+        class="bg-green-600 text-white p-4 rounded-full shadow-lg hover:bg-green-700 transition-colors flex items-center justify-center transform hover:scale-105"
+        title="피드백 받기">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+        </svg>
+    </a>
+    <a href="/qna"
+        class="bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center transform hover:scale-105"
+        title="챗봇과 대화하기">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+        </svg>
+    </a>
+</div>
+
+<!-- New Upload Confirmation Modal -->
+<div id="confirmModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-8 max-w-md w-full">
+        <h2 class="text-2xl font-bold mb-4">새 문서 업로드</h2>
+        <p class="text-gray-700 mb-6">
+            새 문서를 업로드하면 현재 문서는 삭제됩니다. 계속하시겠습니까?
+        </p>
+        <div class="flex space-x-2">
+            <button onclick="executeNewUpload()"
+                class="flex-1 bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700">
+                확인
+            </button>
+            <button onclick="closeConfirmModal()"
+                class="flex-1 bg-gray-300 text-gray-700 py-2 rounded-md hover:bg-gray-400">
+                취소
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/lib/pdf.min.js"></script>
+<script src="/static/js/pdf_viewer.js"></script>
+<script>
+    // Initialize PDF Viewer
+    document.addEventListener('DOMContentLoaded', function () {
+        const pdfUrl = "/docs/{{ document.id }}/download";
+        new PDFViewer(pdfUrl, 'pdf-container');
+    });
+</script>
+<script>
+    // Session cleanup on unload
+    window.addEventListener('beforeunload', function () {
+        navigator.sendBeacon('/docs/cleanup');
+    });
+
+    function confirmNewUpload() {
+        document.getElementById('confirmModal').classList.remove('hidden');
+    }
+
+    function closeConfirmModal() {
+        document.getElementById('confirmModal').classList.add('hidden');
+    }
+
+    async function executeNewUpload() {
+        // Call cleanup to remove current doc
+        try {
+            await fetch('/docs/cleanup', { method: 'POST' });
+            window.location.href = '/'; // Redirect to upload page (root)
+        } catch (e) {
+            console.error("Cleanup failed", e);
+            window.location.href = '/'; // Redirect anyway
+        }
+    }
+</script>
+{% endblock %}

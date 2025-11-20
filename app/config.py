@@ -24,6 +24,25 @@ class Settings(BaseSettings):
         description="CORS 허용 오리진",
     )
 
+    # 세션 쿠키 설정
+    SESSION_COOKIE_NAME: str = Field(
+        default="session", description="세션 쿠키 이름"
+    )
+    SESSION_MAX_AGE: int = Field(
+        default=60 * 60 * 24 * 7,
+        description="세션 최대 유효 시간(초, 기본 7일)",
+    )
+    SESSION_SAME_SITE: str = Field(
+        default="lax", description="SameSite 쿠키 속성"
+    )
+    SESSION_HTTPS_ONLY: bool = Field(
+        default=True,
+        description="HTTPS에서만 세션 쿠키 전송",
+    )
+    SESSION_HTTP_ONLY: bool = Field(
+        default=True, description="JavaScript 접근 차단"
+    )
+
     # 데이터베이스
     DATABASE_URL: str = Field(
         default="sqlite+aiosqlite:///./data/app.db",
@@ -33,7 +52,7 @@ class Settings(BaseSettings):
     # Google Gemini API
     GOOGLE_API_KEY: str = Field(..., description="Google API 키")
     GEMINI_QNA_MODEL: str = Field(
-        default="gemini-2.0-flash-exp", description="QnA용 모델"
+        default="gemini-2.5-flash", description="QnA용 모델"
     )
     GEMINI_EVAL_MODEL: str = Field(
         default="gemini-2.0-flash-thinking-exp",
