@@ -45,6 +45,17 @@ async def ask_question(
             400, f"문서 상태가 'ready'가 아닙니다: {document.status}"
         )
 
+    # store_id와 file_search_file_id 검증 (업로드 완료 여부 확인)
+    if not document.store_id:
+        raise HTTPException(
+            409, "문서 업로드가 완료되지 않았습니다 (store_id 없음). 문서를 다시 업로드해주세요."
+        )
+
+    if not document.file_search_file_id:
+        raise HTTPException(
+            409, "문서 업로드가 완료되지 않았습니다 (file_search_file_id 없음). 문서를 다시 업로드해주세요."
+        )
+
     # QnA 서비스 실행
     qna_service = QnAService(db)
 

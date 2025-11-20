@@ -38,6 +38,20 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory="app/templates")
 
 
+# T095: GET /admin - 관리자 루트 엔드포인트
+@router.get("", response_class=HTMLResponse)
+async def admin_root():
+    """
+    관리자 루트 페이지
+    /admin/dashboard로 리다이렉트
+    """
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse(
+        url="/admin/dashboard", status_code=302
+    )
+
+
 # T096: GET /admin/dashboard - 대시보드 메트릭
 @router.get("/dashboard", response_class=HTMLResponse)
 async def admin_dashboard(
