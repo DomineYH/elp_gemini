@@ -19,6 +19,7 @@ from app.db import get_db
 from app.models.users import User
 from app.schemas.users import UserResponse, UserLogin
 from app.services.auth_service import AuthService
+from app.utils.logging import log_auth_event
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -45,6 +46,11 @@ async def get_current_user(
     user_id = request.session.get("user_id")
 
     if not user_id:
+        log_auth_event(
+            "authentication_required",
+            success=False,
+            reason="No session",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="로그인이 필요합니다.",
@@ -55,6 +61,12 @@ async def get_current_user(
 
     if not user:
         # 세션은 있지만 사용자가 없는 경우
+        log_auth_event(
+            "invalid_session",
+            user_id=user_id,
+            success=False,
+            reason="User not found",
+        )
         request.session.clear()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -81,6 +93,13 @@ async def get_current_admin(
         HTTPException: 관리자가 아닌 경우
     """
     if not current_user.is_admin:
+        log_auth_event(
+            "permission_denied",
+            user_id=current_user.id,
+            username=current_user.username,
+            success=False,
+            reason="Admin permission required",
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="관리자 권한이 필요합니다.",
@@ -130,22 +149,47 @@ async def login(
         auth_service = AuthService(db)
         user = await auth_service.authenticate_user(username, nickname)
 
-        # 세션에 사용자 ID 저장
+        # 세션 고정 공격 방지: 기존 세션 클리어 (Task 2.2)
+        # 로그인 성공 시 새로운 세션 ID를 생성합니다.
+        request.session.clear()
+
+        # 새 세션에 사용자 정보 저장
         request.session["user_id"] = user.id
         request.session["is_admin"] = user.is_admin
+        request.session["username"] = user.username
+        request.session["nickname"] = user.nickname
 
+        # 로그인 성공 로깅
+        log_auth_event(
+            "login",
+            user_id=user.id,
+            username=user.username,
+            success=True,
+        )
         logger.info(
-            f"로그인 성공: user_id={user.id}, "
+            f"로그인 성공 (세션 재발급): "
+            f"user_id={user.id}, "
             f"username={user.username}, nickname={user.nickname}"
         )
 
-        # 관리자는 관리자 대시보드로, 일반 사용자는 홈으로
-        redirect_url = "/admin" if user.is_admin else "/"
+        # 역할 기반 리다이렉트
+        if user.is_admin:
+            redirect_url = "/admin/dashboard"
+        else:
+            redirect_url = "/"
+
         return RedirectResponse(
             url=redirect_url, status_code=status.HTTP_302_FOUND
         )
 
     except Exception as e:
+        # 로그인 실패 로깅
+        log_auth_event(
+            "login",
+            username=username,
+            success=False,
+            reason=str(e),
+        )
         logger.error(f"로그인 처리 중 오류: {str(e)}", exc_info=True)
         return templates.TemplateResponse(
             "user/login.html",
@@ -171,8 +215,16 @@ async def logout(request: Request):
         리다이렉트 응답
     """
     user_id = request.session.get("user_id")
+    username = request.session.get("username")
 
     if user_id:
+        # 로그아웃 로깅
+        log_auth_event(
+            "logout",
+            user_id=user_id,
+            username=username,
+            success=True,
+        )
         logger.info(f"로그아웃: user_id={user_id}")
 
     request.session.clear()

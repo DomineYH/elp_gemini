@@ -3,7 +3,11 @@ FastAPI 애플리케이션 메인 엔트리포인트
 미들웨어, 라우터, 예외 핸들러 설정
 """
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import (
+    JSONResponse,
+    HTMLResponse,
+    RedirectResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -12,6 +16,7 @@ import logging
 
 from app.config import settings
 from app.utils.logging import setup_logging
+from app.middleware import AuthMiddleware
 
 # 로깅 설정
 setup_logging(debug=settings.DEBUG)
@@ -26,17 +31,8 @@ app = FastAPI(
     redoc_url="/redoc" if settings.DEBUG else None,
 )
 
-# 세션 미들웨어 (T012)
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=settings.SECRET_KEY,
-    session_cookie="session",
-    max_age=60 * 60 * 24 * 7,  # 7일
-    same_site="lax",
-    https_only=not settings.DEBUG,
-)
-
 # CORS 미들웨어 (T013)
+# 역순 실행: 나중에 추가한 것이 먼저 실행됨
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -45,12 +41,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 전역 인증 미들웨어 (T095)
+# SessionMiddleware 이후 실행 (세션 데이터 확인)
+app.add_middleware(AuthMiddleware)
+
+# 세션 미들웨어 (T012)
+# 가장 먼저 실행되어야 함 (세션 데이터 로드)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SECRET_KEY,
+    session_cookie=settings.SESSION_COOKIE_NAME,
+    max_age=settings.SESSION_MAX_AGE,
+    same_site=settings.SESSION_SAME_SITE,
+    https_only=(
+        settings.SESSION_HTTPS_ONLY and not settings.DEBUG
+    ),
+)
+
 # 정적 파일 및 템플릿 설정 (T016)
 app.mount(
     "/static",
     StaticFiles(directory="app/static"),
     name="static",
 )
+# Note: /files 정적 마운트 제거 (보안 강화)
+# 파일 다운로드는 /docs/{document_id}/download 엔드포인트 사용
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -65,8 +80,22 @@ async def http_exception_handler(
         f"Path: {request.url.path}"
     )
 
+    # HTML 요청 여부 확인
+    accept = request.headers.get("accept", "")
+    is_html_request = "text/html" in accept.lower()
+
+    # 401/403 오류이고 HTML 요청인 경우 /login 리다이렉트
+    if exc.status_code in (401, 403) and is_html_request:
+        logger.info(
+            f"인증/권한 오류 ({exc.status_code}) → "
+            f"/login 리다이렉트"
+        )
+        return RedirectResponse(
+            url="/login", status_code=302
+        )
+
     # API 요청인 경우 JSON 응답
-    if request.url.path.startswith("/api"):
+    if request.url.path.startswith("/api") or not is_html_request:
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.detail},
@@ -127,6 +156,14 @@ async def startup_event():
         await init_db()
         logger.info("데이터베이스 초기화 완료")
 
+    # 평가 기준 컨텍스트 Provider 초기화
+    from app.services.criteria_context_provider import (
+        criteria_context_provider,
+    )
+
+    await criteria_context_provider.initialize()
+    logger.info("평가 기준 컨텍스트 Provider 초기화 완료")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -147,42 +184,35 @@ async def health_check():
 
 # 라우터 등록
 from app.routers import auth, user_docs, qna, eval, admin
+from app.routers.admin import criteria
 from fastapi.responses import RedirectResponse
 
-# 루트 엔드포인트 - 인증 상태에 따라 리다이렉트
+# 루트 엔드포인트 - 역할 기반 리다이렉트
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     """
     루트 페이지
-    - 로그인한 경우: 사용자 대시보드로 리다이렉트
-    - 로그인하지 않은 경우: 로그인 페이지로 리다이렉트
+    - 관리자: /admin/dashboard로 리다이렉트
+    - 일반 사용자: /docs로 리다이렉트 (사용자 대시보드)
+    - 미인증: /login으로 리다이렉트
     """
     user_id = request.session.get("user_id")
+    is_admin = request.session.get("is_admin", False)
 
     if user_id:
-        # 로그인한 경우 - 사용자 대시보드 표시
-        # user_docs 라우터의 dashboard 함수 호출
-        from app.routers.user_docs import dashboard
-        from app.db import get_db
-        from app.routers.auth import get_current_user
-
-        try:
-            # 현재 사용자 가져오기
-            db_gen = get_db()
-            db = await db_gen.__anext__()
-            try:
-                current_user = await get_current_user(request, db)
-                # 대시보드 렌더링
-                response = await dashboard(request, current_user, db)
-                return response
-            finally:
-                await db_gen.aclose()
-        except HTTPException:
-            # 세션은 있지만 사용자가 없는 경우 - 로그인 페이지로
-            request.session.clear()
-            return RedirectResponse(url="/login", status_code=302)
+        # 로그인한 경우 - 역할에 따라 리다이렉트
+        if is_admin:
+            # 관리자 → 관리자 대시보드
+            return RedirectResponse(
+                url="/admin/dashboard", status_code=302
+            )
+        else:
+            # 일반 사용자 → 사용자 대시보드
+            return RedirectResponse(
+                url="/dashboard", status_code=302
+            )
     else:
-        # 로그인하지 않은 경우 - 로그인 페이지로
+        # 미인증 → 로그인 페이지
         return RedirectResponse(url="/login", status_code=302)
 
 
@@ -191,6 +221,7 @@ app.include_router(user_docs.router, tags=["문서"])
 app.include_router(qna.router, tags=["QnA"])
 app.include_router(eval.router, tags=["평가"])
 app.include_router(admin.router, tags=["관리자"])
+app.include_router(criteria.router, tags=["관리자", "평가기준"])
 
 
 if __name__ == "__main__":

@@ -13,7 +13,11 @@ from fastapi import (
     Form,
     Request,
 )
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import (
+    HTMLResponse,
+    RedirectResponse,
+    FileResponse,
+)
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -28,7 +32,7 @@ from app.routers.auth import get_current_user
 from app.services.file_search_service import FileSearchService
 from app.config import settings
 
-router = APIRouter()
+router = APIRouter(prefix="/dashboard", tags=["documents"])
 templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
 
@@ -52,27 +56,34 @@ async def dashboard(
     )
     documents = result.scalars().all()
 
-    # 문서 상태별 개수 계산 (T084)
-    status_counts = {}
-    for doc in documents:
-        status_counts[doc.status] = (
-            status_counts.get(doc.status, 0) + 1
-        )
-
-    return templates.TemplateResponse(
-        "user/dashboard.html",
-        {
-            "request": request,
-            "user": current_user,
-            "documents": documents,
-            "total_count": len(documents),
-            "status_counts": status_counts,
-        },
+    # 활성 문서 확인 (ready 상태)
+    active_doc = next(
+        (doc for doc in documents if doc.status == "ready"), None
     )
 
+    if active_doc:
+        # 뷰어 렌더링
+        return templates.TemplateResponse(
+            "user/viewer.html",
+            {
+                "request": request,
+                "user": current_user,
+                "document": active_doc,
+            },
+        )
+    else:
+        # 업로드 화면 렌더링
+        return templates.TemplateResponse(
+            "user/upload.html",
+            {
+                "request": request,
+                "user": current_user,
+            },
+        )
 
-# T043: POST /docs/upload - 문서 업로드
-@router.post("/docs/upload")
+
+# T043: POST /upload - 문서 업로드
+@router.post("/upload")
 async def upload_document(
     request: Request,
     title: str = Form(...),
@@ -80,8 +91,35 @@ async def upload_document(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """문서 업로드"""
+    """문서 업로드 (단일 문서 정책 적용)"""
     try:
+        # 기존 문서 정리 (단일 문서 정책)
+        # 'ready', 'indexing', 'uploading' 상태의 문서 조회
+        result = await db.execute(
+            select(Document).where(
+                Document.user_id == current_user.id,
+                Document.status.in_(["ready", "indexing", "uploading"]),
+            )
+        )
+        existing_docs = result.scalars().all()
+
+        fs_service = FileSearchService()
+
+        for doc in existing_docs:
+            # Vector DB에서 삭제
+            if doc.file_search_file_id:
+                try:
+                    await fs_service.delete_document(doc.file_search_file_id)
+                except Exception as e:
+                    logger.warning(f"기존 문서 Vector DB 삭제 실패: {str(e)}")
+            
+            # DB 상태 변경 (소프트 삭제)
+            doc.status = "deleted"
+        
+        if existing_docs:
+            await db.flush()
+            logger.info(f"기존 문서 {len(existing_docs)}개 정리 완료")
+
         # 파일 타입 검증
         if file.content_type != "application/pdf":
             raise HTTPException(400, "PDF 파일만 업로드 가능합니다")
@@ -146,7 +184,19 @@ async def upload_document(
                     "file_path": file_path,
                 }
             )
+            # Debug logging to file
+            with open("debug_error.log", "a") as f:
+                f.write(f"Upload failed: {str(e)}\n")
             document.status = "failed"
+
+        await db.commit()
+
+        logger.info(
+            f"문서 업로드 완료: user={current_user.id}, "
+            f"doc={document.id}"
+        )
+
+        return RedirectResponse(url="/", status_code=302)
 
         await db.commit()
 
@@ -164,8 +214,8 @@ async def upload_document(
         raise HTTPException(500, "문서 업로드 중 오류가 발생했습니다")
 
 
-# T044/T078/T079: GET /docs - 문서 목록 (필터링, 페이지네이션)
-@router.get("/docs", response_model=List[DocumentResponse])
+# T044/T078/T079: GET /list - 문서 목록 (필터링, 페이지네이션)
+@router.get("/list", response_model=List[DocumentResponse])
 async def list_documents(
     status: str = None,
     page: int = 1,
@@ -210,8 +260,7 @@ async def list_documents(
     return documents
 
 
-# T045: GET /docs/{document_id} - 문서 상세
-@router.get("/docs/{document_id}", response_class=HTMLResponse)
+@router.get("/{document_id}", response_class=HTMLResponse)
 async def get_document(
     request: Request,
     document_id: int,
@@ -240,8 +289,72 @@ async def get_document(
     )
 
 
+# T096: GET /{document_id}/download - 파일 다운로드
+@router.get("/{document_id}/download")
+async def download_document(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    문서 파일 다운로드
+
+    인증된 사용자만 본인의 문서를 다운로드할 수 있습니다.
+
+    Args:
+        document_id: 문서 ID
+        current_user: 현재 사용자
+        db: 데이터베이스 세션
+
+    Returns:
+        파일 스트리밍 응답
+
+    Raises:
+        HTTPException: 문서를 찾을 수 없거나 권한이 없는 경우
+    """
+    # 문서 조회 및 권한 확인
+    result = await db.execute(
+        select(Document).where(
+            Document.id == document_id,
+            Document.user_id == current_user.id,
+        )
+    )
+    document = result.scalar_one_or_none()
+
+    if not document:
+        raise HTTPException(404, "문서를 찾을 수 없습니다")
+
+    # 파일 경로 확인
+    file_path = document.file_path
+
+    if not file_path or not os.path.exists(file_path):
+        logger.error(
+            f"파일을 찾을 수 없음: "
+            f"document_id={document_id}, "
+            f"path={file_path}"
+        )
+        raise HTTPException(404, "파일을 찾을 수 없습니다")
+
+    # 파일명 추출 (안전한 파일명 사용)
+    filename = os.path.basename(file_path)
+
+    # 파일 다운로드 로깅
+    logger.info(
+        f"파일 다운로드: user_id={current_user.id}, "
+        f"document_id={document_id}, "
+        f"filename={filename}"
+    )
+
+    # FileResponse로 스트리밍
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type="application/octet-stream",
+    )
+
+
 # T046/T080/T083: DELETE /docs/{document_id} - 문서 소프트 삭제
-@router.delete("/docs/{document_id}")
+@router.delete("/{document_id}")
 async def delete_document(
     document_id: int,
     current_user: User = Depends(get_current_user),
@@ -281,3 +394,49 @@ async def delete_document(
     logger.info(f"문서 소프트 삭제 완료: doc={document_id}")
 
     return {"message": "문서가 삭제되었습니다"}
+
+
+# T090: POST /docs/cleanup - 세션 종료 시 정리
+@router.post("/cleanup")
+async def cleanup_session(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    세션 종료 시 리소스 정리
+    - 현재 사용자의 활성 문서 Vector DB 데이터 삭제
+    """
+    try:
+        # 활성 문서 조회
+        result = await db.execute(
+            select(Document).where(
+                Document.user_id == current_user.id,
+                Document.status.in_(["ready", "indexing"]),
+            )
+        )
+        active_docs = result.scalars().all()
+
+        if not active_docs:
+            return {"message": "정리할 문서가 없습니다"}
+
+        fs_service = FileSearchService()
+
+        for doc in active_docs:
+            # Vector DB에서 삭제
+            if doc.file_search_file_id:
+                try:
+                    await fs_service.delete_document(doc.file_search_file_id)
+                except Exception as e:
+                    logger.warning(f"Cleanup: Vector DB 삭제 실패: {str(e)}")
+            
+            # 상태 변경 (deleted)
+            doc.status = "deleted"
+        
+        await db.commit()
+        logger.info(f"세션 정리 완료: user={current_user.id}, docs={len(active_docs)}")
+        
+        return {"message": "세션 데이터가 정리되었습니다"}
+
+    except Exception as e:
+        logger.error(f"세션 정리 중 오류: {str(e)}")
+        raise HTTPException(500, "세션 정리 실패")

@@ -9,6 +9,8 @@ class QAResponse(BaseModel):
     question: str
     answer: str
     latency_ms: int | None
+    citations: dict | list | None = None
+    grounding_metadata: dict | None = None
 
 
 class QALogResponse(BaseModel):

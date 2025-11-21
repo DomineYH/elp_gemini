@@ -5,10 +5,7 @@
 {% block nav_links %}
 <span class="text-gray-600">{{ user.email }}</span>
 <form method="POST" action="/auth/logout" class="inline">
-    <button
-        type="submit"
-        class="text-gray-600 hover:text-red-600"
-    >
+    <button type="submit" class="text-gray-600 hover:text-red-600">
         로그아웃
     </button>
 </form>
@@ -21,11 +18,8 @@
         <h1 class="text-3xl font-bold text-gray-800">
             내 문서
         </h1>
-        <button
-            onclick="openUploadModal()"
-            class="bg-blue-600 text-white px-6 py-2
-            rounded-lg hover:bg-blue-700 transition-colors"
-        >
+        <button onclick="openUploadModal()" class="bg-blue-600 text-white px-6 py-2
+            rounded-lg hover:bg-blue-700 transition-colors">
             + 문서 업로드
         </button>
     </div>
@@ -66,23 +60,14 @@
                 <label class="block text-sm font-medium mb-1">
                     검색
                 </label>
-                <input
-                    type="text"
-                    id="searchInput"
-                    placeholder="문서 제목 검색..."
-                    class="w-full px-3 py-2 border rounded-md"
-                    onkeyup="filterDocuments()"
-                />
+                <input type="text" id="searchInput" placeholder="문서 제목 검색..." class="w-full px-3 py-2 border rounded-md"
+                    onkeyup="filterDocuments()" />
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">
                     상태 필터
                 </label>
-                <select
-                    id="statusFilter"
-                    class="w-full px-3 py-2 border rounded-md"
-                    onchange="filterDocuments()"
-                >
+                <select id="statusFilter" class="w-full px-3 py-2 border rounded-md" onchange="filterDocuments()">
                     <option value="">전체</option>
                     <option value="ready">준비 완료</option>
                     <option value="uploading">업로드 중</option>
@@ -94,11 +79,7 @@
                 <label class="block text-sm font-medium mb-1">
                     정렬
                 </label>
-                <select
-                    id="sortSelect"
-                    class="w-full px-3 py-2 border rounded-md"
-                    onchange="sortDocuments()"
-                >
+                <select id="sortSelect" class="w-full px-3 py-2 border rounded-md" onchange="sortDocuments()">
                     <option value="date-desc">최신순</option>
                     <option value="date-asc">오래된순</option>
                     <option value="title-asc">제목순 (A-Z)</option>
@@ -112,20 +93,13 @@
     {% if documents %}
     <div id="documentList" class="grid gap-4">
         {% for doc in documents %}
-        <div
-            class="document-item bg-white shadow-md rounded-lg p-6
-            hover:shadow-lg transition-shadow"
-            data-title="{{ doc.title }}"
-            data-status="{{ doc.status }}"
-            data-date="{{ doc.uploaded_at.isoformat() }}"
-        >
+        <div class="document-item bg-white shadow-md rounded-lg p-6
+            hover:shadow-lg transition-shadow" data-title="{{ doc.title }}" data-status="{{ doc.status }}"
+            data-date="{{ doc.uploaded_at.isoformat() }}">
             <div class="flex justify-between items-start">
                 <div class="flex-1">
                     <h3 class="text-xl font-semibold mb-2">
-                        <a
-                            href="/docs/{{ doc.id }}"
-                            class="text-blue-600 hover:underline"
-                        >
+                        <a href="/dashboard/{{ doc.id }}" class="text-blue-600 hover:underline">
                             {{ doc.title }}
                         </a>
                     </h3>
@@ -141,35 +115,27 @@
                         </p>
                         <p>
                             상태:
-                            <span
-                                class="px-2 py-1 rounded text-xs
+                            <span class="px-2 py-1 rounded text-xs
                                 {% if doc.status == 'ready' %}
                                 bg-green-100 text-green-800
                                 {% elif doc.status == 'failed' %}
                                 bg-red-100 text-red-800
                                 {% else %}
                                 bg-yellow-100 text-yellow-800
-                                {% endif %}"
-                            >
+                                {% endif %}">
                                 {{ doc.status }}
                             </span>
                         </p>
                     </div>
                 </div>
                 <div class="space-x-2">
-                    <a
-                        href="/docs/{{ doc.id }}"
-                        class="text-blue-600 hover:text-blue-800
-                        text-sm"
-                    >
+                    <a href="/dashboard/{{ doc.id }}" class="text-blue-600 hover:text-blue-800
+                        text-sm">
                         상세보기
                     </a>
-                    <button
-                        onclick="confirmDelete({{ doc.id }},
-                        '{{ doc.title }}')"
-                        class="text-red-600 hover:text-red-800
-                        text-sm"
-                    >
+                    <button onclick="confirmDelete({{ doc.id }},
+                        '{{ doc.title }}')" class="text-red-600 hover:text-red-800
+                        text-sm">
                         삭제
                     </button>
                 </div>
@@ -179,27 +145,19 @@
     </div>
 
     <!-- 검색 결과 없음 -->
-    <div
-        id="noResults"
-        class="hidden bg-white shadow-md rounded-lg p-12
-        text-center"
-    >
+    <div id="noResults" class="hidden bg-white shadow-md rounded-lg p-12
+        text-center">
         <p class="text-gray-600">
             검색 결과가 없습니다
         </p>
     </div>
     {% else %}
-    <div
-        class="bg-white shadow-md rounded-lg p-12 text-center"
-    >
+    <div class="bg-white shadow-md rounded-lg p-12 text-center">
         <p class="text-gray-600 mb-4">
             아직 업로드된 문서가 없습니다
         </p>
-        <button
-            onclick="openUploadModal()"
-            class="bg-blue-600 text-white px-6 py-2
-            rounded-lg hover:bg-blue-700 transition-colors"
-        >
+        <button onclick="openUploadModal()" class="bg-blue-600 text-white px-6 py-2
+            rounded-lg hover:bg-blue-700 transition-colors">
             첫 문서 업로드하기
         </button>
     </div>
@@ -211,49 +169,27 @@
 bg-opacity-50 flex items-center justify-center z-50">
     <div class="bg-white rounded-lg p-8 max-w-md w-full">
         <h2 class="text-2xl font-bold mb-4">문서 업로드</h2>
-        <form
-            method="POST"
-            action="/docs/upload"
-            enctype="multipart/form-data"
-        >
+        <form method="POST" action="/dashboard/upload" enctype="multipart/form-data">
             <div class="mb-4">
                 <label class="block text-sm font-medium mb-1">
                     문서 제목
                 </label>
-                <input
-                    type="text"
-                    name="title"
-                    required
-                    class="w-full px-3 py-2 border rounded-md"
-                    placeholder="예: 연구 논문 초안"
-                />
+                <input type="text" name="title" required class="w-full px-3 py-2 border rounded-md"
+                    placeholder="예: 연구 논문 초안" />
             </div>
             <div class="mb-4">
                 <label class="block text-sm font-medium mb-1">
                     PDF 파일
                 </label>
-                <input
-                    type="file"
-                    name="file"
-                    accept=".pdf"
-                    required
-                    class="w-full"
-                />
+                <input type="file" name="file" accept=".pdf" required class="w-full" />
             </div>
             <div class="flex space-x-2">
-                <button
-                    type="submit"
-                    class="flex-1 bg-blue-600 text-white
-                    py-2 rounded-md hover:bg-blue-700"
-                >
+                <button type="submit" class="flex-1 bg-blue-600 text-white
+                    py-2 rounded-md hover:bg-blue-700">
                     업로드
                 </button>
-                <button
-                    type="button"
-                    onclick="closeUploadModal()"
-                    class="flex-1 bg-gray-300 text-gray-700
-                    py-2 rounded-md hover:bg-gray-400"
-                >
+                <button type="button" onclick="closeUploadModal()" class="flex-1 bg-gray-300 text-gray-700
+                    py-2 rounded-md hover:bg-gray-400">
                     취소
                 </button>
             </div>
@@ -268,142 +204,166 @@ bg-opacity-50 flex items-center justify-center z-50">
         <h2 class="text-2xl font-bold mb-4">문서 삭제 확인</h2>
         <p class="text-gray-700 mb-6">
             "<span id="deleteDocTitle"></span>" 문서를 삭제하시겠습니까?
-            <br/>
+            <br />
             <span class="text-sm text-red-600">
                 이 작업은 취소할 수 없습니다.
             </span>
         </p>
         <div class="flex space-x-2">
-            <button
-                onclick="executeDelete()"
-                class="flex-1 bg-red-600 text-white
-                py-2 rounded-md hover:bg-red-700"
-            >
+            <button onclick="executeDelete()" class="flex-1 bg-red-600 text-white
+                py-2 rounded-md hover:bg-red-700">
                 삭제
             </button>
-            <button
-                onclick="closeDeleteModal()"
-                class="flex-1 bg-gray-300 text-gray-700
-                py-2 rounded-md hover:bg-gray-400"
-            >
+            <button onclick="closeDeleteModal()" class="flex-1 bg-gray-300 text-gray-700
+                py-2 rounded-md hover:bg-gray-400">
                 취소
             </button>
         </div>
     </div>
 </div>
+</div>
+</div>
+
+<!-- Floating Action Buttons (T091) -->
+{% if has_ready_doc %}
+<div class="fixed bottom-8 right-8 flex flex-col space-y-4 z-40">
+    <a href="/feedback"
+        class="bg-green-600 text-white p-4 rounded-full shadow-lg hover:bg-green-700 transition-colors flex items-center justify-center"
+        title="피드백 받기">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+        </svg>
+    </a>
+    <a href="/qna"
+        class="bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
+        title="챗봇과 대화하기">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+        </svg>
+    </a>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
-let deleteDocId = null;
+    let deleteDocId = null;
 
-// 업로드 모달 관리
-function openUploadModal() {
-    document.getElementById('uploadModal')
-    .classList.remove('hidden');
-}
+    // 업로드 모달 관리
+    function openUploadModal() {
+        document.getElementById('uploadModal')
+            .classList.remove('hidden');
+    }
 
-function closeUploadModal() {
-    document.getElementById('uploadModal')
-    .classList.add('hidden');
-}
+    function closeUploadModal() {
+        document.getElementById('uploadModal')
+            .classList.add('hidden');
+    }
 
-// 삭제 확인 모달 관리
-function confirmDelete(docId, docTitle) {
-    deleteDocId = docId;
-    document.getElementById('deleteDocTitle').textContent =
-    docTitle;
-    document.getElementById('deleteModal')
-    .classList.remove('hidden');
-}
+    // 삭제 확인 모달 관리
+    function confirmDelete(docId, docTitle) {
+        deleteDocId = docId;
+        document.getElementById('deleteDocTitle').textContent =
+            docTitle;
+        document.getElementById('deleteModal')
+            .classList.remove('hidden');
+    }
 
-function closeDeleteModal() {
-    deleteDocId = null;
-    document.getElementById('deleteModal')
-    .classList.add('hidden');
-}
+    function closeDeleteModal() {
+        deleteDocId = null;
+        document.getElementById('deleteModal')
+            .classList.add('hidden');
+    }
 
-async function executeDelete() {
-    if (!deleteDocId) return;
+    async function executeDelete() {
+        if (!deleteDocId) return;
 
-    try {
-        const response = await fetch(`/docs/${deleteDocId}`, {
-            method: 'DELETE',
+        try {
+            const response = await fetch(`/dashboard/${deleteDocId}`, {
+                method: 'DELETE',
+            });
+
+            if (!response.ok) throw new Error('삭제 실패');
+
+            // 페이지 새로고침
+            window.location.reload();
+        } catch (error) {
+            alert('문서 삭제 중 오류가 발생했습니다.');
+            console.error(error);
+        } finally {
+            closeDeleteModal();
+        }
+    }
+
+    // 문서 검색 및 필터링
+    function filterDocuments() {
+        const searchTerm = document.getElementById('searchInput')
+            .value.toLowerCase();
+        const statusFilter = document.getElementById('statusFilter')
+            .value;
+
+        const items = document.querySelectorAll('.document-item');
+        let visibleCount = 0;
+
+        items.forEach(item => {
+            const title = item.dataset.title.toLowerCase();
+            const status = item.dataset.status;
+
+            const matchesSearch = title.includes(searchTerm);
+            const matchesStatus = !statusFilter ||
+                status === statusFilter;
+
+            if (matchesSearch && matchesStatus) {
+                item.classList.remove('hidden');
+                visibleCount++;
+            } else {
+                item.classList.add('hidden');
+            }
         });
 
-        if (!response.ok) throw new Error('삭제 실패');
-
-        // 페이지 새로고침
-        window.location.reload();
-    } catch (error) {
-        alert('문서 삭제 중 오류가 발생했습니다.');
-        console.error(error);
-    } finally {
-        closeDeleteModal();
-    }
-}
-
-// 문서 검색 및 필터링
-function filterDocuments() {
-    const searchTerm = document.getElementById('searchInput')
-    .value.toLowerCase();
-    const statusFilter = document.getElementById('statusFilter')
-    .value;
-
-    const items = document.querySelectorAll('.document-item');
-    let visibleCount = 0;
-
-    items.forEach(item => {
-        const title = item.dataset.title.toLowerCase();
-        const status = item.dataset.status;
-
-        const matchesSearch = title.includes(searchTerm);
-        const matchesStatus = !statusFilter ||
-        status === statusFilter;
-
-        if (matchesSearch && matchesStatus) {
-            item.classList.remove('hidden');
-            visibleCount++;
-        } else {
-            item.classList.add('hidden');
-        }
-    });
-
-    // 검색 결과 없음 표시
-    const noResults = document.getElementById('noResults');
-    if (noResults) {
-        if (visibleCount === 0 && items.length > 0) {
-            noResults.classList.remove('hidden');
-        } else {
-            noResults.classList.add('hidden');
+        // 검색 결과 없음 표시
+        const noResults = document.getElementById('noResults');
+        if (noResults) {
+            if (visibleCount === 0 && items.length > 0) {
+                noResults.classList.remove('hidden');
+            } else {
+                noResults.classList.add('hidden');
+            }
         }
     }
-}
 
-// 문서 정렬
-function sortDocuments() {
-    const sortBy = document.getElementById('sortSelect').value;
-    const list = document.getElementById('documentList');
+    // 문서 정렬
+    function sortDocuments() {
+        const sortBy = document.getElementById('sortSelect').value;
+        const list = document.getElementById('documentList');
 
-    if (!list) return;
+        if (!list) return;
 
-    const items = Array.from(list.children);
+        const items = Array.from(list.children);
 
-    items.sort((a, b) => {
-        if (sortBy === 'title-asc') {
-            return a.dataset.title.localeCompare(b.dataset.title);
-        } else if (sortBy === 'title-desc') {
-            return b.dataset.title.localeCompare(a.dataset.title);
-        } else if (sortBy === 'date-asc') {
-            return new Date(a.dataset.date) -
-            new Date(b.dataset.date);
-        } else { // date-desc (기본값)
-            return new Date(b.dataset.date) -
-            new Date(a.dataset.date);
-        }
+        items.sort((a, b) => {
+            if (sortBy === 'title-asc') {
+                return a.dataset.title.localeCompare(b.dataset.title);
+            } else if (sortBy === 'title-desc') {
+                return b.dataset.title.localeCompare(a.dataset.title);
+            } else if (sortBy === 'date-asc') {
+                return new Date(a.dataset.date) -
+                    new Date(b.dataset.date);
+            } else { // date-desc (기본값)
+                return new Date(b.dataset.date) -
+                    new Date(a.dataset.date);
+            }
+        });
+
+        items.forEach(item => list.appendChild(item));
+    }
+
+    // T092: 세션 종료 시 정리 (User leaves window)
+    window.addEventListener('beforeunload', function () {
+        // sendBeacon을 사용하여 페이지 이탈 시에도 요청 보장
+        navigator.sendBeacon('/dashboard/cleanup');
     });
-
-    items.forEach(item => list.appendChild(item));
-}
 </script>
 {% endblock %}

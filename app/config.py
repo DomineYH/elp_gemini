@@ -24,6 +24,25 @@ class Settings(BaseSettings):
         description="CORS 허용 오리진",
     )
 
+    # 세션 쿠키 설정
+    SESSION_COOKIE_NAME: str = Field(
+        default="session", description="세션 쿠키 이름"
+    )
+    SESSION_MAX_AGE: int = Field(
+        default=60 * 60 * 24 * 7,
+        description="세션 최대 유효 시간(초, 기본 7일)",
+    )
+    SESSION_SAME_SITE: str = Field(
+        default="lax", description="SameSite 쿠키 속성"
+    )
+    SESSION_HTTPS_ONLY: bool = Field(
+        default=True,
+        description="HTTPS에서만 세션 쿠키 전송",
+    )
+    SESSION_HTTP_ONLY: bool = Field(
+        default=True, description="JavaScript 접근 차단"
+    )
+
     # 데이터베이스
     DATABASE_URL: str = Field(
         default="sqlite+aiosqlite:///./data/app.db",
@@ -33,7 +52,7 @@ class Settings(BaseSettings):
     # Google Gemini API
     GOOGLE_API_KEY: str = Field(..., description="Google API 키")
     GEMINI_QNA_MODEL: str = Field(
-        default="gemini-2.0-flash-exp", description="QnA용 모델"
+        default="gemini-2.5-flash", description="QnA용 모델"
     )
     GEMINI_EVAL_MODEL: str = Field(
         default="gemini-2.0-flash-thinking-exp",
@@ -78,6 +97,31 @@ class Settings(BaseSettings):
     )
     UPLOAD_DIR: str = Field(
         default="./data/uploads", description="업로드 디렉토리"
+    )
+
+    # Google Cloud Configuration
+    GOOGLE_APPLICATION_CREDENTIALS: str = Field(
+        default="./credentials/google-cloud-key.json",
+        description="Google Cloud 서비스 계정 키 파일 경로",
+    )
+    GOOGLE_PROJECT_ID: str = Field(
+        default="", description="Google Cloud 프로젝트 ID"
+    )
+
+    # Vector DB Paths (Criteria vs User separation)
+    CRITERIA_VECTOR_DB_PATH: str = Field(
+        default="./data/vector_db/criteria/",
+        description="평가 기준 전용 벡터 DB 경로",
+    )
+    USER_VECTOR_DB_PATH: str = Field(
+        default="./data/vector_db/user/",
+        description="사용자 문서 전용 벡터 DB 경로",
+    )
+
+    # Criteria Upload
+    CRITERIA_UPLOAD_DIR: str = Field(
+        default="./data/uploads/criteria/",
+        description="평가 기준 파일 업로드 디렉토리",
     )
 
 
