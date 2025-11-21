@@ -21,6 +21,7 @@ dependencies = [
     "bcrypt<4.0.0",
     "python-dotenv>=1.0.0",
     "tenacity>=8.2.3",
+    "greenlet>=3.2.4",
 ]
 
 [project.optional-dependencies]

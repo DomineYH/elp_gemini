@@ -94,6 +94,12 @@ class CriteriaDocument(Base):
         index=True,
         comment="Google File Search Document ID",
     )
+    file_id = Column(
+        String(255),
+        nullable=True,
+        index=True,
+        comment="Google File ID (독립적인 파일 객체)",
+    )
     status = Column(
         String(50),
         nullable=False,
@@ -149,6 +155,9 @@ class CriteriaUploadResponse(BaseModel):
     document_id: Optional[str] = Field(
         None, description="Google File Search Document ID"
     )
+    file_id: Optional[str] = Field(
+        None, description="Google File ID (독립적인 파일 객체)"
+    )
     status: str = Field(..., description="문서 상태")
     created_at: datetime = Field(..., description="생성 시각")
 
@@ -165,6 +174,7 @@ class CriteriaDetailResponse(BaseModel):
     file_size: int
     vector_store_id: str
     document_id: Optional[str] = None
+    file_id: Optional[str] = None
     status: str
     created_at: datetime
     activated_at: Optional[datetime] = None

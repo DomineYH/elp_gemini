@@ -101,7 +101,7 @@ class QnAService:
                         types.Tool(
                             file_search=types.FileSearch(
                                 file_search_store_names=[document.store_id],
-                                filter=f"metadata.document_id = '{document.id}'"
+                                # metadata_filter=f"metadata.user_id = '{document.user_id}'"
                             )
                         )
                     ],

@@ -60,16 +60,12 @@ class CriteriaEmbeddingService:
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,  # 원래 예외 재발생
     )
-    def _create_unique_store(
-        self, title: str, metadata: Dict[str, Any] = None
-    ):
+    def _create_unique_store(self, title: str):
         """
         문서별 고유 Vector Store 생성 (재시도: 최대 3회)
 
         Args:
             title: 문서 제목 (로깅용)
-            metadata: 스토어 메타데이터 (선택사항)
-                예: {"department": "engineering", "project": "elp"}
 
         Returns:
             FileSearchStore 객체
@@ -89,10 +85,6 @@ class CriteriaEmbeddingService:
 
             # 스토어 설정 구성
             store_config = {"display_name": store_name}
-
-            # 메타데이터 추가 (제공된 경우)
-            if metadata:
-                store_config["metadata"] = metadata
 
             # Vector Store 생성
             store = self.client.file_search_stores.create(
@@ -150,7 +142,7 @@ class CriteriaEmbeddingService:
         try:
             # 스토어 생성 시간 측정
             store_start = time.time()
-            store = self._create_unique_store(title, metadata)
+            store = self._create_unique_store(title)
             store_time = time.time() - store_start
 
             # Custom metadata 구조 변환
@@ -169,7 +161,7 @@ class CriteriaEmbeddingService:
                             }
                         )
 
-            # 업로드 시작 시간 측정
+            # 파일 업로드 및 스토어 추가 (1단계)
             upload_start = time.time()
             store_manager = self.client.file_search_stores
             operation = store_manager.upload_to_file_search_store(
@@ -206,17 +198,10 @@ class CriteriaEmbeddingService:
                 elapsed += poll_interval
 
                 try:
-                    operation = self.client.operations.get(
-                        operation.name
-                    )
+                    operation = self.client.operations.get(operation)
                     logger.debug(
                         f"인덱싱 진행 중... (경과: {elapsed}초)"
                     )
-                except AttributeError as e:
-                    logger.error(
-                        f"Operation name 추출 실패: {e}"
-                    )
-                    raise
                 except Exception as e:
                     logger.info(
                         f"Operation 빠른 완료 감지: {str(e)}"
@@ -278,18 +263,16 @@ class CriteriaEmbeddingService:
             # 원래 예외 재발생
             raise
 
-    async def delete_document(
+    async def delete_file(
         self,
-        vector_store_id: str,
-        document_id: str,
+        file_id: str,
         ignore_errors: bool = False
     ) -> bool:
         """
-        Vector Store 내부 문서 삭제
+        독립적인 파일 객체 삭제
 
         Args:
-            vector_store_id: 문서가 속한 Store ID
-            document_id: 삭제할 Document ID
+            file_id: 삭제할 Google File ID
             ignore_errors: True면 예외를 삼키고 False 반환,
                           False면 예외를 재발생 (기본값)
 
@@ -301,22 +284,14 @@ class CriteriaEmbeddingService:
             Exception: ignore_errors=False이고 삭제 실패 시
         """
         try:
-            if not vector_store_id or not document_id:
-                logger.warning(
-                    "삭제할 Vector Store ID 또는 Document ID가 "
-                    "없습니다."
-                )
+            if not file_id:
+                logger.warning("삭제할 File ID가 없습니다.")
                 return False
 
-            # 문서 삭제 API 호출
-            self.client.file_search_stores.delete_document(
-                name=document_id
-            )
+            # 파일 삭제 API 호출
+            self.client.files.delete(name=file_id)
 
-            logger.info(
-                f"문서 삭제 완료: "
-                f"store={vector_store_id}, doc={document_id}"
-            )
+            logger.info(f"파일 삭제 완료: file_id={file_id}")
             return True
 
         except Exception as e:
@@ -324,18 +299,13 @@ class CriteriaEmbeddingService:
             error_msg = str(e).lower()
             if "404" in error_msg or "not found" in error_msg:
                 logger.warning(
-                    f"문서가 이미 삭제되었거나 존재하지 않습니다: "
-                    f"{document_id}"
+                    f"파일이 이미 삭제되었거나 존재하지 않습니다: "
+                    f"{file_id}"
                 )
-                if ignore_errors:
-                    return True
-                # ignore_errors=False여도 404는 성공으로 간주
+                # 404는 성공으로 간주
                 return True
 
-            logger.error(
-                f"문서 삭제 실패 "
-                f"(store: {vector_store_id}, doc: {document_id}): {e}"
-            )
+            logger.error(f"파일 삭제 실패 (file_id: {file_id}): {e}")
 
             if ignore_errors:
                 return False
@@ -378,12 +348,14 @@ class CriteriaEmbeddingService:
             error_msg = str(e).lower()
 
             # 404: 이미 삭제된 경우
-            if "404" in error_msg or "not found" in error_msg:
+            # 403: 권한 없음 또는 이미 삭제됨
+            if ("404" in error_msg or "not found" in error_msg or
+                "403" in error_msg or "permission_denied" in error_msg):
                 logger.warning(
-                    f"Store가 이미 삭제되었거나 존재하지 않습니다: "
+                    f"Store가 이미 삭제되었거나 접근 권한이 없습니다: "
                     f"{vector_store_id}"
                 )
-                # 404는 성공으로 간주
+                # 404/403는 성공으로 간주 (이미 삭제되었거나 접근 불가)
                 return True
 
             # FAILED_PRECONDITION: 스토어 내부에 문서가 남아있음

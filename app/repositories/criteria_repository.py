@@ -31,6 +31,7 @@ class CriteriaRepository:
         file_size: int,
         vector_store_id: str,
         document_id: Optional[str] = None,
+        file_id: Optional[str] = None,
     ) -> CriteriaDocument:
         """
         새 평가 기준 문서 생성
@@ -42,6 +43,7 @@ class CriteriaRepository:
             file_size: 파일 크기 (bytes)
             vector_store_id: Google File Search Store ID
             document_id: Google File Search Document ID (선택)
+            file_id: Google File ID (독립적인 파일 객체, 선택)
 
         Returns:
             생성된 CriteriaDocument 객체
@@ -56,6 +58,7 @@ class CriteriaRepository:
             file_size=file_size,
             vector_store_id=vector_store_id,
             document_id=document_id,
+            file_id=file_id,
             status="uploaded",
         )
         self.db.add(document)

@@ -3,6 +3,7 @@
 관리자 전용 기준 문서 삭제
 """
 import os
+import asyncio
 import logging
 from pathlib import Path
 from fastapi import (
@@ -85,42 +86,9 @@ async def delete_criteria(
                 detail=f"평가 기준 문서를 찾을 수 없습니다 (ID: {criteria_id})",
             )
 
-        # 2. Vector DB 순차 삭제 (문서 → 스토어)
+        # 2. Vector Store 삭제 (스토어 삭제 시 내부 문서도 자동 삭제)
         embedding_service = CriteriaEmbeddingService()
 
-        # 2-1. 문서 먼저 삭제 (document_id가 있는 경우)
-        if document.document_id and document.vector_store_id:
-            logger.info(
-                f"문서 삭제 시작: "
-                f"doc_id={document.document_id}"
-            )
-            doc_deleted = await embedding_service.delete_document(
-                vector_store_id=document.vector_store_id,
-                document_id=document.document_id,
-                ignore_errors=False,
-            )
-
-            if not doc_deleted:
-                raise HTTPException(
-                    status_code=500,
-                    detail=(
-                        f"문서 삭제 실패: {document.document_id}. "
-                        f"삭제 작업이 중단되었습니다."
-                    ),
-                )
-            logger.info(
-                f"문서 삭제 완료: doc_id={document.document_id}"
-            )
-        elif not document.document_id and document.vector_store_id:
-            # 레거시 데이터 경고 (document_id 없음)
-            logger.warning(
-                f"레거시 데이터 감지: "
-                f"criteria_id={criteria_id}에 document_id가 없습니다. "
-                f"스토어 삭제 시 FAILED_PRECONDITION 오류가 발생할 수 "
-                f"있습니다."
-            )
-
-        # 2-2. 스토어 삭제 (문서 삭제 후)
         if document.vector_store_id:
             logger.info(
                 f"스토어 삭제 시작: "
@@ -145,10 +113,28 @@ async def delete_criteria(
                 f"store_id={document.vector_store_id}"
             )
 
-        # 3. Local DB 삭제 (Vector DB 삭제 성공 후에만)
+        # 3. 삭제 전 준비 (외래키 제약 조건 처리)
+        from sqlalchemy import delete
+        from app.models.criteria import ActiveCriteria, CriteriaAuditLog
+
+        # 3-1. Active Criteria 삭제
+        await db.execute(
+            delete(ActiveCriteria).where(
+                ActiveCriteria.criteria_document_id == criteria_id
+            )
+        )
+
+        # 3-2. 기존 Audit 로그 삭제 (외래키 제약 조건)
+        await db.execute(
+            delete(CriteriaAuditLog).where(
+                CriteriaAuditLog.criteria_document_id == criteria_id
+            )
+        )
+
+        # 4. 문서 삭제 (Local DB)
         deleted_doc = await repo.delete_by_id(criteria_id)
 
-        # 4. 파일 삭제
+        # 5. 파일 삭제
         file_path = Path(document.file_path)
         if file_path.exists():
             try:
@@ -156,14 +142,6 @@ async def delete_criteria(
                 logger.info(f"파일 삭제 완료: {file_path}")
             except Exception as file_error:
                 logger.error(f"파일 삭제 실패: {file_error}")
-
-        # 5. 감사 로그 기록
-        audit_service = CriteriaAuditService(db)
-        await audit_service.log_delete(
-            criteria_id=criteria_id,
-            actor_id=current_user.id,
-            title=document.title,
-        )
 
         await db.commit()
 
@@ -222,52 +200,11 @@ async def delete_all_criteria(
                 message="삭제할 평가 기준이 없습니다.",
             )
 
-        # 2. Vector DB 순차 삭제 (문서 → 스토어)
+        # 2. Vector Store 삭제 (스토어 삭제 시 내부 문서도 자동 삭제)
         embedding_service = CriteriaEmbeddingService()
-        failed_documents = []
         failed_vectors = []
 
         for doc in documents:
-            doc_delete_success = False
-
-            # 2-1. 문서 먼저 삭제
-            if doc.document_id and doc.vector_store_id:
-                logger.info(
-                    f"문서 삭제 시작: "
-                    f"title={doc.title}, doc_id={doc.document_id}"
-                )
-                doc_deleted = await embedding_service.delete_document(
-                    vector_store_id=doc.vector_store_id,
-                    document_id=doc.document_id,
-                    ignore_errors=False,
-                )
-                if not doc_deleted:
-                    failed_documents.append(
-                        f"{doc.title} (Doc ID: {doc.document_id})"
-                    )
-                    logger.error(
-                        f"문서 삭제 실패로 스토어 삭제 건너뜀: "
-                        f"title={doc.title}"
-                    )
-                    # 문서 삭제 실패 시 스토어 삭제 건너뜀
-                    continue
-                else:
-                    logger.info(
-                        f"문서 삭제 완료: "
-                        f"title={doc.title}, doc_id={doc.document_id}"
-                    )
-                    doc_delete_success = True
-            elif not doc.document_id and doc.vector_store_id:
-                # 레거시 데이터 경고
-                logger.warning(
-                    f"레거시 데이터 감지: "
-                    f"{doc.title} (criteria_id={doc.id})에 "
-                    f"document_id가 없습니다. "
-                    f"스토어 삭제 시 FAILED_PRECONDITION 오류 발생 "
-                    f"가능."
-                )
-
-            # 2-2. 스토어 삭제 (문서 삭제 성공 또는 document_id 없음)
             if doc.vector_store_id:
                 logger.info(
                     f"스토어 삭제 시작: "
@@ -289,22 +226,13 @@ async def delete_all_criteria(
                         f"store_id={doc.vector_store_id}"
                     )
 
-        # 실패한 항목이 있으면 중단
-        if failed_documents or failed_vectors:
-            error_parts = []
-            if failed_documents:
-                error_parts.append(
-                    f"문서 삭제 실패: {', '.join(failed_documents)}"
-                )
-            if failed_vectors:
-                error_parts.append(
-                    f"스토어 삭제 실패: {', '.join(failed_vectors)}"
-                )
+        # Vector Store 삭제 실패 시 중단
+        if failed_vectors:
             raise HTTPException(
                 status_code=500,
                 detail=(
-                    f"Vector DB 삭제 실패: "
-                    f"{'; '.join(error_parts)}. "
+                    f"Vector Store 삭제 실패: "
+                    f"{', '.join(failed_vectors)}. "
                     f"삭제 작업이 중단되었습니다."
                 ),
             )

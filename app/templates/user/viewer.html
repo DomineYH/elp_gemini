@@ -221,7 +221,7 @@
         container.scrollTop = container.scrollHeight;
     }
 
-    // Session cleanup
+    // Session cleanup - Clean up vector DB when leaving the page
     window.addEventListener('beforeunload', function () {
         navigator.sendBeacon('/dashboard/cleanup');
     });

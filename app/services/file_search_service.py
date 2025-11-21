@@ -109,11 +109,16 @@ class FileSearchService:
         """
         try:
             # 스토어 선택
-            store_name = (
-                self.main_store_name
-                if store_type == "main"
-                else self.rubric_store_name
-            )
+            if store_type == "rubric":
+                store_name = self.rubric_store_name
+            else:
+                # 메인 스토어 대신 사용자별 스토어 사용
+                user_id = metadata.get("user_id")
+                if user_id:
+                    store_name = f"user-{user_id}-store"
+                else:
+                    store_name = self.main_store_name
+            
             store = self._get_or_create_store(store_name)
 
             # Custom metadata 구조 변환
