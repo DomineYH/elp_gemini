@@ -99,7 +99,7 @@
             <div class="flex justify-between items-start">
                 <div class="flex-1">
                     <h3 class="text-xl font-semibold mb-2">
-                        <a href="/docs/{{ doc.id }}" class="text-blue-600 hover:underline">
+                        <a href="/dashboard/{{ doc.id }}" class="text-blue-600 hover:underline">
                             {{ doc.title }}
                         </a>
                     </h3>
@@ -129,7 +129,7 @@
                     </div>
                 </div>
                 <div class="space-x-2">
-                    <a href="/docs/{{ doc.id }}" class="text-blue-600 hover:text-blue-800
+                    <a href="/dashboard/{{ doc.id }}" class="text-blue-600 hover:text-blue-800
                         text-sm">
                         상세보기
                     </a>
@@ -169,7 +169,7 @@
 bg-opacity-50 flex items-center justify-center z-50">
     <div class="bg-white rounded-lg p-8 max-w-md w-full">
         <h2 class="text-2xl font-bold mb-4">문서 업로드</h2>
-        <form method="POST" action="/docs/upload" enctype="multipart/form-data">
+        <form method="POST" action="/dashboard/upload" enctype="multipart/form-data">
             <div class="mb-4">
                 <label class="block text-sm font-medium mb-1">
                     문서 제목
@@ -281,7 +281,7 @@ bg-opacity-50 flex items-center justify-center z-50">
         if (!deleteDocId) return;
 
         try {
-            const response = await fetch(`/docs/${deleteDocId}`, {
+            const response = await fetch(`/dashboard/${deleteDocId}`, {
                 method: 'DELETE',
             });
 
@@ -363,7 +363,7 @@ bg-opacity-50 flex items-center justify-center z-50">
     // T092: 세션 종료 시 정리 (User leaves window)
     window.addEventListener('beforeunload', function () {
         // sendBeacon을 사용하여 페이지 이탈 시에도 요청 보장
-        navigator.sendBeacon('/docs/cleanup');
+        navigator.sendBeacon('/dashboard/cleanup');
     });
 </script>
 {% endblock %}

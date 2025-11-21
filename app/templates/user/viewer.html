@@ -11,7 +11,7 @@
 
 {% block content %}
 <div class="flex flex-col h-[calc(100vh-12rem)]">
-    <!-- Header with Upload New -->
+    <!-- Header -->
     <div class="flex justify-between items-center mb-4">
         <h1 class="text-2xl font-bold text-gray-800 truncate max-w-2xl">
             {{ document.title }}
@@ -27,7 +27,7 @@
         </button>
     </div>
 
-    <!-- PDF Viewer -->
+    <!-- PDF Viewer (Full Width) -->
     <div id="pdf-container"
         class="flex-1 bg-gray-100 rounded-lg shadow-inner overflow-auto relative flex flex-col items-center py-4">
         <!-- Canvas will be injected here by JS -->
@@ -36,25 +36,72 @@
 
 <!-- Floating Action Buttons -->
 <div class="fixed bottom-8 right-8 flex flex-col space-y-4 z-40">
-    <a href="/feedback"
+    <!-- 평가 보고서 버튼 -->
+    <a href="/eval/{{ document.id }}"
         class="bg-green-600 text-white p-4 rounded-full shadow-lg hover:bg-green-700 transition-colors flex items-center justify-center transform hover:scale-105"
-        title="피드백 받기">
+        title="평가 보고서 받기">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
         </svg>
     </a>
-    <a href="/qna"
+
+    <!-- QnA 챗봇 버튼 -->
+    <button onclick="toggleQnAModal()"
         class="bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center transform hover:scale-105"
         title="챗봇과 대화하기">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
         </svg>
-    </a>
+    </button>
 </div>
 
-<!-- New Upload Confirmation Modal -->
+<!-- QnA Modal -->
+<div id="qna-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-lg shadow-2xl max-w-2xl w-full h-[600px] flex flex-col">
+        <!-- Modal Header -->
+        <div class="bg-blue-600 text-white p-4 flex justify-between items-center rounded-t-lg">
+            <div class="flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                </svg>
+                <h2 class="text-xl font-semibold">AI 챗봇</h2>
+            </div>
+            <button onclick="toggleQnAModal()" class="text-white hover:text-gray-200 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+
+        <!-- Messages Container -->
+        <div id="messages-container" class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+            <div class="text-center text-gray-500 text-sm py-8">
+                지도안에 대해 질문해보세요!<br>
+                <span class="text-xs">평가기준을 바탕으로 답변드립니다.</span>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-4 bg-white border-t border-gray-200 rounded-b-lg">
+            <form id="qna-form" class="flex gap-2">
+                <input type="text" id="question-input" placeholder="질문을 입력하세요..."
+                    class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required />
+                <button type="submit" id="send-btn"
+                    class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium">
+                    전송
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Confirmation Modal -->
 <div id="confirmModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
     <div class="bg-white rounded-lg p-8 max-w-md w-full">
         <h2 class="text-2xl font-bold mb-4">새 문서 업로드</h2>
@@ -79,18 +126,107 @@
 <script src="/static/js/lib/pdf.min.js"></script>
 <script src="/static/js/pdf_viewer.js"></script>
 <script>
+    const DOCUMENT_ID = {{ document.id }};
+
     // Initialize PDF Viewer
     document.addEventListener('DOMContentLoaded', function () {
-        const pdfUrl = "/docs/{{ document.id }}/download";
+        const pdfUrl = `/dashboard/${DOCUMENT_ID}/download`;
         new PDFViewer(pdfUrl, 'pdf-container');
     });
-</script>
-<script>
-    // Session cleanup on unload
-    window.addEventListener('beforeunload', function () {
-        navigator.sendBeacon('/docs/cleanup');
+
+    // Toggle QnA Modal
+    function toggleQnAModal() {
+        const modal = document.getElementById('qna-modal');
+        modal.classList.toggle('hidden');
+
+        if (!modal.classList.contains('hidden')) {
+            setTimeout(() => {
+                document.getElementById('question-input').focus();
+            }, 100);
+        }
+    }
+
+    // Close modal on background click
+    document.getElementById('qna-modal').addEventListener('click', function (e) {
+        if (e.target === this) {
+            toggleQnAModal();
+        }
     });
 
+    // QnA Form Submission
+    document.getElementById('qna-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const input = document.getElementById('question-input');
+        const sendBtn = document.getElementById('send-btn');
+        const question = input.value.trim();
+
+        if (!question) return;
+
+        addMessage(question, 'user');
+        input.value = '';
+
+        sendBtn.disabled = true;
+        sendBtn.textContent = '답변 중...';
+
+        try {
+            const response = await fetch(`/qna/${DOCUMENT_ID}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question }),
+            });
+
+            if (!response.ok) throw new Error('API 호출 실패');
+
+            const data = await response.json();
+            addMessage(data.answer, 'bot', data);
+
+        } catch (error) {
+            console.error('QnA 오류:', error);
+            addMessage('죄송합니다. 오류가 발생했습니다. 다시 시도해주세요.', 'bot');
+        } finally {
+            sendBtn.disabled = false;
+            sendBtn.textContent = '전송';
+        }
+    });
+
+    // Add Message to UI
+    function addMessage(text, type, metadata = {}) {
+        const container = document.getElementById('messages-container');
+
+        if (container.children.length === 1 && container.children[0].classList.contains('text-center')) {
+            container.innerHTML = '';
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `flex ${type === 'user' ? 'justify-end' : 'justify-start'}`;
+
+        const bubble = document.createElement('div');
+        bubble.className = `max-w-[80%] px-4 py-3 rounded-lg ${type === 'user' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-800'}`;
+
+        const textContent = document.createElement('p');
+        textContent.className = 'text-sm whitespace-pre-wrap leading-relaxed';
+        textContent.textContent = text;
+        bubble.appendChild(textContent);
+
+        if (type === 'bot' && metadata.latency_ms) {
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'text-xs text-gray-500 mt-2';
+            infoDiv.textContent = `응답 시간: ${metadata.latency_ms}ms`;
+            bubble.appendChild(infoDiv);
+        }
+
+        messageDiv.appendChild(bubble);
+        container.appendChild(messageDiv);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    // Session cleanup
+    window.addEventListener('beforeunload', function () {
+        navigator.sendBeacon('/dashboard/cleanup');
+    });
+
+    // Upload Modal Functions
     function confirmNewUpload() {
         document.getElementById('confirmModal').classList.remove('hidden');
     }
@@ -100,13 +236,12 @@
     }
 
     async function executeNewUpload() {
-        // Call cleanup to remove current doc
         try {
-            await fetch('/docs/cleanup', { method: 'POST' });
-            window.location.href = '/'; // Redirect to upload page (root)
+            await fetch('/dashboard/cleanup', { method: 'POST' });
+            window.location.href = '/';
         } catch (e) {
             console.error("Cleanup failed", e);
-            window.location.href = '/'; // Redirect anyway
+            window.location.href = '/';
         }
     }
 </script>

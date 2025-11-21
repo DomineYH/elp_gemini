@@ -32,7 +32,7 @@ from app.routers.auth import get_current_user
 from app.services.file_search_service import FileSearchService
 from app.config import settings
 
-router = APIRouter(prefix="/docs", tags=["documents"])
+router = APIRouter(prefix="/dashboard", tags=["documents"])
 templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
 
@@ -184,6 +184,9 @@ async def upload_document(
                     "file_path": file_path,
                 }
             )
+            # Debug logging to file
+            with open("debug_error.log", "a") as f:
+                f.write(f"Upload failed: {str(e)}\n")
             document.status = "failed"
 
         await db.commit()

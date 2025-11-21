@@ -176,7 +176,7 @@ async def login(
         if user.is_admin:
             redirect_url = "/admin/dashboard"
         else:
-            redirect_url = "/docs"
+            redirect_url = "/"
 
         return RedirectResponse(
             url=redirect_url, status_code=status.HTTP_302_FOUND

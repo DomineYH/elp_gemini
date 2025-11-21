@@ -321,10 +321,10 @@ class TestQnAService:
         assert len(citations['grounding_chunks']) == 3
 
     @pytest.mark.asyncio
-    async def test_metadata_filter_removed(
+    async def test_metadata_filter_added(
         self, mock_db, mock_document, mock_prompt
     ):
-        """메타데이터 필터가 제거되었는지 확인"""
+        """메타데이터 필터가 추가되었는지 확인"""
         # Mock DB execute 결과
         mock_result = Mock()
         mock_result.scalar_one_or_none = Mock(return_value=mock_prompt)
@@ -356,6 +356,5 @@ class TestQnAService:
             file_search = config.tools[0].file_search
             assert file_search.file_search_store_names == [mock_document.store_id]
 
-            # metadata_filter가 None이거나 없는지 확인
-            assert not hasattr(file_search, 'metadata_filter') or \
-                   file_search.metadata_filter is None
+            # metadata_filter가 올바르게 설정되었는지 확인
+            assert file_search.filter == f"metadata.document_id = '{mock_document.id}'"

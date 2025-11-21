@@ -156,6 +156,14 @@ async def startup_event():
         await init_db()
         logger.info("데이터베이스 초기화 완료")
 
+    # 평가 기준 컨텍스트 Provider 초기화
+    from app.services.criteria_context_provider import (
+        criteria_context_provider,
+    )
+
+    await criteria_context_provider.initialize()
+    logger.info("평가 기준 컨텍스트 Provider 초기화 완료")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -176,6 +184,7 @@ async def health_check():
 
 # 라우터 등록
 from app.routers import auth, user_docs, qna, eval, admin
+from app.routers.admin import criteria
 from fastapi.responses import RedirectResponse
 
 # 루트 엔드포인트 - 역할 기반 리다이렉트
@@ -200,7 +209,7 @@ async def root(request: Request):
         else:
             # 일반 사용자 → 사용자 대시보드
             return RedirectResponse(
-                url="/docs", status_code=302
+                url="/dashboard", status_code=302
             )
     else:
         # 미인증 → 로그인 페이지
@@ -212,6 +221,7 @@ app.include_router(user_docs.router, tags=["문서"])
 app.include_router(qna.router, tags=["QnA"])
 app.include_router(eval.router, tags=["평가"])
 app.include_router(admin.router, tags=["관리자"])
+app.include_router(criteria.router, tags=["관리자", "평가기준"])
 
 
 if __name__ == "__main__":

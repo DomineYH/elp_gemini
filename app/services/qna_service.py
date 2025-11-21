@@ -64,9 +64,32 @@ class QnAService:
                 }
             )
 
+            # 평가 기준 컨텍스트 검색
+            from app.services.criteria_context_service import CriteriaContextService
+            criteria_service = CriteriaContextService()
+            
+            criteria_context = ""
+            try:
+                criteria_results = await criteria_service.get_context(question)
+                if criteria_results:
+                    criteria_texts = []
+                    for item in criteria_results:
+                        content = item.get("content", "")
+                        if content:
+                            criteria_texts.append(content)
+                    
+                    if criteria_texts:
+                        criteria_context = "\n\n[관련 평가 기준]\n" + "\n---\n".join(criteria_texts)
+                        logger.info(f"평가 기준 컨텍스트 추가됨: {len(criteria_texts)}개 항목")
+            except Exception as e:
+                logger.warning(f"평가 기준 검색 중 오류 발생 (무시됨): {e}")
+
             # 컨텍스트 구성 (문서 정보 제외, FileSearch가 자동 처리)
+            # 평가 기준을 시스템 프롬프트 뒤에 추가
+            full_prompt_content = f"{prompt.content}{criteria_context}"
+            
             context = self._build_context(
-                prompt.content, conversation_history
+                full_prompt_content, conversation_history
             )
 
             # FileSearch 도구와 함께 질문 전송 (store_id만 사용)
@@ -77,7 +100,8 @@ class QnAService:
                     tools=[
                         types.Tool(
                             file_search=types.FileSearch(
-                                file_search_store_names=[document.store_id]
+                                file_search_store_names=[document.store_id],
+                                filter=f"metadata.document_id = '{document.id}'"
                             )
                         )
                     ],

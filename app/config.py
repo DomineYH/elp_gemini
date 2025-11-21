@@ -99,6 +99,31 @@ class Settings(BaseSettings):
         default="./data/uploads", description="업로드 디렉토리"
     )
 
+    # Google Cloud Configuration
+    GOOGLE_APPLICATION_CREDENTIALS: str = Field(
+        default="./credentials/google-cloud-key.json",
+        description="Google Cloud 서비스 계정 키 파일 경로",
+    )
+    GOOGLE_PROJECT_ID: str = Field(
+        default="", description="Google Cloud 프로젝트 ID"
+    )
+
+    # Vector DB Paths (Criteria vs User separation)
+    CRITERIA_VECTOR_DB_PATH: str = Field(
+        default="./data/vector_db/criteria/",
+        description="평가 기준 전용 벡터 DB 경로",
+    )
+    USER_VECTOR_DB_PATH: str = Field(
+        default="./data/vector_db/user/",
+        description="사용자 문서 전용 벡터 DB 경로",
+    )
+
+    # Criteria Upload
+    CRITERIA_UPLOAD_DIR: str = Field(
+        default="./data/uploads/criteria/",
+        description="평가 기준 파일 업로드 디렉토리",
+    )
+
 
 # 전역 설정 인스턴스
 settings = Settings()
