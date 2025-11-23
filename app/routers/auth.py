@@ -20,92 +20,13 @@ from app.models.users import User
 from app.schemas.users import UserResponse, UserLogin
 from app.services.auth_service import AuthService
 from app.utils.logging import log_auth_event
+from app.dependencies import get_current_user, get_current_admin
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
 
 
-# T022: get_current_user 의존성
-async def get_current_user(
-    request: Request, db: AsyncSession = Depends(get_db)
-) -> User:
-    """
-    현재 로그인한 사용자 가져오기
-
-    Args:
-        request: FastAPI Request 객체
-        db: 데이터베이스 세션
-
-    Returns:
-        User 객체
-
-    Raises:
-        HTTPException: 인증되지 않은 경우
-    """
-    user_id = request.session.get("user_id")
-
-    if not user_id:
-        log_auth_event(
-            "authentication_required",
-            success=False,
-            reason="No session",
-        )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="로그인이 필요합니다.",
-        )
-
-    auth_service = AuthService(db)
-    user = await auth_service.get_user_by_id(user_id)
-
-    if not user:
-        # 세션은 있지만 사용자가 없는 경우
-        log_auth_event(
-            "invalid_session",
-            user_id=user_id,
-            success=False,
-            reason="User not found",
-        )
-        request.session.clear()
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="사용자를 찾을 수 없습니다.",
-        )
-
-    return user
-
-
-# T023: get_current_admin 의존성
-async def get_current_admin(
-    current_user: User = Depends(get_current_user),
-) -> User:
-    """
-    현재 관리자 사용자 가져오기
-
-    Args:
-        current_user: 현재 사용자
-
-    Returns:
-        관리자 User 객체
-
-    Raises:
-        HTTPException: 관리자가 아닌 경우
-    """
-    if not current_user.is_admin:
-        log_auth_event(
-            "permission_denied",
-            user_id=current_user.id,
-            username=current_user.username,
-            success=False,
-            reason="Admin permission required",
-        )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="관리자 권한이 필요합니다.",
-        )
-
-    return current_user
 
 
 # T030: GET /login - 로그인 페이지 렌더링
@@ -226,6 +147,15 @@ async def logout(request: Request):
             success=True,
         )
         logger.info(f"로그아웃: user_id={user_id}")
+
+        # Vector Store 정리
+        try:
+            from app.services.file_search_service import FileSearchService
+            file_search_service = FileSearchService()
+            store_name = f"user-{username}-store"
+            await file_search_service.delete_store_by_display_name(store_name)
+        except Exception as e:
+            logger.warning(f"로그아웃 시 스토어 정리 실패: {str(e)}")
 
     request.session.clear()
 

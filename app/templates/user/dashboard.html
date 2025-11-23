@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}내 문서 - AI 문서 평가 플랫폼{% endblock %}
+{% block title %}대시보드 - AI 문서 평가 플랫폼{% endblock %}
 
 {% block nav_links %}
 <span class="text-gray-600">{{ user.email }}</span>
@@ -13,357 +13,579 @@
 
 {% block content %}
 <div class="max-w-6xl mx-auto">
-    <!-- 헤더 -->
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold text-gray-800">
-            내 문서
-        </h1>
-        <button onclick="openUploadModal()" class="bg-blue-600 text-white px-6 py-2
-            rounded-lg hover:bg-blue-700 transition-colors">
-            + 문서 업로드
-        </button>
-    </div>
+    <!-- 상단: 문서 업로드 (항상 표시) -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">문서 업로드</h1>
 
-    <!-- T084: 문서 요약 -->
-    <div class="grid grid-cols-4 gap-4 mb-6">
-        <div class="bg-white shadow-md rounded-lg p-4">
-            <p class="text-sm text-gray-600">전체 문서</p>
-            <p class="text-2xl font-bold text-blue-600">
-                {{ total_count }}
-            </p>
-        </div>
-        <div class="bg-white shadow-md rounded-lg p-4">
-            <p class="text-sm text-gray-600">준비 완료</p>
-            <p class="text-2xl font-bold text-green-600">
-                {{ status_counts.get('ready', 0) }}
-            </p>
-        </div>
-        <div class="bg-white shadow-md rounded-lg p-4">
-            <p class="text-sm text-gray-600">처리 중</p>
-            <p class="text-2xl font-bold text-yellow-600">
-                {{ status_counts.get('uploading', 0) +
-                status_counts.get('indexing', 0) }}
-            </p>
-        </div>
-        <div class="bg-white shadow-md rounded-lg p-4">
-            <p class="text-sm text-gray-600">실패</p>
-            <p class="text-2xl font-bold text-red-600">
-                {{ status_counts.get('failed', 0) }}
-            </p>
-        </div>
-    </div>
+        <form id="uploadForm" method="POST" action="/dashboard/upload" enctype="multipart/form-data" class="relative">
+            <input type="text" name="title" value="Uploaded Document" class="hidden" />
 
-    <!-- T085/T086: 검색 및 필터 -->
-    <div class="bg-white shadow-md rounded-lg p-4 mb-6">
-        <div class="grid grid-cols-3 gap-4">
-            <div>
-                <label class="block text-sm font-medium mb-1">
-                    검색
-                </label>
-                <input type="text" id="searchInput" placeholder="문서 제목 검색..." class="w-full px-3 py-2 border rounded-md"
-                    onkeyup="filterDocuments()" />
-            </div>
-            <div>
-                <label class="block text-sm font-medium mb-1">
-                    상태 필터
-                </label>
-                <select id="statusFilter" class="w-full px-3 py-2 border rounded-md" onchange="filterDocuments()">
-                    <option value="">전체</option>
-                    <option value="ready">준비 완료</option>
-                    <option value="uploading">업로드 중</option>
-                    <option value="indexing">인덱싱 중</option>
-                    <option value="failed">실패</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-sm font-medium mb-1">
-                    정렬
-                </label>
-                <select id="sortSelect" class="w-full px-3 py-2 border rounded-md" onchange="sortDocuments()">
-                    <option value="date-desc">최신순</option>
-                    <option value="date-asc">오래된순</option>
-                    <option value="title-asc">제목순 (A-Z)</option>
-                    <option value="title-desc">제목순 (Z-A)</option>
-                </select>
-            </div>
-        </div>
-    </div>
-
-    <!-- 문서 목록 -->
-    {% if documents %}
-    <div id="documentList" class="grid gap-4">
-        {% for doc in documents %}
-        <div class="document-item bg-white shadow-md rounded-lg p-6
-            hover:shadow-lg transition-shadow" data-title="{{ doc.title }}" data-status="{{ doc.status }}"
-            data-date="{{ doc.uploaded_at.isoformat() }}">
-            <div class="flex justify-between items-start">
-                <div class="flex-1">
-                    <h3 class="text-xl font-semibold mb-2">
-                        <a href="/dashboard/{{ doc.id }}" class="text-blue-600 hover:underline">
-                            {{ doc.title }}
-                        </a>
-                    </h3>
-                    <div class="text-sm text-gray-600 space-y-1">
-                        <p>
-                            크기: {{ (doc.file_size / 1024 /
-                            1024)|round(2) }} MB
-                        </p>
-                        <p>
-                            업로드: {{
-                            doc.uploaded_at.strftime('%Y-%m-%d
-                            %H:%M') }}
-                        </p>
-                        <p>
-                            상태:
-                            <span class="px-2 py-1 rounded text-xs
-                                {% if doc.status == 'ready' %}
-                                bg-green-100 text-green-800
-                                {% elif doc.status == 'failed' %}
-                                bg-red-100 text-red-800
-                                {% else %}
-                                bg-yellow-100 text-yellow-800
-                                {% endif %}">
-                                {{ doc.status }}
-                            </span>
-                        </p>
+            <div id="dropZone"
+                class="border-2 border-dashed border-gray-300 rounded-xl p-12 bg-white hover:bg-gray-50 transition-colors cursor-pointer text-center">
+                <div class="space-y-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto text-gray-400" fill="none"
+                        viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <div class="text-lg text-gray-600">
+                        <span class="font-semibold text-blue-600 hover:text-blue-700">파일 선택</span>
+                        또는 여기로 드래그하세요
                     </div>
+                    <p class="text-sm text-gray-500">PDF 파일 (최대 50MB)</p>
                 </div>
-                <div class="space-x-2">
-                    <a href="/dashboard/{{ doc.id }}" class="text-blue-600 hover:text-blue-800
-                        text-sm">
-                        상세보기
-                    </a>
-                    <button onclick="confirmDelete({{ doc.id }},
-                        '{{ doc.title }}')" class="text-red-600 hover:text-red-800
-                        text-sm">
-                        삭제
-                    </button>
-                </div>
+                <input type="file" name="file" id="fileInput" accept=".pdf"
+                    class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" required />
             </div>
-        </div>
-        {% endfor %}
+            <div id="fileName" class="mt-4 text-gray-700 font-medium hidden text-center"></div>
+        </form>
     </div>
 
-    <!-- 검색 결과 없음 -->
-    <div id="noResults" class="hidden bg-white shadow-md rounded-lg p-12
-        text-center">
-        <p class="text-gray-600">
-            검색 결과가 없습니다
-        </p>
+    <!-- 하단: 문서 뷰어 및 정보 (문서가 있을 때만 활성화) -->
+    {% if document %}
+    <div class="space-y-6">
+        <!-- 중간: 문서 정보 및 평가 기준 (Grid) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- 문서 정보 -->
+            <div class="bg-white shadow-md rounded-lg p-6">
+                <h2 class="text-xl font-bold mb-4">문서 정보</h2>
+                <div class="space-y-2 text-sm text-gray-600">
+                    <p><span class="font-medium">파일명:</span> {{ document.title }}</p>
+                    <p><span class="font-medium">크기:</span> {{ (document.file_size / 1024 / 1024)|round(2) }} MB</p>
+                    <p><span class="font-medium">상태:</span>
+                        <span class="px-2 py-1 rounded text-xs bg-green-100 text-green-800">
+                            {{ document.status }}
+                        </span>
+                    </p>
+                </div>
+            </div>
+
+            <!-- 평가 기준 목록 -->
+            <div class="bg-white shadow-md rounded-lg p-6">
+                <h2 class="text-xl font-bold mb-4">활성 평가 기준</h2>
+                {% if criteria_documents %}
+                <ul class="space-y-2 max-h-40 overflow-y-auto">
+                    {% for criteria in criteria_documents %}
+                    <li class="flex items-center text-sm text-gray-700 bg-gray-50 p-2 rounded">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-blue-500" fill="none"
+                            viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {{ criteria.display_name }}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-sm text-gray-500">등록된 평가 기준이 없습니다.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 하단: 문서 뷰어 (Full Width) -->
+        <div class="bg-white shadow-md rounded-lg p-6">
+            <h2 class="text-xl font-bold mb-4">문서 뷰어</h2>
+            <div class="border border-gray-200 rounded-lg overflow-hidden h-[800px]">
+                <embed src="{{ document.file_url }}" type="application/pdf" width="100%" height="100%" />
+            </div>
+        </div>
     </div>
     {% else %}
-    <div class="bg-white shadow-md rounded-lg p-12 text-center">
-        <p class="text-gray-600 mb-4">
-            아직 업로드된 문서가 없습니다
-        </p>
-        <button onclick="openUploadModal()" class="bg-blue-600 text-white px-6 py-2
-            rounded-lg hover:bg-blue-700 transition-colors">
-            첫 문서 업로드하기
-        </button>
+    <div class="text-center text-gray-500 py-12">
+        <p>문서를 업로드하면 분석 및 QnA 기능을 사용할 수 있습니다.</p>
     </div>
     {% endif %}
 </div>
 
-<!-- 업로드 모달 -->
-<div id="uploadModal" class="hidden fixed inset-0 bg-black
-bg-opacity-50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg p-8 max-w-md w-full">
-        <h2 class="text-2xl font-bold mb-4">문서 업로드</h2>
-        <form method="POST" action="/dashboard/upload" enctype="multipart/form-data">
-            <div class="mb-4">
-                <label class="block text-sm font-medium mb-1">
-                    문서 제목
-                </label>
-                <input type="text" name="title" required class="w-full px-3 py-2 border rounded-md"
-                    placeholder="예: 연구 논문 초안" />
-            </div>
-            <div class="mb-4">
-                <label class="block text-sm font-medium mb-1">
-                    PDF 파일
-                </label>
-                <input type="file" name="file" accept=".pdf" required class="w-full" />
-            </div>
-            <div class="flex space-x-2">
-                <button type="submit" class="flex-1 bg-blue-600 text-white
-                    py-2 rounded-md hover:bg-blue-700">
-                    업로드
-                </button>
-                <button type="button" onclick="closeUploadModal()" class="flex-1 bg-gray-300 text-gray-700
-                    py-2 rounded-md hover:bg-gray-400">
-                    취소
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- T082: 삭제 확인 모달 -->
-<div id="deleteModal" class="hidden fixed inset-0 bg-black
-bg-opacity-50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg p-8 max-w-md w-full">
-        <h2 class="text-2xl font-bold mb-4">문서 삭제 확인</h2>
-        <p class="text-gray-700 mb-6">
-            "<span id="deleteDocTitle"></span>" 문서를 삭제하시겠습니까?
-            <br />
-            <span class="text-sm text-red-600">
-                이 작업은 취소할 수 없습니다.
-            </span>
-        </p>
-        <div class="flex space-x-2">
-            <button onclick="executeDelete()" class="flex-1 bg-red-600 text-white
-                py-2 rounded-md hover:bg-red-700">
-                삭제
-            </button>
-            <button onclick="closeDeleteModal()" class="flex-1 bg-gray-300 text-gray-700
-                py-2 rounded-md hover:bg-gray-400">
-                취소
-            </button>
-        </div>
-    </div>
-</div>
-</div>
-</div>
-
-<!-- Floating Action Buttons (T091) -->
-{% if has_ready_doc %}
-<div class="fixed bottom-8 right-8 flex flex-col space-y-4 z-40">
-    <a href="/feedback"
-        class="bg-green-600 text-white p-4 rounded-full shadow-lg hover:bg-green-700 transition-colors flex items-center justify-center"
-        title="피드백 받기">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-        </svg>
-    </a>
-    <a href="/qna"
-        class="bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
-        title="챗봇과 대화하기">
+<!-- Floating Action Buttons -->
+<div class="fixed bottom-8 right-8 z-40 flex flex-col space-y-4">
+    <!-- Chatbot FAB -->
+    {% if document %}
+    <button onclick="toggleChatbot()"
+        class="bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center group relative">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
         </svg>
-    </a>
+        <span
+            class="absolute right-full mr-3 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+            QnA 챗봇
+        </span>
+    </button>
+    {% endif %}
+
+    <!-- Analysis FAB -->
+    <button onclick="startAnalysis()"
+        class="bg-indigo-600 text-white p-4 rounded-full shadow-lg hover:bg-indigo-700 transition-colors flex items-center justify-center group relative">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+        <span
+            class="absolute right-full mr-3 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+            분석 시작
+        </span>
+    </button>
 </div>
-{% endif %}
+
+<!-- Chatbot Modal -->
+<div id="chatbotModal"
+    class="fixed bottom-24 right-8 w-96 bg-white rounded-lg shadow-2xl border border-gray-200 z-50 hidden flex flex-col min-w-[300px] min-h-[400px]"
+    style="resize: both; overflow: hidden; max-width: 90vw; max-height: 80vh;">
+    <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-blue-600 text-white rounded-t-lg cursor-move"
+        id="chatbotHeader">
+        <h3 class="font-bold select-none">QnA 챗봇</h3>
+        <button onclick="toggleChatbot()" class="hover:text-gray-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd"
+                    d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                    clip-rule="evenodd" />
+            </svg>
+        </button>
+    </div>
+
+    <!-- 채팅 히스토리 -->
+    <div id="chatHistory" class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+        <div class="text-center text-gray-500 text-sm my-4">
+            문서에 대해 자유롭게 질문하세요.
+        </div>
+    </div>
+
+    <!-- 입력 폼 -->
+    <form id="qnaForm" class="p-4 border-t border-gray-200 bg-white rounded-b-lg">
+        <div class="flex space-x-2">
+            <input type="text" id="question"
+                class="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                placeholder="질문을 입력하세요..." required>
+            <button type="submit"
+                class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm">
+                전송
+            </button>
+        </div>
+    </form>
+
+    <!-- Resize Handle Visual Hint (Optional) -->
+    <div class="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" class="text-gray-400 w-full h-full">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 19L19 19M19 15L15 19M19 11L11 19" />
+        </svg>
+    </div>
+</div>
+
+<!-- Analysis Result Modal -->
+<div id="analysisModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[90vh] flex flex-col m-4">
+        <div
+            class="p-4 border-b border-gray-200 flex justify-between items-center bg-indigo-600 text-white rounded-t-lg">
+            <h3 class="text-xl font-bold">수업 지도안 분석 보고서</h3>
+            <button onclick="closeAnalysisModal()" class="hover:text-gray-200">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-8 prose prose-indigo max-w-none" id="analysisContent">
+            <!-- Markdown content will be rendered here -->
+        </div>
+        <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end rounded-b-lg">
+            <button onclick="closeAnalysisModal()"
+                class="bg-gray-600 text-white px-6 py-2 rounded hover:bg-gray-700 transition-colors">
+                닫기
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white p-8 rounded-lg shadow-xl text-center">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <h3 class="text-xl font-bold text-gray-800 mb-2">문서 처리 중...</h3>
+        <p class="text-gray-600">AI가 문서를 분석하고 있습니다. 잠시만 기다려주세요.</p>
+    </div>
+</div>
 {% endblock %}
 
+<style>
+/* 분석 보고서 가독성 개선 */
+#analysisContent {
+    line-height: 1.8;
+}
+
+#analysisContent h1,
+#analysisContent h2,
+#analysisContent h3,
+#analysisContent h4 {
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+    font-weight: 600;
+    color: #4F46E5;
+}
+
+#analysisContent h1 {
+    font-size: 2rem;
+    border-bottom: 2px solid #E0E7FF;
+    padding-bottom: 0.5rem;
+}
+
+#analysisContent h2 {
+    font-size: 1.5rem;
+}
+
+#analysisContent h3 {
+    font-size: 1.25rem;
+    color: #6366F1;
+}
+
+#analysisContent ul,
+#analysisContent ol {
+    margin-left: 1.5rem;
+    margin-bottom: 1rem;
+    margin-top: 0.5rem;
+}
+
+#analysisContent li {
+    margin-bottom: 0.5rem;
+    line-height: 1.6;
+}
+
+#analysisContent p {
+    margin-bottom: 1rem;
+}
+
+#analysisContent strong {
+    color: #1E40AF;
+    font-weight: 600;
+}
+
+#analysisContent hr {
+    margin: 2rem 0;
+    border-color: #E0E7FF;
+}
+
+/* 참고 자료 섹션 특별 스타일링 */
+#analysisContent h3:contains("Vector Search 참고 자료"),
+#analysisContent h3:contains("File Search 참고 문서") {
+    background-color: #EEF2FF;
+    padding: 0.5rem 1rem;
+    border-left: 4px solid #6366F1;
+    border-radius: 0.25rem;
+}
+
+/* 체크리스트 스타일 */
+#analysisContent input[type="checkbox"] {
+    margin-right: 0.5rem;
+}
+
+/* 코드 블록 스타일 */
+#analysisContent code {
+    background-color: #F3F4F6;
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.25rem;
+    font-size: 0.9em;
+}
+
+#analysisContent pre {
+    background-color: #1F2937;
+    color: #F9FAFB;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    overflow-x: auto;
+}
+
+#analysisContent pre code {
+    background-color: transparent;
+    color: inherit;
+    padding: 0;
+}
+</style>
+
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
-    let deleteDocId = null;
+    // --- Upload Logic ---
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const uploadForm = document.getElementById('uploadForm');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const fileNameDisplay = document.getElementById('fileName');
 
-    // 업로드 모달 관리
-    function openUploadModal() {
-        document.getElementById('uploadModal')
-            .classList.remove('hidden');
+    if (dropZone) {
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight(e) {
+            dropZone.classList.add('border-blue-500', 'bg-blue-50');
+        }
+
+        function unhighlight(e) {
+            dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+        }
+
+        fileInput.addEventListener('change', handleFiles);
+        dropZone.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            fileInput.files = files;
+            handleFiles();
+        }
+
+        function handleFiles() {
+            const files = fileInput.files;
+            if (files.length > 0) {
+                const file = files[0];
+                if (file.type !== 'application/pdf') {
+                    alert('PDF 파일만 업로드 가능합니다.');
+                    fileInput.value = '';
+                    return;
+                }
+                fileNameDisplay.textContent = `선택된 파일: ${file.name}`;
+                fileNameDisplay.classList.remove('hidden');
+                submitForm();
+            }
+        }
+
+        function submitForm() {
+            loadingOverlay.classList.remove('hidden');
+            uploadForm.submit();
+        }
     }
 
-    function closeUploadModal() {
-        document.getElementById('uploadModal')
-            .classList.add('hidden');
+    // --- Chatbot UI Logic ---
+    function toggleChatbot() {
+        const modal = document.getElementById('chatbotModal');
+        modal.classList.toggle('hidden');
+        if (!modal.classList.contains('hidden')) {
+            document.getElementById('question').focus();
+        }
     }
 
-    // 삭제 확인 모달 관리
-    function confirmDelete(docId, docTitle) {
-        deleteDocId = docId;
-        document.getElementById('deleteDocTitle').textContent =
-            docTitle;
-        document.getElementById('deleteModal')
-            .classList.remove('hidden');
+    // Draggable Logic
+    const modal = document.getElementById('chatbotModal');
+    const header = document.getElementById('chatbotHeader');
+
+    let isDragging = false;
+    let currentX;
+    let currentY;
+    let initialX;
+    let initialY;
+    let xOffset = 0;
+    let yOffset = 0;
+
+    header.addEventListener("mousedown", dragStart);
+    document.addEventListener("mouseup", dragEnd);
+    document.addEventListener("mousemove", drag);
+
+    function dragStart(e) {
+        initialX = e.clientX - xOffset;
+        initialY = e.clientY - yOffset;
+
+        if (e.target === header || header.contains(e.target)) {
+            isDragging = true;
+        }
     }
 
-    function closeDeleteModal() {
-        deleteDocId = null;
-        document.getElementById('deleteModal')
-            .classList.add('hidden');
+    function dragEnd(e) {
+        initialX = currentX;
+        initialY = currentY;
+        isDragging = false;
     }
 
-    async function executeDelete() {
-        if (!deleteDocId) return;
+    function drag(e) {
+        if (isDragging) {
+            e.preventDefault();
+            currentX = e.clientX - initialX;
+            currentY = e.clientY - initialY;
+
+            xOffset = currentX;
+            yOffset = currentY;
+
+            setTranslate(currentX, currentY, modal);
+        }
+    }
+
+    function setTranslate(xPos, yPos, el) {
+        el.style.transform = "translate3d(" + xPos + "px, " + yPos + "px, 0)";
+    }
+
+    // --- QnA Logic ---
+    const qnaForm = document.getElementById('qnaForm');
+    if (qnaForm) {
+        qnaForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const questionInput = document.getElementById('question');
+            const submitButton = qnaForm.querySelector('button[type="submit"]');
+            const question = questionInput.value;
+
+            if (!question.trim()) return;
+
+            // Disable input and button to prevent double submission
+            questionInput.disabled = true;
+            submitButton.disabled = true;
+            submitButton.classList.add('opacity-50', 'cursor-not-allowed');
+
+            // Add user message
+            addMessage(question, 'user');
+            questionInput.value = '';
+
+            // Show loading
+            const loadingId = addMessage('답변 생성 중...', 'system');
+
+            try {
+                // Note: We need the document ID. 
+                // Since we rendered this page with 'document' context, we can use it.
+                const docId = "{{ document.id if document else '' }}";
+
+                if (!docId) {
+                    updateMessage(loadingId, '문서 ID를 찾을 수 없습니다.', 'error');
+                    return;
+                }
+
+                const response = await fetch(`/api/qna/${docId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question }),
+                });
+
+                if (!response.ok) throw new Error('요청 실패');
+
+                const data = await response.json();
+                updateMessage(loadingId, data.answer, 'ai');
+
+            } catch (error) {
+                updateMessage(loadingId, '오류가 발생했습니다.', 'error');
+                console.error(error);
+            } finally {
+                // Re-enable input and button
+                questionInput.disabled = false;
+                submitButton.disabled = false;
+                submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
+                questionInput.focus();
+            }
+        });
+    }
+
+    function addMessage(text, type) {
+        const history = document.getElementById('chatHistory');
+        const div = document.createElement('div');
+        // Use a more robust ID to prevent collisions
+        const id = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        div.id = id;
+
+        let classes = "p-3 rounded-lg max-w-[80%] text-sm ";
+        if (type === 'user') {
+            classes += "bg-blue-100 text-blue-800 ml-auto text-right";
+        } else if (type === 'ai') {
+            classes += "bg-white border border-gray-200 text-gray-800 mr-auto whitespace-pre-wrap";
+        } else if (type === 'system') {
+            classes += "bg-gray-100 text-gray-500 text-center text-xs mx-auto";
+        } else { // error
+            classes += "bg-red-100 text-red-800 text-center text-sm mx-auto";
+        }
+
+        div.className = classes;
+        div.textContent = text;
+        history.appendChild(div);
+        history.scrollTop = history.scrollHeight;
+        return id;
+    }
+
+    function updateMessage(id, text, type) {
+        const div = document.getElementById(id);
+        if (div) {
+            let classes = "p-3 rounded-lg max-w-[80%] text-sm ";
+            if (type === 'ai') {
+                classes += "bg-white border border-gray-200 text-gray-800 mr-auto whitespace-pre-wrap";
+            } else if (type === 'error') {
+                classes += "bg-red-100 text-red-800 text-center text-sm mx-auto";
+            }
+            div.className = classes;
+            div.textContent = text;
+
+            const history = document.getElementById('chatHistory');
+            history.scrollTop = history.scrollHeight;
+        }
+    }
+
+    // --- Analysis Logic ---
+    // --- Analysis Logic ---
+    async function startAnalysis() {
+        // Show loading
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const loadingText = loadingOverlay.querySelector('h3');
+        const loadingDesc = loadingOverlay.querySelector('p');
+
+        loadingText.textContent = '수업 지도안 분석 중...';
+        loadingDesc.textContent = 'AI가 수업 지도안을 체계적으로 분석하고 있습니다. 약 1-3분 정도 소요됩니다.';
+        loadingOverlay.classList.remove('hidden');
 
         try {
-            const response = await fetch(`/dashboard/${deleteDocId}`, {
-                method: 'DELETE',
+            const response = await fetch('/api/lessonplan/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: 1 }) // Dummy session_id
             });
 
-            if (!response.ok) throw new Error('삭제 실패');
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || '분석 요청 실패');
+            }
 
-            // 페이지 새로고침
-            window.location.reload();
+            const data = await response.json();
+
+            if (data.success) {
+                showAnalysisResult(data.report);
+            } else {
+                throw new Error(data.error || '분석 실패');
+            }
+
         } catch (error) {
-            alert('문서 삭제 중 오류가 발생했습니다.');
-            console.error(error);
+            alert('오류가 발생했습니다: ' + error.message);
         } finally {
-            closeDeleteModal();
+            loadingOverlay.classList.add('hidden');
+            // Reset loading text
+            loadingText.textContent = '문서 처리 중...';
+            loadingDesc.textContent = 'AI가 문서를 분석하고 있습니다. 잠시만 기다려주세요.';
         }
     }
 
-    // 문서 검색 및 필터링
-    function filterDocuments() {
-        const searchTerm = document.getElementById('searchInput')
-            .value.toLowerCase();
-        const statusFilter = document.getElementById('statusFilter')
-            .value;
+    function showAnalysisResult(markdownReport) {
+        const modal = document.getElementById('analysisModal');
+        const content = document.getElementById('analysisContent');
 
-        const items = document.querySelectorAll('.document-item');
-        let visibleCount = 0;
+        // Parse Markdown
+        content.innerHTML = marked.parse(markdownReport);
 
-        items.forEach(item => {
-            const title = item.dataset.title.toLowerCase();
-            const status = item.dataset.status;
-
-            const matchesSearch = title.includes(searchTerm);
-            const matchesStatus = !statusFilter ||
-                status === statusFilter;
-
-            if (matchesSearch && matchesStatus) {
-                item.classList.remove('hidden');
-                visibleCount++;
-            } else {
-                item.classList.add('hidden');
-            }
-        });
-
-        // 검색 결과 없음 표시
-        const noResults = document.getElementById('noResults');
-        if (noResults) {
-            if (visibleCount === 0 && items.length > 0) {
-                noResults.classList.remove('hidden');
-            } else {
-                noResults.classList.add('hidden');
-            }
-        }
+        modal.classList.remove('hidden');
     }
 
-    // 문서 정렬
-    function sortDocuments() {
-        const sortBy = document.getElementById('sortSelect').value;
-        const list = document.getElementById('documentList');
-
-        if (!list) return;
-
-        const items = Array.from(list.children);
-
-        items.sort((a, b) => {
-            if (sortBy === 'title-asc') {
-                return a.dataset.title.localeCompare(b.dataset.title);
-            } else if (sortBy === 'title-desc') {
-                return b.dataset.title.localeCompare(a.dataset.title);
-            } else if (sortBy === 'date-asc') {
-                return new Date(a.dataset.date) -
-                    new Date(b.dataset.date);
-            } else { // date-desc (기본값)
-                return new Date(b.dataset.date) -
-                    new Date(a.dataset.date);
-            }
-        });
-
-        items.forEach(item => list.appendChild(item));
+    function closeAnalysisModal() {
+        document.getElementById('analysisModal').classList.add('hidden');
     }
 
-    // T092: 세션 종료 시 정리 (User leaves window)
-    window.addEventListener('beforeunload', function () {
-        // sendBeacon을 사용하여 페이지 이탈 시에도 요청 보장
-        navigator.sendBeacon('/dashboard/cleanup');
-    });
+    // --- Cleanup Logic ---
+    // REMOVED: pagehide 자동 cleanup
+    // 이유: 업로드 시 이미 기존 스토어를 정리하므로 (views.py:119-120)
+    //       페이지 리로드/이탈 시 자동 삭제는 불필요하며 오히려 문제를 발생시킴
+    //
+    // 필요 시 명시적 cleanup 버튼을 통해 수동으로 정리 가능
 </script>
 {% endblock %}

@@ -21,7 +21,10 @@ class FileSearchService:
     def get_client(cls):
         """싱글톤 Client 인스턴스 반환"""
         if cls._client is None:
-            cls._client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+            cls._client = genai.Client(
+                api_key=settings.GOOGLE_API_KEY,
+                http_options={'api_version': 'v1beta'}
+            )
         return cls._client
 
     def __init__(self):
@@ -206,3 +209,175 @@ class FileSearchService:
             logger.info(f"문서 삭제 완료: {file_id}")
         except Exception as e:
             logger.warning(f"문서 삭제 실패 (이미 삭제되었을 수 있음): {str(e)}")
+
+    async def delete_store_by_display_name(self, display_name: str) -> None:
+        """
+        Display Name으로 File Search Store 삭제
+
+        Note:
+            force=True 옵션을 사용하면 스토어 내의 모든 문서가 자동으로 삭제됩니다.
+            documents.list()와 documents.delete()는 Python SDK에 존재하지 않는 메서드입니다.
+
+        Args:
+            display_name: 스토어 표시 이름
+        """
+        try:
+            target_store = None
+            # 스토어 목록에서 이름으로 검색
+            for store in self.client.file_search_stores.list():
+                if store.display_name == display_name:
+                    target_store = store
+                    break
+
+            if target_store:
+                # Store 삭제 (force=True로 내부 문서와 함께 삭제)
+                self.client.file_search_stores.delete(
+                    name=target_store.name,
+                    config={'force': True}  # 내부 문서와 함께 강제 삭제
+                )
+                logger.info(f"스토어 삭제 완료: {display_name} ({target_store.name})")
+            else:
+                logger.info(f"삭제할 스토어를 찾지 못함 (무시): {display_name}")
+        except Exception as e:
+            logger.warning(f"스토어 삭제 중 오류 발생: {str(e)}")
+
+    async def search_in_store(
+        self,
+        query: str,
+        store_name: str,
+        model: str = "gemini-2.5-flash",
+        metadata_filter: Optional[str] = None,
+        temperature: float = 0.7,
+    ) -> Dict[str, Any]:
+        """
+        File Search Store에서 문서 검색 및 답변 생성
+
+        Args:
+            query: 검색 쿼리
+            store_name: 스토어 이름 (예: fileSearchStores/xxxxx)
+            model: 사용할 모델 (기본: gemini-2.0-flash-exp)
+            metadata_filter: 메타데이터 필터 (예: 'type="criteria"')
+            temperature: 생성 온도
+
+        Returns:
+            response_text: 생성된 답변
+            citations: 인용 정보
+            sources_count: 참조 소스 개수
+        """
+        try:
+            # File Search Tool 구성
+            file_search_config = {
+                "file_search_store_names": [store_name]
+            }
+            if metadata_filter:
+                file_search_config["metadata_filter"] = metadata_filter
+
+            # Generate Content 요청
+            response = self.client.models.generate_content(
+                model=model,
+                contents=query,
+                config=types.GenerateContentConfig(
+                    tools=[
+                        types.Tool(
+                            file_search=types.FileSearch(
+                                **file_search_config
+                            )
+                        )
+                    ],
+                    temperature=temperature,
+                ),
+            )
+
+            # 응답 텍스트 추출
+            response_text = response.text if response.text else ""
+
+            # Citation 정보 추출
+            citations = self._extract_citations(response)
+
+            logger.info(
+                f"검색 완료: query={query[:50]}..., "
+                f"sources={len(citations)}"
+            )
+
+            return {
+                "response_text": response_text,
+                "citations": citations,
+                "sources_count": len(citations),
+            }
+        except Exception as e:
+            logger.error(f"검색 실패: {str(e)}")
+            raise
+
+    def _extract_citations(
+        self, response
+    ) -> list[Dict[str, Any]]:
+        """
+        응답에서 Citation 정보 추출
+
+        Args:
+            response: Gemini API 응답
+
+        Returns:
+            Citation 정보 리스트
+        """
+        citations = []
+
+        try:
+            if (
+                response.candidates
+                and response.candidates[0].grounding_metadata
+            ):
+                grounding = response.candidates[0].grounding_metadata
+
+                # Grounding chunks 처리
+                if hasattr(grounding, "grounding_chunks"):
+                    for chunk in grounding.grounding_chunks:
+                        citation_info = {
+                            "source": None,
+                            "title": None,
+                            "uri": None,
+                        }
+
+                        # Web source 처리
+                        if hasattr(chunk, "web") and chunk.web:
+                            citation_info["source"] = "web"
+                            citation_info["uri"] = (
+                                chunk.web.uri
+                                if hasattr(chunk.web, "uri")
+                                else None
+                            )
+                            citation_info["title"] = (
+                                chunk.web.title
+                                if hasattr(chunk.web, "title")
+                                else None
+                            )
+
+                        # Retrieved context (File Search) 처리
+                        elif (
+                            hasattr(chunk, "retrieved_context")
+                            and chunk.retrieved_context
+                        ):
+                            citation_info["source"] = "file_search"
+                            citation_info["uri"] = (
+                                chunk.retrieved_context.uri
+                                if hasattr(
+                                    chunk.retrieved_context, "uri"
+                                )
+                                else None
+                            )
+                            citation_info["title"] = (
+                                chunk.retrieved_context.title
+                                if hasattr(
+                                    chunk.retrieved_context, "title"
+                                )
+                                else None
+                            )
+
+                        citations.append(citation_info)
+
+                logger.debug(f"추출된 citations: {len(citations)}개")
+
+        except Exception as e:
+            logger.warning(f"Citation 추출 실패: {str(e)}")
+
+        return citations

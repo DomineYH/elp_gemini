@@ -3,8 +3,8 @@
 ## 개요
 Gemini File Search API 통합을 위한 데이터베이스 스키마 업데이트
 
-**업데이트 날짜**: 2025-11-14
-**영향 받는 테이블**: `documents`, `qa_logs`
+**업데이트 날짜**: 2025-11-22
+**영향 받는 테이블**: `documents`, `qa_logs`, `criteria`
 
 ---
 
@@ -85,6 +85,32 @@ sources_count = Column(
 
 ---
 
+### 3. Criteria 테이블 (`criteria`)
+
+**변경 유형**: 누락된 `file_path` 컬럼 복구
+
+**배경**
+- 일부 SQLite 인스턴스에서 초기 생성 시 `file_path`가 제외됨
+- 업로드 시 `table criteria has no column named file_path`
+  오류가 재현됨
+
+**조치**
+1. 런타임 패치  
+   - 모듈: `app/migrations/criteria_schema.py`  
+   - 함수: `ensure_criteria_file_path_column()`  
+   - FastAPI `startup` 이벤트에서 항상 실행되어 컬럼을 추가
+2. 수동 마이그레이션  
+   - 파일: `scripts/migrations/004_add_file_path_to_criteria.sql`  
+   - `python scripts/run_migration.py` 실행 시 자동 적용
+
+**검증**
+```bash
+sqlite3 data/app.db "PRAGMA table_info(criteria);"
+```
+`file_path` 항목이 존재하면 정상입니다.
+
+---
+
 ## 마이그레이션 방법
 
 ### 방법 1: 개발 환경 (권장)
@@ -95,7 +121,10 @@ sources_count = Column(
 # 1. 기존 DB 백업 (선택적)
 cp data/elp.db data/elp.db.backup
 
-# 2. 애플리케이션 재시작 (스키마 자동 업데이트)
+# 2. SQL 마이그레이션 실행 (004 포함)
+python scripts/run_migration.py
+
+# 3. 애플리케이션 재시작 (스키마 자동 업데이트)
 python main.py
 ```
 
@@ -109,6 +138,13 @@ ALTER TABLE qa_logs ADD COLUMN citations JSON;
 ALTER TABLE qa_logs ADD COLUMN sources_count INTEGER DEFAULT 0 NOT NULL;
 
 -- Document 테이블 컬럼 주석은 SQLite에서 지원되지 않으므로 스키마 문서로 관리
+
+-- Criteria 테이블 file_path 복구 (필요 시)
+ALTER TABLE criteria
+  ADD COLUMN file_path TEXT NOT NULL DEFAULT 'legacy_missing';
+UPDATE criteria
+  SET file_path = 'legacy_missing'
+  WHERE file_path IS NULL OR TRIM(file_path) = '';
 ```
 
 **SQLite 주의사항**:
@@ -143,6 +179,9 @@ sqlite3 data/elp.db
 
 .schema documents
 # file_search_file_id 및 store_id 확인
+
+.schema criteria
+# file_path 컬럼 존재 여부 확인
 ```
 
 ### 2. 데이터 무결성 체크

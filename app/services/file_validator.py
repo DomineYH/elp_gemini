@@ -49,6 +49,51 @@ class FileValidator:
         else:
             self.max_file_size = self.MAX_FILE_SIZE
 
+    async def validate_file(
+        self, file: UploadFile
+    ) -> Dict[str, any]:
+        """
+        파일 검증 (async 래퍼)
+
+        Args:
+            file: 업로드 파일 객체
+
+        Returns:
+            검증 결과 딕셔너리
+            - valid: 검증 성공 여부
+            - error: 오류 메시지 (실패 시)
+            - file_size: 파일 크기 (성공 시)
+            - metadata: 메타데이터 (성공 시)
+        """
+        try:
+            # 파일 내용 읽기
+            contents = await file.read()
+
+            # 파일 포인터 초기화 (재사용 가능하도록)
+            await file.seek(0)
+
+            # 동기 validate_pdf 호출
+            file_size, metadata = self.validate_pdf(file, contents)
+
+            return {
+                "valid": True,
+                "file_size": file_size,
+                "metadata": metadata,
+            }
+
+        except HTTPException as e:
+            logger.warning(f"파일 검증 실패: {e.detail}")
+            return {
+                "valid": False,
+                "error": e.detail,
+            }
+        except Exception as e:
+            logger.error(f"파일 검증 오류: {str(e)}", exc_info=True)
+            return {
+                "valid": False,
+                "error": f"파일 검증 중 오류가 발생했습니다: {str(e)}",
+            }
+
     def validate_pdf(
         self, file: UploadFile, contents: bytes
     ) -> Tuple[int, Dict[str, str]]:

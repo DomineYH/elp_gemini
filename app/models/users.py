@@ -37,7 +37,11 @@ class User(Base):
     )
 
     # 관계
-    documents = relationship("Document", back_populates="user")
+    chat_sessions = relationship(
+        "ChatSession",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return (

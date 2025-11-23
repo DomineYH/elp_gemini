@@ -84,15 +84,8 @@ function handleFiles() {
 }
 
 // 폼 제출 처리
-uploadForm.addEventListener('submit', function(e) {
+uploadForm.addEventListener('submit', async function(e) {
     e.preventDefault();
-
-    // 제목 검증
-    const title = document.getElementById('title').value.trim();
-    if (!title) {
-        alert('제목을 입력해주세요.');
-        return;
-    }
 
     // 파일 검증
     if (!fileInput.files || fileInput.files.length === 0) {
@@ -104,6 +97,37 @@ uploadForm.addEventListener('submit', function(e) {
     loadingOverlay.classList.remove('hidden');
     submitBtn.disabled = true;
 
-    // 폼 제출
-    uploadForm.submit();
+    try {
+        // FormData 생성
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        // API 호출
+        const response = await fetch('/api/admin/criteria/upload', {
+            method: 'POST',
+            body: formData,
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            // 성공 메시지 표시
+            alert('평가 기준이 성공적으로 업로드되었습니다.');
+            // 목록 페이지로 이동
+            window.location.href = '/admin/criteria';
+        } else {
+            // 에러 메시지 표시
+            const errorMsg = result.detail || '업로드 중 오류가 발생했습니다.';
+            alert(`업로드 실패: ${errorMsg}`);
+            // 로딩 해제
+            loadingOverlay.classList.add('hidden');
+            submitBtn.disabled = false;
+        }
+    } catch (error) {
+        console.error('Upload error:', error);
+        alert('네트워크 오류가 발생했습니다. 다시 시도해주세요.');
+        // 로딩 해제
+        loadingOverlay.classList.add('hidden');
+        submitBtn.disabled = false;
+    }
 });

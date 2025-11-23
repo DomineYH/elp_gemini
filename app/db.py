@@ -72,11 +72,8 @@ async def seed_initial_data():
     """
     초기 데이터 시드
     - 기본 관리자 계정
-    - 기본 시스템 프롬프트
-    - 기본 평가 템플릿
     """
     from app.models.users import User
-    from app.models.prompts import SystemPrompt
     from passlib.context import CryptContext
     from sqlalchemy import select
 
@@ -98,60 +95,12 @@ async def seed_initial_data():
                     username="admin",
                     nickname="admin",
                     email="admin@example.com",
-                    hashed_password=pwd_context.hash("admin_password"),
+                    hashed_password=pwd_context.hash(
+                        "admin_password"
+                    ),
                     is_admin=True,
                 )
                 session.add(admin)
-                await session.flush()
-
-            # QnA 시스템 프롬프트가 이미 존재하는지 확인
-            result = await session.execute(
-                select(SystemPrompt).where(
-                    SystemPrompt.type == "qna",
-                    SystemPrompt.version == 1,
-                )
-            )
-            qna_prompt = result.scalar_one_or_none()
-
-            # QnA 프롬프트가 없으면 생성
-            if not qna_prompt:
-                qna_prompt = SystemPrompt(
-                    type="qna",
-                    version=1,
-                    content=(
-                        "당신은 문서 기반 질문답변을 돕는 유용한 AI "
-                        "어시스턴트입니다. 제공된 문서 컨텍스트를 "
-                        "기반으로 정확하고 유용한 답변을 제공하세요."
-                    ),
-                    is_active=True,
-                    created_by=admin.id,
-                )
-                session.add(qna_prompt)
-
-            # 평가 시스템 프롬프트가 이미 존재하는지 확인
-            result = await session.execute(
-                select(SystemPrompt).where(
-                    SystemPrompt.type == "evaluation",
-                    SystemPrompt.version == 1,
-                )
-            )
-            eval_prompt = result.scalar_one_or_none()
-
-            # 평가 프롬프트가 없으면 생성
-            if not eval_prompt:
-                eval_prompt = SystemPrompt(
-                    type="evaluation",
-                    version=1,
-                    content=(
-                        "당신은 문서 평가 전문가입니다. 제공된 "
-                        "루브릭을 기반으로 문서를 체계적으로 "
-                        "평가하고, 각 기준별 점수와 상세한 피드백을 "
-                        "제공하세요."
-                    ),
-                    is_active=True,
-                    created_by=admin.id,
-                )
-                session.add(eval_prompt)
 
             await session.commit()
         except Exception as e:

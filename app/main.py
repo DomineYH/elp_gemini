@@ -17,6 +17,8 @@ import logging
 from app.config import settings
 from app.utils.logging import setup_logging
 from app.middleware import AuthMiddleware
+from app.db import engine
+from app.migrations import ensure_criteria_file_path_column
 
 # 로깅 설정
 setup_logging(debug=settings.DEBUG)
@@ -149,20 +151,16 @@ async def startup_event():
     """애플리케이션 시작 시 실행"""
     logger.info("애플리케이션 시작...")
 
+    patched = await ensure_criteria_file_path_column(engine)
+    if patched:
+        logger.info("criteria.file_path 컬럼이 자동 복구되었습니다.")
+
     # 데이터베이스 초기화 (개발 모드에서만)
     if settings.DEBUG:
         from app.db import init_db
 
         await init_db()
         logger.info("데이터베이스 초기화 완료")
-
-    # 평가 기준 컨텍스트 Provider 초기화
-    from app.services.criteria_context_provider import (
-        criteria_context_provider,
-    )
-
-    await criteria_context_provider.initialize()
-    logger.info("평가 기준 컨텍스트 Provider 초기화 완료")
 
 
 @app.on_event("shutdown")
@@ -183,8 +181,8 @@ async def health_check():
 
 
 # 라우터 등록
-from app.routers import auth, user_docs, qna, eval, admin
-from app.routers.admin import criteria
+from app.routers import auth, lessonplans, qna, evaluations, views, lessonplan_analysis
+from app.routers.admin import router as admin_router
 from fastapi.responses import RedirectResponse
 
 # 루트 엔드포인트 - 역할 기반 리다이렉트
@@ -216,12 +214,14 @@ async def root(request: Request):
         return RedirectResponse(url="/login", status_code=302)
 
 
+# 라우터 등록
 app.include_router(auth.router, tags=["인증"])
-app.include_router(user_docs.router, tags=["문서"])
-app.include_router(qna.router, tags=["QnA"])
-app.include_router(eval.router, tags=["평가"])
-app.include_router(admin.router, tags=["관리자"])
-app.include_router(criteria.router, tags=["관리자", "평가기준"])
+app.include_router(lessonplans.router)
+app.include_router(qna.router)
+app.include_router(evaluations.router)
+app.include_router(lessonplan_analysis.router)
+app.include_router(views.router)
+app.include_router(admin_router)
 
 
 if __name__ == "__main__":
