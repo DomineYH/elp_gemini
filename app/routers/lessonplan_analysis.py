@@ -40,7 +40,7 @@ async def analyze_lesson_plan(
         service = LessonPlanAnalysisService(db=db)
         result = await service.analyze_lesson_plan(
             session_id=request.session_id,
-            username=current_user.username
+            user_id=current_user.id
         )
 
         if not result.get("success"):

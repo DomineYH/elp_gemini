@@ -41,14 +41,14 @@ class LessonPlanAnalysisService:
     async def analyze_lesson_plan(
         self,
         session_id: int,
-        username: str,
+        user_id: int,
     ) -> Dict[str, Any]:
         """
         수업 지도안 체계적 평가
 
         Args:
             session_id: 채팅 세션 ID
-            username: 사용자명 (Store ID 조회용)
+            user_id: 사용자 ID (Store ID 조회용)
 
         Returns:
             {
@@ -68,8 +68,8 @@ class LessonPlanAnalysisService:
                 criteria_context = await self._get_criteria_context()
                 logger.info("평가기준 컨텍스트 추출 완료")
 
-                # 2. File Search Store ID 조회
-                store_ids = await self._get_store_ids(username)
+                # 2. File Search Store ID 조회 (Phase 1 활용)
+                store_ids = await self._get_store_ids(user_id)
                 if not store_ids:
                     return {
                         "success": False,
@@ -151,38 +151,28 @@ class LessonPlanAnalysisService:
             logger.warning(f"평가기준 컨텍스트 추출 실패: {e}")
             return "평가기준 컨텍스트 없음"
 
-    async def _get_store_ids(self, username: str) -> list[str]:
+    async def _get_store_ids(self, user_id: int) -> list[str]:
         """
-        File Search Store ID 조회
+        File Search Store ID 조회 (Phase 1 공통 유틸 사용)
 
         Args:
-            username: 사용자명
+            user_id: 사용자 ID
 
         Returns:
-            Store ID 리스트 [rubricstore, user-{username}-store]
+            Store ID 리스트 [rubricstore, user-{user_id}-store]
         """
-        store_ids = []
-
         try:
-            # rubricstore: 평가기준 문서
-            for store in self.file_search_service.client.file_search_stores.list():
-                if "rubricstore" in store.display_name.lower():
-                    store_ids.append(store.name)
-                    logger.debug(f"rubricstore 발견: {store.name}")
-                    break
-
-            # user-{username}-store: 사용자 수업지도안
-            user_store_name = f"user-{username}-store"
-            for store in self.file_search_service.client.file_search_stores.list():
-                if user_store_name in store.display_name.lower():
-                    store_ids.append(store.name)
-                    logger.debug(f"사용자 Store 발견: {store.name}")
-                    break
-
+            # Phase 1의 get_dual_store_ids() 사용
+            store_ids = self.file_search_service.get_dual_store_ids(
+                user_id
+            )
+            logger.info(f"✅ Store ID 조회 완료: {len(store_ids)}개")
             return store_ids
-
+        except ValueError as e:
+            logger.error(f"❌ Store ID 조회 실패: {e}")
+            return []
         except Exception as e:
-            logger.error(f"Store ID 조회 실패: {e}")
+            logger.error(f"❌ 예상치 못한 오류: {e}")
             return []
 
     def _build_analysis_prompt(

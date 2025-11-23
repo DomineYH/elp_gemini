@@ -165,10 +165,10 @@ class TestRouterIntegration:
         # 실제 검증은 통합 테스트에서 수행됩니다.
 
         # 코드 변경 후 예상되는 동작:
-        # document.file_search_file_id = result.get("document_id")  # ✅ 올바른 키
-        # document.store_id = result.get("store_id")  # ✅ 올바른 키
+        # document.file_search_file_id = result.get("document_id")
+        # document.store_id = result.get("store_id")
 
         # 변경 전 버그:
-        # document.file_search_file_id = result.get("file_id")  # ❌ 잘못된 키 (None 반환)
+        # document.file_search_file_id = result.get("file_id")
 
         assert True  # 플레이스홀더

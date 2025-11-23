@@ -91,6 +91,90 @@ class FileSearchService:
             logger.error(f"스토어 처리 실패: {str(e)}")
             raise
 
+    def get_dual_store_ids(self, user_id: int) -> list[str]:
+        """
+        rubricstore와 사용자 스토어 ID 조회/생성
+
+        Args:
+            user_id: 사용자 ID
+
+        Returns:
+            [rubricstore_id, user_store_id]
+
+        Raises:
+            ValueError: rubricstore를 찾을 수 없는 경우
+        """
+        import time
+
+        store_ids = []
+
+        # 1. 캐시 확인 (60초 TTL)
+        cache_key = f"dual_store_{user_id}"
+        if not hasattr(self, '_store_cache'):
+            self._store_cache = {}
+
+        cached = self._store_cache.get(cache_key)
+        if cached and time.time() - cached['time'] < 60:
+            logger.debug(f"캐시에서 Store ID 조회: {user_id}")
+            return cached['ids']
+
+        # 2. rubricstore 조회
+        rubric_store_id = None
+        for store in self.client.file_search_stores.list():
+            if "rubricstore" in store.display_name.lower():
+                rubric_store_id = store.name
+                logger.info(f"✅ rubricstore 발견: {store.name}")
+                break
+
+        if not rubric_store_id:
+            logger.error("❌ rubricstore를 찾을 수 없습니다")
+            raise ValueError(
+                "평가기준 스토어(rubricstore)를 찾을 수 없습니다. "
+                "관리자에게 문의하세요."
+            )
+
+        store_ids.append(rubric_store_id)
+
+        # 3. 사용자 스토어 조회 또는 생성
+        user_store_name = f"user-{user_id}-store"
+        user_store_id = None
+
+        for store in self.client.file_search_stores.list():
+            if user_store_name in store.display_name.lower():
+                user_store_id = store.name
+                logger.info(
+                    f"✅ 사용자 스토어 발견: {store.name} "
+                    f"(user_id={user_id})"
+                )
+                break
+
+        if not user_store_id:
+            # 생성
+            logger.info(
+                f"📦 사용자 스토어 생성 시작: {user_store_name}"
+            )
+            created_store = self._get_or_create_store(
+                user_store_name
+            )
+            user_store_id = created_store.name
+            logger.info(
+                f"✅ 사용자 스토어 생성 완료: {user_store_id}"
+            )
+
+        store_ids.append(user_store_id)
+
+        # 4. 캐싱
+        self._store_cache[cache_key] = {
+            'ids': store_ids,
+            'time': time.time()
+        }
+
+        logger.info(
+            f"🎯 Store ID 조회 완료: "
+            f"rubricstore + user-{user_id}-store"
+        )
+        return store_ids
+
     async def upload_document(
         self,
         file_path: str,

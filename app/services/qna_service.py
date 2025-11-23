@@ -116,69 +116,28 @@ class QnAService:
                 full_prompt, conversation_history
             )
 
-            # Store ID 결정 - 평가기준 스토어와 사용자 스토어 모두 사용
+            # Store ID 결정 - Phase 1 공통 유틸리티 사용
             # Vector Search는 평가기준 벡터 검색 (참고 자료)
             # File Search는 평가기준 스토어 + 사용자 스토어 검색 (주요 검색)
-            store_ids = []
-
-            # 1. 평가기준 스토어 (rubric store) 조회
-            rubric_store_id = None
             try:
-                # 스토어 목록에서 "rubricstore" 문자가 포함된 스토어 찾기
-                for store in self.file_search_service.client.file_search_stores.list():
-                    if "rubricstore" in store.display_name.lower():
-                        rubric_store_id = store.name
-                        store_ids.append(rubric_store_id)
-                        logger.info(f"평가기준 스토어 발견: {store.display_name} ({rubric_store_id})")
-                        break
-
-                # 없으면 rubric_store_name으로 생성
-                if not rubric_store_id:
-                    rubric_store = self.file_search_service._get_or_create_store(
-                        self.file_search_service.rubric_store_name
-                    )
-                    rubric_store_id = rubric_store.name
-                    store_ids.append(rubric_store_id)
-                    logger.info(f"평가기준 스토어 생성: {rubric_store.display_name} ({rubric_store_id})")
-            except Exception as e:
-                logger.warning(f"평가기준 스토어 조회 실패: {e}")
-
-            # 2. 사용자 스토어 조회/생성
-            user_store_id = None
-            if store_id:
-                # store_id가 제공된 경우 사용
-                user_store_id = store_id
-                store_ids.append(user_store_id)
-                logger.info(f"제공된 사용자 스토어 사용: {user_store_id}")
-            else:
-                # 사용자별 스토어 찾기 또는 생성
-                user_store_name = f"user-{user_id}-store"
-                try:
-                    # 스토어 목록에서 user{id}store 패턴 찾기
-                    for store in self.file_search_service.client.file_search_stores.list():
-                        if f"user{user_id}store" in store.display_name.lower() or user_store_name in store.display_name.lower():
-                            user_store_id = store.name
-                            store_ids.append(user_store_id)
-                            logger.info(f"사용자 스토어 발견: {store.display_name} ({user_store_id})")
-                            break
-
-                    # 없으면 생성
-                    if not user_store_id:
-                        user_store = self.file_search_service._get_or_create_store(user_store_name)
-                        user_store_id = user_store.name
-                        store_ids.append(user_store_id)
-                        logger.info(f"사용자 스토어 생성: {user_store_name} ({user_store_id})")
-                except Exception as e:
-                    logger.warning(f"사용자 스토어 접근 실패: {e}")
-
-            # 최소한 하나의 스토어는 있어야 함
-            if not store_ids:
-                # 메인 스토어를 폴백으로 사용
-                main_store = self.file_search_service._get_or_create_store(
-                    self.file_search_service.main_store_name
+                # Phase 1의 get_dual_store_ids() 사용
+                store_ids = self.file_search_service.get_dual_store_ids(
+                    user_id=user_id
                 )
-                store_ids.append(main_store.name)
-                logger.warning(f"모든 스토어 조회 실패, 메인 스토어 사용: {main_store.name}")
+                logger.info(f"🎯 Store 조회 완료: {len(store_ids)}개")
+
+                # 스토어 정보 로깅
+                rubric_store_id = store_ids[0] if len(store_ids) > 0 else None
+                user_store_id = store_ids[1] if len(store_ids) > 1 else None
+            except ValueError as e:
+                logger.error(f"❌ Store 조회 실패: {e}")
+                raise Exception(
+                    "평가기준 스토어를 찾을 수 없습니다. "
+                    "관리자에게 문의하세요."
+                )
+            except Exception as e:
+                logger.error(f"❌ 예상치 못한 오류: {e}")
+                raise
 
             # FileSearch 도구와 함께 질문 전송 (평가기준 스토어 + 사용자 스토어 참조)
             logger.info(
