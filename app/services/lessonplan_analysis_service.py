@@ -42,13 +42,16 @@ class LessonPlanAnalysisService:
         self,
         session_id: int,
         user_id: int,
+        username: str,
     ) -> Dict[str, Any]:
         """
         수업 지도안 체계적 평가
 
         Args:
             session_id: 채팅 세션 ID
-            user_id: 사용자 ID (Store ID 조회용)
+            session_id: 채팅 세션 ID
+            user_id: 사용자 ID (로깅용)
+            username: 사용자 이름 (Store ID 조회용)
 
         Returns:
             {
@@ -69,22 +72,34 @@ class LessonPlanAnalysisService:
                 logger.info("평가기준 컨텍스트 추출 완료")
 
                 # 2. File Search Store ID 조회 (Phase 1 활용)
-                store_ids = await self._get_store_ids(user_id)
+                store_ids = await self._get_store_ids(username)
                 if not store_ids:
                     return {
                         "success": False,
                         "error": "분석할 문서가 없습니다. 수업 지도안을 먼저 업로드해주세요."
                     }
-                logger.info(f"File Search Store 조회 완료: {store_ids}")
 
-                # 3. 프롬프트 구성
+                # Store ID 분리 및 역할 명확화
+                user_store_id = store_ids[0]      # 사용자 업로드 수업 지도안
+                rubric_store_id = store_ids[1]    # 평가기준 문서
+
+                logger.info(
+                    f"File Search Store 조회 완료:\n"
+                    f"  - Rubric Store: {rubric_store_id}\n"
+                    f"  - Lesson Store: {user_store_id}"
+                )
+
+                # 3. 프롬프트 구성 (Store 역할 명시)
                 system_prompt = self.prompt_loader.get_prompt("lesson_analysis")
                 full_prompt = self._build_analysis_prompt(
-                    system_prompt, criteria_context
+                    system_prompt,
+                    criteria_context,
+                    rubric_store_id=rubric_store_id,
+                    lesson_store_id=user_store_id
                 )
-                logger.info("프롬프트 구성 완료")
+                logger.info("프롬프트 구성 완료 (Store 역할 명시 포함)")
 
-                # 4. Gemini API 호출 (File Search)
+                # 4. Gemini API 호출 (File Search - 평가기준 우선 순서)
                 response = self.client.models.generate_content(
                     model=self.model_name,
                     contents=full_prompt,
@@ -92,7 +107,7 @@ class LessonPlanAnalysisService:
                         tools=[
                             types.Tool(
                                 file_search=types.FileSearch(
-                                    file_search_store_names=store_ids
+                                    file_search_store_names=[rubric_store_id, user_store_id]
                                 )
                             )
                         ],
@@ -151,20 +166,21 @@ class LessonPlanAnalysisService:
             logger.warning(f"평가기준 컨텍스트 추출 실패: {e}")
             return "평가기준 컨텍스트 없음"
 
-    async def _get_store_ids(self, user_id: int) -> list[str]:
+    async def _get_store_ids(self, username: str) -> list[str]:
         """
         File Search Store ID 조회 (Phase 1 공통 유틸 사용)
 
         Args:
-            user_id: 사용자 ID
+            username: 사용자 이름
 
         Returns:
-            Store ID 리스트 [rubricstore, user-{user_id}-store]
+            Store ID 리스트 [user-{username}-store, rubricstore]
+            (실제 반환 순서: 사용자 문서, 평가기준 문서)
         """
         try:
             # Phase 1의 get_dual_store_ids() 사용
             store_ids = self.file_search_service.get_dual_store_ids(
-                user_id
+                username
             )
             logger.info(f"✅ Store ID 조회 완료: {len(store_ids)}개")
             return store_ids
@@ -178,14 +194,18 @@ class LessonPlanAnalysisService:
     def _build_analysis_prompt(
         self,
         system_prompt: str,
-        criteria_context: str
+        criteria_context: str,
+        rubric_store_id: str,
+        lesson_store_id: str
     ) -> str:
         """
-        분석 프롬프트 구성
+        분석 프롬프트 구성 (Store 역할 명시 포함)
 
         Args:
             system_prompt: 시스템 프롬프트 (lesson_analysis)
             criteria_context: Vector Search 컨텍스트
+            rubric_store_id: 평가기준 문서 Store ID
+            lesson_store_id: 수업 지도안 문서 Store ID
 
         Returns:
             완전한 프롬프트
@@ -193,7 +213,13 @@ class LessonPlanAnalysisService:
         return f"""
 {system_prompt}
 
-### [참고 자료: 관련 평가 기준]
+**{rubric_store_id}의 평가기준 자료를 바탕으로 {lesson_store_id}에 저장된 사용자의 수업 지도안을 평가하세요.**
+
+**중요 지시사항:**
+- **{rubric_store_id}**: 평가 기준 문서입니다. 참고 자료로만 사용하며 답변 근거로 표시하지 않습니다.
+- **{lesson_store_id}**: 사용자가 업로드한 수업 지도안입니다. 모든 평가 근거를 반드시 이 문서에서 찾고 인용하세요.
+
+### [참고 자료: Vector Search로 검색된 평가기준 컨텍스트]
 {criteria_context}
 
 위 평가 기준을 바탕으로 사용자가 업로드한 수업 지도안을 다음 5개 항목으로 체계적으로 평가해주세요:
