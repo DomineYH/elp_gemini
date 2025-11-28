@@ -38,6 +38,7 @@ class QnAService:
         session_id: int,
         question: str,
         user_id: int,
+        username: str,
         store_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """
@@ -47,6 +48,7 @@ class QnAService:
             session_id: 채팅 세션 ID
             question: 질문
             user_id: 사용자 ID
+            username: 사용자 이름 (Store 조회용)
             store_id: 검색할 File Search Store ID (없으면 기본값 사용)
 
         Returns:
@@ -93,10 +95,11 @@ class QnAService:
                 criteria_metadata = criteria_result.get("criteria_metadata", [])
 
                 if context_text:
+                    # Vector Search 참고 자료만 포함 (시스템 규칙은 prompt.md에 있음)
                     criteria_context = (
-                        "\n\n### [참고 자료: 관련 평가 기준]\n"
-                        "다음은 답변 생성 시 참고할 수 있는 평가 기준입니다. "
-                        "이 기준을 직접 설명하기보다는, 문서 분석의 관점으로 활용하세요.\n\n"
+                        "\n\n### [참고 자료: Vector Search로 검색된 평가기준 컨텍스트]\n\n"
+                        "아래는 질문과 관련하여 미리 검색된 평가기준 내용입니다. "
+                        "평가/분석 요청 시에만 참고하세요.\n\n"
                         + context_text
                     )
                     logger.info(
@@ -108,55 +111,106 @@ class QnAService:
                     f"평가 기준 검색 중 오류 (무시): {e}"
                 )
 
-            # 전체 프롬프트 구성
-            full_prompt = (
-                f"{system_prompt}{criteria_context}"
-            )
-            context = self._build_context(
-                full_prompt, conversation_history
-            )
-
-            # Store ID 결정 - Phase 1 공통 유틸리티 사용
-            # Vector Search는 평가기준 벡터 검색 (참고 자료)
-            # File Search는 평가기준 스토어 + 사용자 스토어 검색 (주요 검색)
+            # Store ID 결정 - 사용자 스토어와 평가기준 스토어 모두 검색
             try:
-                # Phase 1의 get_dual_store_ids() 사용
+                # 사용자 스토어와 평가기준 스토어 모두 가져오기
                 store_ids = self.file_search_service.get_dual_store_ids(
-                    user_id=user_id
+                    user_key=username
                 )
-                logger.info(f"🎯 Store 조회 완료: {len(store_ids)}개")
+                logger.info(f"🎯 Store 조회 완료: {store_ids}")
 
-                # 스토어 정보 로깅
-                rubric_store_id = store_ids[0] if len(store_ids) > 0 else None
-                user_store_id = store_ids[1] if len(store_ids) > 1 else None
+                # Store ID 분리 (첫 번째: user store, 두 번째: rubric store)
+                user_store_id = store_ids[0]
+                rubric_store_id = store_ids[1]
+
             except ValueError as e:
                 logger.error(f"❌ Store 조회 실패: {e}")
                 raise Exception(
-                    "평가기준 스토어를 찾을 수 없습니다. "
+                    "문서 스토어를 찾을 수 없습니다. "
                     "관리자에게 문의하세요."
                 )
             except Exception as e:
                 logger.error(f"❌ 예상치 못한 오류: {e}")
                 raise
 
-            # FileSearch 도구와 함께 질문 전송 (평가기준 스토어 + 사용자 스토어 참조)
+            # 질문 유형 분석 및 메타데이터 필터 결정
+            from app.services.question_analyzer import QuestionAnalyzer
+            analyzer = QuestionAnalyzer()
+            question_analysis = analyzer.analyze_question(question)
+            metadata_filter = question_analysis["metadata_filter"]
+            is_evaluation = question_analysis["question_type"] == "evaluation"
+
+            logger.info(
+                f"질문 분석 완료\n"
+                f"  - 질문 유형: {question_analysis['question_type']}\n"
+                f"  - 평가 요청 여부: {is_evaluation}\n"
+                f"  - 메타데이터 필터: {metadata_filter if metadata_filter else '없음 (모든 스토어 검색)'}"
+            )
+
+            # Store 역할 명시 프롬프트 구성
+            if is_evaluation:
+                # 평가 요청: rubricstore는 참고 자료, user store는 평가 대상
+                store_role_prompt = (
+                    f"\n\n**{rubric_store_id}를 참고하여 {user_store_id}의 문서에 대해서 답해주세요.**\n\n"
+                    f"**중요 지시사항:**\n"
+                    f"- {rubric_store_id}의 자료는 **답변 생성의 참고 자료**로만 사용하세요.\n"
+                    f"- {user_store_id}의 문서만 **질의 응답 대상**입니다.\n"
+                    f"- 평가기준(rubricstore) 내용은 답변 생성의 참고 자료로만 활용하고, "
+                    f"답변 근거는 반드시 사용자 문서(user store)에서 찾으세요.\n"
+                )
+            else:
+                # 일반 질문: 사용자 문서만 검색
+                store_role_prompt = (
+                    f"\n\n**중요 지시사항:**\n"
+                    f"- {user_store_id}의 사용자 업로드 문서를 기반으로 답변하세요.\n"
+                )
+
+            # 대화 히스토리 구성
+            history_context = ""
+            if conversation_history:
+                history_context = "\n\n**이전 대화:**\n"
+                for conv in conversation_history:
+                    history_context += (
+                        f"Q: {conv.get('question', '')}\n"
+                        f"A: {conv.get('answer', '')}\n"
+                    )
+
+            # Contents 구성: Store 역할 명시 + 평가기준 컨텍스트 + 히스토리 + 질문
+            contents = (
+                f"{store_role_prompt}"
+                f"{criteria_context}"
+                f"{history_context}"
+                f"\n\n**질문:** {question}"
+            )
+
+            # FileSearch 도구와 함께 질문 전송
             logger.info(
                 f"QnA FileSearch 호출\n"
                 f"  - session_id: {session_id}\n"
                 f"  - user_id: {user_id}\n"
-                f"  - 평가기준 스토어: {rubric_store_id}\n"
-                f"  - 사용자 스토어: {user_store_id}\n"
-                f"  - 총 스토어 개수: {len(store_ids)}"
+                f"  - username: {username}\n"
+                f"  - User Store: {user_store_id}\n"
+                f"  - Rubric Store: {rubric_store_id}\n"
+                f"  - 평가 요청: {is_evaluation}\n"
+                f"  - 메타데이터 필터: {metadata_filter if metadata_filter else '미적용'}"
             )
+
+            # FileSearch 설정 구성
+            file_search_config = {
+                "file_search_store_names": store_ids
+            }
+            if metadata_filter:
+                file_search_config["metadata_filter"] = metadata_filter
 
             response = self.client.models.generate_content(
                 model=self.qna_model_name,
-                contents=f"{context}\n\n질문: {question}",
+                contents=contents,
                 config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,  # 시스템 프롬프트를 별도로 분리
                     tools=[
                         types.Tool(
                             file_search=types.FileSearch(
-                                file_search_store_names=store_ids
+                                **file_search_config
                             )
                         )
                     ],
@@ -229,25 +283,6 @@ class QnAService:
         except Exception as e:
             logger.error(f"QnA 처리 실패: {str(e)}")
             raise
-
-    def _build_context(
-        self,
-        system_prompt: str,
-        conversation_history: Optional[List[dict]] = None,
-    ) -> str:
-        """대화 컨텍스트 구성"""
-        context_parts = [f"시스템 프롬프트: {system_prompt}"]
-
-        # 대화 히스토리 추가
-        if conversation_history:
-            context_parts.append("\n이전 대화:")
-            for conv in conversation_history:
-                context_parts.append(
-                    f"Q: {conv.get('question', '')}\n"
-                    f"A: {conv.get('answer', '')}"
-                )
-
-        return "\n".join(context_parts)
 
     def _extract_citations(
         self, grounding_metadata: Any

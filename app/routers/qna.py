@@ -127,6 +127,7 @@ async def ask_question(
             session_id=session_id,
             question=request.question,
             user_id=current_user.id,
+            username=current_user.username,
         )
         await db.commit()
 
@@ -284,6 +285,7 @@ async def chat_with_document(
             session_id=session.id,
             question=request.question,
             user_id=current_user.id,
+            username=current_user.username,
             store_id=store_id,
         )
         await db.commit()
