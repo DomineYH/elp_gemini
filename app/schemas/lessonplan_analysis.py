@@ -10,6 +10,13 @@ class LessonPlanAnalysisRequest(BaseModel):
     session_id: int = Field(..., description="채팅 세션 ID", gt=0)
 
 
+class SavedReportInfo(BaseModel):
+    """저장된 보고서 정보 스키마"""
+    filename: str = Field(..., description="저장된 파일명")
+    file_path: str = Field(..., description="저장된 파일 경로")
+    timestamp: str = Field(..., description="저장 시간 (년월일시분초)")
+
+
 class LessonPlanAnalysisResponse(BaseModel):
     """분석 응답 스키마"""
     success: bool = Field(..., description="성공 여부")
@@ -17,6 +24,10 @@ class LessonPlanAnalysisResponse(BaseModel):
     citations: Optional[Dict[str, Any]] = Field(None, description="Citation 정보")
     latency_ms: Optional[int] = Field(None, description="응답 시간 (ms)")
     error: Optional[str] = Field(None, description="에러 메시지")
+    saved_report: Optional[SavedReportInfo] = Field(
+        None,
+        description="저장된 보고서 파일 정보"
+    )
 
     class Config:
         json_schema_extra = {
@@ -27,6 +38,11 @@ class LessonPlanAnalysisResponse(BaseModel):
                     "used_criteria": ["평가기준 1", "평가기준 2"],
                     "grounding_chunks": [...]
                 },
-                "latency_ms": 12350
+                "latency_ms": 12350,
+                "saved_report": {
+                    "filename": "111_20251128182530_수업지도안_reports.md",
+                    "file_path": "app/static/reports/111_20251128182530_수업지도안_reports.md",
+                    "timestamp": "20251128182530"
+                }  # 파일명 형식: {username}_{년월일시간}_{업로드파일명}_reports.md
             }
         }

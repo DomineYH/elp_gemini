@@ -14,6 +14,8 @@ from app.config import settings
 from app.services.prompt_loader_service import PromptLoaderService
 from app.services.file_search_service import FileSearchService
 from app.services.criteria_context_service import CriteriaContextService
+from app.services.lessonplan_storage_service import LessonPlanStorageService
+from app.services.report_storage_service import ReportStorageService
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,8 @@ class LessonPlanAnalysisService:
         self.prompt_loader = PromptLoaderService()
         self.file_search_service = FileSearchService()
         self.criteria_service = CriteriaContextService(db=db)
+        self.lessonplan_storage = LessonPlanStorageService()
+        self.report_storage = ReportStorageService()
 
     async def analyze_lesson_plan(
         self,
@@ -127,11 +131,45 @@ class LessonPlanAnalysisService:
 
                 logger.info(f"분석 완료 (응답 시간: {latency_ms}ms)")
 
+                # 보고서 파일 저장
+                saved_report = None
+                if report:
+                    try:
+                        # 가장 최근 업로드 파일명 조회
+                        lessonplans = self.lessonplan_storage.list_lessonplans(
+                            username
+                        )
+                        if lessonplans:
+                            # created_at 기준 정렬하여 최신 파일 선택
+                            latest = max(
+                                lessonplans,
+                                key=lambda x: x["created_at"]
+                            )
+                            original_filename = latest["original_filename"]
+                        else:
+                            original_filename = "unknown"
+
+                        # 보고서 저장
+                        saved_report = self.report_storage.save_report(
+                            username=username,
+                            original_filename=original_filename,
+                            report_content=report,
+                        )
+                        logger.info(
+                            f"보고서 파일 저장 완료: {saved_report['filename']}"
+                        )
+                    except Exception as save_error:
+                        logger.warning(
+                            f"보고서 파일 저장 실패 (분석 결과는 정상): "
+                            f"{save_error}"
+                        )
+
                 return {
                     "success": True,
                     "report": report,
                     "citations": citations,
-                    "latency_ms": latency_ms
+                    "latency_ms": latency_ms,
+                    "saved_report": saved_report
                 }
 
         except asyncio.TimeoutError:
@@ -249,8 +287,8 @@ class LessonPlanAnalysisService:
 
         try:
             # "Vector Search 참고 자료" 섹션 찾기
-            # 패턴: ### Vector Search 참고 자료 이후의 내용
-            pattern = r'(###\s*Vector Search 참고 자료\s*\n)(.*?)(\n###|\Z)'
+            # 패턴: ### 🔍 Vector Search 참고 자료 이후의 내용
+            pattern = r'(###\s*🔍\s*Vector Search 참고 자료\s*\n)(.*?)(\n###|\Z)'
 
             match = re.search(pattern, report, flags=re.DOTALL)
 
