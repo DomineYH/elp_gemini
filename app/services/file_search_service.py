@@ -4,12 +4,49 @@ Google File Search 서비스
 """
 import asyncio
 import logging
+import re
+import unicodedata
+from datetime import datetime
 from typing import Optional, Dict, Any
 from google import genai
 from google.genai import types
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_display_name(name: str) -> str:
+    """
+    display_name을 ASCII 안전한 문자열로 변환
+
+    HTTP 헤더로 전달되는 display_name에 한글이 포함되면
+    UnicodeEncodeError가 발생하므로 ASCII로 변환합니다.
+
+    Args:
+        name: 원본 파일명
+
+    Returns:
+        ASCII 안전한 문자열
+    """
+    # 1. 유니코드 정규화 후 ASCII 문자만 유지
+    normalized = unicodedata.normalize('NFD', name)
+    ascii_safe = ''.join(
+        c for c in normalized
+        if unicodedata.category(c) != 'Mn' and ord(c) < 128
+    )
+
+    # 2. 빈 문자열이면 타임스탬프로 대체
+    if not ascii_safe.strip():
+        ascii_safe = f"doc_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    # 3. 특수문자를 underscore로 치환
+    sanitized = re.sub(r'[^\w\.\-]', '_', ascii_safe)
+
+    # 4. 연속 underscore 정리
+    sanitized = re.sub(r'_+', '_', sanitized).strip('_')
+
+    logger.debug(f"display_name 변환: {name} -> {sanitized}")
+    return sanitized
 
 
 class FileSearchService:
@@ -74,18 +111,22 @@ class FileSearchService:
 
     def _get_or_create_store(self, store_name: str):
         """FileSearchStore 가져오기 또는 생성"""
+        # store_name을 ASCII 안전하게 변환 (HTTP 헤더 호환)
+        safe_store_name = _sanitize_display_name(store_name)
+        logger.debug(f"스토어 이름 변환: {store_name} -> {safe_store_name}")
+
         try:
-            # 기존 스토어 찾기
+            # 기존 스토어 찾기 (sanitized name으로 검색)
             for store in self.client.file_search_stores.list():
-                if store.display_name == store_name:
-                    logger.info(f"기존 스토어 발견: {store_name} (ID: {store.name})")
+                if store.display_name == safe_store_name:
+                    logger.info(f"기존 스토어 발견: {safe_store_name} (ID: {store.name})")
                     return store
 
             # 없으면 새로 생성
             store = self.client.file_search_stores.create(
-                config={'display_name': store_name}
+                config={'display_name': safe_store_name}
             )
-            logger.info(f"새 스토어 생성: {store_name} (ID: {store.name})")
+            logger.info(f"새 스토어 생성: {safe_store_name} (ID: {store.name})")
             return store
         except Exception as e:
             logger.error(f"스토어 처리 실패: {str(e)}")
@@ -144,10 +185,12 @@ class FileSearchService:
 
         # 3. 사용자 스토어 조회 또는 생성
         user_store_name = f"user-{user_key}-store"
+        # 검색 시에도 sanitized name 사용
+        safe_user_store_name = _sanitize_display_name(user_store_name)
         user_store_id = None
 
         for store in self.client.file_search_stores.list():
-            if user_store_name in store.display_name.lower():
+            if safe_user_store_name == store.display_name:
                 user_store_id = store.name
                 logger.info(
                     f"✅ 사용자 스토어 발견: {store.name} "
@@ -156,9 +199,9 @@ class FileSearchService:
                 break
 
         if not user_store_id:
-            # 생성
+            # 생성 (_get_or_create_store에서 자동으로 sanitize됨)
             logger.info(
-                f"📦 사용자 스토어 생성 시작: {user_store_name}"
+                f"📦 사용자 스토어 생성 시작: {user_store_name} -> {safe_user_store_name}"
             )
             created_store = self._get_or_create_store(
                 user_store_name
@@ -211,10 +254,12 @@ class FileSearchService:
 
         # 2. 사용자 스토어 조회 또는 생성
         user_store_name = f"user-{user_key}-store"
+        # 검색 시에도 sanitized name 사용
+        safe_user_store_name = _sanitize_display_name(user_store_name)
         user_store_id = None
 
         for store in self.client.file_search_stores.list():
-            if user_store_name in store.display_name.lower():
+            if safe_user_store_name == store.display_name:
                 user_store_id = store.name
                 logger.info(
                     f"✅ 사용자 스토어 발견: {store.name} "
@@ -223,9 +268,9 @@ class FileSearchService:
                 break
 
         if not user_store_id:
-            # 생성
+            # 생성 (_get_or_create_store에서 자동으로 sanitize됨)
             logger.info(
-                f"📦 사용자 스토어 생성 시작: {user_store_name}"
+                f"📦 사용자 스토어 생성 시작: {user_store_name} -> {safe_user_store_name}"
             )
             created_store = self._get_or_create_store(
                 user_store_name
@@ -242,7 +287,7 @@ class FileSearchService:
         }
 
         logger.info(
-            f"🎯 사용자 Store ID 조회 완료: user-{user_key}-store"
+            f"🎯 사용자 Store ID 조회 완료: {safe_user_store_name}"
         )
         return user_store_id
 
@@ -285,7 +330,7 @@ class FileSearchService:
             else:
                 metadata["document_type"] = "user_document"
 
-            # Custom metadata 구조 변환
+            # Custom metadata 구조 변환 (string_value도 ASCII 안전하게)
             custom_metadata = []
             for key, value in metadata.items():
                 if isinstance(value, (int, float)):
@@ -294,17 +339,22 @@ class FileSearchService:
                         "numeric_value": value
                     })
                 else:
+                    # string_value도 ASCII 안전하게 변환 (HTTP 헤더 호환)
+                    safe_value = _sanitize_display_name(str(value))
                     custom_metadata.append({
                         "key": key,
-                        "string_value": str(value)
+                        "string_value": safe_value
                     })
+
+            # display_name을 ASCII 안전하게 변환 (HTTP 헤더 호환)
+            safe_display_name = _sanitize_display_name(display_name)
 
             # 직접 업로드 및 청킹 설정
             operation = self.client.file_search_stores.upload_to_file_search_store(
                 file_search_store_name=store.name,
                 file=file_path,
                 config={
-                    'display_name': display_name,  # 표시 이름 명시적 설정
+                    'display_name': safe_display_name,  # ASCII 안전한 이름 사용
                     'chunking_config': {
                         'white_space_config': {
                             'max_tokens_per_chunk': settings.FS_CHUNKING_MAX_TOKENS,

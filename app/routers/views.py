@@ -9,7 +9,7 @@ import logging
 from app.dependencies import get_current_user
 from app.models.users import User
 from app.services.lessonplan_storage_service import LessonPlanStorageService
-from app.services.file_search_service import FileSearchService
+from app.services.file_search_service import FileSearchService, _sanitize_display_name
 from app.services.criteria_vector_service import CriteriaVectorService
 from datetime import datetime
 import shutil
@@ -95,8 +95,10 @@ async def upload_document(
     upload_dir = Path("app/static/uploads")
     upload_dir.mkdir(parents=True, exist_ok=True)
     
-    # 파일명 안전하게 처리 (필요시 추가 로직 구현 가능)
-    saved_filename = f"{current_user.username}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}"
+    # 파일명 안전하게 처리 (ASCII 변환으로 Google API 호환성 보장)
+    safe_username = _sanitize_display_name(current_user.username)
+    safe_original = _sanitize_display_name(file.filename)
+    saved_filename = f"{safe_username}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{safe_original}"
     file_path = upload_dir / saved_filename
     
     # 웹 접근 URL
