@@ -42,7 +42,179 @@ async def login_page(request: Request):
     )
 
 
-# T024: POST /auth/login - 로그인 또는 신규 사용자 생성
+# 사용자 로그인 (드롭다운 선택 기반)
+@router.post("/auth/login/user")
+async def login_user(
+    request: Request,
+    user_type: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    사용자 로그인 (드롭다운 선택 기반)
+
+    사용자 유형(1학년, 2학년, 3학년, 4학년, 현직교사)을 선택하여 로그인합니다.
+    선택한 유형을 username과 nickname으로 사용합니다.
+
+    Args:
+        request: Request 객체
+        user_type: 사용자 유형 (1학년, 2학년, 3학년, 4학년, 현직교사)
+        db: 데이터베이스 세션
+
+    Returns:
+        리다이렉트 응답
+    """
+    # 유효한 사용자 유형 검증
+    valid_types = ["1학년", "2학년", "3학년", "4학년", "현직교사"]
+    if user_type not in valid_types:
+        return templates.TemplateResponse(
+            "user/login.html",
+            {
+                "request": request,
+                "error": "유효하지 않은 사용자 유형입니다.",
+                "active_tab": "user",
+            },
+            status_code=400,
+        )
+
+    try:
+        auth_service = AuthService(db)
+        # user_type을 username과 nickname으로 사용
+        user = await auth_service.authenticate_user(user_type, user_type)
+
+        # 세션 고정 공격 방지: 기존 세션 클리어
+        request.session.clear()
+
+        # 새 세션에 사용자 정보 저장
+        request.session["user_id"] = user.id
+        request.session["is_admin"] = user.is_admin
+        request.session["username"] = user.username
+        request.session["nickname"] = user.nickname
+
+        # 로그인 성공 로깅
+        log_auth_event(
+            "login",
+            user_id=user.id,
+            username=user.username,
+            success=True,
+        )
+        logger.info(
+            f"사용자 로그인 성공: "
+            f"user_id={user.id}, user_type={user_type}"
+        )
+
+        return RedirectResponse(
+            url="/", status_code=status.HTTP_302_FOUND
+        )
+
+    except Exception as e:
+        log_auth_event(
+            "login",
+            username=user_type,
+            success=False,
+            reason=str(e),
+        )
+        logger.error(f"사용자 로그인 처리 중 오류: {str(e)}", exc_info=True)
+        return templates.TemplateResponse(
+            "user/login.html",
+            {
+                "request": request,
+                "error": "로그인 처리 중 오류가 발생했습니다. "
+                "다시 시도해주세요.",
+                "active_tab": "user",
+            },
+            status_code=500,
+        )
+
+
+# 관리자 로그인 (ID + 비밀번호 기반)
+@router.post("/auth/login/admin")
+async def login_admin(
+    request: Request,
+    admin_id: str = Form(...),
+    password: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    관리자 로그인 (ID + 비밀번호 기반)
+
+    관리자 ID와 비밀번호를 사용하여 인증합니다.
+
+    Args:
+        request: Request 객체
+        admin_id: 관리자 ID
+        password: 비밀번호
+        db: 데이터베이스 세션
+
+    Returns:
+        리다이렉트 응답
+    """
+    try:
+        auth_service = AuthService(db)
+        user = await auth_service.authenticate_admin(admin_id, password)
+
+        if not user:
+            log_auth_event(
+                "login",
+                username=admin_id,
+                success=False,
+                reason="Invalid credentials",
+            )
+            return templates.TemplateResponse(
+                "user/login.html",
+                {
+                    "request": request,
+                    "error": "관리자 ID 또는 비밀번호가 올바르지 않습니다.",
+                    "active_tab": "admin",
+                },
+                status_code=401,
+            )
+
+        # 세션 고정 공격 방지: 기존 세션 클리어
+        request.session.clear()
+
+        # 새 세션에 사용자 정보 저장
+        request.session["user_id"] = user.id
+        request.session["is_admin"] = user.is_admin
+        request.session["username"] = user.username
+        request.session["nickname"] = user.nickname
+
+        # 로그인 성공 로깅
+        log_auth_event(
+            "login",
+            user_id=user.id,
+            username=user.username,
+            success=True,
+        )
+        logger.info(
+            f"관리자 로그인 성공: "
+            f"user_id={user.id}, admin_id={admin_id}"
+        )
+
+        return RedirectResponse(
+            url="/admin/dashboard", status_code=status.HTTP_302_FOUND
+        )
+
+    except Exception as e:
+        log_auth_event(
+            "login",
+            username=admin_id,
+            success=False,
+            reason=str(e),
+        )
+        logger.error(f"관리자 로그인 처리 중 오류: {str(e)}", exc_info=True)
+        return templates.TemplateResponse(
+            "user/login.html",
+            {
+                "request": request,
+                "error": "로그인 처리 중 오류가 발생했습니다. "
+                "다시 시도해주세요.",
+                "active_tab": "admin",
+            },
+            status_code=500,
+        )
+
+
+# T024: POST /auth/login - 기존 로그인 (하위 호환성 유지)
 @router.post("/auth/login")
 async def login(
     request: Request,
@@ -51,7 +223,7 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    사용자 로그인 또는 신규 사용자 생성
+    사용자 로그인 또는 신규 사용자 생성 (하위 호환성)
 
     사용자 식별 로직:
     - username과 nickname이 모두 일치 → 기존 사용자로 로그인
