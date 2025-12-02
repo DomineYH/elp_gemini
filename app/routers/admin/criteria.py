@@ -416,7 +416,10 @@ async def _sync_criteria_store(
                     criteria.id,
                     result["document_id"]
                 )
-                
+
+                # 동기화 시각 업데이트
+                await criteria_repo.update_synced_at(criteria.id)
+
                 logger.info(f"Vector Store 업로드 완료: {criteria.title}")
                 
             finally:
@@ -437,7 +440,7 @@ async def _sync_criteria_store(
 @router.post(
     "/{criteria_id}/activate",
     summary="평가기준 활성화",
-    description="특정 평가기준을 활성화하고 Vector Store에 즉시 반영합니다.",
+    description="특정 평가기준을 활성화합니다. Vector Store 반영은 '활성화 확정'에서 수행됩니다.",
 )
 async def activate_criteria(
     criteria_id: int,
@@ -464,20 +467,20 @@ async def activate_criteria(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="평가기준을 찾을 수 없습니다."
             )
-        
-        # Vector Store 자동 동기화
-        await _sync_criteria_store(db, current_admin.username)
+
+        # DB만 커밋 (Vector Store 동기화는 confirm-activation에서 수행)
         await db.commit()
-        
+
         logger.info(
-            f"평가기준 활성화 및 동기화 완료: "
+            f"평가기준 활성화 (DB만): "
             f"admin={current_admin.username}, id={criteria_id}"
         )
-        
+
         return {
             "success": True,
-            "message": f"{criteria.title}이(가) 활성화되고 적용되었습니다.",
-            "criteria_id": criteria_id
+            "message": f"{criteria.title}이(가) 활성화되었습니다. '활성화 확정'을 눌러 반영하세요.",
+            "criteria_id": criteria_id,
+            "needs_sync": True
         }
         
     except HTTPException:
@@ -494,7 +497,7 @@ async def activate_criteria(
 @router.post(
     "/{criteria_id}/deactivate",
     summary="평가기준 비활성화",
-    description="특정 평가기준을 비활성화하고 Vector Store에 즉시 반영합니다.",
+    description="특정 평가기준을 비활성화합니다. Vector Store 반영은 '활성화 확정'에서 수행됩니다.",
 )
 async def deactivate_criteria(
     criteria_id: int,
@@ -522,19 +525,19 @@ async def deactivate_criteria(
                 detail="평가기준을 찾을 수 없습니다."
             )
 
-        # Vector Store 자동 동기화
-        await _sync_criteria_store(db, current_admin.username)
+        # DB만 커밋 (Vector Store 동기화는 confirm-activation에서 수행)
         await db.commit()
 
         logger.info(
-            f"평가기준 비활성화 및 동기화 완료: "
+            f"평가기준 비활성화 (DB만): "
             f"admin={current_admin.username}, id={criteria_id}"
         )
 
         return {
             "success": True,
-            "message": f"{criteria.title}이(가) 비활성화되고 적용되었습니다.",
-            "criteria_id": criteria_id
+            "message": f"{criteria.title}이(가) 비활성화되었습니다. '활성화 확정'을 눌러 반영하세요.",
+            "criteria_id": criteria_id,
+            "needs_sync": True
         }
 
     except HTTPException:
@@ -587,3 +590,30 @@ async def confirm_activation(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="활성화 확정 중 오류가 발생했습니다."
         )
+
+
+@router.get(
+    "/sync-status",
+    summary="동기화 상태 확인",
+    description="Vector Store 동기화 상태를 확인합니다.",
+)
+async def get_sync_status(
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    동기화 상태 확인 (관리자 전용)
+
+    Returns:
+        동기화 상태 정보
+    """
+    criteria_repo = CriteriaRepository(db)
+    active_criteria = await criteria_repo.get_active_criteria()
+    pending_criteria = await criteria_repo.get_criteria_needing_sync()
+
+    return {
+        "needs_sync": len(pending_criteria) > 0,
+        "active_count": len(active_criteria),
+        "pending_count": len(pending_criteria),
+        "pending_titles": [c.title for c in pending_criteria]
+    }

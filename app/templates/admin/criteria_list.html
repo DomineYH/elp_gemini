@@ -34,10 +34,22 @@
             </p>
         </div>
         <div class="flex gap-3">
-            <button onclick="confirmActivation()" class="px-6 py-3 bg-green-600 text-white
-                rounded-lg hover:bg-green-700 transition-colors
-                font-medium">
-                ✓ 활성화 확정
+            <button
+                id="confirm-sync-btn"
+                onclick="confirmActivation()"
+                class="px-6 py-3 rounded-lg transition-colors font-medium
+                    {% if needs_sync %}
+                        bg-green-600 text-white hover:bg-green-700
+                    {% else %}
+                        bg-gray-400 text-white cursor-not-allowed
+                    {% endif %}"
+                {% if not needs_sync %}disabled{% endif %}
+            >
+                {% if needs_sync %}
+                    ⟳ 동기화 확정 ({{ pending_count }}개)
+                {% else %}
+                    ✓ 동기화 완료
+                {% endif %}
             </button>
             <a href="/admin/criteria/upload" class="px-6 py-3 bg-blue-600 text-white
                 rounded-lg hover:bg-blue-700 transition-colors
@@ -46,31 +58,28 @@
             </a>
         </div>
     </div>
-    {% if active_criteria %}
-    <div class="bg-blue-50 border-l-4 border-blue-500
-        p-4 mb-6 rounded-lg">
-        <div class="flex items-center">
-            <svg class="h-5 w-5 text-blue-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0
-                    0116 0zm-7-4a1 1 0 11-2 0 1 1 0
-                    012 0zM9 9a1 1 0 000 2v3a1 1 0
-                    001 1h1a1 1 0 100-2v-3a1 1 0
-                    00-1-1H9z" clip-rule="evenodd" />
-            </svg>
-            <div>
-                <p class="text-sm font-medium text-blue-800">
-                    현재 활성 기준: {{ active_criteria.title }}
-                </p>
-                <p class="text-xs text-blue-600 mt-1">
-                    활성화 시각:
-                    {{ active_criteria.activated_at.strftime(
-                    '%Y-%m-%d %H:%M'
-                    ) }}
-                </p>
+
+    {% if needs_sync %}
+    <div id="sync-pending-banner" class="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6 rounded-lg">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center">
+                <svg class="h-5 w-5 text-amber-500 mr-2 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
+                </svg>
+                <div>
+                    <p class="text-sm font-medium text-amber-800">
+                        동기화 필요: {{ pending_count }}개의 평가기준이 Vector Store에 반영되지 않았습니다.
+                    </p>
+                    <p class="text-xs text-amber-600 mt-1">
+                        '동기화 확정' 버튼을 눌러 변경사항을 반영하세요.
+                    </p>
+                </div>
             </div>
         </div>
     </div>
-    {% else %}
+    {% endif %}
+
+    {% if not active_criteria %}
     <div class="bg-yellow-50 border-l-4 border-yellow-500
         p-4 mb-6 rounded-lg">
         <div class="flex items-center">

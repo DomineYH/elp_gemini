@@ -74,6 +74,16 @@ async def criteria_list(
             None
         )
 
+        # 동기화 필요한 평가기준 계산
+        # (active 상태이면서 synced_at이 없거나 updated_at보다 이전인 경우)
+        pending_sync_criteria = [
+            c for c in all_criteria
+            if c.status == "active" and (
+                c.synced_at is None or c.synced_at < c.updated_at
+            )
+        ]
+        needs_sync = len(pending_sync_criteria) > 0
+
         return templates.TemplateResponse(
             "admin/criteria_list.html",
             {
@@ -81,6 +91,8 @@ async def criteria_list(
                 "user": current_admin,
                 "criteria": criteria_items,
                 "active_criteria": active_criteria,
+                "needs_sync": needs_sync,
+                "pending_count": len(pending_sync_criteria),
             }
         )
     except Exception as e:
@@ -93,6 +105,8 @@ async def criteria_list(
                 "user": current_admin,
                 "criteria": {"documents": []},
                 "active_criteria": None,
+                "needs_sync": False,
+                "pending_count": 0,
             }
         )
 

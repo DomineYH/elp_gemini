@@ -5,7 +5,7 @@ Criteria 데이터 액세스 레이어
 from typing import Optional, List
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, or_
 import logging
 
 from app.models.criteria import Criteria
@@ -296,3 +296,64 @@ class CriteriaRepository:
             f"id={criteria_id}, document_id={document_id}"
         )
         return criteria
+
+    async def update_synced_at(
+        self, criteria_id: int
+    ) -> Optional[Criteria]:
+        """
+        평가기준 동기화 시각 업데이트
+
+        Args:
+            criteria_id: 평가기준 ID
+
+        Returns:
+            업데이트된 Criteria 객체 또는 None
+        """
+        criteria = await self.get_criteria_by_id(criteria_id)
+
+        if not criteria:
+            logger.warning(
+                f"평가기준 synced_at 업데이트 실패 (없음): "
+                f"id={criteria_id}"
+            )
+            return None
+
+        criteria.synced_at = datetime.utcnow()
+        await self.db.flush()
+
+        logger.info(
+            f"평가기준 동기화 시각 업데이트: "
+            f"id={criteria_id}, synced_at={criteria.synced_at}"
+        )
+        return criteria
+
+    async def get_criteria_needing_sync(self) -> List[Criteria]:
+        """
+        동기화가 필요한 활성 평가기준 조회
+        (synced_at이 NULL이거나 updated_at보다 이전인 경우)
+
+        Returns:
+            동기화 필요한 Criteria 리스트
+        """
+        result = await self.db.execute(
+            select(Criteria)
+            .where(Criteria.status == "active")
+            .where(
+                or_(
+                    Criteria.synced_at.is_(None),
+                    Criteria.synced_at < Criteria.updated_at
+                )
+            )
+            .order_by(Criteria.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def has_pending_sync(self) -> bool:
+        """
+        동기화 대기 중인 평가기준 존재 여부
+
+        Returns:
+            동기화 필요한 평가기준이 있으면 True
+        """
+        pending = await self.get_criteria_needing_sync()
+        return len(pending) > 0

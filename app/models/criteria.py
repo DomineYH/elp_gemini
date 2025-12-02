@@ -76,6 +76,11 @@ class Criteria(Base):
         server_default=func.now(),
         onupdate=func.now()
     )
+    synced_at = Column(
+        DateTime,
+        nullable=True,
+        comment="Vector Store 동기화 시각"
+    )
 
     def __repr__(self):
         return (
