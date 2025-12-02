@@ -304,6 +304,7 @@ class FileSearchService:
                 file_search_store_name=store.name,
                 file=file_path,
                 config={
+                    'display_name': display_name,  # 표시 이름 명시적 설정
                     'chunking_config': {
                         'white_space_config': {
                             'max_tokens_per_chunk': settings.FS_CHUNKING_MAX_TOKENS,

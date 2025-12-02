@@ -2,6 +2,235 @@
 
 {% block title %}대시보드 - AI 문서 평가 플랫폼{% endblock %}
 
+{% block head %}
+<style>
+/* 분석 보고서 가독성 개선 */
+#analysisContent {
+    line-height: 1.8;
+}
+
+#analysisContent h1,
+#analysisContent h2,
+#analysisContent h3,
+#analysisContent h4 {
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+    font-weight: 600;
+    color: #4F46E5;
+}
+
+#analysisContent h1 {
+    font-size: 2rem;
+    border-bottom: 2px solid #E0E7FF;
+    padding-bottom: 0.5rem;
+}
+
+#analysisContent h2 {
+    font-size: 1.5rem;
+}
+
+#analysisContent h3 {
+    font-size: 1.25rem;
+    color: #6366F1;
+}
+
+#analysisContent ul,
+#analysisContent ol {
+    margin-left: 1.5rem;
+    margin-bottom: 1.5rem;
+    margin-top: 0.5rem;
+}
+
+#analysisContent li {
+    margin-bottom: 1rem;
+    line-height: 1.8;
+    padding-bottom: 0.5rem;
+}
+
+/* 번호 목록 항목 간격 강화 */
+#analysisContent ol > li {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #E5E7EB;
+}
+
+#analysisContent ol > li:last-child {
+    border-bottom: none;
+}
+
+/* br 태그 간격 */
+#analysisContent br {
+    display: block;
+    content: "";
+    margin-top: 0.75rem;
+}
+
+#analysisContent p {
+    margin-bottom: 1rem;
+}
+
+#analysisContent strong {
+    color: #1E40AF;
+    font-weight: 600;
+}
+
+#analysisContent hr {
+    margin: 2rem 0;
+    border-color: #E0E7FF;
+}
+
+/* 참고 자료 섹션 특별 스타일링 */
+#analysisContent h3:contains("Vector Search 참고 자료"),
+#analysisContent h3:contains("File Search 참고 문서") {
+    background-color: #EEF2FF;
+    padding: 0.5rem 1rem;
+    border-left: 4px solid #6366F1;
+    border-radius: 0.25rem;
+}
+
+/* 체크리스트 스타일 */
+#analysisContent input[type="checkbox"] {
+    margin-right: 0.5rem;
+}
+
+/* 코드 블록 스타일 */
+#analysisContent code {
+    background-color: #F3F4F6;
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.25rem;
+    font-size: 0.9em;
+}
+
+#analysisContent pre {
+    background-color: #1F2937;
+    color: #F9FAFB;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    overflow-x: auto;
+}
+
+#analysisContent pre code {
+    background-color: transparent;
+    color: inherit;
+    padding: 0;
+}
+
+/* 인쇄용 스타일 */
+@media print {
+    /* body 설정 */
+    body {
+        background: white !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+
+    /* nav, footer 숨김 (main은 표시 유지) */
+    body > nav,
+    body > footer {
+        display: none !important;
+    }
+
+    /* main 태그는 표시하되 패딩/마진 제거 */
+    body > main {
+        display: block !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        width: 100% !important;
+    }
+
+    /* main 내부에서 모달 관련 요소만 표시 */
+    body > main > .max-w-6xl,
+    body > main > .fixed:not(#analysisModal),
+    #chatbotModal,
+    #loadingOverlay {
+        display: none !important;
+    }
+
+    /* 모달 컨테이너 설정 */
+    #analysisModal {
+        display: block !important;
+        position: static !important;
+        width: 100% !important;
+        height: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        background: white !important;
+        z-index: 9999 !important;
+        box-shadow: none !important;
+    }
+
+    /* 모달 오버레이 배경 제거 */
+    #analysisModal.bg-black {
+        background: white !important;
+    }
+
+    /* 모달 내부 레이아웃 재정의 */
+    #analysisModal > div {
+        width: 100% !important;
+        max-width: none !important;
+        height: auto !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+    }
+
+    /* 헤더 스타일 조정: 배경색 제거 및 텍스트 검정 */
+    #analysisModal > div > div:first-child {
+        background: none !important;
+        color: black !important;
+        border-bottom: 2px solid #000 !important;
+        padding: 0 0 1rem 0 !important;
+        margin-bottom: 2rem !important;
+    }
+
+    /* 헤더 제목 색상 */
+    #analysisModal > div > div:first-child h3 {
+        color: black !important;
+    }
+
+    /* 닫기 버튼 등 헤더 아이콘 숨김 */
+    #analysisModal > div > div:first-child button {
+        display: none !important;
+    }
+
+    /* 하단 버튼 영역 숨김 */
+    #analysisModal > div > div:last-child {
+        display: none !important;
+    }
+
+    /* 컨텐츠 영역 확장 */
+    #analysisContent {
+        height: auto !important;
+        overflow: visible !important;
+        max-height: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    /* 페이지 나누기 설정 */
+    h1, h2 {
+        page-break-before: auto;
+        page-break-after: avoid;
+    }
+
+    h3, h4 {
+        page-break-after: avoid;
+    }
+
+    ul, ol, p, pre, blockquote {
+        page-break-inside: avoid;
+    }
+
+    /* 링크 URL 출력 방지 */
+    a[href]:after {
+        content: none !important;
+    }
+}
+</style>
+{% endblock %}
+
 {% block nav_links %}
 <span class="text-gray-600">{{ user.email }}</span>
 <form method="POST" action="/auth/logout" class="inline">
@@ -189,7 +418,14 @@
         <div class="flex-1 overflow-y-auto p-8 prose prose-indigo max-w-none" id="analysisContent">
             <!-- Markdown content will be rendered here -->
         </div>
-        <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end rounded-b-lg">
+        <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3 rounded-b-lg">
+            <button onclick="printAnalysisReport()"
+                class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 transition-colors flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                </svg>
+                인쇄
+            </button>
             <button onclick="closeAnalysisModal()"
                 class="bg-gray-600 text-white px-6 py-2 rounded hover:bg-gray-700 transition-colors">
                 닫기
@@ -207,100 +443,6 @@
     </div>
 </div>
 {% endblock %}
-
-<style>
-/* 분석 보고서 가독성 개선 */
-#analysisContent {
-    line-height: 1.8;
-}
-
-#analysisContent h1,
-#analysisContent h2,
-#analysisContent h3,
-#analysisContent h4 {
-    margin-top: 2rem;
-    margin-bottom: 1rem;
-    font-weight: 600;
-    color: #4F46E5;
-}
-
-#analysisContent h1 {
-    font-size: 2rem;
-    border-bottom: 2px solid #E0E7FF;
-    padding-bottom: 0.5rem;
-}
-
-#analysisContent h2 {
-    font-size: 1.5rem;
-}
-
-#analysisContent h3 {
-    font-size: 1.25rem;
-    color: #6366F1;
-}
-
-#analysisContent ul,
-#analysisContent ol {
-    margin-left: 1.5rem;
-    margin-bottom: 1rem;
-    margin-top: 0.5rem;
-}
-
-#analysisContent li {
-    margin-bottom: 0.5rem;
-    line-height: 1.6;
-}
-
-#analysisContent p {
-    margin-bottom: 1rem;
-}
-
-#analysisContent strong {
-    color: #1E40AF;
-    font-weight: 600;
-}
-
-#analysisContent hr {
-    margin: 2rem 0;
-    border-color: #E0E7FF;
-}
-
-/* 참고 자료 섹션 특별 스타일링 */
-#analysisContent h3:contains("Vector Search 참고 자료"),
-#analysisContent h3:contains("File Search 참고 문서") {
-    background-color: #EEF2FF;
-    padding: 0.5rem 1rem;
-    border-left: 4px solid #6366F1;
-    border-radius: 0.25rem;
-}
-
-/* 체크리스트 스타일 */
-#analysisContent input[type="checkbox"] {
-    margin-right: 0.5rem;
-}
-
-/* 코드 블록 스타일 */
-#analysisContent code {
-    background-color: #F3F4F6;
-    padding: 0.2rem 0.4rem;
-    border-radius: 0.25rem;
-    font-size: 0.9em;
-}
-
-#analysisContent pre {
-    background-color: #1F2937;
-    color: #F9FAFB;
-    padding: 1rem;
-    border-radius: 0.5rem;
-    overflow-x: auto;
-}
-
-#analysisContent pre code {
-    background-color: transparent;
-    color: inherit;
-    padding: 0;
-}
-</style>
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -579,6 +721,18 @@
 
     function closeAnalysisModal() {
         document.getElementById('analysisModal').classList.add('hidden');
+    }
+
+    function printAnalysisReport() {
+        // 인쇄 전 모달이 열려있는지 확인
+        const modal = document.getElementById('analysisModal');
+        if (modal.classList.contains('hidden')) {
+            alert('인쇄할 보고서가 없습니다.');
+            return;
+        }
+
+        // 인쇄 실행
+        window.print();
     }
 
     // --- Cleanup Logic ---
