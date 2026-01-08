@@ -49,6 +49,12 @@ class ChatSession(Base):
         server_default=func.now(),
         onupdate=func.now()
     )
+    user_type = Column(
+        String(50),
+        nullable=True,
+        index=True,
+        comment="사용자 유형 (1학년, 2학년, 3학년, 4학년, 현직교사)"
+    )
 
     # 관계
     user = relationship("User", back_populates="chat_sessions")

@@ -67,6 +67,37 @@ class AuthService:
 
         return new_user
 
+    async def authenticate_admin(
+        self, admin_id: str, password: str
+    ) -> Optional[User]:
+        """
+        관리자 인증 (ID + 비밀번호)
+
+        관리자 ID와 비밀번호를 검증하여 관리자 사용자를 반환합니다.
+
+        Args:
+            admin_id: 관리자 ID
+            password: 비밀번호
+
+        Returns:
+            인증된 관리자 User 객체 또는 None
+        """
+        # 1. admin_id로 사용자 검색
+        user = await self.get_user_by_username(admin_id)
+
+        # 2. 사용자가 없거나 관리자가 아닌 경우
+        if not user or not user.is_admin:
+            return None
+
+        # 3. 비밀번호 검증
+        if not user.hashed_password:
+            return None
+
+        if not self.verify_password(password, user.hashed_password):
+            return None
+
+        return user
+
     async def get_user_by_username_and_nickname(
         self, username: str, nickname: str
     ) -> Optional[User]:

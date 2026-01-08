@@ -59,7 +59,7 @@ async def create_test_users():
                 username="admin",
                 is_admin=True
             )
-            admin.set_password("adminpassword")
+            admin.set_password("admin1234")
             db.add(admin)
             await db.commit()
             print("✅ admin 생성 완료")
@@ -74,7 +74,7 @@ async def create_test_users():
     print("   - is_admin: False")
     print("\n2. 관리자")
     print("   - username: admin")
-    print("   - password: adminpassword")
+    print("   - password: admin1234")
     print("   - is_admin: True")
     print("=" * 50)
 

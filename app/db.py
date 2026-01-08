@@ -96,7 +96,7 @@ async def seed_initial_data():
                     nickname="admin",
                     email="admin@example.com",
                     hashed_password=pwd_context.hash(
-                        "admin_password"
+                        "admin1234"
                     ),
                     is_admin=True,
                 )
