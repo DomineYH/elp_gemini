@@ -14,6 +14,7 @@ from app.models.users import User
 from app.repositories.criteria_repository import (
     CriteriaRepository
 )
+from app.services.cloud_sync_validator import CloudSyncValidator
 
 router = APIRouter(
     prefix="/admin/criteria",
@@ -74,8 +75,6 @@ async def criteria_list(
             None
         )
 
-        # 동기화 필요한 평가기준 계산
-        # (active 상태이면서 synced_at이 없거나 updated_at보다 이전인 경우)
         pending_sync_criteria = [
             c for c in all_criteria
             if c.status == "active" and (
@@ -83,6 +82,15 @@ async def criteria_list(
             )
         ]
         needs_sync = len(pending_sync_criteria) > 0
+
+        cloud_sync_warning = None
+        try:
+            validator = CloudSyncValidator()
+            sync_result = await validator.validate_rubricstore_sync(db)
+            if sync_result.needs_resync:
+                cloud_sync_warning = sync_result.warning_message
+        except Exception as e:
+            logger.warning(f"클라우드 동기화 검증 실패: {e}")
 
         return templates.TemplateResponse(
             "admin/criteria_list.html",
@@ -93,6 +101,7 @@ async def criteria_list(
                 "active_criteria": active_criteria,
                 "needs_sync": needs_sync,
                 "pending_count": len(pending_sync_criteria),
+                "cloud_sync_warning": cloud_sync_warning,
             }
         )
     except Exception as e:

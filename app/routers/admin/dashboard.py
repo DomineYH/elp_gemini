@@ -4,10 +4,13 @@
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
+from app.db import get_db
 from app.dependencies import get_current_admin
 from app.models.users import User
+from app.services.cloud_sync_validator import CloudSyncValidator
 
 router = APIRouter(
     prefix="/admin",
@@ -26,6 +29,7 @@ templates = Jinja2Templates(directory="app/templates")
 async def admin_dashboard(
     request: Request,
     current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     관리자 대시보드
@@ -39,8 +43,6 @@ async def admin_dashboard(
     """
     logger.info(f"관리자 대시보드 접근: admin={current_admin.username}")
 
-    # TODO: 실제 통계 데이터 조회 로직 구현 필요
-    # 현재는 임시로 0 값으로 초기화
     metrics = {
         "total_users": 0,
         "total_documents": 0,
@@ -51,11 +53,23 @@ async def admin_dashboard(
         "evaluation_runs_last_7days": 0,
     }
 
+    sync_warning = None
+    try:
+        validator = CloudSyncValidator()
+        sync_result = await validator.validate_rubricstore_sync(db)
+        if sync_result.needs_resync:
+            sync_warning = sync_result.warning_message
+            logger.warning(f"클라우드 동기화 경고: {sync_warning}")
+    except Exception as e:
+        logger.error(f"동기화 검증 실패: {e}")
+        sync_warning = f"클라우드 연결 확인 실패: {str(e)}"
+
     return templates.TemplateResponse(
         "admin/admin_dashboard.html",
         {
             "request": request,
             "user": current_admin,
             "metrics": metrics,
+            "sync_warning": sync_warning,
         }
     )

@@ -457,7 +457,7 @@ class FileSearchService:
         self,
         query: str,
         store_name: str,
-        model: str = "gemini-2.5-flash",
+        model: str = None,
         metadata_filter: Optional[str] = None,
         temperature: float = 0.7,
     ) -> Dict[str, Any]:
@@ -467,7 +467,7 @@ class FileSearchService:
         Args:
             query: 검색 쿼리
             store_name: 스토어 이름 (예: fileSearchStores/xxxxx)
-            model: 사용할 모델 (기본: gemini-2.0-flash-exp)
+            model: 사용할 모델 (None이면 settings.GEMINI_QNA_MODEL 사용)
             metadata_filter: 메타데이터 필터 (예: 'type="criteria"')
             temperature: 생성 온도
 
@@ -477,7 +477,9 @@ class FileSearchService:
             sources_count: 참조 소스 개수
         """
         try:
-            # File Search Tool 구성
+            if model is None:
+                model = settings.GEMINI_QNA_MODEL
+            
             file_search_config = {
                 "file_search_store_names": [store_name]
             }

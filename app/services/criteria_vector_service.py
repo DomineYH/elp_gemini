@@ -189,7 +189,7 @@ class CriteriaVectorService:
     async def search_criteria(
         self,
         query: str,
-        model: str = "gemini-2.5-flash",
+        model: str = None,
         temperature: float = 0.7,
     ) -> Dict[str, Any]:
         """
@@ -197,7 +197,7 @@ class CriteriaVectorService:
 
         Args:
             query: 검색 쿼리
-            model: 사용할 모델
+            model: 사용할 모델 (None이면 settings.GEMINI_QNA_MODEL 사용)
             temperature: 생성 온도
 
         Returns:
@@ -206,7 +206,9 @@ class CriteriaVectorService:
             sources_count: 참조 소스 개수
         """
         try:
-            # Store 이름 가져오기
+            if model is None:
+                model = settings.GEMINI_QNA_MODEL
+            
             client = self.file_search_service.client
             store = None
 
