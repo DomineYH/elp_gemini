@@ -59,10 +59,11 @@ async def create_session(
     try:
         qna_service = QnAService(db)
 
-        # 세션 생성 (title에 지도안 파일명 저장)
+        # 세션 생성 (title에 지도안 파일명, user_type에 사용자 유형 저장)
         session = await qna_service.create_session(
             user_id=current_user.id,
             title=request.lessonplan_filename,
+            user_type=current_user.username,
         )
         await db.commit()
 
@@ -269,6 +270,7 @@ async def chat_with_document(
             session = await qna_service.create_session(
                 user_id=current_user.id,
                 title=document_id,
+                user_type=current_user.username,
             )
             await db.commit()
             logger.info(f"새 세션 자동 생성: {session.id} for {document_id}")

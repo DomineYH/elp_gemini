@@ -15,7 +15,7 @@ import io
 # 테스트 설정
 BASE_URL = "http://localhost:8000"
 TEST_USERNAME = "admin"
-TEST_PASSWORD = "adminpassword"
+TEST_PASSWORD = "admin1234"
 TEST_CRITERIA_CONTENT_1 = """
 # 평가기준 1
 

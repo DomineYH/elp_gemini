@@ -463,7 +463,10 @@ class QnAService:
         return history[-limit:]  # 최근 limit개만
 
     async def create_session(
-        self, user_id: int, title: Optional[str] = None
+        self,
+        user_id: int,
+        title: Optional[str] = None,
+        user_type: Optional[str] = None,
     ) -> ChatSession:
         """
         새 세션 생성
@@ -471,6 +474,7 @@ class QnAService:
         Args:
             user_id: 사용자 ID
             title: 세션 제목 (선택)
+            user_type: 사용자 유형 (1학년, 2학년, 3학년, 4학년, 현직교사)
 
         Returns:
             생성된 ChatSession
@@ -478,12 +482,14 @@ class QnAService:
         session = ChatSession(
             user_id=user_id,
             title=title,
+            user_type=user_type,
         )
         self.db.add(session)
         await self.db.flush()
 
         logger.info(
-            f"세션 생성: id={session.id}, user_id={user_id}"
+            f"세션 생성: id={session.id}, user_id={user_id}, "
+            f"user_type={user_type}"
         )
         return session
 

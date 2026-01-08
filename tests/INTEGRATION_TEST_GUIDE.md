@@ -49,7 +49,7 @@ python scripts/create_test_users.py
 
 생성될 사용자:
 - **일반 사용자**: username=`testuser`, password=`testpassword`
-- **관리자**: username=`admin`, password=`adminpassword`
+- **관리자**: username=`admin`, password=`admin1234`
 
 #### 2.2 프롬프트 파일 확인
 `prompt/prompt.md` 파일이 존재하는지 확인:

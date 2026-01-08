@@ -1,6 +1,6 @@
 """관리자 스키마"""
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 
 
@@ -57,7 +57,7 @@ class AdminUserDetailResponse(BaseModel):
 
 
 class AdminQALogResponse(BaseModel):
-    """관리자 QnA 로그 응답 모델"""
+    """관리자 QnA 로그 응답 모델 (레거시)"""
 
     id: int
     document_id: int
@@ -72,3 +72,45 @@ class AdminQALogResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ===== 새로운 세션 기반 QnA 로그 스키마 =====
+
+
+class QnAMessageItem(BaseModel):
+    """개별 메시지 아이템"""
+
+    id: int
+    role: str = Field(..., description="발화 주체 (user 또는 assistant)")
+    content: str = Field(..., description="메시지 내용")
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class QnASessionLogResponse(BaseModel):
+    """세션 단위 QnA 로그 응답"""
+
+    session_id: int
+    user_type: Optional[str] = Field(
+        None, description="사용자 유형 (1학년, 2학년, 3학년, 4학년, 현직교사)"
+    )
+    title: Optional[str] = Field(None, description="세션 제목 (지도안 파일명)")
+    messages: List[QnAMessageItem] = Field(
+        default_factory=list, description="대화 메시지 목록"
+    )
+    message_count: int = Field(..., description="메시지 수")
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class QnALogsPageResponse(BaseModel):
+    """페이징된 QnA 로그 응답"""
+
+    sessions: List[QnASessionLogResponse] = Field(
+        default_factory=list, description="세션 목록"
+    )
+    total: int = Field(..., description="전체 세션 수")
+    page: int = Field(..., description="현재 페이지")
+    page_size: int = Field(..., description="페이지 크기")
