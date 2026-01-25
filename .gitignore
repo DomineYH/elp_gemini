@@ -44,10 +44,7 @@ env/
 .env.*.local
 
 # Database
-data/
-*.db
-*.db-shm
-*.db-wal
+
 
 # Testing
 .pytest_cache/
