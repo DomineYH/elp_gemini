@@ -267,6 +267,10 @@ class LessonPlanAnalysisService:
         Returns:
             완전한 프롬프트
         """
+        # 모델 이름 플레이스홀더 치환
+        system_prompt = system_prompt.replace(
+            "{model_name}", self.model_name
+        )
         return f"""
 {system_prompt}
 

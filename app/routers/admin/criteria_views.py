@@ -15,6 +15,7 @@ from app.repositories.criteria_repository import (
     CriteriaRepository
 )
 from app.services.cloud_sync_validator import CloudSyncValidator
+from app.services.criteria_vector_service import CriteriaVectorService
 
 router = APIRouter(
     prefix="/admin/criteria",
@@ -52,6 +53,19 @@ async def criteria_list(
         criteria_repo = CriteriaRepository(db)
         all_criteria = await criteria_repo.get_all_criteria()
 
+        # 클라우드 문서 목록 조회
+        cloud_documents = []
+        cloud_error = None
+        try:
+            criteria_service = CriteriaVectorService()
+            cloud_documents = await criteria_service.list_criteria_documents()
+        except Exception as e:
+            logger.warning(f"클라우드 문서 목록 조회 실패: {e}")
+            cloud_error = str(e)
+
+        # document_id 매핑 생성 (DB ↔ 클라우드 연동 확인용)
+        cloud_doc_ids = {doc["document_id"] for doc in cloud_documents}
+
         # 템플릿에 맞게 데이터 변환
         criteria_items = {
             "documents": [
@@ -61,6 +75,11 @@ async def criteria_list(
                     "status": criteria.status,
                     "file_size": criteria.file_size,
                     "created_at": criteria.created_at,
+                    "document_id": criteria.document_id,
+                    "cloud_synced": (
+                        criteria.document_id is not None
+                        and criteria.document_id in cloud_doc_ids
+                    ),
                 }
                 for criteria in all_criteria
             ]
@@ -102,6 +121,8 @@ async def criteria_list(
                 "needs_sync": needs_sync,
                 "pending_count": len(pending_sync_criteria),
                 "cloud_sync_warning": cloud_sync_warning,
+                "cloud_documents": cloud_documents,
+                "cloud_error": cloud_error,
             }
         )
     except Exception as e:

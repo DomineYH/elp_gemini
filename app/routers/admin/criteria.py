@@ -258,7 +258,7 @@ async def delete_all_criteria(
     response_model=DeleteSingleCriteriaResponse,
     summary="평가기준 개별 삭제",
     description="특정 평가기준을 삭제합니다. "
-    "(DB에서만 삭제, Vector Store는 유지)",
+    "활성 상태인 경우 Vector Store도 동기화됩니다.",
 )
 async def delete_single_criteria(
     criteria_id: int,
@@ -267,20 +267,19 @@ async def delete_single_criteria(
 ):
     """
     개별 평가기준 삭제 (관리자 전용)
-    
+
     Note:
         Gemini File Search API 제약으로 개별 문서 삭제 불가.
-        DB 레코드만 삭제하고 Vector Store는 유지됩니다.
-        완전한 삭제를 위해서는 전체 삭제를 사용하세요.
-    
+        활성 상태 평가기준 삭제 시 Vector Store를 재동기화합니다.
+
     Args:
         criteria_id: 삭제할 평가기준 ID
         current_admin: 현재 로그인한 관리자
         db: 데이터베이스 세션
-        
+
     Returns:
         삭제 결과 정보
-        
+
     Raises:
         HTTPException: 삭제 오류
     """
@@ -301,33 +300,54 @@ async def delete_single_criteria(
                 detail="평가기준을 찾을 수 없습니다."
             )
         
+        # 활성 상태 여부 저장
+        was_active = criteria.status == "active"
+        criteria_title = criteria.title
+
         # 로컬 파일 삭제
         from app.services.file_storage_service import (
             FileStorageService
         )
         storage = FileStorageService()
         storage.delete_file(criteria.file_path)
-        
+
         # DB에서 삭제
         success = await criteria_repo.delete_criteria(criteria_id)
-        await db.commit()
-        
+
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="평가기준 삭제 실패"
             )
-        
+
+        # flush()로 DELETE를 즉시 적용 (commit 전)
+        # 이후 _sync_criteria_store의 get_active_criteria가 정확한 결과 반환
+        await db.flush()
+
+        # 활성 상태였다면 Vector Store 재동기화
+        sync_message = ""
+        if was_active:
+            try:
+                sync_count = await _sync_criteria_store(
+                    db, current_admin.username
+                )
+                sync_message = f" (Vector Store 동기화: {sync_count}개 문서)"
+            except Exception as e:
+                logger.warning(f"Vector Store 동기화 실패: {e}")
+                sync_message = " (Vector Store 동기화 실패 - 수동 동기화 필요)"
+
+        await db.commit()
+
         logger.info(
             f"평가기준 삭제 성공: "
             f"admin={current_admin.username}, "
             f"id={criteria_id}, "
-            f"title={criteria.title}"
+            f"title={criteria_title}"
         )
-        
+
         return DeleteSingleCriteriaResponse(
             success=True,
-            message=f"{criteria.title} 기준이 삭제되었습니다.",
+            message=f"{criteria_title} 기준이 삭제되었습니다.{sync_message}",
             criteria_id=criteria_id,
         )
         

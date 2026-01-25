@@ -52,10 +52,10 @@ class Settings(BaseSettings):
     # Google Gemini API
     GOOGLE_API_KEY: str = Field(..., description="Google API 키")
     GEMINI_QNA_MODEL: str = Field(
-        default="gemini-2.5-flash", description="QnA용 모델"
+        default="gemini-3-flash-preview", description="QnA용 모델"
     )
     GEMINI_EVAL_MODEL: str = Field(
-        default="gemini-2.0-flash-thinking-exp",
+        default="gemini-3-flash-preview",
         description="평가용 모델",
     )
 
