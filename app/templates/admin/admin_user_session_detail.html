@@ -2,8 +2,376 @@
 
 {% block title %}세션 상세 - 관리자{% endblock %}
 
+{% block nav_links %}
+{% if user.is_admin %}
+<a href="/admin/dashboard"
+   class="text-gray-600 hover:text-blue-600">대시보드</a>
+<a href="/admin/users"
+   class="text-blue-600 font-medium">사용자</a>
+<a href="/admin/qna-logs"
+   class="text-gray-600 hover:text-blue-600">QnA 로그</a>
+<a href="/admin/prompts"
+   class="text-gray-600 hover:text-blue-600">프롬프트</a>
+<a href="/admin/criteria"
+   class="text-gray-600 hover:text-blue-600">평가기준</a>
+{% endif %}
+<span class="text-gray-600">{{ user.username }}</span>
+<form method="POST" action="/auth/logout" class="inline">
+    <button type="submit"
+            class="text-gray-600 hover:text-red-600">
+        로그아웃
+    </button>
+</form>
+{% endblock %}
+
 {% block content %}
-<div id="session-detail" data-session-id="{{ session_id }}">
-  <h1>세션 상세</h1>
+<div class="max-w-6xl mx-auto">
+    <!-- 뒤로가기 -->
+    <a href="/admin/users"
+       class="inline-flex items-center text-sm text-blue-600
+              hover:text-blue-800 mb-4">
+        &larr; 사용자 관리로 돌아가기
+    </a>
+
+    <h1 class="text-3xl font-bold mb-6">세션 상세</h1>
+
+    <!-- 로딩 상태 -->
+    <div id="loading"
+         class="text-center py-12 text-gray-500">
+        로딩 중...
+    </div>
+
+    <!-- 에러 상태 -->
+    <div id="error" class="hidden text-center py-12">
+        <p class="text-red-500 text-lg font-medium"
+           id="errorMessage">
+            세션을 찾을 수 없습니다.
+        </p>
+        <a href="/admin/users"
+           class="mt-4 inline-block text-blue-600
+                  hover:underline">
+            사용자 관리로 돌아가기
+        </a>
+    </div>
+
+    <!-- 메인 콘텐츠 (로딩 후 표시) -->
+    <div id="content" class="hidden">
+        <!-- 세션 정보 카드 -->
+        <div class="bg-white shadow-md rounded-lg p-4 mb-6">
+            <div class="flex flex-wrap gap-6">
+                <div>
+                    <div class="text-sm text-gray-500">
+                        학년
+                    </div>
+                    <div class="font-medium mt-1"
+                         id="infoUserType">
+                    </div>
+                </div>
+                <div>
+                    <div class="text-sm text-gray-500">
+                        접속일시
+                    </div>
+                    <div class="font-medium mt-1"
+                         id="infoCreatedAt">
+                        -
+                    </div>
+                </div>
+                <div>
+                    <div class="text-sm text-gray-500">
+                        세션 ID
+                    </div>
+                    <div class="font-medium mt-1"
+                         id="infoSessionId">
+                        -
+                    </div>
+                </div>
+                <div>
+                    <div class="text-sm text-gray-500">
+                        QnA 수
+                    </div>
+                    <div class="font-medium mt-1"
+                         id="infoQnaCount">
+                        0
+                    </div>
+                </div>
+                <div>
+                    <div class="text-sm text-gray-500">
+                        보고서 수
+                    </div>
+                    <div class="font-medium mt-1"
+                         id="infoReportCount">
+                        0
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2열 레이아웃 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- QnA 대화 내역 (좌측 2열) -->
+            <div class="lg:col-span-2">
+                <h2 class="text-xl font-semibold mb-4">
+                    QnA 대화 내역
+                </h2>
+                <div id="chatMessages"
+                     class="bg-white shadow-md rounded-lg
+                            p-4 space-y-3">
+                    <p class="text-gray-500 text-center
+                              py-8">
+                        대화 내역이 없습니다
+                    </p>
+                </div>
+            </div>
+
+            <!-- 분석 보고서 (우측 1열) -->
+            <div>
+                <h2 class="text-xl font-semibold mb-4">
+                    분석 보고서
+                </h2>
+                <div id="reportList" class="space-y-3">
+                    <div class="bg-white shadow-md
+                                rounded-lg p-4">
+                        <p class="text-gray-500 text-center
+                                  py-4">
+                            보고서가 없습니다
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const sessionId = {{ session_id }};
+
+function getBadgeClass(userType) {
+    const classes = {
+        '1학년': 'bg-blue-100 text-blue-800',
+        '2학년': 'bg-green-100 text-green-800',
+        '3학년': 'bg-yellow-100 text-yellow-800',
+        '4학년': 'bg-purple-100 text-purple-800',
+        '현직교사': 'bg-red-100 text-red-800',
+    };
+    return classes[userType] || 'bg-gray-100 text-gray-800';
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    return date.toLocaleString('ko-KR', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function formatTime(dateStr) {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    return date.toLocaleString('ko-KR', {
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+async function loadSessionDetail() {
+    const loadingEl = document.getElementById('loading');
+    const errorEl = document.getElementById('error');
+    const contentEl = document.getElementById('content');
+
+    try {
+        const resp = await fetch(
+            `/admin/api/users/session/${sessionId}`
+        );
+        if (!resp.ok) {
+            loadingEl.classList.add('hidden');
+            errorEl.classList.remove('hidden');
+            if (resp.status === 404) {
+                document.getElementById(
+                    'errorMessage'
+                ).textContent =
+                    '세션을 찾을 수 없습니다.';
+            } else {
+                document.getElementById(
+                    'errorMessage'
+                ).textContent =
+                    '세션 정보를 불러올 수 없습니다.';
+            }
+            return;
+        }
+
+        const data = await resp.json();
+
+        // 세션 정보 카드
+        const userType = data.user_type || '미지정';
+        const badge = getBadgeClass(userType);
+        document.getElementById(
+            'infoUserType'
+        ).innerHTML =
+            `<span class="inline-flex items-center ` +
+            `px-2.5 py-0.5 rounded-full text-xs ` +
+            `font-medium ${badge}">${escapeHtml(userType)}</span>`;
+
+        const firstMsgDate =
+            data.messages && data.messages.length > 0
+                ? data.messages[0].created_at
+                : null;
+        document.getElementById(
+            'infoCreatedAt'
+        ).textContent = formatDate(firstMsgDate);
+
+        document.getElementById(
+            'infoSessionId'
+        ).textContent = `#${data.session_id}`;
+
+        const qnaCount = data.messages
+            ? data.messages.filter(
+                  m => m.role === 'user'
+              ).length
+            : 0;
+        document.getElementById(
+            'infoQnaCount'
+        ).textContent = qnaCount;
+
+        document.getElementById(
+            'infoReportCount'
+        ).textContent =
+            data.reports ? data.reports.length : 0;
+
+        // QnA 대화 내역
+        renderMessages(data.messages || []);
+
+        // 분석 보고서
+        renderReports(data.reports || []);
+
+        loadingEl.classList.add('hidden');
+        contentEl.classList.remove('hidden');
+    } catch (err) {
+        console.error('세션 상세 로드 실패:', err);
+        loadingEl.classList.add('hidden');
+        errorEl.classList.remove('hidden');
+        document.getElementById(
+            'errorMessage'
+        ).textContent =
+            '세션 정보를 불러올 수 없습니다.';
+    }
+}
+
+function renderMessages(messages) {
+    const container = document.getElementById(
+        'chatMessages'
+    );
+
+    if (!messages || messages.length === 0) {
+        container.innerHTML =
+            '<p class="text-gray-500 text-center py-8">' +
+            '대화 내역이 없습니다</p>';
+        return;
+    }
+
+    container.innerHTML = messages.map(msg => {
+        const isUser = msg.role === 'user';
+        const modelInfo =
+            !isUser && msg.model_name
+                ? `<span class="text-xs text-gray-400 ` +
+                  `block mt-1">${escapeHtml(msg.model_name)}</span>`
+                : '';
+
+        return `
+            <div class="flex gap-3 ${isUser ? '' : 'flex-row-reverse'}">
+                <div class="flex-shrink-0">
+                    <span class="inline-flex items-center
+                                 justify-center w-8 h-8
+                                 rounded-full
+                                 ${isUser
+                                     ? 'bg-blue-100 text-blue-600'
+                                     : 'bg-green-100 text-green-600'}">
+                        ${isUser ? '사용자' : 'AI'}
+                    </span>
+                </div>
+                <div class="flex-1 ${isUser ? 'text-left' : 'text-right'}">
+                    <div class="inline-block max-w-[80%]
+                                ${isUser
+                                    ? 'bg-blue-50 border-blue-200'
+                                    : 'bg-green-50 border-green-200'}
+                                border rounded-lg p-3">
+                        <p class="text-sm text-gray-800
+                                  whitespace-pre-wrap">${escapeHtml(msg.content)}</p>
+                        <span class="text-xs text-gray-400
+                                     mt-1 block">
+                            ${formatTime(msg.created_at)}
+                        </span>
+                        ${modelInfo}
+                    </div>
+                </div>
+            </div>`;
+    }).join('');
+}
+
+function renderReports(reports) {
+    const container = document.getElementById(
+        'reportList'
+    );
+
+    if (!reports || reports.length === 0) {
+        container.innerHTML =
+            '<div class="bg-white shadow-md rounded-lg p-4">' +
+            '<p class="text-gray-500 text-center py-4">' +
+            '보고서가 없습니다</p></div>';
+        return;
+    }
+
+    container.innerHTML = reports.map(r => {
+        const filename = r.filename || '보고서';
+        const truncName =
+            filename.length > 30
+                ? filename.substring(0, 27) + '...'
+                : filename;
+        const latency =
+            r.latency_ms != null
+                ? (r.latency_ms / 1000).toFixed(1) + '초'
+                : '-';
+        const reportUrl =
+            r.report_path
+                ? `/static/${r.report_path}`
+                : '#';
+
+        return `
+            <div class="bg-white shadow-md rounded-lg
+                        p-4">
+                <div class="text-sm font-medium
+                            text-gray-900 truncate"
+                     title="${escapeHtml(filename)}">
+                    ${escapeHtml(truncName)}
+                </div>
+                <div class="text-xs text-gray-500 mt-1">
+                    ${formatDate(r.created_at)}
+                </div>
+                <div class="text-xs text-gray-500 mt-1">
+                    소요시간: ${latency}
+                </div>
+                <a href="${reportUrl}"
+                   target="_blank"
+                   class="inline-block mt-2 text-sm
+                          text-blue-600 hover:underline">
+                    보고서 보기
+                </a>
+            </div>`;
+    }).join('');
+}
+
+loadSessionDetail();
+</script>
 {% endblock %}
