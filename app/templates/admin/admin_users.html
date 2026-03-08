@@ -8,8 +8,9 @@
 <a href="/admin/users" class="text-blue-600 font-medium">사용자</a>
 <a href="/admin/qna-logs" class="text-gray-600 hover:text-blue-600">QnA 로그</a>
 <a href="/admin/prompts" class="text-gray-600 hover:text-blue-600">프롬프트</a>
+<a href="/admin/criteria" class="text-gray-600 hover:text-blue-600">평가기준</a>
 {% endif %}
-<span class="text-gray-600">{{ user.email }}</span>
+<span class="text-gray-600">{{ user.username }}</span>
 <form method="POST" action="/auth/logout" class="inline">
     <button type="submit" class="text-gray-600 hover:text-red-600">로그아웃</button>
 </form>
@@ -19,39 +20,265 @@
 <div class="max-w-6xl mx-auto">
     <h1 class="text-3xl font-bold mb-6">사용자 관리</h1>
 
+    <!-- 통계 카드 -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white shadow-md rounded-lg p-4">
+            <div class="text-sm font-medium text-blue-600">총 세션 수</div>
+            <div id="stat-sessions" class="text-2xl font-bold text-blue-800 mt-1">-</div>
+        </div>
+        <div class="bg-white shadow-md rounded-lg p-4">
+            <div class="text-sm font-medium text-green-600">총 QnA 질문 수</div>
+            <div id="stat-qna" class="text-2xl font-bold text-green-800 mt-1">-</div>
+        </div>
+        <div class="bg-white shadow-md rounded-lg p-4">
+            <div class="text-sm font-medium text-purple-600">총 분석 보고서</div>
+            <div id="stat-reports" class="text-2xl font-bold text-purple-800 mt-1">-</div>
+        </div>
+        <div class="bg-white shadow-md rounded-lg p-4">
+            <div class="text-sm font-medium text-orange-600">오늘 접속</div>
+            <div id="stat-today" class="text-2xl font-bold text-orange-800 mt-1">-</div>
+        </div>
+    </div>
+
+    <!-- 학년별 통계 테이블 -->
+    <div class="bg-white shadow-md rounded-lg overflow-hidden mb-6">
+        <table class="w-full">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">학년</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">세션 수</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">QnA 수</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">보고서 수</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">오늘</th>
+                </tr>
+            </thead>
+            <tbody id="statsBody" class="divide-y divide-gray-200">
+                <tr><td colspan="5" class="px-6 py-4 text-sm text-gray-500 text-center">로딩 중...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 필터 영역 -->
+    <div class="bg-white shadow-md rounded-lg p-4 mb-6">
+        <div class="flex items-center gap-4">
+            <label for="userTypeFilter" class="text-sm font-medium text-gray-700">사용자 유형:</label>
+            <select id="userTypeFilter" class="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">전체</option>
+                <option value="1학년">1학년</option>
+                <option value="2학년">2학년</option>
+                <option value="3학년">3학년</option>
+                <option value="4학년">4학년</option>
+                <option value="현직교사">현직교사</option>
+            </select>
+            <button onclick="loadSessions(1)" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
+                필터 적용
+            </button>
+        </div>
+    </div>
+
+    <!-- 세션 목록 테이블 -->
     <div class="bg-white shadow-md rounded-lg overflow-hidden">
         <table class="w-full">
             <thead class="bg-gray-50">
                 <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">이메일</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">관리자</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">문서 수</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">QnA 수</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">가입일</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">학년</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">접속일시</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">세션ID</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">QnA</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">보고서</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">마지막 활동</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">상태</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">작업</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-gray-200">
-                {% for u in users %}
-                <tr>
-                    <td class="px-6 py-4 text-sm">{{ u.email }}</td>
-                    <td class="px-6 py-4 text-sm">
-                        {% if u.is_admin %}
-                        <span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">관리자</span>
-                        {% else %}
-                        <span class="text-gray-500">일반</span>
-                        {% endif %}
-                    </td>
-                    <td class="px-6 py-4 text-sm">{{ u.document_count }}</td>
-                    <td class="px-6 py-4 text-sm">{{ u.qna_count }}</td>
-                    <td class="px-6 py-4 text-sm text-gray-500">{{ u.created_at.strftime('%Y-%m-%d') }}</td>
-                    <td class="px-6 py-4 text-sm">
-                        <a href="/admin/users/{{ u.id }}" class="text-blue-600 hover:underline">상세보기</a>
-                    </td>
-                </tr>
-                {% endfor %}
+            <tbody id="sessionBody" class="divide-y divide-gray-200">
+                <tr><td colspan="8" class="px-6 py-4 text-sm text-gray-500 text-center">로딩 중...</td></tr>
             </tbody>
         </table>
     </div>
+
+    <!-- 페이지네이션 -->
+    <div id="pagination" class="mt-6 flex justify-center items-center gap-2"></div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPage = 1;
+let totalPages = 1;
+const pageSize = 20;
+
+function getBadgeClass(userType) {
+    const classes = {
+        '1학년': 'bg-blue-100 text-blue-800',
+        '2학년': 'bg-green-100 text-green-800',
+        '3학년': 'bg-yellow-100 text-yellow-800',
+        '4학년': 'bg-purple-100 text-purple-800',
+        '현직교사': 'bg-red-100 text-red-800',
+    };
+    return classes[userType] || 'bg-gray-100 text-gray-800';
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    return date.toLocaleString('ko-KR', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+async function loadStats() {
+    try {
+        const response = await fetch('/admin/api/users/stats');
+        const data = await response.json();
+
+        document.getElementById('stat-sessions').textContent =
+            data.totals.session_count.toLocaleString();
+        document.getElementById('stat-qna').textContent =
+            data.totals.qna_count.toLocaleString();
+        document.getElementById('stat-reports').textContent =
+            data.totals.report_count.toLocaleString();
+        document.getElementById('stat-today').textContent =
+            data.totals.today_count.toLocaleString();
+
+        const tbody = document.getElementById('statsBody');
+        if (!data.stats || data.stats.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-sm text-gray-500 text-center">데이터 없음</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.stats.map(s => `
+            <tr>
+                <td class="px-6 py-4 text-sm">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getBadgeClass(s.user_type)}">
+                        ${s.user_type}
+                    </span>
+                </td>
+                <td class="px-6 py-4 text-sm">${s.session_count}</td>
+                <td class="px-6 py-4 text-sm">${s.qna_count}</td>
+                <td class="px-6 py-4 text-sm">${s.report_count}</td>
+                <td class="px-6 py-4 text-sm">${s.today_count}</td>
+            </tr>
+        `).join('');
+    } catch (error) {
+        console.error('통계 로드 실패:', error);
+    }
+}
+
+async function loadSessions(page = 1) {
+    currentPage = page;
+    const userType = document.getElementById('userTypeFilter').value;
+
+    try {
+        let url = `/admin/api/users/sessions?page=${page}&page_size=${pageSize}`;
+        if (userType) {
+            url += `&user_type=${encodeURIComponent(userType)}`;
+        }
+
+        const response = await fetch(url);
+        const data = await response.json();
+        const tbody = document.getElementById('sessionBody');
+
+        if (!data.sessions || data.sessions.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="px-6 py-4 text-sm text-gray-500 text-center">세션이 없습니다</td></tr>';
+            document.getElementById('pagination').innerHTML = '';
+            return;
+        }
+
+        tbody.innerHTML = data.sessions.map(s => `
+            <tr class="hover:bg-gray-50">
+                <td class="px-6 py-4 text-sm">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getBadgeClass(s.user_type)}">
+                        ${s.user_type || '미지정'}
+                    </span>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-500">${formatDate(s.created_at)}</td>
+                <td class="px-6 py-4 text-sm font-mono text-gray-600">${s.session_id}</td>
+                <td class="px-6 py-4 text-sm">${s.qna_count}</td>
+                <td class="px-6 py-4 text-sm">${s.report_count}</td>
+                <td class="px-6 py-4 text-sm text-gray-500">${formatDate(s.last_activity)}</td>
+                <td class="px-6 py-4 text-sm">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${s.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
+                        ${s.status === 'active' ? '활성' : '비활성'}
+                    </span>
+                </td>
+                <td class="px-6 py-4 text-sm">
+                    <a href="/admin/users/session/${s.session_id}" class="text-blue-600 hover:underline">상세보기</a>
+                </td>
+            </tr>
+        `).join('');
+
+        totalPages = Math.ceil(data.total / pageSize);
+        updatePagination(data.total);
+    } catch (error) {
+        console.error('세션 목록 로드 실패:', error);
+        document.getElementById('sessionBody').innerHTML =
+            '<tr><td colspan="8" class="px-6 py-4 text-sm text-red-500 text-center">세션 목록을 불러올 수 없습니다</td></tr>';
+    }
+}
+
+function updatePagination(total) {
+    const pagination = document.getElementById('pagination');
+
+    if (totalPages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+
+    html += `
+        <button onclick="loadSessions(${currentPage - 1})"
+                ${currentPage === 1 ? 'disabled' : ''}
+                class="px-3 py-1 rounded ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}">
+            이전
+        </button>
+    `;
+
+    const startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, currentPage + 2);
+
+    if (startPage > 1) {
+        html += `<button onclick="loadSessions(1)" class="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-700">1</button>`;
+        if (startPage > 2) {
+            html += `<span class="px-2 text-gray-500">...</span>`;
+        }
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        html += `
+            <button onclick="loadSessions(${i})"
+                    class="px-3 py-1 rounded ${i === currentPage ? 'bg-blue-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}">
+                ${i}
+            </button>
+        `;
+    }
+
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            html += `<span class="px-2 text-gray-500">...</span>`;
+        }
+        html += `<button onclick="loadSessions(${totalPages})" class="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-700">${totalPages}</button>`;
+    }
+
+    html += `
+        <button onclick="loadSessions(${currentPage + 1})"
+                ${currentPage === totalPages ? 'disabled' : ''}
+                class="px-3 py-1 rounded ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}">
+            다음
+        </button>
+    `;
+
+    html += `<span class="ml-4 text-sm text-gray-500">총 ${total}개 세션</span>`;
+
+    pagination.innerHTML = html;
+}
+
+loadStats();
+loadSessions(1);
+</script>
 {% endblock %}
