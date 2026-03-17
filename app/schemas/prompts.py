@@ -22,5 +22,26 @@ class SystemPromptResponse(BaseModel):
 class SystemPromptCreateRequest(BaseModel):
     """시스템 프롬프트 생성 요청 모델"""
 
-    type: str = Field(..., description="프롬프트 타입 (qna, evaluation)")
-    content: str = Field(..., min_length=10, description="프롬프트 내용")
+    type: str = Field(
+        ...,
+        pattern=r"^[a-zA-Z0-9_]+$",
+        max_length=50,
+        description="프롬프트 타입 (영문, 숫자, 밑줄만)",
+    )
+    content: str = Field(
+        ...,
+        min_length=10,
+        max_length=50000,
+        description="프롬프트 내용",
+    )
+
+
+class SystemPromptUpdateRequest(BaseModel):
+    """시스템 프롬프트 수정 요청 모델"""
+
+    content: str = Field(
+        ...,
+        min_length=10,
+        max_length=50000,
+        description="프롬프트 내용",
+    )

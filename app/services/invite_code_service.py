@@ -4,6 +4,7 @@ import string
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -35,27 +36,23 @@ class InviteCodeService:
         for _ in range(count):
             for _retry in range(10):
                 code = self._generate_code()
-                existing = await self.db.execute(
-                    select(InviteCode).where(
-                        InviteCode.code == code
-                    )
+                invite = InviteCode(
+                    code=code,
+                    user_type=user_type,
+                    created_by=admin_id,
                 )
-                if not existing.scalar_one_or_none():
+                self.db.add(invite)
+                try:
+                    await self.db.flush()
                     break
+                except IntegrityError:
+                    await self.db.rollback()
             else:
                 raise ValueError(
                     "코드 생성 실패: 중복"
                 )
-
-            invite = InviteCode(
-                code=code,
-                user_type=user_type,
-                created_by=admin_id,
-            )
-            self.db.add(invite)
             codes.append(invite)
 
-        await self.db.flush()
         for c in codes:
             await self.db.refresh(c)
         return codes

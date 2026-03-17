@@ -22,56 +22,43 @@
         <button onclick="openCreateModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">+ 새 프롬프트</button>
     </div>
 
-    <div class="space-y-6">
-        <!-- QnA 프롬프트 -->
-        <div class="bg-white shadow-md rounded-lg p-6">
-            <h2 class="text-xl font-semibold mb-4">QnA 프롬프트</h2>
+    <div class="bg-white shadow-md rounded-lg p-6">
+        {% if prompts %}
+        <div class="space-y-3">
             {% for prompt in prompts %}
-                {% if prompt.type == 'qna' %}
-                <div class="border rounded-lg p-4 mb-3 {% if prompt.is_active %}bg-green-50 border-green-300{% endif %}">
-                    <div class="flex justify-between items-start">
-                        <div class="flex-1">
+            <div class="border rounded-lg p-4 {% if prompt.is_active %}bg-green-50 border-green-300{% endif %}">
+                <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                        <div class="flex items-center space-x-2 mb-1">
                             <p class="font-medium">버전 {{ prompt.version }}</p>
-                            <p class="text-sm text-gray-600 mt-2">{{ prompt.content[:200] }}{% if prompt.content|length > 200 %}...{% endif %}</p>
-                            <p class="text-xs text-gray-500 mt-2">생성: {{ prompt.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
-                        </div>
-                        <div class="ml-4">
-                            {% if prompt.is_active %}
-                            <span class="px-3 py-1 bg-green-100 text-green-800 rounded text-sm">활성</span>
+                            {% if prompt.type == 'qna' %}
+                            <span class="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs font-medium">QnA</span>
+                            {% elif prompt.type == 'evaluation' %}
+                            <span class="px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs font-medium">평가</span>
+                            {% elif prompt.type == 'lesson_analysis' %}
+                            <span class="px-2 py-0.5 bg-purple-100 text-purple-800 rounded text-xs font-medium">수업분석</span>
                             {% else %}
-                            <button onclick="activatePrompt({{ prompt.id }})" class="px-3 py-1 bg-gray-100 text-gray-700 rounded text-sm hover:bg-gray-200">활성화</button>
+                            <span class="px-2 py-0.5 bg-gray-100 text-gray-800 rounded text-xs font-medium">{{ prompt.type }}</span>
                             {% endif %}
                         </div>
+                        <p class="text-sm text-gray-600 mt-2">{{ prompt.content[:200] }}{% if prompt.content|length > 200 %}...{% endif %}</p>
+                        <p class="text-xs text-gray-500 mt-2">생성: {{ prompt.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                    </div>
+                    <div class="ml-4 flex items-center space-x-2">
+                        {% if prompt.is_active %}
+                        <span class="px-3 py-1 bg-green-100 text-green-800 rounded text-sm">활성</span>
+                        {% endif %}
+                        <button data-type="{{ prompt.type }}" data-content-id="prompt-content-{{ prompt.id }}" class="edit-btn px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200">수정</button>
+                        <button data-type="{{ prompt.type }}" class="delete-btn px-3 py-1 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200">삭제</button>
                     </div>
                 </div>
-                {% endif %}
+                <pre id="prompt-content-{{ prompt.id }}" class="hidden">{{ prompt.content }}</pre>
+            </div>
             {% endfor %}
         </div>
-
-        <!-- 평가 프롬프트 -->
-        <div class="bg-white shadow-md rounded-lg p-6">
-            <h2 class="text-xl font-semibold mb-4">평가 프롬프트</h2>
-            {% for prompt in prompts %}
-                {% if prompt.type == 'evaluation' %}
-                <div class="border rounded-lg p-4 mb-3 {% if prompt.is_active %}bg-green-50 border-green-300{% endif %}">
-                    <div class="flex justify-between items-start">
-                        <div class="flex-1">
-                            <p class="font-medium">버전 {{ prompt.version }}</p>
-                            <p class="text-sm text-gray-600 mt-2">{{ prompt.content[:200] }}{% if prompt.content|length > 200 %}...{% endif %}</p>
-                            <p class="text-xs text-gray-500 mt-2">생성: {{ prompt.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
-                        </div>
-                        <div class="ml-4">
-                            {% if prompt.is_active %}
-                            <span class="px-3 py-1 bg-green-100 text-green-800 rounded text-sm">활성</span>
-                            {% else %}
-                            <button onclick="activatePrompt({{ prompt.id }})" class="px-3 py-1 bg-gray-100 text-gray-700 rounded text-sm hover:bg-gray-200">활성화</button>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-                {% endif %}
-            {% endfor %}
-        </div>
+        {% else %}
+        <p class="text-gray-500 text-center py-8">등록된 프롬프트가 없습니다.</p>
+        {% endif %}
     </div>
 </div>
 
@@ -82,10 +69,7 @@
         <form id="createForm">
             <div class="mb-4">
                 <label class="block text-sm font-medium mb-1">타입</label>
-                <select id="promptType" class="w-full px-3 py-2 border rounded-md">
-                    <option value="qna">QnA</option>
-                    <option value="evaluation">평가</option>
-                </select>
+                <input type="text" id="promptType" class="w-full px-3 py-2 border rounded-md" placeholder="예: qna, evaluation, custom_type" required>
             </div>
             <div class="mb-4">
                 <label class="block text-sm font-medium mb-1">프롬프트 내용</label>
@@ -94,6 +78,28 @@
             <div class="flex justify-end space-x-2">
                 <button type="button" onclick="closeCreateModal()" class="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">취소</button>
                 <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">생성</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 수정 모달 -->
+<div id="editModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 w-full max-w-2xl">
+        <h2 class="text-2xl font-bold mb-4">프롬프트 수정</h2>
+        <form id="editForm">
+            <input type="hidden" id="editPromptType">
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-1">타입</label>
+                <p id="editTypeDisplay" class="px-3 py-2 bg-gray-100 rounded-md"></p>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-1">프롬프트 내용</label>
+                <textarea id="editPromptContent" rows="12" class="w-full px-3 py-2 border rounded-md font-mono text-sm"></textarea>
+            </div>
+            <div class="flex justify-end space-x-2">
+                <button type="button" onclick="closeEditModal()" class="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">취소</button>
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">저장</button>
             </div>
         </form>
     </div>
@@ -133,20 +139,62 @@ document.getElementById('createForm').addEventListener('submit', async (e) => {
     }
 });
 
-async function activatePrompt(promptId) {
-    if (!confirm('이 프롬프트를 활성화하시겠습니까?')) return;
+function openEditModal(type, contentId) {
+    document.getElementById('editPromptType').value = type;
+    document.getElementById('editTypeDisplay').textContent = type;
+    document.getElementById('editPromptContent').value =
+        document.getElementById(contentId).textContent;
+    document.getElementById('editModal').classList.remove('hidden');
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').classList.add('hidden');
+    document.getElementById('editForm').reset();
+}
+
+document.querySelectorAll('.edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        openEditModal(btn.dataset.type, btn.dataset.contentId);
+    });
+});
+
+document.querySelectorAll('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        deletePrompt(btn.dataset.type);
+    });
+});
+
+document.getElementById('editForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const type = document.getElementById('editPromptType').value;
+    const content = document.getElementById('editPromptContent').value;
 
     try {
-        const response = await fetch(`/admin/api/prompts/${promptId}/activate`, {
-            method: 'POST'
+        const response = await fetch(`/admin/api/prompts/${encodeURIComponent(type)}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({content})
         });
-
-        if (!response.ok) throw new Error('활성화 실패');
-
-        alert('프롬프트가 활성화되었습니다');
+        if (!response.ok) throw new Error('수정 실패');
+        alert('프롬프트가 수정되었습니다');
         window.location.reload();
     } catch (error) {
-        alert('프롬프트 활성화 중 오류가 발생했습니다');
+        alert('프롬프트 수정 중 오류가 발생했습니다');
+    }
+});
+
+async function deletePrompt(type) {
+    if (!confirm(`'${type}' 프롬프트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) return;
+
+    try {
+        const response = await fetch(`/admin/api/prompts/${encodeURIComponent(type)}`, {
+            method: 'DELETE'
+        });
+        if (!response.ok) throw new Error('삭제 실패');
+        alert('프롬프트가 삭제되었습니다');
+        window.location.reload();
+    } catch (error) {
+        alert('프롬프트 삭제 중 오류가 발생했습니다');
     }
 }
 </script>

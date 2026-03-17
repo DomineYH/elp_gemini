@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from datetime import datetime
 import logging
 
+from app.constants import USER_TYPES
 from app.db import get_db
 from app.dependencies import get_current_admin
 from app.models.users import User
@@ -25,9 +26,6 @@ from app.models.analysis_reports import AnalysisReport
 router = APIRouter(tags=["관리자-사용자관리"])
 templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
-USER_TYPES = [
-    "1학년", "2학년", "3학년", "4학년", "현직교사",
-]
 
 
 def _role_str(role):

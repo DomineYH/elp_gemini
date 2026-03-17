@@ -3,6 +3,7 @@
 prompt/prompt.md 파일에서 프롬프트 로드 및 캐싱
 """
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Optional, Dict, List
@@ -60,24 +61,24 @@ class PromptLoaderService:
             프롬프트 타입별 딕셔너리
         """
         prompts = {}
+        pattern = r"\n---\s*\n+## (\S+)\s*\n"
+        matches = list(re.finditer(pattern, content))
 
-        # ## {prompt_type} 패턴으로 섹션 분리
-        sections = re.split(r"\n## ", content)
+        for i, match in enumerate(matches):
+            prompt_type = match.group(1).strip()
+            start = match.end()
 
-        for section in sections:
-            if not section.strip():
-                continue
+            if i + 1 < len(matches):
+                end = matches[i + 1].start()
+            else:
+                end = len(content)
 
-            # 첫 번째 줄이 프롬프트 타입
-            lines = section.split("\n")
-            if len(lines) < 2:
-                continue
+            prompt_content = content[start:end].strip()
 
-            prompt_type = lines[0].strip()
-            prompt_content = "\n".join(lines[1:]).strip()
-
-            # --- 구분선 제거
-            prompt_content = prompt_content.split("\n---")[0].strip()
+            if prompt_content.endswith("\n---"):
+                prompt_content = prompt_content[:-4].strip()
+            elif prompt_content.endswith("---"):
+                prompt_content = prompt_content[:-3].strip()
 
             if prompt_type and prompt_content:
                 prompts[prompt_type] = prompt_content
@@ -157,3 +158,117 @@ class PromptLoaderService:
             "total_prompts": len(self._cache),
             "total_chars": total_chars,
         }
+
+    def _save_prompts(self) -> None:
+        """캐시 내용을 마크다운 파일로 저장"""
+        lines = [
+            "# 시스템 프롬프트",
+            "",
+            "이 파일은 시스템에서 사용하는 프롬프트를 정의합니다.",
+            "",
+            "---",
+        ]
+
+        for prompt_type, content in self._cache.items():
+            lines.append("")
+            lines.append(f"## {prompt_type}")
+            lines.append("")
+            lines.append(content)
+            lines.append("")
+            lines.append("---")
+
+        output = "\n".join(lines) + "\n"
+
+        self.prompt_file.parent.mkdir(
+            parents=True, exist_ok=True
+        )
+        tmp_path = self.prompt_file.with_suffix(".tmp")
+        with open(
+            tmp_path, "w", encoding="utf-8"
+        ) as f:
+            f.write(output)
+        os.replace(
+            str(tmp_path), str(self.prompt_file)
+        )
+
+        logger.info(
+            f"프롬프트 저장 완료: {len(self._cache)}개"
+        )
+
+    def create_prompt(
+        self, prompt_type: str, content: str
+    ) -> None:
+        """
+        새 프롬프트 생성
+
+        Args:
+            prompt_type: 프롬프트 타입
+            content: 프롬프트 내용
+
+        Raises:
+            ValueError: 이미 존재하는 타입인 경우
+        """
+        if prompt_type in self._cache:
+            raise ValueError(
+                f"이미 존재하는 프롬프트: {prompt_type}"
+            )
+
+        old_cache = dict(self._cache)
+        self._cache[prompt_type] = content
+        try:
+            self._save_prompts()
+        except Exception:
+            self._cache = old_cache
+            raise
+        logger.info(f"프롬프트 생성: {prompt_type}")
+
+    def update_prompt(
+        self, prompt_type: str, content: str
+    ) -> None:
+        """
+        기존 프롬프트 수정
+
+        Args:
+            prompt_type: 프롬프트 타입
+            content: 새 프롬프트 내용
+
+        Raises:
+            ValueError: 존재하지 않는 타입인 경우
+        """
+        if prompt_type not in self._cache:
+            raise ValueError(
+                f"존재하지 않는 프롬프트: {prompt_type}"
+            )
+
+        old_cache = dict(self._cache)
+        self._cache[prompt_type] = content
+        try:
+            self._save_prompts()
+        except Exception:
+            self._cache = old_cache
+            raise
+        logger.info(f"프롬프트 수정: {prompt_type}")
+
+    def delete_prompt(self, prompt_type: str) -> None:
+        """
+        프롬프트 삭제
+
+        Args:
+            prompt_type: 프롬프트 타입
+
+        Raises:
+            ValueError: 존재하지 않는 타입인 경우
+        """
+        if prompt_type not in self._cache:
+            raise ValueError(
+                f"존재하지 않는 프롬프트: {prompt_type}"
+            )
+
+        old_cache = dict(self._cache)
+        del self._cache[prompt_type]
+        try:
+            self._save_prompts()
+        except Exception:
+            self._cache = old_cache
+            raise
+        logger.info(f"프롬프트 삭제: {prompt_type}")

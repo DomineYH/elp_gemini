@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
+from app.constants import USER_TYPES
 from app.db import get_db
 from app.models.users import User
 from app.schemas.users import UserResponse, UserLogin
@@ -65,9 +66,7 @@ async def login_user(
     Returns:
         리다이렉트 응답
     """
-    # 유효한 사용자 유형 검증
-    valid_types = ["1학년", "2학년", "3학년", "4학년", "현직교사"]
-    if user_type not in valid_types:
+    if user_type not in USER_TYPES:
         return templates.TemplateResponse(
             "user/login.html",
             {
@@ -101,9 +100,10 @@ async def login_user(
             username=user.username,
             success=True,
         )
+        masked = invite_code[:2] + "****"
         logger.info(
             f"사용자 로그인 성공: "
-            f"user_id={user.id}, code={invite_code}"
+            f"user_id={user.id}, code={masked}"
         )
 
         return RedirectResponse(

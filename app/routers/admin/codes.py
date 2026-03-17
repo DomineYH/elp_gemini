@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
+from app.constants import USER_TYPES
 from app.db import get_db
 from app.dependencies import get_current_admin
 from app.models.users import User
@@ -36,10 +37,7 @@ async def generate_codes(
     db: AsyncSession = Depends(get_db),
 ):
     """코드 일괄 생성"""
-    valid_types = [
-        "1학년", "2학년", "3학년", "4학년", "현직교사"
-    ]
-    if body.user_type not in valid_types:
+    if body.user_type not in USER_TYPES:
         raise HTTPException(400, "유효하지 않은 사용자 유형")
 
     service = InviteCodeService(db)
