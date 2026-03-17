@@ -47,17 +47,19 @@ async def login_page(request: Request):
 async def login_user(
     request: Request,
     user_type: str = Form(...),
+    invite_code: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    사용자 로그인 (드롭다운 선택 기반)
+    사용자 로그인 (드롭다운 선택 + 초대 코드 기반)
 
-    사용자 유형(1학년, 2학년, 3학년, 4학년, 현직교사)을 선택하여 로그인합니다.
-    선택한 유형을 username과 nickname으로 사용합니다.
+    사용자 유형(1학년, 2학년, 3학년, 4학년, 현직교사)과
+    초대 코드를 사용하여 로그인합니다.
 
     Args:
         request: Request 객체
         user_type: 사용자 유형 (1학년, 2학년, 3학년, 4학년, 현직교사)
+        invite_code: 초대 코드
         db: 데이터베이스 세션
 
     Returns:
@@ -78,8 +80,9 @@ async def login_user(
 
     try:
         auth_service = AuthService(db)
-        # user_type을 username과 nickname으로 사용
-        user = await auth_service.authenticate_user(user_type, user_type)
+        user = await auth_service.authenticate_user_with_code(
+            user_type, invite_code
+        )
 
         # 세션 고정 공격 방지: 기존 세션 클리어
         request.session.clear()
@@ -89,6 +92,7 @@ async def login_user(
         request.session["is_admin"] = user.is_admin
         request.session["username"] = user.username
         request.session["nickname"] = user.nickname
+        request.session["invite_code"] = invite_code.upper()
 
         # 로그인 성공 로깅
         log_auth_event(
@@ -99,13 +103,23 @@ async def login_user(
         )
         logger.info(
             f"사용자 로그인 성공: "
-            f"user_id={user.id}, user_type={user_type}"
+            f"user_id={user.id}, code={invite_code}"
         )
 
         return RedirectResponse(
             url="/", status_code=status.HTTP_302_FOUND
         )
 
+    except ValueError as e:
+        return templates.TemplateResponse(
+            "user/login.html",
+            {
+                "request": request,
+                "error": str(e),
+                "active_tab": "user",
+            },
+            status_code=400,
+        )
     except Exception as e:
         log_auth_event(
             "login",

@@ -221,3 +221,52 @@ class AuthService:
             검증 결과 (True/False)
         """
         return pwd_context.verify(plain_password, hashed_password)
+
+    async def authenticate_user_with_code(
+        self, user_type: str, code: str
+    ) -> User:
+        """
+        초대 코드 기반 사용자 인증
+
+        Args:
+            user_type: 사용자 유형 (1학년 등)
+            code: 초대 코드
+
+        Returns:
+            인증된 User 객체
+
+        Raises:
+            ValueError: 유효하지 않은 코드
+        """
+        from app.services.invite_code_service import (
+            InviteCodeService,
+        )
+
+        invite_service = InviteCodeService(self.db)
+        invite = await invite_service.validate_code(
+            code, user_type
+        )
+        if not invite:
+            raise ValueError(
+                "유효하지 않은 초대 코드입니다."
+            )
+
+        # 이미 사용된 코드 → 기존 사용자 반환
+        if invite.user_id:
+            user = await self.get_user_by_id(
+                invite.user_id
+            )
+            if user:
+                return user
+
+        # 새 사용자 생성 (username=코드, nickname=유형)
+        user_data = UserCreate(
+            username=code.upper(),
+            nickname=user_type,
+        )
+        new_user = await self.create_user(user_data)
+        await invite_service.use_code(
+            code, new_user.id
+        )
+        await self.db.commit()
+        return new_user
