@@ -211,9 +211,14 @@ class InviteCodeService:
         return invite
 
     async def delete_code(
-        self, code_id: int
+        self, code_id: int, force: bool = False
     ) -> None:
-        """코드 영구 삭제 (미사용 코드만, atomic)"""
+        """코드 영구 삭제
+
+        Args:
+            code_id: 삭제할 코드 ID
+            force: True면 사용중 코드도 삭제
+        """
         result = await self.db.execute(
             select(InviteCode).where(
                 InviteCode.id == code_id
@@ -224,19 +229,25 @@ class InviteCodeService:
             raise CodeNotFoundError(
                 "코드를 찾을 수 없습니다"
             )
-        if invite.user_id is not None:
+        if invite.user_id is not None and not force:
             raise CodeInUseError(
                 "사용된 코드는 삭제할 수 없습니다"
             )
 
-        # Atomic delete: 조건부 삭제로 race condition 방지
-        del_result = await self.db.execute(
-            delete(InviteCode).where(
-                InviteCode.id == code_id,
-                InviteCode.user_id.is_(None),
+        # Atomic delete
+        conditions = [InviteCode.id == code_id]
+        if not force:
+            conditions.append(
+                InviteCode.user_id.is_(None)
             )
+        del_result = await self.db.execute(
+            delete(InviteCode).where(*conditions)
         )
         if del_result.rowcount == 0:
+            if force:
+                raise CodeNotFoundError(
+                    "코드를 찾을 수 없습니다"
+                )
             raise CodeInUseError(
                 "사용된 코드는 삭제할 수 없습니다"
             )

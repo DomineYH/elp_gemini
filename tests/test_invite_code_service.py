@@ -477,6 +477,61 @@ class TestDeleteCode:
         assert total == 0
 
     @pytest.mark.asyncio
+    async def test_force_delete_used_code(
+        self,
+        db_session: AsyncSession,
+        admin_user: User,
+        normal_user: User,
+    ):
+        """사용중 코드 force 삭제 성공"""
+        service = InviteCodeService(db_session)
+        codes = await service.generate_codes(
+            user_type="1학년",
+            count=1,
+            admin_id=admin_user.id,
+        )
+        await db_session.commit()
+
+        await service.use_code(
+            codes[0].code, normal_user.id
+        )
+        await db_session.commit()
+
+        await service.delete_code(
+            codes[0].id, force=True
+        )
+        await db_session.commit()
+
+        _, total = await service.get_codes()
+        assert total == 0
+
+    @pytest.mark.asyncio
+    async def test_delete_used_without_force_raises(
+        self,
+        db_session: AsyncSession,
+        admin_user: User,
+        normal_user: User,
+    ):
+        """사용중 코드 force 없이 삭제 시 예외"""
+        service = InviteCodeService(db_session)
+        codes = await service.generate_codes(
+            user_type="1학년",
+            count=1,
+            admin_id=admin_user.id,
+        )
+        await db_session.commit()
+
+        await service.use_code(
+            codes[0].code, normal_user.id
+        )
+        await db_session.commit()
+
+        with pytest.raises(CodeInUseError):
+            await service.delete_code(
+                codes[0].id, force=False
+            )
+
+    @pytest.mark.asyncio
     async def test_delete_nonexistent(
         self, db_session: AsyncSession
     ):

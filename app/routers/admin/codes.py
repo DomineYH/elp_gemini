@@ -120,13 +120,21 @@ async def activate_code(
 @router.delete("/admin/api/codes/{code_id}")
 async def delete_code(
     code_id: int,
+    force: bool = Query(False),
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """코드 영구 삭제 (미사용만)"""
+    """코드 영구 삭제 (force=true면 사용중도 삭제)"""
     service = InviteCodeService(db)
     try:
-        await service.delete_code(code_id)
+        await service.delete_code(code_id, force=force)
+        if force:
+            logger.warning(
+                "사용중 코드 강제 삭제: code_id=%d, "
+                "admin_id=%d",
+                code_id,
+                current_admin.id,
+            )
         return {
             "message": "코드가 삭제되었습니다.",
             "code_id": code_id,

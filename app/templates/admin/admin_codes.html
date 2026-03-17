@@ -280,7 +280,9 @@ function getActionButtons(code) {
     } else {
         btns.push(`<button onclick="activateCode(${code.id})" class="text-green-600 hover:underline text-xs">활성화</button>`);
     }
-    if (!code.is_used) {
+    if (code.is_used) {
+        btns.push(`<button onclick="deleteUsedCode(${code.id}, '${code.code}')" class="text-red-600 hover:underline text-xs">삭제</button>`);
+    } else {
         btns.push(`<button onclick="deleteCode(${code.id})" class="text-red-600 hover:underline text-xs">삭제</button>`);
     }
     return btns.length ? btns.join(' <span class="text-gray-300">|</span> ') : '-';
@@ -322,6 +324,23 @@ async function deleteCode(codeId) {
     if (!confirm('이 코드를 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) return;
     try {
         const response = await fetch(`/admin/api/codes/${codeId}`, {method: 'DELETE'});
+        if (response.ok) {
+            loadCodes(currentPage);
+            loadStats();
+        } else {
+            const data = await response.json();
+            alert(data.detail || '삭제 실패');
+        }
+    } catch (error) {
+        console.error('삭제 실패:', error);
+    }
+}
+
+async function deleteUsedCode(codeId, codeStr) {
+    if (!confirm(`[주의] 코드 "${codeStr}"은(는) 현재 사용중입니다.\n삭제하면 해당 사용자가 이 코드로 로그인할 수 없게 됩니다.\n정말 삭제하시겠습니까?`)) return;
+    if (!confirm('사용중인 코드를 삭제하면 복구할 수 없습니다.\n정말로 삭제를 진행하시겠습니까?')) return;
+    try {
+        const response = await fetch(`/admin/api/codes/${codeId}?force=true`, {method: 'DELETE'});
         if (response.ok) {
             loadCodes(currentPage);
             loadStats();
