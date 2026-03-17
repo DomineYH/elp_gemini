@@ -19,6 +19,9 @@ from app.dependencies import get_current_admin
 from app.models.users import User
 from app.services.invite_code_service import (
     InviteCodeService,
+    CodeNotFoundError,
+    CodeAlreadyActiveError,
+    CodeInUseError,
 )
 from app.schemas.invite_codes import (
     InviteCodeCreate,
@@ -76,7 +79,7 @@ async def get_codes(
     }
 
 
-@router.delete("/admin/api/codes/{code_id}")
+@router.patch("/admin/api/codes/{code_id}/deactivate")
 async def deactivate_code(
     code_id: int,
     current_admin: User = Depends(get_current_admin),
@@ -90,8 +93,48 @@ async def deactivate_code(
             "message": "코드가 비활성화되었습니다.",
             "code_id": code.id,
         }
-    except ValueError as e:
+    except CodeNotFoundError as e:
         raise HTTPException(404, str(e))
+
+
+@router.patch("/admin/api/codes/{code_id}/activate")
+async def activate_code(
+    code_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """비활성화된 코드 활성화"""
+    service = InviteCodeService(db)
+    try:
+        code = await service.activate_code(code_id)
+        return {
+            "message": "코드가 활성화되었습니다.",
+            "code_id": code.id,
+        }
+    except CodeNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except CodeAlreadyActiveError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.delete("/admin/api/codes/{code_id}")
+async def delete_code(
+    code_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """코드 영구 삭제 (미사용만)"""
+    service = InviteCodeService(db)
+    try:
+        await service.delete_code(code_id)
+        return {
+            "message": "코드가 삭제되었습니다.",
+            "code_id": code_id,
+        }
+    except CodeNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except CodeInUseError as e:
+        raise HTTPException(400, str(e))
 
 
 @router.get("/admin/api/codes/stats")

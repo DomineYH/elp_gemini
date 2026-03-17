@@ -6,9 +6,24 @@ from typing import Optional
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 
 from app.models.invite_codes import InviteCode
+
+
+class CodeNotFoundError(ValueError):
+    """코드를 찾을 수 없음"""
+    pass
+
+
+class CodeAlreadyActiveError(ValueError):
+    """이미 활성 상태"""
+    pass
+
+
+class CodeInUseError(ValueError):
+    """사용된 코드"""
+    pass
 
 
 class InviteCodeService:
@@ -162,7 +177,7 @@ class InviteCodeService:
         )
         invite = result.scalar_one_or_none()
         if not invite:
-            raise ValueError(
+            raise CodeNotFoundError(
                 "코드를 찾을 수 없습니다"
             )
 
@@ -170,6 +185,62 @@ class InviteCodeService:
         await self.db.flush()
         await self.db.refresh(invite)
         return invite
+
+    async def activate_code(
+        self, code_id: int
+    ) -> InviteCode:
+        """비활성화된 코드 재활성화"""
+        result = await self.db.execute(
+            select(InviteCode).where(
+                InviteCode.id == code_id
+            )
+        )
+        invite = result.scalar_one_or_none()
+        if not invite:
+            raise CodeNotFoundError(
+                "코드를 찾을 수 없습니다"
+            )
+        if invite.is_active:
+            raise CodeAlreadyActiveError(
+                "이미 활성 상태입니다"
+            )
+
+        invite.is_active = True
+        await self.db.flush()
+        await self.db.refresh(invite)
+        return invite
+
+    async def delete_code(
+        self, code_id: int
+    ) -> None:
+        """코드 영구 삭제 (미사용 코드만, atomic)"""
+        result = await self.db.execute(
+            select(InviteCode).where(
+                InviteCode.id == code_id
+            )
+        )
+        invite = result.scalar_one_or_none()
+        if not invite:
+            raise CodeNotFoundError(
+                "코드를 찾을 수 없습니다"
+            )
+        if invite.user_id is not None:
+            raise CodeInUseError(
+                "사용된 코드는 삭제할 수 없습니다"
+            )
+
+        # Atomic delete: 조건부 삭제로 race condition 방지
+        del_result = await self.db.execute(
+            delete(InviteCode).where(
+                InviteCode.id == code_id,
+                InviteCode.user_id.is_(None),
+            )
+        )
+        if del_result.rowcount == 0:
+            raise CodeInUseError(
+                "사용된 코드는 삭제할 수 없습니다"
+            )
+        await self.db.flush()
 
     async def get_stats(self) -> list[dict]:
         """유형별 코드 통계"""

@@ -1,6 +1,6 @@
 """
 초대 코드 서비스 테스트
-코드 생성, 검증, 사용, 조회, 비활성화, 통계
+코드 생성, 검증, 사용, 조회, 비활성화, 활성화, 삭제, 통계
 """
 import pytest
 import pytest_asyncio
@@ -11,6 +11,9 @@ from app.models.invite_codes import InviteCode
 from app.models.users import User
 from app.services.invite_code_service import (
     InviteCodeService,
+    CodeNotFoundError,
+    CodeAlreadyActiveError,
+    CodeInUseError,
 )
 from tests.conftest import (
     TestingSessionLocal,
@@ -350,6 +353,137 @@ class TestDeactivateCode:
         with pytest.raises(ValueError) as exc:
             await service.deactivate_code(99999)
         assert "찾을 수 없습니다" in str(exc.value)
+
+
+class TestActivateCode:
+    """코드 활성화 테스트"""
+
+    @pytest.mark.asyncio
+    async def test_activate_success(
+        self, db_session: AsyncSession, admin_user: User
+    ):
+        """비활성 코드 활성화 성공"""
+        service = InviteCodeService(db_session)
+        codes = await service.generate_codes(
+            user_type="1학년",
+            count=1,
+            admin_id=admin_user.id,
+        )
+        await db_session.commit()
+
+        await service.deactivate_code(codes[0].id)
+        await db_session.commit()
+        assert codes[0].is_active is False
+
+        result = await service.activate_code(
+            codes[0].id
+        )
+        await db_session.commit()
+        assert result.is_active is True
+
+    @pytest.mark.asyncio
+    async def test_activate_already_active(
+        self, db_session: AsyncSession, admin_user: User
+    ):
+        """이미 활성인 코드 활성화 시 예외"""
+        service = InviteCodeService(db_session)
+        codes = await service.generate_codes(
+            user_type="1학년",
+            count=1,
+            admin_id=admin_user.id,
+        )
+        await db_session.commit()
+
+        with pytest.raises(CodeAlreadyActiveError):
+            await service.activate_code(codes[0].id)
+
+    @pytest.mark.asyncio
+    async def test_activate_nonexistent(
+        self, db_session: AsyncSession
+    ):
+        """존재하지 않는 코드 활성화 시 예외"""
+        service = InviteCodeService(db_session)
+        with pytest.raises(CodeNotFoundError):
+            await service.activate_code(99999)
+
+
+class TestDeleteCode:
+    """코드 삭제 테스트"""
+
+    @pytest.mark.asyncio
+    async def test_delete_unused_code(
+        self, db_session: AsyncSession, admin_user: User
+    ):
+        """미사용 코드 삭제 성공"""
+        service = InviteCodeService(db_session)
+        codes = await service.generate_codes(
+            user_type="1학년",
+            count=1,
+            admin_id=admin_user.id,
+        )
+        await db_session.commit()
+
+        code_id = codes[0].id
+        await service.delete_code(code_id)
+        await db_session.commit()
+
+        remaining, total = await service.get_codes()
+        assert total == 0
+
+    @pytest.mark.asyncio
+    async def test_delete_used_code_raises(
+        self,
+        db_session: AsyncSession,
+        admin_user: User,
+        normal_user: User,
+    ):
+        """사용된 코드 삭제 시 예외"""
+        service = InviteCodeService(db_session)
+        codes = await service.generate_codes(
+            user_type="1학년",
+            count=1,
+            admin_id=admin_user.id,
+        )
+        await db_session.commit()
+
+        await service.use_code(
+            codes[0].code, normal_user.id
+        )
+        await db_session.commit()
+
+        with pytest.raises(CodeInUseError):
+            await service.delete_code(codes[0].id)
+
+    @pytest.mark.asyncio
+    async def test_delete_inactive_unused_code(
+        self, db_session: AsyncSession, admin_user: User
+    ):
+        """비활성+미사용 코드 삭제 성공"""
+        service = InviteCodeService(db_session)
+        codes = await service.generate_codes(
+            user_type="1학년",
+            count=1,
+            admin_id=admin_user.id,
+        )
+        await db_session.commit()
+
+        await service.deactivate_code(codes[0].id)
+        await db_session.commit()
+
+        await service.delete_code(codes[0].id)
+        await db_session.commit()
+
+        _, total = await service.get_codes()
+        assert total == 0
+
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent(
+        self, db_session: AsyncSession
+    ):
+        """존재하지 않는 코드 삭제 시 예외"""
+        service = InviteCodeService(db_session)
+        with pytest.raises(CodeNotFoundError):
+            await service.delete_code(99999)
 
 
 class TestGetStats:

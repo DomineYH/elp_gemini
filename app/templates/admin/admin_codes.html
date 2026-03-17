@@ -238,6 +238,10 @@ async function loadCodes(page = 1) {
         const tbody = document.getElementById('codesBody');
 
         if (!data.codes || data.codes.length === 0) {
+            if (currentPage > 1) {
+                loadCodes(currentPage - 1);
+                return;
+            }
             tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-4 text-sm text-gray-500 text-center">코드가 없습니다</td></tr>';
             document.getElementById('pagination').innerHTML = '';
             return;
@@ -255,9 +259,7 @@ async function loadCodes(page = 1) {
                 <td class="px-6 py-4 text-sm text-gray-500">${formatDate(c.created_at)}</td>
                 <td class="px-6 py-4 text-sm text-gray-500">${formatDate(c.used_at)}</td>
                 <td class="px-6 py-4 text-sm">
-                    ${c.is_active && !c.is_used ?
-                        `<button onclick="deactivateCode(${c.id})" class="text-red-600 hover:underline text-xs">비활성화</button>`
-                        : '-'}
+                    ${getActionButtons(c)}
                 </td>
             </tr>
         `).join('');
@@ -271,10 +273,23 @@ async function loadCodes(page = 1) {
     }
 }
 
+function getActionButtons(code) {
+    const btns = [];
+    if (code.is_active) {
+        btns.push(`<button onclick="deactivateCode(${code.id})" class="text-yellow-600 hover:underline text-xs">비활성화</button>`);
+    } else {
+        btns.push(`<button onclick="activateCode(${code.id})" class="text-green-600 hover:underline text-xs">활성화</button>`);
+    }
+    if (!code.is_used) {
+        btns.push(`<button onclick="deleteCode(${code.id})" class="text-red-600 hover:underline text-xs">삭제</button>`);
+    }
+    return btns.length ? btns.join(' <span class="text-gray-300">|</span> ') : '-';
+}
+
 async function deactivateCode(codeId) {
     if (!confirm('이 코드를 비활성화하시겠습니까?')) return;
     try {
-        const response = await fetch(`/admin/api/codes/${codeId}`, {method: 'DELETE'});
+        const response = await fetch(`/admin/api/codes/${codeId}/deactivate`, {method: 'PATCH'});
         if (response.ok) {
             loadCodes(currentPage);
             loadStats();
@@ -284,6 +299,38 @@ async function deactivateCode(codeId) {
         }
     } catch (error) {
         console.error('비활성화 실패:', error);
+    }
+}
+
+async function activateCode(codeId) {
+    if (!confirm('이 코드를 활성화하시겠습니까?')) return;
+    try {
+        const response = await fetch(`/admin/api/codes/${codeId}/activate`, {method: 'PATCH'});
+        if (response.ok) {
+            loadCodes(currentPage);
+            loadStats();
+        } else {
+            const data = await response.json();
+            alert(data.detail || '활성화 실패');
+        }
+    } catch (error) {
+        console.error('활성화 실패:', error);
+    }
+}
+
+async function deleteCode(codeId) {
+    if (!confirm('이 코드를 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) return;
+    try {
+        const response = await fetch(`/admin/api/codes/${codeId}`, {method: 'DELETE'});
+        if (response.ok) {
+            loadCodes(currentPage);
+            loadStats();
+        } else {
+            const data = await response.json();
+            alert(data.detail || '삭제 실패');
+        }
+    } catch (error) {
+        console.error('삭제 실패:', error);
     }
 }
 
