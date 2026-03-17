@@ -1,7 +1,7 @@
 """초대 코드 서비스"""
 import secrets
 import string
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -89,7 +89,7 @@ class InviteCodeService:
             )
 
         invite.user_id = user_id
-        invite.used_at = datetime.utcnow()
+        invite.used_at = datetime.now(timezone.utc)
         await self.db.flush()
         await self.db.refresh(invite)
         return invite

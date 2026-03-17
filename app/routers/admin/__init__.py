@@ -7,9 +7,9 @@ from . import (
     criteria,
     criteria_views,
     dashboard,
+    prompts,
     qna_logs,
     users,
-    prompts,
 )
 
 # 메인 admin 라우터 생성
