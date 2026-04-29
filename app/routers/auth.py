@@ -43,6 +43,27 @@ async def login_page(request: Request):
     )
 
 
+# GET /login/admin - 관리자 전용 로그인 페이지 (직접 URL 접근 시에만 노출)
+# /admin/login alias도 등록해 두 URL 모두 동일 페이지로 진입 가능
+@router.get("/login/admin", response_class=HTMLResponse)
+@router.get(
+    "/admin/login",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def login_admin_page(request: Request):
+    """관리자 로그인 페이지 (URL 직접 입력 시에만 노출)"""
+    # 이미 로그인한 경우 역할별 대시보드로 리다이렉트
+    if request.session.get("user_id"):
+        if request.session.get("is_admin"):
+            return RedirectResponse(url="/admin/dashboard", status_code=302)
+        return RedirectResponse(url="/", status_code=302)
+
+    return templates.TemplateResponse(
+        "user/login_admin.html", {"request": request}
+    )
+
+
 # 사용자 로그인 (드롭다운 선택 기반)
 @router.post("/auth/login/user")
 async def login_user(
@@ -72,7 +93,6 @@ async def login_user(
             {
                 "request": request,
                 "error": "유효하지 않은 사용자 유형입니다.",
-                "active_tab": "user",
             },
             status_code=400,
         )
@@ -116,7 +136,6 @@ async def login_user(
             {
                 "request": request,
                 "error": str(e),
-                "active_tab": "user",
             },
             status_code=400,
         )
@@ -134,7 +153,6 @@ async def login_user(
                 "request": request,
                 "error": "로그인 처리 중 오류가 발생했습니다. "
                 "다시 시도해주세요.",
-                "active_tab": "user",
             },
             status_code=500,
         )
@@ -174,11 +192,10 @@ async def login_admin(
                 reason="Invalid credentials",
             )
             return templates.TemplateResponse(
-                "user/login.html",
+                "user/login_admin.html",
                 {
                     "request": request,
                     "error": "관리자 ID 또는 비밀번호가 올바르지 않습니다.",
-                    "active_tab": "admin",
                 },
                 status_code=401,
             )
@@ -217,12 +234,11 @@ async def login_admin(
         )
         logger.error(f"관리자 로그인 처리 중 오류: {str(e)}", exc_info=True)
         return templates.TemplateResponse(
-            "user/login.html",
+            "user/login_admin.html",
             {
                 "request": request,
                 "error": "로그인 처리 중 오류가 발생했습니다. "
                 "다시 시도해주세요.",
-                "active_tab": "admin",
             },
             status_code=500,
         )

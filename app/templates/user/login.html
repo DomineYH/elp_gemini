@@ -5,27 +5,11 @@
 {% block content %}
 <div class="max-w-md mx-auto mt-10">
     <div class="bg-white shadow-md rounded-lg overflow-hidden">
-        <!-- 탭 헤더 -->
-        <div class="flex border-b border-gray-200">
-            <button
-                id="tab-user"
-                type="button"
-                class="flex-1 py-4 px-6 text-center font-medium text-blue-600 border-b-2 border-blue-600 bg-blue-50 focus:outline-none transition-colors"
-                onclick="switchTab('user')"
-            >
-                사용자
-            </button>
-            <button
-                id="tab-admin"
-                type="button"
-                class="flex-1 py-4 px-6 text-center font-medium text-gray-500 hover:text-gray-700 focus:outline-none transition-colors"
-                onclick="switchTab('admin')"
-            >
-                관리자
-            </button>
-        </div>
-
         <div class="p-8">
+            <h2 class="text-xl font-bold mb-6 text-center text-gray-800">
+                사용자 로그인
+            </h2>
+
             {% if error %}
             <div
                 class="bg-red-100 border border-red-400
@@ -36,190 +20,84 @@
             </div>
             {% endif %}
 
-            <!-- 사용자 로그인 폼 -->
-            <div id="panel-user" class="tab-panel">
-                <h2 class="text-xl font-bold mb-6 text-center text-gray-800">
-                    사용자 로그인
-                </h2>
-                <form
-                    method="POST"
-                    action="/auth/login/user"
-                    class="space-y-4"
-                >
-                    <div>
-                        <label
-                            for="user_type"
-                            class="block text-sm font-medium
-                            text-gray-700 mb-2"
-                        >
-                            사용자 유형 선택
-                        </label>
-                        <select
-                            id="user_type"
-                            name="user_type"
-                            required
-                            class="w-full px-3 py-3 border
-                            border-gray-300 rounded-md
-                            focus:outline-none focus:ring-2
-                            focus:ring-blue-500
-                            bg-white text-gray-700
-                            cursor-pointer"
-                        >
-                            <option value="" disabled selected>
-                                -- 선택하세요 --
-                            </option>
-                            <option value="1학년">1학년</option>
-                            <option value="2학년">2학년</option>
-                            <option value="3학년">3학년</option>
-                            <option value="4학년">4학년</option>
-                            <option value="현직교사">현직교사</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label
-                            for="invite_code"
-                            class="block text-sm font-medium
-                            text-gray-700 mb-2"
-                        >
-                            초대 코드 입력
-                        </label>
-                        <input
-                            type="text"
-                            id="invite_code"
-                            name="invite_code"
-                            required
-                            maxlength="6"
-                            pattern="[A-Za-z0-9]{6}"
-                            class="w-full px-3 py-3 border
-                            border-gray-300 rounded-md
-                            focus:outline-none focus:ring-2
-                            focus:ring-blue-500
-                            text-gray-700 uppercase
-                            tracking-widest text-center text-lg
-                            font-mono"
-                            placeholder="예: A3X7K2"
-                            oninput="this.value = this.value.toUpperCase()"
-                        />
-                    </div>
-
-                    <button
-                        type="submit"
-                        class="w-full bg-blue-600 text-white
-                        py-3 px-4 rounded-md hover:bg-blue-700
-                        transition-colors font-medium mt-4"
+            <form
+                method="POST"
+                action="/auth/login/user"
+                class="space-y-4"
+            >
+                <div>
+                    <label
+                        for="user_type"
+                        class="block text-sm font-medium
+                        text-gray-700 mb-2"
                     >
-                        로그인
-                    </button>
-                </form>
-
-                <div class="mt-6 text-center text-sm text-gray-500">
-                    <p>
-                        학년을 선택하고 초대 코드를 입력하세요.
-                    </p>
-                </div>
-            </div>
-
-            <!-- 관리자 로그인 폼 -->
-            <div id="panel-admin" class="tab-panel hidden">
-                <h2 class="text-xl font-bold mb-6 text-center text-gray-800">
-                    관리자 로그인
-                </h2>
-                <form
-                    method="POST"
-                    action="/auth/login/admin"
-                    class="space-y-4"
-                >
-                    <div>
-                        <label
-                            for="admin_id"
-                            class="block text-sm font-medium
-                            text-gray-700 mb-1"
-                        >
-                            관리자 ID
-                        </label>
-                        <input
-                            type="text"
-                            id="admin_id"
-                            name="admin_id"
-                            required
-                            class="w-full px-3 py-2 border
-                            border-gray-300 rounded-md
-                            focus:outline-none focus:ring-2
-                            focus:ring-blue-500"
-                            placeholder="관리자 ID를 입력하세요"
-                        />
-                    </div>
-
-                    <div>
-                        <label
-                            for="password"
-                            class="block text-sm font-medium
-                            text-gray-700 mb-1"
-                        >
-                            비밀번호
-                        </label>
-                        <input
-                            type="password"
-                            id="password"
-                            name="password"
-                            required
-                            class="w-full px-3 py-2 border
-                            border-gray-300 rounded-md
-                            focus:outline-none focus:ring-2
-                            focus:ring-blue-500"
-                            placeholder="비밀번호를 입력하세요"
-                        />
-                    </div>
-
-                    <button
-                        type="submit"
-                        class="w-full bg-blue-600 text-white
-                        py-3 px-4 rounded-md hover:bg-blue-700
-                        transition-colors font-medium mt-4"
+                        사용자 유형 선택
+                    </label>
+                    <select
+                        id="user_type"
+                        name="user_type"
+                        required
+                        class="w-full px-3 py-3 border
+                        border-gray-300 rounded-md
+                        focus:outline-none focus:ring-2
+                        focus:ring-blue-500
+                        bg-white text-gray-700
+                        cursor-pointer"
                     >
-                        로그인
-                    </button>
-                </form>
-
-                <div class="mt-6 text-center text-sm text-gray-500">
-                    <p>
-                        관리자 계정으로 로그인합니다.
-                    </p>
+                        <option value="" disabled selected>
+                            -- 선택하세요 --
+                        </option>
+                        <option value="1학년">1학년</option>
+                        <option value="2학년">2학년</option>
+                        <option value="3학년">3학년</option>
+                        <option value="4학년">4학년</option>
+                        <option value="현직교사">현직교사</option>
+                    </select>
                 </div>
+
+                <div>
+                    <label
+                        for="invite_code"
+                        class="block text-sm font-medium
+                        text-gray-700 mb-2"
+                    >
+                        초대 코드 입력
+                    </label>
+                    <input
+                        type="text"
+                        id="invite_code"
+                        name="invite_code"
+                        required
+                        maxlength="6"
+                        pattern="[A-Za-z0-9]{6}"
+                        class="w-full px-3 py-3 border
+                        border-gray-300 rounded-md
+                        focus:outline-none focus:ring-2
+                        focus:ring-blue-500
+                        text-gray-700 uppercase
+                        tracking-widest text-center text-lg
+                        font-mono"
+                        placeholder="예: A3X7K2"
+                        oninput="this.value = this.value.toUpperCase()"
+                    />
+                </div>
+
+                <button
+                    type="submit"
+                    class="w-full bg-blue-600 text-white
+                    py-3 px-4 rounded-md hover:bg-blue-700
+                    transition-colors font-medium mt-4"
+                >
+                    로그인
+                </button>
+            </form>
+
+            <div class="mt-6 text-center text-sm text-gray-500">
+                <p>
+                    학년을 선택하고 초대 코드를 입력하세요.
+                </p>
             </div>
         </div>
     </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-    function switchTab(tabName) {
-        // 모든 탭 버튼 초기화
-        const tabs = ['user', 'admin'];
-        tabs.forEach(tab => {
-            const tabBtn = document.getElementById('tab-' + tab);
-            const panel = document.getElementById('panel-' + tab);
-
-            if (tab === tabName) {
-                // 활성 탭 스타일
-                tabBtn.classList.remove('text-gray-500', 'hover:text-gray-700');
-                tabBtn.classList.add('text-blue-600', 'border-b-2', 'border-blue-600', 'bg-blue-50');
-                panel.classList.remove('hidden');
-            } else {
-                // 비활성 탭 스타일
-                tabBtn.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600', 'bg-blue-50');
-                tabBtn.classList.add('text-gray-500', 'hover:text-gray-700');
-                panel.classList.add('hidden');
-            }
-        });
-    }
-
-    // 페이지 로드 시 에러가 있고 active_tab이 설정되어 있으면 해당 탭으로 전환
-    document.addEventListener('DOMContentLoaded', function() {
-        const activeTab = '{{ active_tab | default("user") }}';
-        switchTab(activeTab);
-    });
-</script>
 {% endblock %}
