@@ -41,6 +41,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
     # 화이트리스트 경로 (인증 불필요)
     WHITELIST_PATHS = [
         "/login",
+        # 관리자 로그인 페이지 (직접 URL 접근, 인증 전 노출 필요)
+        "/login/admin",
+        "/login/admin/",
+        "/admin/login",
+        "/admin/login/",
         "/auth/login",
         "/auth/logout",
         "/health",
