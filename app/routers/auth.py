@@ -12,11 +12,12 @@ from fastapi import (
 )
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.datastructures import URL
 import logging
 
 from app.config import settings
-from app.constants import USER_TYPES
 from app.db import get_db
 from app.models.users import User
 from app.rate_limit import limiter
@@ -30,6 +31,239 @@ templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
 
 
+try:
+    from app.constants import (
+        PRESERVICE_UNIVERSITY_REGIONS,
+        TEACHER_REGIONS,
+    )
+except ImportError:
+    TEACHER_REGIONS = [
+        "서울", "부산", "대구", "인천", "광주", "대전", "울산",
+        "세종", "경기", "충북", "충남", "전북", "전남", "경북",
+        "경남", "강원", "제주",
+    ]
+    PRESERVICE_UNIVERSITY_REGIONS = [
+        "서울", "경인", "공주", "광주", "대구", "부산", "전주",
+        "진주", "청주", "춘천", "한국교원대",
+    ]
+
+try:
+    from app.schemas.users import (
+        EmailPasswordLogin,
+        PreserviceTeacherRegistration,
+        TeacherRegistration,
+        normalize_email_address,
+    )
+except ImportError:
+    EmailPasswordLogin = None
+    PreserviceTeacherRegistration = None
+    TeacherRegistration = None
+
+    def normalize_email_address(value: str | None) -> str:
+        """Fallback until Lane B schemas are merged."""
+        if value is None:
+            return ""
+        return str(value).strip().lower()
+
+
+USER_ROLE_LABELS = {
+    "teacher": "교사",
+    "preservice_teacher": "예비교사",
+}
+INVALID_USER_CREDENTIALS_MESSAGE = (
+    "이메일 또는 비밀번호가 올바르지 않습니다."
+)
+
+
+def _register_context(
+    request: Request,
+    *,
+    email: str = "",
+    selected_role: str = "teacher",
+    error: str | None = None,
+    teacher_region: str = "",
+    teacher_career_years: str = "",
+    preservice_university_region: str = "",
+    preservice_grade: str = "",
+) -> dict:
+    """Build template context for the regular-user registration form."""
+    return {
+        "request": request,
+        "error": error,
+        "email": normalize_email_address(email),
+        "selected_role": selected_role,
+        "teacher_regions": TEACHER_REGIONS,
+        "teacher_region": teacher_region,
+        "teacher_career_years": teacher_career_years,
+        "preservice_university_regions": (
+            PRESERVICE_UNIVERSITY_REGIONS
+        ),
+        "preservice_university_region": (
+            preservice_university_region
+        ),
+        "preservice_grade": preservice_grade,
+    }
+
+
+def _login_context(
+    request: Request,
+    *,
+    email: str = "",
+    error: str | None = None,
+) -> dict:
+    """Build template context for the regular-user login form."""
+    return {
+        "request": request,
+        "error": error,
+        "email": normalize_email_address(email),
+    }
+
+
+def _set_user_session(request: Request, user: User) -> None:
+    """Clear fixation-prone session state and store fresh user identity."""
+    request.session.clear()
+    request.session["user_id"] = user.id
+    request.session["is_admin"] = user.is_admin
+    request.session["username"] = user.username
+    request.session["nickname"] = user.nickname
+
+
+async def _get_regular_user_by_email(
+    auth_service: AuthService,
+    email: str,
+) -> User | None:
+    """Use Lane B regular-user lookup when present, else safe fallback."""
+    if hasattr(auth_service, "get_regular_user_by_email"):
+        return await auth_service.get_regular_user_by_email(email)
+
+    user = await auth_service.get_user_by_email(email)
+    if user and user.is_admin:
+        return None
+    return user
+
+
+async def _authenticate_regular_user(
+    auth_service: AuthService,
+    email: str,
+    password: str,
+) -> User | None:
+    """Use Lane B password auth when present, else verify directly."""
+    if hasattr(auth_service, "authenticate_regular_user"):
+        return await auth_service.authenticate_regular_user(
+            email, password
+        )
+
+    user = await _get_regular_user_by_email(auth_service, email)
+    if not user or not user.hashed_password:
+        return None
+    if not auth_service.verify_password(password, user.hashed_password):
+        return None
+    return user
+
+
+def _validate_login_form(email: str, password: str) -> tuple[str, str]:
+    """Normalize and validate login form data."""
+    if EmailPasswordLogin is not None:
+        login_data = EmailPasswordLogin(
+            email=email,
+            password=password,
+        )
+        return str(login_data.email), login_data.password
+
+    normalized_email = normalize_email_address(email)
+    if not normalized_email or "@" not in normalized_email:
+        raise ValueError("유효한 이메일 주소를 입력해주세요.")
+    if not password:
+        raise ValueError("비밀번호를 입력해주세요.")
+    return normalized_email, password
+
+
+def _validation_error_message(exc: Exception) -> str:
+    """Convert schema/form validation exceptions into a safe message."""
+    if isinstance(exc, ValidationError):
+        first_error = exc.errors()[0] if exc.errors() else {}
+        message = first_error.get("msg", "입력값을 확인해주세요.")
+        return str(message).removeprefix("Value error, ")
+    return str(exc) or "입력값을 확인해주세요."
+
+
+def _redirect_to_register(email: str) -> RedirectResponse:
+    """Redirect unregistered regular users into the registration flow."""
+    url = str(URL("/register").include_query_params(email=email))
+    return RedirectResponse(
+        url=url,
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+async def _register_teacher(
+    auth_service: AuthService,
+    *,
+    email: str,
+    password: str,
+    teacher_region: str | None,
+    teacher_career_years: str | None,
+) -> User:
+    """Validate teacher form data and delegate creation to AuthService."""
+    try:
+        career_years = int(teacher_career_years or "")
+    except ValueError as exc:
+        raise ValueError("경력 연수는 숫자로 입력해주세요.") from exc
+
+    payload = {
+        "email": email,
+        "role": "teacher",
+        "teacher_region": teacher_region or "",
+        "teacher_career_years": career_years,
+        "password": password,
+    }
+    if TeacherRegistration is not None:
+        registration = TeacherRegistration(**payload)
+        payload = registration.model_dump()
+
+    return await auth_service.register_teacher(
+        email=payload["email"],
+        password=payload["password"],
+        teacher_region=payload["teacher_region"],
+        teacher_career_years=payload["teacher_career_years"],
+    )
+
+
+async def _register_preservice_teacher(
+    auth_service: AuthService,
+    *,
+    email: str,
+    password: str,
+    preservice_university_region: str | None,
+    preservice_grade: str | None,
+) -> User:
+    """Validate preservice form data and delegate creation to AuthService."""
+    try:
+        grade = int(preservice_grade or "")
+    except ValueError as exc:
+        raise ValueError("학년은 숫자로 입력해주세요.") from exc
+
+    payload = {
+        "email": email,
+        "role": "preservice_teacher",
+        "preservice_university_region": (
+            preservice_university_region or ""
+        ),
+        "preservice_grade": grade,
+        "password": password,
+    }
+    if PreserviceTeacherRegistration is not None:
+        registration = PreserviceTeacherRegistration(**payload)
+        payload = registration.model_dump()
+
+    return await auth_service.register_preservice_teacher(
+        email=payload["email"],
+        password=payload["password"],
+        preservice_university_region=(
+            payload["preservice_university_region"]
+        ),
+        preservice_grade=payload["preservice_grade"],
+    )
 
 
 # T030: GET /login - 로그인 페이지 렌더링
@@ -41,7 +275,19 @@ async def login_page(request: Request):
         return RedirectResponse(url="/", status_code=302)
 
     return templates.TemplateResponse(
-        "user/login.html", {"request": request}
+        "user/login.html", _login_context(request)
+    )
+
+
+@router.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request, email: str = ""):
+    """일반 사용자 등록 페이지"""
+    if request.session.get("user_id"):
+        return RedirectResponse(url="/", status_code=302)
+
+    return templates.TemplateResponse(
+        "user/register.html",
+        _register_context(request, email=email),
     )
 
 
@@ -66,66 +312,73 @@ async def login_admin_page(request: Request):
     )
 
 
-# 사용자 로그인 (드롭다운 선택 기반)
+# 사용자 로그인 (이메일 + 비밀번호 기반)
 @router.post("/auth/login/user")
 async def login_user(
     request: Request,
-    user_type: str = Form(...),
-    invite_code: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    사용자 로그인 (드롭다운 선택 + 초대 코드 기반)
+    일반 사용자 로그인 (이메일 + 비밀번호 기반).
 
-    사용자 유형(1학년, 2학년, 3학년, 4학년, 현직교사)과
-    초대 코드를 사용하여 로그인합니다.
-
-    Args:
-        request: Request 객체
-        user_type: 사용자 유형 (1학년, 2학년, 3학년, 4학년, 현직교사)
-        invite_code: 초대 코드
-        db: 데이터베이스 세션
-
-    Returns:
-        리다이렉트 응답
+    등록되지 않은 이메일은 등록 화면으로 이동한다. 기존 초대코드
+    인증 메서드와 /auth/login 하위 호환 라우트는 삭제하지 않는다.
     """
-    if user_type not in USER_TYPES:
+    try:
+        normalized_email, password = _validate_login_form(
+            email, password
+        )
+    except (ValueError, ValidationError) as exc:
         return templates.TemplateResponse(
             "user/login.html",
-            {
-                "request": request,
-                "error": "유효하지 않은 사용자 유형입니다.",
-            },
+            _login_context(
+                request,
+                email=email,
+                error=_validation_error_message(exc),
+            ),
             status_code=400,
         )
 
     try:
         auth_service = AuthService(db)
-        user = await auth_service.authenticate_user_with_code(
-            user_type, invite_code
+        existing_user = await _get_regular_user_by_email(
+            auth_service, normalized_email
         )
+        if not existing_user:
+            return _redirect_to_register(normalized_email)
 
-        # 세션 고정 공격 방지: 기존 세션 클리어
-        request.session.clear()
+        user = await _authenticate_regular_user(
+            auth_service, normalized_email, password
+        )
+        if not user:
+            log_auth_event(
+                "login",
+                username=normalized_email,
+                success=False,
+                reason="Invalid regular-user credentials",
+            )
+            return templates.TemplateResponse(
+                "user/login.html",
+                _login_context(
+                    request,
+                    email=normalized_email,
+                    error=INVALID_USER_CREDENTIALS_MESSAGE,
+                ),
+                status_code=401,
+            )
 
-        # 새 세션에 사용자 정보 저장
-        request.session["user_id"] = user.id
-        request.session["is_admin"] = user.is_admin
-        request.session["username"] = user.username
-        request.session["nickname"] = user.nickname
-        request.session["invite_code"] = invite_code.upper()
-
-        # 로그인 성공 로깅
+        _set_user_session(request, user)
         log_auth_event(
             "login",
             user_id=user.id,
-            username=user.username,
+            username=normalized_email,
             success=True,
         )
-        masked = invite_code[:2] + "****"
         logger.info(
             f"사용자 로그인 성공: "
-            f"user_id={user.id}, code={masked}"
+            f"user_id={user.id}, email={normalized_email}"
         )
 
         return RedirectResponse(
@@ -135,27 +388,134 @@ async def login_user(
     except ValueError as e:
         return templates.TemplateResponse(
             "user/login.html",
-            {
-                "request": request,
-                "error": str(e),
-            },
+            _login_context(
+                request,
+                email=normalized_email,
+                error=str(e),
+            ),
             status_code=400,
         )
     except Exception as e:
         log_auth_event(
             "login",
-            username=user_type,
+            username=normalized_email,
             success=False,
             reason=str(e),
         )
         logger.error(f"사용자 로그인 처리 중 오류: {str(e)}", exc_info=True)
         return templates.TemplateResponse(
             "user/login.html",
-            {
-                "request": request,
-                "error": "로그인 처리 중 오류가 발생했습니다. "
+            _login_context(
+                request,
+                email=normalized_email,
+                error="로그인 처리 중 오류가 발생했습니다. "
                 "다시 시도해주세요.",
-            },
+            ),
+            status_code=500,
+        )
+
+
+@router.post("/auth/register")
+async def register_user(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+    role: str = Form(...),
+    teacher_region: str | None = Form(None),
+    teacher_career_years: str | None = Form(None),
+    preservice_university_region: str | None = Form(None),
+    preservice_grade: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """일반 사용자 등록 후 자동 로그인."""
+    normalized_email = normalize_email_address(email)
+    selected_role = role if role in USER_ROLE_LABELS else "teacher"
+
+    def render_error(message: str, status_code: int = 400):
+        return templates.TemplateResponse(
+            "user/register.html",
+            _register_context(
+                request,
+                email=normalized_email,
+                selected_role=selected_role,
+                error=message,
+                teacher_region=teacher_region or "",
+                teacher_career_years=teacher_career_years or "",
+                preservice_university_region=(
+                    preservice_university_region or ""
+                ),
+                preservice_grade=preservice_grade or "",
+            ),
+            status_code=status_code,
+        )
+
+    if password != password_confirm:
+        return render_error("비밀번호 확인이 일치하지 않습니다.")
+
+    if role not in USER_ROLE_LABELS:
+        return render_error("유효하지 않은 사용자 유형입니다.")
+
+    try:
+        auth_service = AuthService(db)
+        existing_user = await _get_regular_user_by_email(
+            auth_service, normalized_email
+        )
+        if existing_user:
+            return render_error(
+                "이미 등록된 이메일입니다. 로그인해주세요.",
+                status_code=409,
+            )
+
+        if role == "teacher":
+            user = await _register_teacher(
+                auth_service,
+                email=normalized_email,
+                password=password,
+                teacher_region=teacher_region,
+                teacher_career_years=teacher_career_years,
+            )
+        else:
+            user = await _register_preservice_teacher(
+                auth_service,
+                email=normalized_email,
+                password=password,
+                preservice_university_region=(
+                    preservice_university_region
+                ),
+                preservice_grade=preservice_grade,
+            )
+
+        _set_user_session(request, user)
+        log_auth_event(
+            "register",
+            user_id=user.id,
+            username=normalized_email,
+            success=True,
+        )
+        logger.info(
+            f"사용자 등록 성공: "
+            f"user_id={user.id}, role={role}, email={normalized_email}"
+        )
+
+        return RedirectResponse(
+            url="/", status_code=status.HTTP_302_FOUND
+        )
+
+    except (ValueError, ValidationError) as exc:
+        return render_error(_validation_error_message(exc))
+    except Exception as exc:
+        log_auth_event(
+            "register",
+            username=normalized_email,
+            success=False,
+            reason=str(exc),
+        )
+        logger.error(
+            f"사용자 등록 처리 중 오류: {str(exc)}", exc_info=True
+        )
+        return render_error(
+            "등록 처리 중 오류가 발생했습니다. 다시 시도해주세요.",
             status_code=500,
         )
 
