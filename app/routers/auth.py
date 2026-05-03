@@ -28,7 +28,11 @@ from app.constants import (
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models.users import User
-from app.rate_limit import check_admin_id_rate_limit, limiter
+from app.rate_limit import (
+    check_admin_id_rate_limit,
+    check_admin_ip_rate_limit,
+    limiter,
+)
 from app.schemas.users import (
     EmailPasswordLogin,
     PreserviceTeacherRegistration,
@@ -556,7 +560,6 @@ def _is_admin_login_csrf_valid(
 
 # 관리자 로그인 (ID + 비밀번호 기반) — Issue #5 brute-force 방어
 @router.post("/auth/login/admin")
-@limiter.limit(settings.ADMIN_LOGIN_RATE_LIMIT)
 async def login_admin(
     request: Request,
     admin_id: str = Form(...),
@@ -588,9 +591,10 @@ async def login_admin(
             status_code=status.HTTP_403_FORBIDDEN,
         )
 
-    # admin_id 기반 rate limit (IP 전환 brute-force 방어).
+    # CSRF 검증을 통과한 로그인 시도만 IP/admin_id quota 를 소모한다.
     # 아래의 try/except Exception 가 HTTPException(429) 까지 삼켜 500 으로
     # 변환하지 않도록 try 블록 밖에서 호출한다.
+    check_admin_ip_rate_limit(request)
     check_admin_id_rate_limit(admin_id)
     failure_started_at = time.monotonic()
 

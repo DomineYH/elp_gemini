@@ -189,6 +189,31 @@ async def test_ip_rate_limit_returns_429(
     )
 
 
+@pytest.mark.asyncio
+async def test_invalid_csrf_does_not_consume_ip_rate_limit(
+    http_client, admin_user, disable_failure_response_floor
+):
+    """CSRF 실패 요청은 관리자 로그인 IP quota 를 소모하지 않아야 함."""
+    limiter.enabled = True
+
+    invalid_csrf_statuses = []
+    for _ in range(8):
+        resp = await http_client.post(
+            "/auth/login/admin",
+            data={"admin_id": ADMIN_USERNAME, "password": "wrong"},
+            follow_redirects=False,
+        )
+        invalid_csrf_statuses.append(resp.status_code)
+
+    assert invalid_csrf_statuses == [403] * 8
+
+    resp = await _post_login(http_client, ADMIN_USERNAME, "wrong")
+    assert resp.status_code == 401, (
+        "invalid CSRF 요청이 IP quota 를 소모하면 첫 valid-CSRF 시도가 "
+        f"429 로 막힐 수 있음: status={resp.status_code}"
+    )
+
+
 # ---------------------------------------------------------------------
 # AC2 — N회 실패 후 잠금
 # ---------------------------------------------------------------------
