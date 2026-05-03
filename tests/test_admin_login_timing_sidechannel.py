@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import re
 import statistics
 import time
 from datetime import datetime, timedelta
@@ -36,6 +37,7 @@ from app.services.auth_service import AuthService
 
 ADMIN = "ts_admin"
 ADMIN_PASSWORD = "correct horse battery staple"
+_ADMIN_CSRF_RE = re.compile(r'name="csrf_token"\s+value="([^"]+)"')
 
 
 # ---------------------------------------------------------------------
@@ -127,6 +129,31 @@ def disable_rate_limit():
     limiter.reset()
 
 
+async def _get_admin_csrf_token(client: AsyncClient) -> str:
+    response = await client.get("/login/admin", follow_redirects=False)
+    assert response.status_code == 200
+    match = _ADMIN_CSRF_RE.search(response.text)
+    assert match, "관리자 로그인 폼에 CSRF hidden input 이 있어야 함"
+    return match.group(1)
+
+
+async def _post_admin_login(
+    client: AsyncClient,
+    admin_id: str,
+    password: str,
+):
+    csrf_token = await _get_admin_csrf_token(client)
+    return await client.post(
+        "/auth/login/admin",
+        data={
+            "admin_id": admin_id,
+            "password": password,
+            "csrf_token": csrf_token,
+        },
+        follow_redirects=False,
+    )
+
+
 # ---------------------------------------------------------------------
 # T1 — 모든 실패 경로가 동일한 응답 반환
 # ---------------------------------------------------------------------
@@ -137,11 +164,7 @@ async def test_all_failure_paths_return_identical_response(
     http_client, admin_user, session_factory, disable_rate_limit
 ):
     # Path 1: missing user
-    r1 = await http_client.post(
-        "/auth/login/admin",
-        data={"admin_id": "no_such_user", "password": "x"},
-        follow_redirects=False,
-    )
+    r1 = await _post_admin_login(http_client, "no_such_user", "x")
 
     # Path 2: non-admin user (is_admin=False)
     async with session_factory() as s:
@@ -154,18 +177,10 @@ async def test_all_failure_paths_return_identical_response(
             )
         )
         await s.commit()
-    r2 = await http_client.post(
-        "/auth/login/admin",
-        data={"admin_id": "regular", "password": "x"},
-        follow_redirects=False,
-    )
+    r2 = await _post_admin_login(http_client, "regular", "x")
 
     # Path 3: invalid password
-    r3 = await http_client.post(
-        "/auth/login/admin",
-        data={"admin_id": ADMIN, "password": "wrong"},
-        follow_redirects=False,
-    )
+    r3 = await _post_admin_login(http_client, ADMIN, "wrong")
 
     # Path 4: locked account
     async with session_factory() as s:
@@ -173,11 +188,7 @@ async def test_all_failure_paths_return_identical_response(
         u.failed_login_count = 10
         u.locked_until = datetime.utcnow() + timedelta(minutes=5)
         await s.commit()
-    r4 = await http_client.post(
-        "/auth/login/admin",
-        data={"admin_id": ADMIN, "password": "wrong"},
-        follow_redirects=False,
-    )
+    r4 = await _post_admin_login(http_client, ADMIN, "wrong")
 
     # Path 5: no-password admin (hashed_password cleared)
     async with session_factory() as s:
@@ -186,11 +197,7 @@ async def test_all_failure_paths_return_identical_response(
         u.locked_until = None
         u.failed_login_count = 0
         await s.commit()
-    r5 = await http_client.post(
-        "/auth/login/admin",
-        data={"admin_id": ADMIN, "password": "x"},
-        follow_redirects=False,
-    )
+    r5 = await _post_admin_login(http_client, ADMIN, "x")
 
     for label, r in [
         ("missing_user", r1),
@@ -376,18 +383,10 @@ async def test_audit_log_distinguishes_locked_vs_invalid(
         await s.commit()
 
     # locked 경로 요청
-    await http_client.post(
-        "/auth/login/admin",
-        data={"admin_id": ADMIN, "password": "wrong"},
-        follow_redirects=False,
-    )
+    await _post_admin_login(http_client, ADMIN, "wrong")
 
     # missing/non-admin (invalid) 경로 요청
-    await http_client.post(
-        "/auth/login/admin",
-        data={"admin_id": "no_such_admin", "password": "wrong"},
-        follow_redirects=False,
-    )
+    await _post_admin_login(http_client, "no_such_admin", "wrong")
 
     joined = "\n".join(r.getMessage() for r in caplog.records)
     # locked 경로는 service/router 양쪽에서 별도 audit 이벤트를 남긴다
@@ -482,10 +481,15 @@ async def test_failure_paths_wallclock_parity(
         for _ in range(samples):
             for label, admin_id, password, setup in paths:
                 await setup()
+                csrf_token = await _get_admin_csrf_token(http_client)
                 t0 = time.perf_counter()
                 response = await http_client.post(
                     "/auth/login/admin",
-                    data={"admin_id": admin_id, "password": password},
+                    data={
+                        "admin_id": admin_id,
+                        "password": password,
+                        "csrf_token": csrf_token,
+                    },
                     follow_redirects=False,
                 )
                 timings[label].append(time.perf_counter() - t0)

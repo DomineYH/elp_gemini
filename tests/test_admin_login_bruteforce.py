@@ -16,10 +16,13 @@ Issue #5: 관리자 로그인 brute-force 방어 회귀 테스트
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 from datetime import datetime, timedelta
 from typing import AsyncIterator
 from unittest.mock import patch
 
+import itsdangerous
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -38,6 +41,7 @@ from app.rate_limit import _admin_id_limit_item, limiter
 
 ADMIN_USERNAME = "bf_admin"
 ADMIN_PASSWORD = "correct horse battery staple"
+ADMIN_CSRF_TOKEN = "test-admin-login-csrf-token"
 
 
 @pytest_asyncio.fixture
@@ -135,10 +139,31 @@ def disable_rate_limit(disable_failure_response_floor):
         limiter.enabled = original_limiter_enabled
 
 
-def _post_login(client: AsyncClient, admin_id: str, password: str):
-    return client.post(
+def _build_session_cookie(data: dict) -> str:
+    """Starlette SessionMiddleware 호환 서명된 세션 쿠키 생성."""
+    signer = itsdangerous.TimestampSigner(str(settings.SECRET_KEY))
+    payload = base64.b64encode(json.dumps(data).encode("utf-8"))
+    signed = signer.sign(payload)
+    return signed.decode("utf-8")
+
+
+def _admin_login_cookies() -> dict[str, str]:
+    return {
+        settings.SESSION_COOKIE_NAME: _build_session_cookie(
+            {"admin_login_csrf_token": ADMIN_CSRF_TOKEN}
+        )
+    }
+
+
+async def _post_login(client: AsyncClient, admin_id: str, password: str):
+    return await client.post(
         "/auth/login/admin",
-        data={"admin_id": admin_id, "password": password},
+        data={
+            "admin_id": admin_id,
+            "password": password,
+            "csrf_token": ADMIN_CSRF_TOKEN,
+        },
+        cookies=_admin_login_cookies(),
         follow_redirects=False,
     )
 

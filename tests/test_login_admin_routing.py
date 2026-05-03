@@ -11,7 +11,9 @@
 """
 import base64
 import json
+import re
 import time
+from unittest.mock import patch
 
 import itsdangerous
 import pytest
@@ -66,6 +68,21 @@ def _build_session_cookie(data: dict) -> str:
     return signed.decode("utf-8")
 
 
+_ADMIN_CSRF_RE = re.compile(r'name="csrf_token"\s+value="([^"]+)"')
+
+
+def _extract_admin_csrf_token(body: str) -> str:
+    match = _ADMIN_CSRF_RE.search(body)
+    assert match, "관리자 로그인 폼에 CSRF hidden input 이 있어야 함"
+    return match.group(1)
+
+
+async def _get_admin_csrf_token(client: AsyncClient) -> str:
+    response = await client.get("/login/admin", follow_redirects=False)
+    assert response.status_code == 200
+    return _extract_admin_csrf_token(response.text)
+
+
 # T1
 @pytest.mark.asyncio
 async def test_login_page_has_no_admin_tab():
@@ -96,6 +113,7 @@ async def test_login_admin_page_renders_admin_form():
     body = response.text
     assert 'name="admin_id"' in body
     assert 'name="password"' in body
+    assert 'name="csrf_token"' in body
     assert 'action="/auth/login/admin"' in body
     # 사용자 로그인 폼은 같은 페이지에 노출되지 않아야 함
     assert 'action="/auth/login/user"' not in body
@@ -171,7 +189,11 @@ async def test_admin_login_invalid_credentials_renders_admin_form():
     ) as ac:
         response = await ac.post(
             "/auth/login/admin",
-            data={"admin_id": "no_such_admin", "password": "wrong"},
+            data={
+                "admin_id": "no_such_admin",
+                "password": "wrong",
+                "csrf_token": await _get_admin_csrf_token(ac),
+            },
             follow_redirects=False,
         )
     assert response.status_code == 401
@@ -180,6 +202,50 @@ async def test_admin_login_invalid_credentials_renders_admin_form():
     assert 'action="/auth/login/admin"' in body
     assert 'action="/auth/login/user"' not in body
     assert "ID 또는 비밀번호" in body
+
+
+@pytest.mark.asyncio
+async def test_admin_login_missing_csrf_is_rejected_before_authentication():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        with patch(
+            "app.routers.auth.AuthService.authenticate_admin"
+        ) as authenticate_admin:
+            response = await ac.post(
+                "/auth/login/admin",
+                data={"admin_id": "no_such_admin", "password": "wrong"},
+                follow_redirects=False,
+            )
+
+    assert response.status_code == 403
+    assert "보안 확인에 실패" in response.text
+    assert 'name="csrf_token"' in response.text
+    authenticate_admin.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_admin_login_invalid_csrf_is_rejected_before_authentication():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        await _get_admin_csrf_token(ac)
+        with patch(
+            "app.routers.auth.AuthService.authenticate_admin"
+        ) as authenticate_admin:
+            response = await ac.post(
+                "/auth/login/admin",
+                data={
+                    "admin_id": "no_such_admin",
+                    "password": "wrong",
+                    "csrf_token": "invalid-token",
+                },
+                follow_redirects=False,
+            )
+
+    assert response.status_code == 403
+    assert "보안 확인에 실패" in response.text
+    authenticate_admin.assert_not_called()
 
 
 # T2b — /admin/login alias도 같은 관리자 폼을 렌더해야 함

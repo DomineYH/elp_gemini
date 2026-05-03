@@ -25,6 +25,12 @@
                 action="/auth/login/admin"
                 class="space-y-4"
             >
+                <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="{{ csrf_token }}"
+                />
+
                 <div>
                     <label
                         for="admin_id"

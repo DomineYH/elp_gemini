@@ -10,6 +10,7 @@ WHITELIST_PREFIXES 에서 /auth/ 를 제거하고,
 """
 from __future__ import annotations
 
+import re
 from typing import AsyncIterator
 
 import pytest
@@ -28,6 +29,15 @@ from app.models.users import User
 from app.rate_limit import limiter
 
 USER_PASSWORD = "test-password-1234"
+_ADMIN_CSRF_RE = re.compile(r'name="csrf_token"\s+value="([^"]+)"')
+
+
+async def _get_admin_csrf_token(client: AsyncClient) -> str:
+    response = await client.get("/login/admin", follow_redirects=False)
+    assert response.status_code == 200
+    match = _ADMIN_CSRF_RE.search(response.text)
+    assert match, "관리자 로그인 폼에 CSRF hidden input 이 있어야 함"
+    return match.group(1)
 
 
 @pytest_asyncio.fixture
@@ -107,9 +117,14 @@ async def test_unauthed_post_login_admin_passes(
     http_client, disable_rate_limit
 ):
     """POST /auth/login/admin 은 세션 없이도 미들웨어를 통과해야 함."""
+    csrf_token = await _get_admin_csrf_token(http_client)
     resp = await http_client.post(
         "/auth/login/admin",
-        data={"admin_id": "noone", "password": "wrong"},
+        data={
+            "admin_id": "noone",
+            "password": "wrong",
+            "csrf_token": csrf_token,
+        },
         follow_redirects=False,
     )
     # 미들웨어가 통과시켰고, 엔드포인트에서 401 반환
