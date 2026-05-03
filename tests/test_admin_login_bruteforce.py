@@ -165,8 +165,12 @@ async def test_account_locks_after_threshold(
         http_client, ADMIN_USERNAME, "wrong"
     )
     assert resp.status_code == 401
-    assert "잠시" in resp.text, (
-        "lockout 메시지가 노출되어야 함"
+    # issue #6: lockout 응답이 외부에는 invalid-credentials 와 동일해야 함
+    assert "ID 또는 비밀번호" in resp.text, (
+        "lockout 시에도 invalid 와 동일한 메시지여야 함 (#6)"
+    )
+    assert "잠시" not in resp.text, (
+        "lockout 임을 외부에 누설하면 안 됨 (#6)"
     )
 
     # DB에 잠금 정보가 영속화되어 있어야 함
@@ -270,7 +274,9 @@ async def test_locked_account_skips_password_verification(
             http_client, ADMIN_USERNAME, ADMIN_PASSWORD
         )
         assert resp.status_code == 401
-        assert "잠시" in resp.text
+        # issue #6: 외부 메시지는 invalid 와 동일, 단 real verify_password 는
+        # 호출되지 않아 timing 절약 + 사이드이펙트 차단 (AC6 의도 유지).
+        assert "ID 또는 비밀번호" in resp.text
         verify.assert_not_called()
 
 

@@ -21,6 +21,10 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 logger = logging.getLogger(__name__)
 
+# 타이밍 사이드채널 차단용 사전계산 더미 해시 (issue #6).
+# 모듈 import 시 1회만 계산하여 cold-start 타이밍 스파이크와 동시성 race 모두 회피.
+_DUMMY_BCRYPT_HASH: str = pwd_context.hash("dummy-timing-equalizer")
+
 
 @dataclass
 class AdminLoginResult:
@@ -42,6 +46,37 @@ class AuthService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    @staticmethod
+    def _dummy_password_verify(password: str) -> None:
+        """타이밍 일치를 위해 더미 bcrypt 검증을 실행한다.
+        결과값은 항상 무시한다 (issue #6).
+        실패 시에도 외부로 예외를 누출시키지 않되, 내부적으로 경고 로깅하여
+        타이밍 보정이 무력화된 사실을 운영팀이 감지할 수 있게 한다."""
+        try:
+            pwd_context.verify(password, _DUMMY_BCRYPT_HASH)
+        except Exception as e:
+            logger.warning(
+                "dummy_password_verify failed (timing equalizer degraded): %s",
+                type(e).__name__,
+            )
+
+    async def _touch_locked_attempt(self, user: User) -> None:
+        """잠금 상태에서 추가 로그인 시도가 들어왔을 때, 비밀번호 검증
+        경로의 DB 쓰기 비용과 타이밍을 일치시키기 위한 touch-only UPDATE.
+
+        - failed_login_count 와 locked_until 은 변경하지 않는다 (잠금 자체에 영향 없음)
+        - last_failed_login_at 만 갱신하여 단일 atomic UPDATE 비용을 발생시킨다
+        - 부수 효과로, 잠금 상태에서의 시도 빈도가 last_failed_login_at 으로 추적된다
+        """
+        now = datetime.utcnow()
+        stmt = (
+            update(User)
+            .where(User.id == user.id)
+            .values(last_failed_login_at=now)
+        )
+        await self.db.execute(stmt)
+        await self.db.commit()
 
     async def authenticate_user(
         self, username: str, nickname: str
@@ -108,10 +143,14 @@ class AuthService:
 
         # 2. 사용자가 없거나 관리자가 아닌 경우 — 동일 응답
         if not user or not user.is_admin:
+            self._dummy_password_verify(password)
             return AdminLoginResult(user=None, locked=False)
 
         # 3. 잠금 상태면 비밀번호 검증 없이 즉시 반환
         if self._is_account_locked(user):
+            self._dummy_password_verify(password)
+            # invalid-password 경로의 DB UPDATE 비용과 타이밍을 일치시킨다 (issue #6)
+            await self._touch_locked_attempt(user)
             log_auth_event(
                 "lockout_attempt_blocked",
                 user_id=user.id,
@@ -127,6 +166,7 @@ class AuthService:
 
         # 4. 비밀번호 미설정 → 인증 실패로 카운터 증가
         if not user.hashed_password:
+            self._dummy_password_verify(password)
             await self._record_failed_admin_login(user, admin_id)
             return AdminLoginResult(user=None, locked=False)
 

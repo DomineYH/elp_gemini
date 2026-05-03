@@ -163,10 +163,8 @@ async def login_user(
 INVALID_ADMIN_CREDENTIALS_MESSAGE = (
     "관리자 ID 또는 비밀번호가 올바르지 않습니다."
 )
-ADMIN_ACCOUNT_LOCKED_MESSAGE = (
-    "관리자 계정이 일시적으로 잠겨 있습니다. "
-    "잠시 후 다시 시도해주세요."
-)
+# Issue #6: lockout 상태도 외부 응답은 INVALID_ADMIN_CREDENTIALS_MESSAGE 로 통일.
+# 별도의 lockout 메시지는 외부에 노출되지 않으므로 상수로 보존하지 않는다.
 
 
 # 관리자 로그인 (ID + 비밀번호 기반) — Issue #5 brute-force 방어
@@ -198,23 +196,23 @@ async def login_admin(
             admin_id, password
         )
 
-        if result.locked:
-            return templates.TemplateResponse(
-                "user/login_admin.html",
-                {
-                    "request": request,
-                    "error": ADMIN_ACCOUNT_LOCKED_MESSAGE,
-                },
-                status_code=401,
-            )
-
-        if not result.user:
-            log_auth_event(
-                "login",
-                username=admin_id,
-                success=False,
-                reason="Invalid credentials",
-            )
+        # 외부 응답 통일 (issue #6) — locked / invalid 모두 동일한 401 + 메시지
+        if result.locked or not result.user:
+            if result.locked:
+                # 내부 감사 로그는 lockout 상황을 별도 기록 (외부에는 노출 X)
+                log_auth_event(
+                    "lockout_attempt_external_blocked",
+                    username=admin_id,
+                    success=False,
+                    reason="locked_response_unified_with_invalid",
+                )
+            else:
+                log_auth_event(
+                    "login",
+                    username=admin_id,
+                    success=False,
+                    reason="Invalid credentials",
+                )
             return templates.TemplateResponse(
                 "user/login_admin.html",
                 {
