@@ -2,30 +2,31 @@
 FastAPI 애플리케이션 메인 엔트리포인트
 미들웨어, 라우터, 예외 핸들러 설정
 """
-from fastapi import FastAPI, Request, HTTPException
+import logging
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import (
-    JSONResponse,
     HTMLResponse,
+    JSONResponse,
     RedirectResponse,
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from starlette.middleware.sessions import SessionMiddleware
-from starlette.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-import logging
+from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
-from app.rate_limit import limiter
-from app.utils.logging import setup_logging
-from app.middleware import AuthMiddleware
 from app.db import engine
+from app.middleware import AuthMiddleware
 from app.migrations import (
     ensure_criteria_file_path_column,
     ensure_user_profiles_table,
     ensure_users_lockout_columns,
 )
+from app.rate_limit import limiter
+from app.utils.logging import setup_logging
 
 # 로깅 설정
 setup_logging(debug=settings.DEBUG)
@@ -206,9 +207,16 @@ async def health_check():
 
 
 # 라우터 등록
-from app.routers import auth, lessonplans, qna, evaluations, views, lessonplan_analysis
-from app.routers.admin import router as admin_router
-from fastapi.responses import RedirectResponse
+from app.routers import (  # noqa: E402
+    auth,
+    evaluations,
+    lessonplan_analysis,
+    lessonplans,
+    qna,
+    views,
+)
+from app.routers.admin import router as admin_router  # noqa: E402
+
 
 # 루트 엔드포인트 - 역할 기반 리다이렉트
 @app.get("/", response_class=HTMLResponse)

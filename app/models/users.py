@@ -2,11 +2,12 @@
 사용자 모델
 User 엔티티 정의
 """
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Boolean, Column, DateTime, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db import Base
+
 # 직접 app.models.users를 import하는 기존 경로에서도 User.profile의
 # relationship 대상이 SQLAlchemy class registry에 등록되도록 한다.
 from app.models.user_profiles import UserProfile  # noqa: F401
