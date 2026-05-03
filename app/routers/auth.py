@@ -18,52 +18,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import URL
 
 from app.config import settings
+from app.constants import (
+    PRESERVICE_UNIVERSITY_REGIONS,
+    TEACHER_REGIONS,
+)
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models.users import User
 from app.rate_limit import limiter
-from app.schemas.users import UserResponse
+from app.schemas.users import (
+    EmailPasswordLogin,
+    PreserviceTeacherRegistration,
+    TeacherRegistration,
+    UserResponse,
+    normalize_email_address,
+)
 from app.services.auth_service import AuthService
 from app.utils.logging import log_auth_event
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
-
-
-try:
-    from app.constants import (
-        PRESERVICE_UNIVERSITY_REGIONS,
-        TEACHER_REGIONS,
-    )
-except ImportError:
-    TEACHER_REGIONS = [
-        "서울", "부산", "대구", "인천", "광주", "대전", "울산",
-        "세종", "경기", "충북", "충남", "전북", "전남", "경북",
-        "경남", "강원", "제주",
-    ]
-    PRESERVICE_UNIVERSITY_REGIONS = [
-        "서울", "경인", "공주", "광주", "대구", "부산", "전주",
-        "진주", "청주", "춘천", "한국교원대",
-    ]
-
-try:
-    from app.schemas.users import (
-        EmailPasswordLogin,
-        PreserviceTeacherRegistration,
-        TeacherRegistration,
-        normalize_email_address,
-    )
-except ImportError:
-    EmailPasswordLogin = None
-    PreserviceTeacherRegistration = None
-    TeacherRegistration = None
-
-    def normalize_email_address(value: str | None) -> str:
-        """Fallback until Lane B schemas are merged."""
-        if value is None:
-            return ""
-        return str(value).strip().lower()
 
 
 USER_ROLE_LABELS = {
@@ -217,9 +192,8 @@ async def _register_teacher(
         "teacher_career_years": career_years,
         "password": password,
     }
-    if TeacherRegistration is not None:
-        registration = TeacherRegistration(**payload)
-        payload = registration.model_dump()
+    registration = TeacherRegistration(**payload)
+    payload = registration.model_dump()
 
     return await auth_service.register_teacher(
         email=payload["email"],
@@ -252,9 +226,8 @@ async def _register_preservice_teacher(
         "preservice_grade": grade,
         "password": password,
     }
-    if PreserviceTeacherRegistration is not None:
-        registration = PreserviceTeacherRegistration(**payload)
-        payload = registration.model_dump()
+    registration = PreserviceTeacherRegistration(**payload)
+    payload = registration.model_dump()
 
     return await auth_service.register_preservice_teacher(
         email=payload["email"],
@@ -314,6 +287,7 @@ async def login_admin_page(request: Request):
 
 # 사용자 로그인 (이메일 + 비밀번호 기반)
 @router.post("/auth/login/user")
+@limiter.limit(settings.USER_LOGIN_RATE_LIMIT)
 async def login_user(
     request: Request,
     email: str = Form(...),
@@ -638,79 +612,28 @@ async def login(
     request: Request,
     username: str = Form(...),
     nickname: str = Form(...),
-    db: AsyncSession = Depends(get_db),
 ):
     """
-    사용자 로그인 또는 신규 사용자 생성 (하위 호환성)
+    기존 username/nickname 로그인 엔드포인트.
 
-    사용자 식별 로직:
-    - username과 nickname이 모두 일치 → 기존 사용자로 로그인
-    - 둘 중 하나라도 다름 → 새로운 사용자 생성 후 로그인
-
-    Args:
-        request: Request 객체
-        username: 사용자 ID
-        nickname: 닉네임
-        db: 데이터베이스 세션
-
-    Returns:
-        리다이렉트 응답
+    Issue #10 이후 일반 사용자 인증은 이메일+비밀번호 또는 보존된
+    초대코드 서비스 경로만 허용한다. 이 레거시 엔드포인트는 임의의
+    passwordless 세션 생성을 막기 위해 더 이상 인증을 수행하지 않는다.
     """
-    try:
-        auth_service = AuthService(db)
-        user = await auth_service.authenticate_user(username, nickname)
-
-        # 세션 고정 공격 방지: 기존 세션 클리어 (Task 2.2)
-        # 로그인 성공 시 새로운 세션 ID를 생성합니다.
-        request.session.clear()
-
-        # 새 세션에 사용자 정보 저장
-        request.session["user_id"] = user.id
-        request.session["is_admin"] = user.is_admin
-        request.session["username"] = user.username
-        request.session["nickname"] = user.nickname
-
-        # 로그인 성공 로깅
-        log_auth_event(
-            "login",
-            user_id=user.id,
-            username=user.username,
-            success=True,
-        )
-        logger.info(
-            f"로그인 성공 (세션 재발급): "
-            f"user_id={user.id}, "
-            f"username={user.username}, nickname={user.nickname}"
-        )
-
-        # 역할 기반 리다이렉트
-        if user.is_admin:
-            redirect_url = "/admin/dashboard"
-        else:
-            redirect_url = "/"
-
-        return RedirectResponse(
-            url=redirect_url, status_code=status.HTTP_302_FOUND
-        )
-
-    except Exception as e:
-        # 로그인 실패 로깅
-        log_auth_event(
-            "login",
-            username=username,
-            success=False,
-            reason=str(e),
-        )
-        logger.error(f"로그인 처리 중 오류: {str(e)}", exc_info=True)
-        return templates.TemplateResponse(
-            "user/login.html",
-            {
-                "request": request,
-                "error": "로그인 처리 중 오류가 발생했습니다. "
-                "다시 시도해주세요.",
-            },
-            status_code=500,
-        )
+    log_auth_event(
+        "legacy_login_blocked",
+        username=username,
+        success=False,
+        reason="Legacy username/nickname login disabled",
+    )
+    return templates.TemplateResponse(
+        "user/login.html",
+        _login_context(
+            request,
+            error="이메일과 비밀번호로 로그인해주세요.",
+        ),
+        status_code=status.HTTP_410_GONE,
+    )
 
 
 # T025: POST /auth/logout - 로그아웃 처리

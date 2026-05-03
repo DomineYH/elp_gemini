@@ -2,6 +2,10 @@
 
 {% block title %}사용자 관리 - 관리자{% endblock %}
 
+{% block head %}
+<meta name="csrf-token" content="{{ csrf_token }}">
+{% endblock %}
+
 {% block nav_links %}
 {% if user.is_admin %}
 <a href="/admin/dashboard" class="text-gray-600 hover:text-blue-600">대시보드</a>
@@ -239,6 +243,10 @@ function formatDate(dateStr) {
     });
 }
 
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+
 async function loadStats() {
     try {
         const response = await fetch('/admin/api/users/stats');
@@ -360,8 +368,9 @@ async function loadAccounts(page = 1) {
 async function changePassword(userId) {
     const input = document.getElementById(`password-${userId}`);
     const newPassword = input.value;
-    if (!newPassword || newPassword.length < 8) {
-        alert('비밀번호는 최소 8자 이상이어야 합니다.');
+    if (!newPassword || newPassword.length < 8 ||
+            !/[^\W\d_]/u.test(newPassword) || !/\d/u.test(newPassword)) {
+        alert('비밀번호는 최소 8자 이상이며 문자와 숫자를 포함해야 합니다.');
         input.focus();
         return;
     }
@@ -369,7 +378,10 @@ async function changePassword(userId) {
     try {
         const response = await fetch(`/admin/api/users/${userId}/password`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': getCsrfToken(),
+            },
             body: JSON.stringify({new_password: newPassword}),
         });
         const data = await response.json().catch(() => ({}));

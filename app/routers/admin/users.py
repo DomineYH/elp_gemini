@@ -3,6 +3,7 @@
 학년별 통계, 세션 목록, 세션 상세 API
 """
 import logging
+import secrets
 from datetime import datetime
 from typing import Any
 
@@ -29,6 +30,7 @@ from app.models.chat_messages import (
     MessageRole,
 )
 from app.models.chat_sessions import ChatSession
+from app.models.user_profiles import UserProfile
 from app.models.users import User
 from app.services.auth_service import AuthService
 from app.utils.logging import log_auth_event, log_user_action
@@ -37,34 +39,18 @@ router = APIRouter(tags=["관리자-사용자관리"])
 templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
 
-PASSWORD_MIN_LENGTH = 8
 PROFILE_ROLE_LABELS = {
     "teacher": "교사",
     "preservice_teacher": "예비교사",
 }
+ADMIN_CSRF_SESSION_KEY = "admin_csrf_token"
+ADMIN_CSRF_HEADER = "x-csrf-token"
 
 
 def _role_str(role):
     """role 문자열 추출 (방어적)"""
     return role.value if hasattr(role, "value") \
         else str(role)
-
-
-def _get_user_profile_model():
-    """UserProfile 모델을 선택적으로 가져온다.
-
-    Lane D는 Lane A와 병합되기 전에도 기존 관리자 페이지를
-    깨뜨리지 않아야 하므로 프로필 모델/테이블 부재를 허용한다.
-    """
-    try:
-        from app.models.user_profiles import UserProfile
-
-        return UserProfile
-    except (ImportError, ModuleNotFoundError):
-        return None
-    except Exception as exc:  # pragma: no cover - defensive import guard
-        logger.warning("UserProfile 모델 로드 실패: %s", exc)
-        return None
 
 
 def _value_str(value: Any) -> str | None:
@@ -147,20 +133,39 @@ def _serialize_profile(profile: Any) -> dict[str, Any]:
     }
 
 
+def _ensure_admin_csrf_token(request: Request) -> str:
+    """관리자 상태 변경 요청용 CSRF 토큰을 세션에 보관한다."""
+    token = request.session.get(ADMIN_CSRF_SESSION_KEY)
+    if not token:
+        token = secrets.token_urlsafe(32)
+        request.session[ADMIN_CSRF_SESSION_KEY] = token
+    return str(token)
+
+
+def _require_admin_csrf_token(request: Request) -> None:
+    """세션 CSRF 토큰과 요청 헤더를 상수 시간 비교한다."""
+    expected = request.session.get(ADMIN_CSRF_SESSION_KEY)
+    provided = request.headers.get(ADMIN_CSRF_HEADER)
+    if not expected or not provided or not secrets.compare_digest(
+        str(expected), str(provided)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CSRF 토큰이 유효하지 않습니다.",
+        )
+
+
 async def _load_profiles(
     db: AsyncSession,
     user_ids: set[int],
 ) -> dict[int, dict[str, Any]]:
     """사용자 프로필을 일괄 조회한다. 프로필 미구현/미마이그레이션은 무시."""
-    user_profile_model = _get_user_profile_model()
-    if user_profile_model is None or not user_ids:
+    if not user_ids:
         return {}
 
     try:
         result = await db.execute(
-            select(user_profile_model).where(
-                user_profile_model.user_id.in_(user_ids)
-            )
+            select(UserProfile).where(UserProfile.user_id.in_(user_ids))
         )
     except Exception as exc:
         await db.rollback()
@@ -187,20 +192,15 @@ async def _get_profile_totals(db: AsyncSession) -> dict[str, int]:
     )
     totals["regular_user_count"] = result.scalar() or 0
 
-    user_profile_model = _get_user_profile_model()
-    if user_profile_model is None:
-        totals["no_profile_count"] = totals["regular_user_count"]
-        return totals
-
     try:
         role_counts = await db.execute(
             select(
-                user_profile_model.role,
-                func.count(user_profile_model.user_id),
+                UserProfile.role,
+                func.count(UserProfile.user_id),
             )
-            .join(User, User.id == user_profile_model.user_id)
+            .join(User, User.id == UserProfile.user_id)
             .where(User.is_admin.is_(False))
-            .group_by(user_profile_model.role)
+            .group_by(UserProfile.role)
         )
     except Exception as exc:
         await db.rollback()
@@ -274,18 +274,6 @@ async def _extract_new_password(request: Request) -> str:
             detail="새 비밀번호를 입력해주세요.",
         )
     return str(password)
-
-
-def _validate_new_password(password: str) -> None:
-    """관리자 비밀번호 변경용 최소 서버 검증."""
-    if len(password) < PASSWORD_MIN_LENGTH:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"비밀번호는 최소 {PASSWORD_MIN_LENGTH}자 이상이어야 "
-                "합니다."
-            ),
-        )
 
 
 def _audit_password_change(
@@ -566,7 +554,9 @@ async def get_user_accounts(
                 "profile_summary": profile["summary"],
                 "session_count": session_counts.get(account.id, 0),
                 "report_count": report_counts.get(account.id, 0),
-                "can_change_password": not account.is_admin,
+                "can_change_password": (
+                    not account.is_admin and bool(account.email)
+                ),
             })
 
         logger.info(
@@ -679,9 +669,10 @@ async def change_regular_user_password(
             detail="관리자 권한이 필요합니다.",
         )
 
+    _require_admin_csrf_token(request)
+
     try:
         new_password = await _extract_new_password(request)
-        _validate_new_password(new_password)
     except HTTPException as exc:
         _audit_password_change(
             current_admin,
@@ -691,44 +682,29 @@ async def change_regular_user_password(
         )
         raise
 
+    auth_service = AuthService(db)
+
     try:
-        result = await db.execute(
-            select(User).where(User.id == user_id)
+        target_user = await auth_service.admin_set_user_password(
+            user_id, new_password
         )
-        target_user = result.scalar_one_or_none()
-        if target_user is None:
-            _audit_password_change(
-                current_admin,
-                user_id,
-                success=False,
-                reason="target_not_found",
-            )
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="사용자를 찾을 수 없습니다.",
-            )
-
-        if target_user.is_admin:
-            _audit_password_change(
-                current_admin,
-                user_id,
-                success=False,
-                reason="admin_target_rejected",
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="관리자 계정 비밀번호는 이 화면에서 변경할 수 없습니다.",
-            )
-
-        target_user.hashed_password = AuthService.hash_password(
-            new_password
+    except ValueError as exc:
+        reason = str(exc)
+        if "찾을 수" in reason:
+            status_code = status.HTTP_404_NOT_FOUND
+        elif "관리자 계정" in reason:
+            status_code = status.HTTP_403_FORBIDDEN
+        else:
+            status_code = status.HTTP_400_BAD_REQUEST
+        _audit_password_change(
+            current_admin,
+            user_id,
+            success=False,
+            reason=reason,
         )
-        target_user.failed_login_count = 0
-        target_user.locked_until = None
-        target_user.last_failed_login_at = None
-        await db.commit()
-        await db.refresh(target_user)
+        raise HTTPException(status_code=status_code, detail=reason) from exc
 
+    try:
         _audit_password_change(
             current_admin,
             target_user.id,
@@ -782,9 +758,14 @@ async def users_page(
     current_admin: User = Depends(get_current_admin),
 ):
     """사용자 관리 페이지 렌더링"""
+    csrf_token = _ensure_admin_csrf_token(request)
     return templates.TemplateResponse(
         "admin/admin_users.html",
-        {"request": request, "user": current_admin})
+        {
+            "request": request,
+            "user": current_admin,
+            "csrf_token": csrf_token,
+        })
 
 
 @router.get(

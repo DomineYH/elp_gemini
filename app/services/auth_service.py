@@ -542,6 +542,10 @@ class AuthService:
             raise ValueError(
                 "관리자 계정 비밀번호는 이 기능으로 변경할 수 없습니다."
             )
+        if not user.email:
+            raise ValueError(
+                "이메일 기반 일반 사용자만 비밀번호를 변경할 수 있습니다."
+            )
 
         user.hashed_password = self.hash_password(validated_password)
         user.failed_login_count = 0

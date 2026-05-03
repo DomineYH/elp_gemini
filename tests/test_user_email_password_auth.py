@@ -39,6 +39,7 @@ PRESERVICE_PASSWORD = "PreservicePass123"
 ADMIN_PASSWORD = "AdminPass123"
 NEW_USER_PASSWORD = "NewUserPass123"
 NEW_ADMIN_SET_PASSWORD = "ChangedPass123"
+ADMIN_CSRF_TOKEN = "test-admin-csrf-token"
 
 
 def _optional_user_profile_model():
@@ -183,6 +184,16 @@ async def _fetch_user_by_email(session_factory, email: str) -> User | None:
         return result.scalar_one_or_none()
 
 
+async def _fetch_user_by_username(
+    session_factory, username: str
+) -> User | None:
+    async with session_factory() as session:
+        result = await session.execute(
+            select(User).where(User.username == username)
+        )
+        return result.scalar_one_or_none()
+
+
 async def _assert_profile(
     session_factory,
     *,
@@ -262,6 +273,22 @@ async def test_login_page_uses_email_password_without_invite_code(client):
     assert 'name="invite_code"' not in body
     assert 'id="invite_code"' not in body
     assert "초대 코드" not in body
+
+
+@pytest.mark.asyncio
+async def test_legacy_username_login_no_longer_creates_session(
+    client,
+    session_factory,
+):
+    response = await client.post(
+        "/auth/login",
+        data={"username": "legacy_user", "nickname": "Legacy"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 410
+    assert settings.SESSION_COOKIE_NAME not in response.cookies
+    assert await _fetch_user_by_username(session_factory, "legacy_user") is None
 
 
 @pytest.mark.asyncio
@@ -476,6 +503,7 @@ async def test_admin_can_change_regular_user_password(
             "is_admin": True,
             "username": admin.username,
             "nickname": admin.nickname,
+            "admin_csrf_token": ADMIN_CSRF_TOKEN,
         }
     )
 
@@ -483,6 +511,7 @@ async def test_admin_can_change_regular_user_password(
         f"/admin/api/users/{regular.id}/password",
         json={"new_password": NEW_ADMIN_SET_PASSWORD},
         cookies={settings.SESSION_COOKIE_NAME: admin_cookie},
+        headers={"X-CSRF-Token": ADMIN_CSRF_TOKEN},
         follow_redirects=False,
     )
 
@@ -512,6 +541,144 @@ async def test_admin_can_change_regular_user_password(
         follow_redirects=False,
     )
     assert new_login.status_code in {302, 303}
+
+
+@pytest.mark.asyncio
+async def test_admin_password_change_requires_csrf_token(
+    client,
+    session_factory,
+):
+    admin = await _create_user(
+        session_factory,
+        username="admin-password-csrf",
+        email="admin-csrf@example.com",
+        password=ADMIN_PASSWORD,
+        is_admin=True,
+    )
+    regular = await _create_regular_user_with_profile(
+        session_factory,
+        username="csrf_target",
+        email="csrf-target@example.com",
+        password=TEACHER_PASSWORD,
+    )
+    admin_cookie = _build_session_cookie(
+        {
+            "user_id": admin.id,
+            "is_admin": True,
+            "username": admin.username,
+            "nickname": admin.nickname,
+            "admin_csrf_token": ADMIN_CSRF_TOKEN,
+        }
+    )
+
+    response = await client.post(
+        f"/admin/api/users/{regular.id}/password",
+        json={"new_password": NEW_ADMIN_SET_PASSWORD},
+        cookies={settings.SESSION_COOKIE_NAME: admin_cookie},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    unchanged = await _fetch_user_by_email(
+        session_factory, "csrf-target@example.com"
+    )
+    assert unchanged is not None
+    assert AuthService.verify_password(
+        TEACHER_PASSWORD, unchanged.hashed_password
+    )
+
+
+@pytest.mark.asyncio
+async def test_admin_password_change_uses_shared_password_policy(
+    client,
+    session_factory,
+):
+    admin = await _create_user(
+        session_factory,
+        username="admin-password-policy",
+        email="admin-policy@example.com",
+        password=ADMIN_PASSWORD,
+        is_admin=True,
+    )
+    regular = await _create_regular_user_with_profile(
+        session_factory,
+        username="weak_policy_target",
+        email="weak-policy@example.com",
+        password=TEACHER_PASSWORD,
+    )
+    admin_cookie = _build_session_cookie(
+        {
+            "user_id": admin.id,
+            "is_admin": True,
+            "username": admin.username,
+            "nickname": admin.nickname,
+            "admin_csrf_token": ADMIN_CSRF_TOKEN,
+        }
+    )
+
+    response = await client.post(
+        f"/admin/api/users/{regular.id}/password",
+        json={"new_password": "NoDigitsHere"},
+        cookies={settings.SESSION_COOKIE_NAME: admin_cookie},
+        headers={"X-CSRF-Token": ADMIN_CSRF_TOKEN},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    unchanged = await _fetch_user_by_email(
+        session_factory, "weak-policy@example.com"
+    )
+    assert unchanged is not None
+    assert AuthService.verify_password(
+        TEACHER_PASSWORD, unchanged.hashed_password
+    )
+
+
+@pytest.mark.asyncio
+async def test_admin_password_change_rejects_legacy_emailless_user(
+    client,
+    session_factory,
+):
+    admin = await _create_user(
+        session_factory,
+        username="admin-password-legacy",
+        email="admin-legacy@example.com",
+        password=ADMIN_PASSWORD,
+        is_admin=True,
+    )
+    legacy = await _create_user(
+        session_factory,
+        username="legacy-invite-code",
+        email=None,
+        password=TEACHER_PASSWORD,
+        is_admin=False,
+    )
+    admin_cookie = _build_session_cookie(
+        {
+            "user_id": admin.id,
+            "is_admin": True,
+            "username": admin.username,
+            "nickname": admin.nickname,
+            "admin_csrf_token": ADMIN_CSRF_TOKEN,
+        }
+    )
+
+    response = await client.post(
+        f"/admin/api/users/{legacy.id}/password",
+        json={"new_password": NEW_ADMIN_SET_PASSWORD},
+        cookies={settings.SESSION_COOKIE_NAME: admin_cookie},
+        headers={"X-CSRF-Token": ADMIN_CSRF_TOKEN},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    unchanged = await _fetch_user_by_username(
+        session_factory, "legacy-invite-code"
+    )
+    assert unchanged is not None
+    assert AuthService.verify_password(
+        TEACHER_PASSWORD, unchanged.hashed_password
+    )
 
 
 @pytest.mark.asyncio
