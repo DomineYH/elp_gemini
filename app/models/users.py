@@ -26,6 +26,14 @@ class User(Base):
     )
     hashed_password = Column(String(255), nullable=True)
     is_admin = Column(Boolean, nullable=False, default=False)
+    failed_login_count = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    locked_until = Column(DateTime, nullable=True)
+    last_failed_login_at = Column(DateTime, nullable=True)
     created_at = Column(
         DateTime, nullable=False, server_default=func.now()
     )

@@ -2,16 +2,43 @@
 인증 서비스
 사용자 인증 및 비밀번호 관리
 """
+import logging
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Optional
+
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import case, select, update
 
+from app.config import settings
 from app.models.users import User
 from app.schemas.users import UserCreate
+from app.utils.logging import log_auth_event
 
 # 비밀번호 해싱 컨텍스트 (T020)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+logger = logging.getLogger(__name__)
+
+# 타이밍 사이드채널 차단용 사전계산 더미 해시 (issue #6).
+# 모듈 import 시 1회만 계산하여 cold-start 타이밍 스파이크와 동시성 race 모두 회피.
+_DUMMY_BCRYPT_HASH: str = pwd_context.hash("dummy-timing-equalizer")
+
+
+@dataclass
+class AdminLoginResult:
+    """관리자 로그인 결과 컨테이너
+
+    Fields:
+        user: 인증 성공 시 User 객체, 그 외 None
+        locked: 계정이 brute-force lockout 상태이면 True
+        retry_at: lockout이 풀리는 시각 (locked=True일 때만 의미 있음)
+    """
+
+    user: Optional[User] = None
+    locked: bool = False
+    retry_at: Optional[datetime] = None
 
 
 class AuthService:
@@ -19,6 +46,37 @@ class AuthService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    @staticmethod
+    def _dummy_password_verify(password: str) -> None:
+        """타이밍 일치를 위해 더미 bcrypt 검증을 실행한다.
+        결과값은 항상 무시한다 (issue #6).
+        실패 시에도 외부로 예외를 누출시키지 않되, 내부적으로 경고 로깅하여
+        타이밍 보정이 무력화된 사실을 운영팀이 감지할 수 있게 한다."""
+        try:
+            pwd_context.verify(password, _DUMMY_BCRYPT_HASH)
+        except Exception as e:
+            logger.warning(
+                "dummy_password_verify failed (timing equalizer degraded): %s",
+                type(e).__name__,
+            )
+
+    async def _touch_locked_attempt(self, user: User) -> None:
+        """잠금 상태에서 추가 로그인 시도가 들어왔을 때, 비밀번호 검증
+        경로의 DB 쓰기 비용과 타이밍을 일치시키기 위한 touch-only UPDATE.
+
+        - failed_login_count 와 locked_until 은 변경하지 않는다 (잠금 자체에 영향 없음)
+        - last_failed_login_at 만 갱신하여 단일 atomic UPDATE 비용을 발생시킨다
+        - 부수 효과로, 잠금 상태에서의 시도 빈도가 last_failed_login_at 으로 추적된다
+        """
+        now = datetime.utcnow()
+        stmt = (
+            update(User)
+            .where(User.id == user.id)
+            .values(last_failed_login_at=now)
+        )
+        await self.db.execute(stmt)
+        await self.db.commit()
 
     async def authenticate_user(
         self, username: str, nickname: str
@@ -69,34 +127,153 @@ class AuthService:
 
     async def authenticate_admin(
         self, admin_id: str, password: str
-    ) -> Optional[User]:
+    ) -> AdminLoginResult:
         """
-        관리자 인증 (ID + 비밀번호)
+        관리자 인증 (ID + 비밀번호) — brute-force 방어 포함
 
-        관리자 ID와 비밀번호를 검증하여 관리자 사용자를 반환합니다.
-
-        Args:
-            admin_id: 관리자 ID
-            password: 비밀번호
+        - 잠긴 계정은 비밀번호 검증을 건너뛴다 (timing leak 차단)
+        - 임계치(설정값) 도달 시 잠금 시각을 영속화한다
+        - 성공 시 카운터를 리셋한다
 
         Returns:
-            인증된 관리자 User 객체 또는 None
+            AdminLoginResult: user(성공 시), locked, retry_at
         """
         # 1. admin_id로 사용자 검색
         user = await self.get_user_by_username(admin_id)
 
-        # 2. 사용자가 없거나 관리자가 아닌 경우
+        # 2. 사용자가 없거나 관리자가 아닌 경우 — 동일 응답
         if not user or not user.is_admin:
-            return None
+            self._dummy_password_verify(password)
+            return AdminLoginResult(user=None, locked=False)
 
-        # 3. 비밀번호 검증
+        # 3. 잠금 상태면 비밀번호 검증 없이 즉시 반환
+        if self._is_account_locked(user):
+            self._dummy_password_verify(password)
+            # invalid-password 경로의 DB UPDATE 비용과 타이밍을 일치시킨다 (issue #6)
+            await self._touch_locked_attempt(user)
+            log_auth_event(
+                "lockout_attempt_blocked",
+                user_id=user.id,
+                username=admin_id,
+                success=False,
+                reason=f"locked_until={user.locked_until.isoformat()}",
+            )
+            return AdminLoginResult(
+                user=None,
+                locked=True,
+                retry_at=user.locked_until,
+            )
+
+        # 4. 비밀번호 미설정 → 인증 실패로 카운터 증가
         if not user.hashed_password:
-            return None
+            self._dummy_password_verify(password)
+            await self._record_failed_admin_login(user, admin_id)
+            return AdminLoginResult(user=None, locked=False)
 
+        # 5. 비밀번호 검증
         if not self.verify_password(password, user.hashed_password):
-            return None
+            await self._record_failed_admin_login(user, admin_id)
+            # 임계치 도달로 방금 잠겼다면 lockout 응답으로 승격
+            if self._is_account_locked(user):
+                return AdminLoginResult(
+                    user=None,
+                    locked=True,
+                    retry_at=user.locked_until,
+                )
+            return AdminLoginResult(user=None, locked=False)
 
-        return user
+        # 6. 성공 → 카운터 리셋
+        await self._reset_admin_login_counter(user)
+        return AdminLoginResult(user=user, locked=False)
+
+    def _is_account_locked(self, user: User) -> bool:
+        """잠금 시각이 미래라면 잠금 상태."""
+        if user.locked_until is None:
+            return False
+        return user.locked_until > datetime.utcnow()
+
+    async def _record_failed_admin_login(
+        self, user: User, admin_id: str
+    ) -> None:
+        """실패 카운터 +1, 임계치 도달 시 잠금 시각 설정.
+
+        동시 실패 요청 사이의 lost-update 회피를 위해 단일 atomic
+        UPDATE로 카운터 증가와 (조건부) 잠금 시각을 함께 적용한다.
+        """
+        max_attempts = int(settings.ADMIN_MAX_FAILED_ATTEMPTS)
+        lockout_minutes = int(settings.ADMIN_LOCKOUT_DURATION_MINUTES)
+        now = datetime.utcnow()
+        lockout_until = now + timedelta(minutes=lockout_minutes)
+
+        # Lockout 만료 여부: locked_until 이 NULL 이 아니고 과거인 경우
+        lockout_expired = User.locked_until.is_not(None) & (
+            User.locked_until <= now
+        )
+
+        stmt = (
+            update(User)
+            .where(User.id == user.id)
+            .values(
+                failed_login_count=case(
+                    (lockout_expired, 1),
+                    else_=User.failed_login_count + 1,
+                ),
+                last_failed_login_at=now,
+                locked_until=case(
+                    # 만료된 lockout 은 먼저 정리 (순서 중요!)
+                    (lockout_expired, None),
+                    (
+                        User.failed_login_count + 1 >= max_attempts,
+                        lockout_until,
+                    ),
+                    else_=User.locked_until,
+                ),
+            )
+        )
+        await self.db.execute(stmt)
+        await self.db.commit()
+        await self.db.refresh(user)
+
+        current = user.failed_login_count
+
+        log_auth_event(
+            "login",
+            user_id=user.id,
+            username=admin_id,
+            success=False,
+            reason=f"failed_attempt={current}/{max_attempts}",
+        )
+
+        if current >= max_attempts and user.locked_until is not None:
+            log_auth_event(
+                "lockout_triggered",
+                user_id=user.id,
+                username=admin_id,
+                success=False,
+                reason=f"locked_until={user.locked_until.isoformat()}",
+            )
+
+    async def _reset_admin_login_counter(self, user: User) -> None:
+        """성공 시 카운터/잠금 정보 리셋 (atomic UPDATE)."""
+        if (
+            not user.failed_login_count
+            and user.locked_until is None
+            and user.last_failed_login_at is None
+        ):
+            return
+
+        stmt = (
+            update(User)
+            .where(User.id == user.id)
+            .values(
+                failed_login_count=0,
+                locked_until=None,
+                last_failed_login_at=None,
+            )
+        )
+        await self.db.execute(stmt)
+        await self.db.commit()
+        await self.db.refresh(user)
 
     async def get_user_by_username_and_nickname(
         self, username: str, nickname: str

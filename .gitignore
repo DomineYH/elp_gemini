@@ -57,3 +57,4 @@ htmlcov/
 *.log
 
 # Project specific
+.gstack/
