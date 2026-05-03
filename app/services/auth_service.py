@@ -5,7 +5,7 @@
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 from passlib.context import CryptContext
@@ -164,7 +164,7 @@ class AuthService:
         관리자 인증 (ID + 비밀번호) — brute-force 방어 포함
 
         - 잠긴 계정은 비밀번호 검증을 건너뛴다 (timing leak 차단)
-        - 임계치(설정값) 도달 시 잠금 시각을 영속화한다
+        - 공개/익명 로그인 실패는 hard lockout 직전에서 soft-cap 한다
         - 성공 시 카운터를 리셋한다
         - 이 서비스는 bcrypt/DB 작업 비용을 보정한다. 외부 응답의
           wall-clock floor 는 HTTP 경계(`login_admin`) 또는 동등한
@@ -209,13 +209,6 @@ class AuthService:
         # 5. 비밀번호 검증
         if not self.verify_password(password, user.hashed_password):
             await self._record_failed_admin_login(user, admin_id)
-            # 임계치 도달로 방금 잠겼다면 lockout 응답으로 승격
-            if self._is_account_locked(user):
-                return AdminLoginResult(
-                    user=None,
-                    locked=True,
-                    retry_at=user.locked_until,
-                )
             return AdminLoginResult(user=None, locked=False)
 
         # 6. 성공 → 카운터 리셋
@@ -231,37 +224,48 @@ class AuthService:
     async def _record_failed_admin_login(
         self, user: User, admin_id: str
     ) -> None:
-        """실패 카운터 +1, 임계치 도달 시 잠금 시각 설정.
+        """실패 카운터 +1, hard lockout 직전에서 soft-cap.
 
         동시 실패 요청 사이의 lost-update 회피를 위해 단일 atomic
-        UPDATE로 카운터 증가와 (조건부) 잠금 시각을 함께 적용한다.
+        UPDATE로 카운터 증가를 적용한다.
+
+        Issue #13: 이 경로는 인증되지 않은 public admin-login endpoint 에서
+        호출되므로, 잘못된 비밀번호만으로 `locked_until` 을 설정하면
+        익명 공격자가 brute-force 방어를 관리자 계정 DoS 로 무기화할 수
+        있다. 기존 수동/운영 lockout 은 계속 존중하되, 공개 실패 누적은
+        hard lockout 임계치보다 하나 작은 값에서 멈춘다. 실제 시도량 제한은
+        IP/admin_id rate limit 과 실패 응답 시간 보정이 담당한다.
         """
         max_attempts = int(settings.ADMIN_MAX_FAILED_ATTEMPTS)
-        lockout_minutes = int(settings.ADMIN_LOCKOUT_DURATION_MINUTES)
+        soft_failure_cap = max(max_attempts - 1, 0)
         now = datetime.utcnow()
-        lockout_until = now + timedelta(minutes=lockout_minutes)
 
         # Lockout 만료 여부: locked_until 이 NULL 이 아니고 과거인 경우
         lockout_expired = User.locked_until.is_not(None) & (
             User.locked_until <= now
         )
+        if soft_failure_cap == 0:
+            next_failed_count = 0
+        else:
+            next_failed_count = case(
+                (lockout_expired, 1),
+                (
+                    User.failed_login_count < soft_failure_cap,
+                    User.failed_login_count + 1,
+                ),
+                else_=User.failed_login_count,
+            )
 
         stmt = (
             update(User)
             .where(User.id == user.id)
             .values(
-                failed_login_count=case(
-                    (lockout_expired, 1),
-                    else_=User.failed_login_count + 1,
-                ),
+                failed_login_count=next_failed_count,
                 last_failed_login_at=now,
                 locked_until=case(
-                    # 만료된 lockout 은 먼저 정리 (순서 중요!)
+                    # 만료된 lockout 은 정리하되, 공개 실패로 새 lockout 을
+                    # 만들지는 않는다 (Issue #13).
                     (lockout_expired, None),
-                    (
-                        User.failed_login_count + 1 >= max_attempts,
-                        lockout_until,
-                    ),
                     else_=User.locked_until,
                 ),
             )
@@ -280,13 +284,16 @@ class AuthService:
             reason=f"failed_attempt={current}/{max_attempts}",
         )
 
-        if current >= max_attempts and user.locked_until is not None:
+        if soft_failure_cap > 0 and current >= soft_failure_cap:
             log_auth_event(
-                "lockout_triggered",
+                "admin_login_soft_capped",
                 user_id=user.id,
                 username=admin_id,
                 success=False,
-                reason=f"locked_until={user.locked_until.isoformat()}",
+                reason=(
+                    f"failed_attempt_cap={current}/{soft_failure_cap}; "
+                    "hard_lockout_not_set_for_public_endpoint"
+                ),
             )
 
     async def _reset_admin_login_counter(self, user: User) -> None:

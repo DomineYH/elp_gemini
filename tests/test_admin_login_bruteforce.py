@@ -4,14 +4,15 @@ Issue #5: 관리자 로그인 brute-force 방어 회귀 테스트
 검증 매트릭스:
     .omc/plans/2026-04-29-issue-5-admin-bruteforce-protection.md §3
     AC1  IP rate limit 초과 시 429 응답
-    AC2  N회 실패 시 (N+1)번째 lockout
+    AC2  익명 wrong-password 누적은 hard lockout 직전 soft-cap
     AC3  lockout 만료 후 정상 인증 + 카운터 리셋
     AC4  성공 시 카운터/잠금 정보 리셋
-    AC5  failed_login_count / locked_until / last_failed_login_at 영속화
+    AC5  failed_login_count / last_failed_login_at 영속화
     AC6  lockout 중 verify_password 호출 안 함 (timing leak 차단)
     AC7  존재하지 않는 admin_id 도 동일 메시지
-    AC8  lockout_triggered / lockout_attempt_blocked 감사 로그
-    +    동시 실패 요청에서 failed_login_count lost-update 없음 (Codex P2 후속)
+    AC8  soft-cap / 기존 lockout 차단 감사 로그
+    +    동시 실패 요청에서 failed_login_count cap lost-update 없음
+         (Codex P2 후속)
 """
 from __future__ import annotations
 
@@ -168,6 +169,17 @@ async def _post_login(client: AsyncClient, admin_id: str, password: str):
     )
 
 
+async def _post_login_from_ip(
+    ip_address: str, admin_id: str, password: str
+):
+    """IP-rotated login attempt helper for rate-limit/DoS regressions."""
+    transport = ASGITransport(app=app, client=(ip_address, 123))
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
+        return await _post_login(client, admin_id, password)
+
+
 # ---------------------------------------------------------------------
 # AC1 — IP rate limit
 # ---------------------------------------------------------------------
@@ -215,42 +227,49 @@ async def test_invalid_csrf_does_not_consume_ip_rate_limit(
 
 
 # ---------------------------------------------------------------------
-# AC2 — N회 실패 후 잠금
+# AC2 — 익명 실패 누적은 hard lockout 직전 soft-cap
 # ---------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_account_locks_after_threshold(
-    http_client, admin_user, session_factory, disable_rate_limit
+async def test_rotated_ip_wrong_passwords_soft_cap_before_lockout(
+    http_client, admin_user, session_factory, disable_failure_response_floor
 ):
-    """기본 임계치(10회) 실패 후 잠금 메시지를 반환."""
+    """IP 회전 wrong-password 캠페인은 관리자 계정을 hard-lock 하지 못한다."""
     from app.config import settings
 
     threshold = settings.ADMIN_MAX_FAILED_ATTEMPTS
+    expected_cap = max(threshold - 1, 0)
+    limiter.enabled = True
 
-    for _ in range(threshold):
-        resp = await _post_login(
-            http_client, ADMIN_USERNAME, "wrong"
+    statuses = []
+    for index in range(threshold + 3):
+        resp = await _post_login_from_ip(
+            f"203.0.113.{index + 10}",
+            ADMIN_USERNAME,
+            f"wrong-{index}",
         )
+        statuses.append(resp.status_code)
         assert resp.status_code == 401
+        assert "ID 또는 비밀번호" in resp.text
+        assert "잠시" not in resp.text
 
-    # 임계치 도달 시점에 lockout 메시지로 전환되어야 함
-    resp = await _post_login(
-        http_client, ADMIN_USERNAME, "wrong"
-    )
-    assert resp.status_code == 401
-    # issue #6: lockout 응답이 외부에는 invalid-credentials 와 동일해야 함
-    assert "ID 또는 비밀번호" in resp.text, (
-        "lockout 시에도 invalid 와 동일한 메시지여야 함 (#6)"
-    )
-    assert "잠시" not in resp.text, (
-        "lockout 임을 외부에 누설하면 안 됨 (#6)"
+    assert 429 not in statuses, (
+        "IP 회전으로 IP rate limit 을 우회한 시나리오를 검증해야 함: "
+        f"{statuses}"
     )
 
-    # DB에 잠금 정보가 영속화되어 있어야 함
+    # DB에는 soft cap 까지만 누적되고 hard lockout 은 생성되지 않아야 함.
     async with session_factory() as session:
         user = await session.get(User, admin_user.id)
-        assert user.failed_login_count >= threshold
-        assert user.locked_until is not None
-        assert user.locked_until > datetime.utcnow()
+        assert user.failed_login_count == expected_cap
+        assert user.locked_until is None
+        assert user.last_failed_login_at is not None
+
+    # 정상 관리자는 soft cap 이후에도 즉시 로그인할 수 있어야 한다.
+    resp = await _post_login_from_ip(
+        "203.0.113.250", ADMIN_USERNAME, ADMIN_PASSWORD
+    )
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/admin/dashboard"
 
 
 # ---------------------------------------------------------------------
@@ -377,7 +396,7 @@ async def test_unknown_admin_returns_generic_message(
 # AC8 — 감사 로그
 # ---------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_audit_log_records_lockout_events(
+async def test_audit_log_records_soft_cap_and_lockout_events(
     http_client, admin_user, session_factory, disable_rate_limit, caplog
 ):
     from app.config import settings
@@ -387,29 +406,39 @@ async def test_audit_log_records_lockout_events(
     caplog.set_level("INFO", logger="app.auth")
     caplog.set_level("WARNING", logger="app.auth")
 
-    for _ in range(threshold):
+    for _ in range(threshold + 1):
         await _post_login(http_client, ADMIN_USERNAME, "wrong")
 
-    # 잠긴 상태에서 추가 시도
+    async with session_factory() as session:
+        user = await session.get(User, admin_user.id)
+        user.failed_login_count = threshold
+        user.locked_until = datetime.utcnow() + timedelta(minutes=5)
+        await session.commit()
+
+    # 기존/manual lockout 상태에서 추가 시도
     await _post_login(http_client, ADMIN_USERNAME, "wrong")
 
     audit_messages = [r.getMessage() for r in caplog.records]
     joined = "\n".join(audit_messages)
-    assert "lockout_triggered" in joined, joined
+    assert "admin_login_soft_capped" in joined, joined
     assert "lockout_attempt_blocked" in joined, joined
     assert "failed_attempt=" in joined, joined
+    assert "lockout_triggered" not in joined, joined
 
 
 # ---------------------------------------------------------------------
-# Codex P2 후속 — 동시 실패 요청에서 failed_login_count 가 정확히 누적
+# Codex P2 후속 — 동시 실패 요청에서 failed_login_count cap 이 정확히 적용
 # ---------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_concurrent_failed_logins_no_lost_updates(
     admin_user, session_factory, disable_rate_limit
 ):
     """10개 코루틴이 각자 별도 세션으로 동시에 실패 시도해도
-    failed_login_count == 10 이어야 한다 (atomic UPDATE 검증)."""
+    failed_login_count 가 soft cap 을 넘지 않아야 한다 (atomic UPDATE 검증)."""
+    from app.config import settings
     from app.services.auth_service import AuthService
+
+    expected_cap = max(settings.ADMIN_MAX_FAILED_ATTEMPTS - 1, 0)
 
     async def fail_once() -> None:
         async with session_factory() as session:
@@ -417,8 +446,9 @@ async def test_concurrent_failed_logins_no_lost_updates(
             result = await service.authenticate_admin(
                 ADMIN_USERNAME, "wrong"
             )
-            # 임계치(10) 도달 전까지는 not locked, 도달 후엔 locked 가능
+            # 공개 wrong-password 실패는 hard lockout 으로 승격되지 않는다.
             assert result.user is None
+            assert result.locked is False
 
         return None
 
@@ -426,14 +456,11 @@ async def test_concurrent_failed_logins_no_lost_updates(
 
     async with session_factory() as session:
         user = await session.get(User, admin_user.id)
-        assert user.failed_login_count == 10, (
+        assert user.failed_login_count == expected_cap, (
             f"동시 10회 실패 후 카운터가 {user.failed_login_count}"
-            f" — lost update 의심"
+            f" — soft cap/lost update 의심"
         )
-        assert user.locked_until is not None, (
-            "임계치 도달했으므로 locked_until 이 설정되어야 함"
-        )
-        assert user.locked_until > datetime.utcnow()
+        assert user.locked_until is None
 
 
 # ---------------------------------------------------------------------

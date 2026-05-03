@@ -87,7 +87,7 @@ async def _get_admin_csrf_token(client: AsyncClient) -> str:
 @pytest.mark.asyncio
 async def test_login_page_has_no_admin_tab():
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app), base_url="https://test"
     ) as ac:
         response = await ac.get("/login", follow_redirects=False)
     assert response.status_code == 200
@@ -106,7 +106,7 @@ async def test_login_page_has_no_admin_tab():
 @pytest.mark.asyncio
 async def test_login_admin_page_renders_admin_form():
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app), base_url="https://test"
     ) as ac:
         response = await ac.get("/login/admin", follow_redirects=False)
     assert response.status_code == 200
@@ -130,7 +130,7 @@ async def test_admin_login_paths_bypass_auth_middleware_with_browser_headers(
     url: str,
 ) -> None:
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app), base_url="https://test"
     ) as ac:
         response = await ac.get(
             url,
@@ -157,7 +157,7 @@ async def test_login_admin_page_redirects_admin_session():
     )
     async with AsyncClient(
         transport=ASGITransport(app=app),
-        base_url="http://test",
+        base_url="https://test",
         cookies={settings.SESSION_COOKIE_NAME: cookie},
     ) as ac:
         response = await ac.get("/login/admin", follow_redirects=False)
@@ -173,7 +173,7 @@ async def test_login_admin_page_redirects_user_session():
     )
     async with AsyncClient(
         transport=ASGITransport(app=app),
-        base_url="http://test",
+        base_url="https://test",
         cookies={settings.SESSION_COOKIE_NAME: cookie},
     ) as ac:
         response = await ac.get("/login/admin", follow_redirects=False)
@@ -185,7 +185,7 @@ async def test_login_admin_page_redirects_user_session():
 @pytest.mark.asyncio
 async def test_admin_login_invalid_credentials_renders_admin_form():
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app), base_url="https://test"
     ) as ac:
         response = await ac.post(
             "/auth/login/admin",
@@ -207,7 +207,7 @@ async def test_admin_login_invalid_credentials_renders_admin_form():
 @pytest.mark.asyncio
 async def test_admin_login_missing_csrf_is_rejected_before_authentication():
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app), base_url="https://test"
     ) as ac:
         with patch(
             "app.routers.auth.AuthService.authenticate_admin"
@@ -227,7 +227,7 @@ async def test_admin_login_missing_csrf_is_rejected_before_authentication():
 @pytest.mark.asyncio
 async def test_admin_login_invalid_csrf_is_rejected_before_authentication():
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app), base_url="https://test"
     ) as ac:
         await _get_admin_csrf_token(ac)
         with patch(
@@ -252,7 +252,7 @@ async def test_admin_login_invalid_csrf_is_rejected_before_authentication():
 @pytest.mark.asyncio
 async def test_admin_login_alias_renders_admin_form():
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app), base_url="https://test"
     ) as ac:
         response = await ac.get("/admin/login", follow_redirects=False)
     assert response.status_code == 200
@@ -266,7 +266,7 @@ async def test_admin_login_alias_renders_admin_form():
 @pytest.mark.asyncio
 async def test_admin_login_alias_trailing_slash():
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app), base_url="https://test"
     ) as ac:
         response = await ac.get("/admin/login/", follow_redirects=True)
     assert response.status_code == 200
@@ -277,7 +277,7 @@ async def test_admin_login_alias_trailing_slash():
 @pytest.mark.asyncio
 async def test_login_page_does_not_expose_admin_url():
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app), base_url="https://test"
     ) as ac:
         response = await ac.get("/login", follow_redirects=False)
     assert response.status_code == 200

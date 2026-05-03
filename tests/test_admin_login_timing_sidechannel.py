@@ -96,7 +96,7 @@ async def http_client(session_factory) -> AsyncIterator[AsyncClient]:
     app.dependency_overrides[get_db] = _get_db_override
     transport = ASGITransport(app=app)
     async with AsyncClient(
-        transport=transport, base_url="http://test"
+        transport=transport, base_url="https://test"
     ) as client:
         yield client
     app.dependency_overrides.pop(get_db, None)
