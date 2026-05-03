@@ -524,10 +524,12 @@ async def login_admin(
     Returns:
         리다이렉트 응답 또는 401
     """
-    try:
-        # admin_id 기반 rate limit (IP 전환 brute-force 방어)
-        check_admin_id_rate_limit(admin_id)
+    # admin_id 기반 rate limit (IP 전환 brute-force 방어).
+    # 아래의 try/except Exception 가 HTTPException(429) 까지 삼켜 500 으로
+    # 변환하지 않도록 try 블록 밖에서 호출한다.
+    check_admin_id_rate_limit(admin_id)
 
+    try:
         auth_service = AuthService(db)
         result = await auth_service.authenticate_admin(
             admin_id, password

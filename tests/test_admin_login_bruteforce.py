@@ -465,3 +465,36 @@ async def test_admin_id_rate_limit_isolated_per_id():
     # admin2 는 동일 IP(호출 컨텍스트)에서도 허용
     check_admin_id_rate_limit("other_admin")
     # 예외 없이 통과해야 함
+
+
+# ---------------------------------------------------------------------
+# admin_id rate limit HTTP 통합 — broad-except 가 HTTPException(429) 을
+# 500 으로 변환하지 않는다는 회귀 가드
+# ---------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_admin_id_rate_limit_via_http_returns_429(
+    http_client, admin_user, disable_rate_limit
+):
+    """POST /auth/login/admin 으로 admin_id 한도 초과 시 HTTP 429 응답.
+
+    `check_admin_id_rate_limit` 의 HTTPException(429) 이 핸들러의
+    `try/except Exception` 에 흡수되어 500 으로 변환되면 안 된다.
+    `disable_rate_limit` 으로 IP 기반 rate limit 은 끄고
+    (`limiter.enabled = False`), admin_id 한도 (`settings.RATE_LIMIT_ENABLED`
+    게이트) 만 검증한다.
+    """
+    limit_count = _admin_id_limit_item.amount
+
+    statuses: list[int] = []
+    for _ in range(limit_count + 3):
+        resp = await _post_login(
+            http_client, ADMIN_USERNAME, "wrong"
+        )
+        statuses.append(resp.status_code)
+
+    assert 429 in statuses, (
+        f"admin_id 한도 초과 시 429 가 응답에 포함되어야 함: {statuses}"
+    )
+    assert 500 not in statuses, (
+        f"HTTPException(429) 가 500 으로 변환되면 안 됨: {statuses}"
+    )
