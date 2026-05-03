@@ -160,7 +160,7 @@ class Settings(BaseSettings):
         le=10.0,
         description=(
             "관리자 로그인 실패 응답 최소 소요 시간(초). "
-            "admin_id 타이밍 열거 방지용"
+            "admin_id 타이밍 열거 방지용 운영 기본값"
         ),
     )
 

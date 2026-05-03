@@ -166,6 +166,9 @@ class AuthService:
         - 잠긴 계정은 비밀번호 검증을 건너뛴다 (timing leak 차단)
         - 임계치(설정값) 도달 시 잠금 시각을 영속화한다
         - 성공 시 카운터를 리셋한다
+        - 이 서비스는 bcrypt/DB 작업 비용을 보정한다. 외부 응답의
+          wall-clock floor 는 HTTP 경계(`login_admin`) 또는 동등한
+          호출자가 적용해야 한다.
 
         Returns:
             AdminLoginResult: user(성공 시), locked, retry_at

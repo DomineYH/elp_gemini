@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
+from app.config import settings
 from app.db import Base, get_db
 from app.main import app
 from app.models.users import User
@@ -108,11 +109,22 @@ def _reset_limiter_storage():
 
 @pytest.fixture
 def disable_rate_limit():
-    """rate limit 비활성화 (lockout / 메시지 테스트용)."""
-    original = limiter.enabled
+    """rate limit 과 실패 응답 floor 비활성화.
+
+    이 파일은 brute-force/lockout 동작을 검증한다. issue #6 의
+    wall-clock parity 는 전용 timing 테스트에서 검증하므로, 여기서는
+    `ADMIN_LOGIN_FAILURE_MIN_SECONDS` 를 0으로 낮춰 불필요한 지연 없이
+    기존 brute-force 회귀 신호만 확인한다.
+    """
+    original_limiter_enabled = limiter.enabled
+    original_failure_min_seconds = settings.ADMIN_LOGIN_FAILURE_MIN_SECONDS
     limiter.enabled = False
-    yield
-    limiter.enabled = original
+    settings.ADMIN_LOGIN_FAILURE_MIN_SECONDS = 0.0
+    try:
+        yield
+    finally:
+        settings.ADMIN_LOGIN_FAILURE_MIN_SECONDS = original_failure_min_seconds
+        limiter.enabled = original_limiter_enabled
 
 
 def _post_login(client: AsyncClient, admin_id: str, password: str):
