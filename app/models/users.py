@@ -55,9 +55,20 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan"
     )
+    profile = relationship(
+        "UserProfile",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
     def __repr__(self):
         return (
             f"<User(id={self.id}, username={self.username}, "
             f"nickname={self.nickname}, is_admin={self.is_admin})>"
         )
+
+
+# User를 직접 import하는 기존 코드 경로에서도 profile relationship 대상이
+# SQLAlchemy class registry에 등록되도록 유지한다.
+from app.models.user_profiles import UserProfile  # noqa: E402,F401
