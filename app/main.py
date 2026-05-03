@@ -23,6 +23,7 @@ from app.middleware import AuthMiddleware
 from app.db import engine
 from app.migrations import (
     ensure_criteria_file_path_column,
+    ensure_user_profiles_table,
     ensure_users_lockout_columns,
 )
 
@@ -171,6 +172,12 @@ async def startup_event():
     if lockout_patched:
         logger.info(
             "users 테이블 lockout 컬럼이 자동 복구되었습니다."
+        )
+
+    profiles_patched = await ensure_user_profiles_table(engine)
+    if profiles_patched:
+        logger.info(
+            "user_profiles 테이블이 자동 생성되었습니다."
         )
 
     # 데이터베이스 초기화 (개발 모드에서만)
