@@ -420,7 +420,7 @@ async def register_user(
     request: Request,
     email: str = Form(...),
     password: str = Form(...),
-    password_confirm: str = Form(...),
+    password_confirm: str | None = Form(None),
     role: str = Form(...),
     teacher_region: str | None = Form(None),
     teacher_career_years: str | None = Form(None),
@@ -450,7 +450,7 @@ async def register_user(
             status_code=status_code,
         )
 
-    if password != password_confirm:
+    if password_confirm is not None and password != password_confirm:
         return render_error("비밀번호 확인이 일치하지 않습니다.")
 
     if role not in USER_ROLE_LABELS:
