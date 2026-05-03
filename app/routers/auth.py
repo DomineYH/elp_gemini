@@ -2,7 +2,9 @@
 인증 라우터
 로그인, 로그아웃, 현재 사용자 정보 엔드포인트
 """
+import asyncio
 import logging
+import time
 
 from fastapi import (
     APIRouter,
@@ -39,6 +41,16 @@ from app.utils.logging import log_auth_event
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
+
+
+async def _equalize_admin_failure_response(started_at: float) -> None:
+    """관리자 실패 응답을 최소 시간까지 지연해 timing oracle 을 줄인다."""
+    min_seconds = float(settings.ADMIN_LOGIN_FAILURE_MIN_SECONDS)
+    if min_seconds <= 0:
+        return
+    remaining = min_seconds - (time.monotonic() - started_at)
+    if remaining > 0:
+        await asyncio.sleep(remaining)
 
 
 USER_ROLE_LABELS = {
@@ -497,7 +509,7 @@ async def register_user(
 INVALID_ADMIN_CREDENTIALS_MESSAGE = (
     "관리자 ID 또는 비밀번호가 올바르지 않습니다."
 )
-# Issue #6: lockout 상태도 외부 응답은 INVALID_ADMIN_CREDENTIALS_MESSAGE 로 통일.
+# Issue #6: lockout 상태도 외부 응답은 generic admin 실패 메시지로 통일.
 # 별도의 lockout 메시지는 외부에 노출되지 않으므로 상수로 보존하지 않는다.
 
 
@@ -528,6 +540,7 @@ async def login_admin(
     # 아래의 try/except Exception 가 HTTPException(429) 까지 삼켜 500 으로
     # 변환하지 않도록 try 블록 밖에서 호출한다.
     check_admin_id_rate_limit(admin_id)
+    failure_started_at = time.monotonic()
 
     try:
         auth_service = AuthService(db)
@@ -552,6 +565,7 @@ async def login_admin(
                     success=False,
                     reason="Invalid credentials",
                 )
+            await _equalize_admin_failure_response(failure_started_at)
             return templates.TemplateResponse(
                 "user/login_admin.html",
                 {

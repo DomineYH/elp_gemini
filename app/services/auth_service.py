@@ -28,9 +28,12 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 logger = logging.getLogger(__name__)
 
-# 타이밍 사이드채널 차단용 사전계산 더미 해시 (issue #6).
-# 모듈 import 시 1회만 계산하여 cold-start 타이밍 스파이크와 동시성 race 모두 회피.
-_DUMMY_BCRYPT_HASH: str = pwd_context.hash("dummy-timing-equalizer")
+# 타이밍 사이드채널 차단용 사전계산 더미 bcrypt 해시 (issue #6).
+# 런타임/import 시 hash()를 새로 계산하지 않아 cold-start 타이밍 스파이크와
+# 동시성 race를 피한다. 평문은 검증되지 않으며 verify 비용만 사용한다.
+_DUMMY_BCRYPT_HASH: str = (
+    "$2b$12$Fif9YgEbtiOSRyzBnaWFTeS1g06F.zPP2MARUT911dzcU0lL9jooy"
+)
 
 
 @dataclass
@@ -69,17 +72,39 @@ class AuthService:
             )
 
     async def _touch_locked_attempt(self, user: User) -> None:
-        """잠금 상태에서 추가 로그인 시도가 들어왔을 때, 비밀번호 검증
-        경로의 DB 쓰기 비용과 타이밍을 일치시키기 위한 touch-only UPDATE.
+        """잠금 상태 실패를 invalid-password 실패와 같은 DB 비용으로 기록한다.
 
-        - failed_login_count 와 locked_until 은 변경하지 않는다 (잠금 자체에 영향 없음)
-        - last_failed_login_at 만 갱신하여 단일 atomic UPDATE 비용을 발생시킨다
-        - 부수 효과로, 잠금 상태에서의 시도 빈도가 last_failed_login_at 으로 추적된다
+        잠금 중 추가 시도는 잠금 카운터/해제 시각을 바꾸면 안 되지만,
+        issue #6 방어상 invalid-password 경로의 atomic UPDATE + refresh 비용과
+        같은 모양의 작업을 수행해야 locked 여부가 timing oracle 이 되지 않는다.
         """
         now = datetime.utcnow()
         stmt = (
             update(User)
             .where(User.id == user.id)
+            .values(
+                failed_login_count=User.failed_login_count,
+                last_failed_login_at=now,
+                locked_until=User.locked_until,
+            )
+        )
+        await self.db.execute(stmt)
+        await self.db.commit()
+        await self.db.refresh(user)
+
+    async def _touch_missing_admin_attempt(self) -> None:
+        """존재하지 않거나 관리자가 아닌 admin_id 실패 경로의 DB 비용 보정.
+
+        실제 관리자 invalid-password 경로는 실패 카운터 UPDATE + COMMIT 이
+        발생한다. missing/non-admin 경로가 bcrypt 보정 후 즉시 반환하면
+        여전히 DB 쓰기 유무로 admin_id 열거가 가능할 수 있으므로, 어떤
+        사용자 행도 변경하지 않는 no-op UPDATE + COMMIT 으로 왕복 비용을
+        맞춘다.
+        """
+        now = datetime.utcnow()
+        stmt = (
+            update(User)
+            .where(User.id == -1)
             .values(last_failed_login_at=now)
         )
         await self.db.execute(stmt)
@@ -151,12 +176,13 @@ class AuthService:
         # 2. 사용자가 없거나 관리자가 아닌 경우 — 동일 응답
         if not user or not user.is_admin:
             self._dummy_password_verify(password)
+            await self._touch_missing_admin_attempt()
             return AdminLoginResult(user=None, locked=False)
 
         # 3. 잠금 상태면 비밀번호 검증 없이 즉시 반환
         if self._is_account_locked(user):
             self._dummy_password_verify(password)
-            # invalid-password 경로의 DB UPDATE 비용과 타이밍을 일치시킨다 (issue #6)
+            # invalid-password 경로의 DB UPDATE 비용과 타이밍을 맞춘다.
             await self._touch_locked_attempt(user)
             log_auth_event(
                 "lockout_attempt_blocked",

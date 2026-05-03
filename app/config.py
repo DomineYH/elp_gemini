@@ -154,6 +154,15 @@ class Settings(BaseSettings):
         le=1440,
         description="관리자 로그인 잠금 지속 시간 (분)",
     )
+    ADMIN_LOGIN_FAILURE_MIN_SECONDS: float = Field(
+        default=1.5,
+        ge=0.0,
+        le=10.0,
+        description=(
+            "관리자 로그인 실패 응답 최소 소요 시간(초). "
+            "admin_id 타이밍 열거 방지용"
+        ),
+    )
 
 
 # 전역 설정 인스턴스

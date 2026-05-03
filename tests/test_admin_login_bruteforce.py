@@ -33,7 +33,7 @@ from sqlalchemy.pool import StaticPool
 from app.db import Base, get_db
 from app.main import app
 from app.models.users import User
-from app.rate_limit import limiter, _admin_id_limit_item
+from app.rate_limit import _admin_id_limit_item, limiter
 
 ADMIN_USERNAME = "bf_admin"
 ADMIN_PASSWORD = "correct horse battery staple"
