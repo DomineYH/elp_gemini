@@ -12,13 +12,19 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 import logging
 
 from app.config import settings
+from app.rate_limit import limiter
 from app.utils.logging import setup_logging
 from app.middleware import AuthMiddleware
 from app.db import engine
-from app.migrations import ensure_criteria_file_path_column
+from app.migrations import (
+    ensure_criteria_file_path_column,
+    ensure_users_lockout_columns,
+)
 
 # 로깅 설정
 setup_logging(debug=settings.DEBUG)
@@ -31,6 +37,12 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
+)
+
+# Rate limiter (Issue #5: 관리자 로그인 brute-force 방어)
+app.state.limiter = limiter
+app.add_exception_handler(
+    RateLimitExceeded, _rate_limit_exceeded_handler
 )
 
 # CORS 미들웨어 (T013)
@@ -154,6 +166,12 @@ async def startup_event():
     patched = await ensure_criteria_file_path_column(engine)
     if patched:
         logger.info("criteria.file_path 컬럼이 자동 복구되었습니다.")
+
+    lockout_patched = await ensure_users_lockout_columns(engine)
+    if lockout_patched:
+        logger.info(
+            "users 테이블 lockout 컬럼이 자동 복구되었습니다."
+        )
 
     # 데이터베이스 초기화 (개발 모드에서만)
     if settings.DEBUG:

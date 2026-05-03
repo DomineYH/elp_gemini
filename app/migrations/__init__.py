@@ -3,8 +3,12 @@
 """
 
 from .criteria_schema import ensure_criteria_file_path_column
+from .users_lockout_columns import ensure_users_lockout_columns
 
-__all__ = ["ensure_criteria_file_path_column"]
+__all__ = [
+    "ensure_criteria_file_path_column",
+    "ensure_users_lockout_columns",
+]
 
 
 

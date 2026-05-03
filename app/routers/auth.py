@@ -15,9 +15,11 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
+from app.config import settings
 from app.constants import USER_TYPES
 from app.db import get_db
 from app.models.users import User
+from app.rate_limit import limiter
 from app.schemas.users import UserResponse, UserLogin
 from app.services.auth_service import AuthService
 from app.utils.logging import log_auth_event
@@ -158,8 +160,18 @@ async def login_user(
         )
 
 
-# 관리자 로그인 (ID + 비밀번호 기반)
+INVALID_ADMIN_CREDENTIALS_MESSAGE = (
+    "관리자 ID 또는 비밀번호가 올바르지 않습니다."
+)
+ADMIN_ACCOUNT_LOCKED_MESSAGE = (
+    "관리자 계정이 일시적으로 잠겨 있습니다. "
+    "잠시 후 다시 시도해주세요."
+)
+
+
+# 관리자 로그인 (ID + 비밀번호 기반) — Issue #5 brute-force 방어
 @router.post("/auth/login/admin")
+@limiter.limit(settings.ADMIN_LOGIN_RATE_LIMIT)
 async def login_admin(
     request: Request,
     admin_id: str = Form(...),
@@ -169,7 +181,7 @@ async def login_admin(
     """
     관리자 로그인 (ID + 비밀번호 기반)
 
-    관리자 ID와 비밀번호를 사용하여 인증합니다.
+    Issue #5: rate limit + 계정 잠금으로 brute-force 방어.
 
     Args:
         request: Request 객체
@@ -178,13 +190,25 @@ async def login_admin(
         db: 데이터베이스 세션
 
     Returns:
-        리다이렉트 응답
+        리다이렉트 응답 또는 401
     """
     try:
         auth_service = AuthService(db)
-        user = await auth_service.authenticate_admin(admin_id, password)
+        result = await auth_service.authenticate_admin(
+            admin_id, password
+        )
 
-        if not user:
+        if result.locked:
+            return templates.TemplateResponse(
+                "user/login_admin.html",
+                {
+                    "request": request,
+                    "error": ADMIN_ACCOUNT_LOCKED_MESSAGE,
+                },
+                status_code=401,
+            )
+
+        if not result.user:
             log_auth_event(
                 "login",
                 username=admin_id,
@@ -195,10 +219,12 @@ async def login_admin(
                 "user/login_admin.html",
                 {
                     "request": request,
-                    "error": "관리자 ID 또는 비밀번호가 올바르지 않습니다.",
+                    "error": INVALID_ADMIN_CREDENTIALS_MESSAGE,
                 },
                 status_code=401,
             )
+
+        user = result.user
 
         # 세션 고정 공격 방지: 기존 세션 클리어
         request.session.clear()
@@ -232,7 +258,9 @@ async def login_admin(
             success=False,
             reason=str(e),
         )
-        logger.error(f"관리자 로그인 처리 중 오류: {str(e)}", exc_info=True)
+        logger.error(
+            f"관리자 로그인 처리 중 오류: {str(e)}", exc_info=True
+        )
         return templates.TemplateResponse(
             "user/login_admin.html",
             {
