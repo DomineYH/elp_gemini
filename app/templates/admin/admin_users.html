@@ -41,12 +41,32 @@
         </div>
     </div>
 
-    <!-- 학년별 통계 테이블 -->
+    <!-- 등록 사용자 통계 카드 -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white shadow-md rounded-lg p-4">
+            <div class="text-sm font-medium text-slate-600">등록 일반 사용자</div>
+            <div id="stat-regular-users" class="text-2xl font-bold text-slate-800 mt-1">-</div>
+        </div>
+        <div class="bg-white shadow-md rounded-lg p-4">
+            <div class="text-sm font-medium text-emerald-600">교사</div>
+            <div id="stat-teachers" class="text-2xl font-bold text-emerald-800 mt-1">-</div>
+        </div>
+        <div class="bg-white shadow-md rounded-lg p-4">
+            <div class="text-sm font-medium text-indigo-600">예비교사</div>
+            <div id="stat-preservice" class="text-2xl font-bold text-indigo-800 mt-1">-</div>
+        </div>
+        <div class="bg-white shadow-md rounded-lg p-4">
+            <div class="text-sm font-medium text-gray-600">프로필 미등록</div>
+            <div id="stat-no-profile" class="text-2xl font-bold text-gray-800 mt-1">-</div>
+        </div>
+    </div>
+
+    <!-- 세션 유형별 통계 테이블 -->
     <div class="bg-white shadow-md rounded-lg overflow-hidden mb-6">
         <table class="w-full">
             <thead class="bg-gray-50">
                 <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">학년</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">세션 유형</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">세션 수</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">QnA 수</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">보고서 수</th>
@@ -62,7 +82,7 @@
     <!-- 필터 영역 -->
     <div class="bg-white shadow-md rounded-lg p-4 mb-6">
         <div class="flex items-center gap-4">
-            <label for="userTypeFilter" class="text-sm font-medium text-gray-700">사용자 유형:</label>
+            <label for="userTypeFilter" class="text-sm font-medium text-gray-700">세션 유형:</label>
             <select id="userTypeFilter" class="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">전체</option>
                 <option value="1학년">1학년</option>
@@ -77,12 +97,58 @@
         </div>
     </div>
 
+    <!-- 사용자 계정 목록 -->
+    <div class="bg-white shadow-md rounded-lg overflow-hidden mb-6">
+        <div class="p-4 border-b border-gray-200 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div>
+                <h2 class="text-lg font-semibold text-gray-900">사용자 계정 목록</h2>
+                <p class="text-sm text-gray-500 mt-1">
+                    이메일, 프로필 역할/지역/경력/학년을 확인하고 일반 사용자 비밀번호를 변경합니다.
+                </p>
+            </div>
+            <div class="flex gap-2">
+                <input
+                    id="accountSearch"
+                    type="search"
+                    placeholder="이메일 또는 ID 검색"
+                    class="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                <button onclick="loadAccounts(1)" class="bg-gray-700 text-white px-4 py-2 rounded-md hover:bg-gray-800">
+                    검색
+                </button>
+            </div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">이메일</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">내부 ID</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">역할</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">지역/대학교지역</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">경력/학년</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">활동</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">가입일</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">비밀번호 변경</th>
+                    </tr>
+                </thead>
+                <tbody id="accountBody" class="divide-y divide-gray-200">
+                    <tr><td colspan="9" class="px-6 py-4 text-sm text-gray-500 text-center">로딩 중...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div id="accountPagination" class="px-4 py-4 flex justify-center items-center gap-2"></div>
+    </div>
+
     <!-- 세션 목록 테이블 -->
     <div class="bg-white shadow-md rounded-lg overflow-hidden">
         <table class="w-full">
             <thead class="bg-gray-50">
                 <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">학년</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">세션 유형</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">이메일</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">프로필</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">접속일시</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">세션ID</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">QnA</th>
@@ -93,7 +159,7 @@
                 </tr>
             </thead>
             <tbody id="sessionBody" class="divide-y divide-gray-200">
-                <tr><td colspan="8" class="px-6 py-4 text-sm text-gray-500 text-center">로딩 중...</td></tr>
+                <tr><td colspan="10" class="px-6 py-4 text-sm text-gray-500 text-center">로딩 중...</td></tr>
             </tbody>
         </table>
     </div>
@@ -107,6 +173,8 @@
 <script>
 let currentPage = 1;
 let totalPages = 1;
+let accountPage = 1;
+let accountTotalPages = 1;
 const pageSize = 20;
 
 function getBadgeClass(userType) {
@@ -116,8 +184,47 @@ function getBadgeClass(userType) {
         '3학년': 'bg-yellow-100 text-yellow-800',
         '4학년': 'bg-purple-100 text-purple-800',
         '현직교사': 'bg-red-100 text-red-800',
+        'teacher': 'bg-emerald-100 text-emerald-800',
+        'preservice_teacher': 'bg-indigo-100 text-indigo-800',
+        '교사': 'bg-emerald-100 text-emerald-800',
+        '예비교사': 'bg-indigo-100 text-indigo-800',
     };
     return classes[userType] || 'bg-gray-100 text-gray-800';
+}
+
+function escapeHtml(value) {
+    if (value === null || value === undefined || value === '') {
+        return '-';
+    }
+    return String(value).replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+    }[char]));
+}
+
+function getProfileRole(profile) {
+    return profile?.role_label || profile?.role || '-';
+}
+
+function getProfileRegion(profile) {
+    return profile?.teacher_region ||
+        profile?.preservice_university_region ||
+        '-';
+}
+
+function getProfileCareerOrGrade(profile) {
+    if (profile?.teacher_career_years !== null &&
+            profile?.teacher_career_years !== undefined) {
+        return `${profile.teacher_career_years}년`;
+    }
+    if (profile?.preservice_grade !== null &&
+            profile?.preservice_grade !== undefined) {
+        return `${profile.preservice_grade}학년`;
+    }
+    return '-';
 }
 
 function formatDate(dateStr) {
@@ -145,6 +252,15 @@ async function loadStats() {
             data.totals.report_count.toLocaleString();
         document.getElementById('stat-today').textContent =
             data.totals.today_count.toLocaleString();
+        const profileTotals = data.profile_totals || {};
+        document.getElementById('stat-regular-users').textContent =
+            (profileTotals.regular_user_count || 0).toLocaleString();
+        document.getElementById('stat-teachers').textContent =
+            (profileTotals.teacher_count || 0).toLocaleString();
+        document.getElementById('stat-preservice').textContent =
+            (profileTotals.preservice_teacher_count || 0).toLocaleString();
+        document.getElementById('stat-no-profile').textContent =
+            (profileTotals.no_profile_count || 0).toLocaleString();
 
         const tbody = document.getElementById('statsBody');
         if (!data.stats || data.stats.length === 0) {
@@ -156,7 +272,7 @@ async function loadStats() {
             <tr>
                 <td class="px-6 py-4 text-sm">
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getBadgeClass(s.user_type)}">
-                        ${s.user_type}
+                        ${escapeHtml(s.user_type)}
                     </span>
                 </td>
                 <td class="px-6 py-4 text-sm">${s.session_count}</td>
@@ -167,6 +283,105 @@ async function loadStats() {
         `).join('');
     } catch (error) {
         console.error('통계 로드 실패:', error);
+    }
+}
+
+async function loadAccounts(page = 1) {
+    accountPage = page;
+    const search = document.getElementById('accountSearch').value.trim();
+
+    try {
+        let url = `/admin/api/users/accounts?page=${page}&page_size=${pageSize}`;
+        if (search) {
+            url += `&q=${encodeURIComponent(search)}`;
+        }
+
+        const response = await fetch(url);
+        const data = await response.json();
+        const tbody = document.getElementById('accountBody');
+
+        if (!data.accounts || data.accounts.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="px-6 py-4 text-sm text-gray-500 text-center">사용자가 없습니다</td></tr>';
+            document.getElementById('accountPagination').innerHTML = '';
+            return;
+        }
+
+        tbody.innerHTML = data.accounts.map((account) => {
+            const profile = account.profile || {};
+            const passwordAction = account.can_change_password ? `
+                <div class="flex min-w-[240px] gap-2">
+                    <input
+                        id="password-${account.user_id}"
+                        type="password"
+                        minlength="8"
+                        autocomplete="new-password"
+                        placeholder="새 비밀번호"
+                        class="w-36 border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                    <button
+                        onclick="changePassword(${account.user_id})"
+                        class="bg-blue-600 text-white px-3 py-1 rounded-md text-sm hover:bg-blue-700"
+                    >
+                        변경
+                    </button>
+                </div>
+            ` : '<span class="text-xs text-gray-400">관리자 변경 불가</span>';
+
+            return `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-4 text-sm font-mono text-gray-600">${account.user_id}</td>
+                    <td class="px-4 py-4 text-sm text-gray-900">${escapeHtml(account.email)}</td>
+                    <td class="px-4 py-4 text-sm text-gray-500">${escapeHtml(account.username)}</td>
+                    <td class="px-4 py-4 text-sm">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getBadgeClass(profile.role || profile.role_label)}">
+                            ${escapeHtml(getProfileRole(profile))}
+                        </span>
+                    </td>
+                    <td class="px-4 py-4 text-sm text-gray-600">${escapeHtml(getProfileRegion(profile))}</td>
+                    <td class="px-4 py-4 text-sm text-gray-600">${escapeHtml(getProfileCareerOrGrade(profile))}</td>
+                    <td class="px-4 py-4 text-sm text-gray-600">
+                        세션 ${account.session_count} · 보고서 ${account.report_count}
+                    </td>
+                    <td class="px-4 py-4 text-sm text-gray-500">${formatDate(account.created_at)}</td>
+                    <td class="px-4 py-4 text-sm">${passwordAction}</td>
+                </tr>
+            `;
+        }).join('');
+
+        accountTotalPages = Math.ceil(data.total / pageSize);
+        updateAccountPagination(data.total);
+    } catch (error) {
+        console.error('사용자 계정 목록 로드 실패:', error);
+        document.getElementById('accountBody').innerHTML =
+            '<tr><td colspan="9" class="px-6 py-4 text-sm text-red-500 text-center">사용자 계정 목록을 불러올 수 없습니다</td></tr>';
+    }
+}
+
+async function changePassword(userId) {
+    const input = document.getElementById(`password-${userId}`);
+    const newPassword = input.value;
+    if (!newPassword || newPassword.length < 8) {
+        alert('비밀번호는 최소 8자 이상이어야 합니다.');
+        input.focus();
+        return;
+    }
+
+    try {
+        const response = await fetch(`/admin/api/users/${userId}/password`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({new_password: newPassword}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            alert(data.detail || '비밀번호 변경에 실패했습니다.');
+            return;
+        }
+        input.value = '';
+        alert(data.message || '비밀번호가 변경되었습니다.');
+    } catch (error) {
+        console.error('비밀번호 변경 실패:', error);
+        alert('비밀번호 변경 중 오류가 발생했습니다.');
     }
 }
 
@@ -185,7 +400,7 @@ async function loadSessions(page = 1) {
         const tbody = document.getElementById('sessionBody');
 
         if (!data.sessions || data.sessions.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="px-6 py-4 text-sm text-gray-500 text-center">세션이 없습니다</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="px-6 py-4 text-sm text-gray-500 text-center">세션이 없습니다</td></tr>';
             document.getElementById('pagination').innerHTML = '';
             return;
         }
@@ -194,9 +409,11 @@ async function loadSessions(page = 1) {
             <tr class="hover:bg-gray-50">
                 <td class="px-6 py-4 text-sm">
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getBadgeClass(s.user_type)}">
-                        ${s.user_type || '미지정'}
+                        ${escapeHtml(s.user_type || '미지정')}
                     </span>
                 </td>
+                <td class="px-6 py-4 text-sm text-gray-600">${escapeHtml(s.user_email)}</td>
+                <td class="px-6 py-4 text-sm text-gray-600">${escapeHtml(s.profile_summary)}</td>
                 <td class="px-6 py-4 text-sm text-gray-500">${formatDate(s.created_at)}</td>
                 <td class="px-6 py-4 text-sm font-mono text-gray-600">${s.session_id}</td>
                 <td class="px-6 py-4 text-sm">${s.qna_count}</td>
@@ -218,7 +435,7 @@ async function loadSessions(page = 1) {
     } catch (error) {
         console.error('세션 목록 로드 실패:', error);
         document.getElementById('sessionBody').innerHTML =
-            '<tr><td colspan="8" class="px-6 py-4 text-sm text-red-500 text-center">세션 목록을 불러올 수 없습니다</td></tr>';
+            '<tr><td colspan="10" class="px-6 py-4 text-sm text-red-500 text-center">세션 목록을 불러올 수 없습니다</td></tr>';
     }
 }
 
@@ -279,7 +496,47 @@ function updatePagination(total) {
     pagination.innerHTML = html;
 }
 
+function updateAccountPagination(total) {
+    const pagination = document.getElementById('accountPagination');
+
+    if (accountTotalPages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+
+    html += `
+        <button onclick="loadAccounts(${accountPage - 1})"
+                ${accountPage === 1 ? 'disabled' : ''}
+                class="px-3 py-1 rounded ${accountPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}">
+            이전
+        </button>
+    `;
+
+    for (let i = 1; i <= accountTotalPages; i++) {
+        html += `
+            <button onclick="loadAccounts(${i})"
+                    class="px-3 py-1 rounded ${i === accountPage ? 'bg-blue-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}">
+                ${i}
+            </button>
+        `;
+    }
+
+    html += `
+        <button onclick="loadAccounts(${accountPage + 1})"
+                ${accountPage === accountTotalPages ? 'disabled' : ''}
+                class="px-3 py-1 rounded ${accountPage === accountTotalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}">
+            다음
+        </button>
+    `;
+
+    html += `<span class="ml-4 text-sm text-gray-500">총 ${total}명</span>`;
+    pagination.innerHTML = html;
+}
+
 loadStats();
+loadAccounts(1);
 loadSessions(1);
 </script>
 {% endblock %}
