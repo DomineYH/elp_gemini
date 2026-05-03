@@ -4,6 +4,7 @@
 """
 import asyncio
 import logging
+import secrets
 import time
 
 from fastapi import (
@@ -27,7 +28,11 @@ from app.constants import (
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models.users import User
-from app.rate_limit import check_admin_id_rate_limit, limiter
+from app.rate_limit import (
+    check_admin_id_rate_limit,
+    check_admin_ip_rate_limit,
+    limiter,
+)
 from app.schemas.users import (
     EmailPasswordLogin,
     PreserviceTeacherRegistration,
@@ -293,7 +298,7 @@ async def login_admin_page(request: Request):
         return RedirectResponse(url="/", status_code=302)
 
     return templates.TemplateResponse(
-        "user/login_admin.html", {"request": request}
+        "user/login_admin.html", _admin_login_context(request)
     )
 
 
@@ -509,17 +514,57 @@ async def register_user(
 INVALID_ADMIN_CREDENTIALS_MESSAGE = (
     "관리자 ID 또는 비밀번호가 올바르지 않습니다."
 )
+ADMIN_LOGIN_CSRF_SESSION_KEY = "admin_login_csrf_token"
+ADMIN_LOGIN_CSRF_ERROR_MESSAGE = (
+    "보안 확인에 실패했습니다. 로그인 페이지를 새로고침한 뒤 "
+    "다시 시도해주세요."
+)
 # Issue #6: lockout 상태도 외부 응답은 generic admin 실패 메시지로 통일.
 # 별도의 lockout 메시지는 외부에 노출되지 않으므로 상수로 보존하지 않는다.
 
 
+def _ensure_admin_login_csrf_token(request: Request) -> str:
+    """관리자 로그인 폼용 CSRF 토큰을 세션에 보관한다."""
+    token = request.session.get(ADMIN_LOGIN_CSRF_SESSION_KEY)
+    if not token:
+        token = secrets.token_urlsafe(32)
+        request.session[ADMIN_LOGIN_CSRF_SESSION_KEY] = token
+    return str(token)
+
+
+def _admin_login_context(
+    request: Request,
+    *,
+    error: str | None = None,
+) -> dict:
+    """Build template context for the administrator login form."""
+    return {
+        "request": request,
+        "error": error,
+        "csrf_token": _ensure_admin_login_csrf_token(request),
+    }
+
+
+def _is_admin_login_csrf_valid(
+    request: Request,
+    csrf_token: str,
+) -> bool:
+    """세션 토큰과 폼 토큰을 상수 시간 비교한다."""
+    expected = request.session.get(ADMIN_LOGIN_CSRF_SESSION_KEY)
+    return bool(
+        expected
+        and csrf_token
+        and secrets.compare_digest(str(expected), str(csrf_token))
+    )
+
+
 # 관리자 로그인 (ID + 비밀번호 기반) — Issue #5 brute-force 방어
 @router.post("/auth/login/admin")
-@limiter.limit(settings.ADMIN_LOGIN_RATE_LIMIT)
 async def login_admin(
     request: Request,
     admin_id: str = Form(...),
     password: str = Form(...),
+    csrf_token: str = Form(""),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -536,9 +581,20 @@ async def login_admin(
     Returns:
         리다이렉트 응답 또는 401
     """
-    # admin_id 기반 rate limit (IP 전환 brute-force 방어).
+    if not _is_admin_login_csrf_valid(request, csrf_token):
+        return templates.TemplateResponse(
+            "user/login_admin.html",
+            _admin_login_context(
+                request,
+                error=ADMIN_LOGIN_CSRF_ERROR_MESSAGE,
+            ),
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    # CSRF 검증을 통과한 로그인 시도만 IP/admin_id quota 를 소모한다.
     # 아래의 try/except Exception 가 HTTPException(429) 까지 삼켜 500 으로
     # 변환하지 않도록 try 블록 밖에서 호출한다.
+    check_admin_ip_rate_limit(request)
     check_admin_id_rate_limit(admin_id)
     failure_started_at = time.monotonic()
 
@@ -568,10 +624,10 @@ async def login_admin(
             await _equalize_admin_failure_response(failure_started_at)
             return templates.TemplateResponse(
                 "user/login_admin.html",
-                {
-                    "request": request,
-                    "error": INVALID_ADMIN_CREDENTIALS_MESSAGE,
-                },
+                _admin_login_context(
+                    request,
+                    error=INVALID_ADMIN_CREDENTIALS_MESSAGE,
+                ),
                 status_code=401,
             )
 
@@ -614,11 +670,11 @@ async def login_admin(
         )
         return templates.TemplateResponse(
             "user/login_admin.html",
-            {
-                "request": request,
-                "error": "로그인 처리 중 오류가 발생했습니다. "
+            _admin_login_context(
+                request,
+                error="로그인 처리 중 오류가 발생했습니다. "
                 "다시 시도해주세요.",
-            },
+            ),
             status_code=500,
         )
 

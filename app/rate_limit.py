@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from limits import parse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from starlette.requests import Request
 
 from app.config import settings
 
@@ -16,8 +17,26 @@ limiter = Limiter(
     enabled=settings.RATE_LIMIT_ENABLED,
 )
 
-# admin_id 기반 rate limit (Issue #5: IP + admin_id 이중 방어)
+# 관리자 로그인 rate limit (Issue #5: IP + admin_id 이중 방어)
+_admin_login_ip_limit_item = parse(settings.ADMIN_LOGIN_RATE_LIMIT)
 _admin_id_limit_item = parse(settings.ADMIN_LOGIN_RATE_LIMIT_PER_ID)
+
+
+def check_admin_ip_rate_limit(request: Request) -> None:
+    """관리자 로그인 IP 기반 rate limit 검사. 초과 시 429 발생.
+
+    CSRF 검증 이후에 호출해, 유효하지 않은 cross-site form POST 가
+    로그인 IP quota 를 소모하지 않도록 한다.
+    """
+    if not settings.RATE_LIMIT_ENABLED or not limiter.enabled:
+        return
+    key = f"admin-login-ip:{get_remote_address(request)}"
+    allowed = limiter._limiter.hit(_admin_login_ip_limit_item, key)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+        )
 
 
 def check_admin_id_rate_limit(admin_id: str) -> None:
