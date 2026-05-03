@@ -108,22 +108,30 @@ def _reset_limiter_storage():
 
 
 @pytest.fixture
-def disable_rate_limit():
-    """rate limit 과 실패 응답 floor 비활성화.
+def disable_failure_response_floor():
+    """brute-force 테스트에서 issue #6 응답 지연만 비활성화.
 
     이 파일은 brute-force/lockout 동작을 검증한다. issue #6 의
     wall-clock parity 는 전용 timing 테스트에서 검증하므로, 여기서는
     `ADMIN_LOGIN_FAILURE_MIN_SECONDS` 를 0으로 낮춰 불필요한 지연 없이
     기존 brute-force 회귀 신호만 확인한다.
     """
-    original_limiter_enabled = limiter.enabled
     original_failure_min_seconds = settings.ADMIN_LOGIN_FAILURE_MIN_SECONDS
-    limiter.enabled = False
     settings.ADMIN_LOGIN_FAILURE_MIN_SECONDS = 0.0
     try:
         yield
     finally:
         settings.ADMIN_LOGIN_FAILURE_MIN_SECONDS = original_failure_min_seconds
+
+
+@pytest.fixture
+def disable_rate_limit(disable_failure_response_floor):
+    """rate limit 비활성화 (lockout / 메시지 테스트용)."""
+    original_limiter_enabled = limiter.enabled
+    limiter.enabled = False
+    try:
+        yield
+    finally:
         limiter.enabled = original_limiter_enabled
 
 
@@ -139,7 +147,9 @@ def _post_login(client: AsyncClient, admin_id: str, password: str):
 # AC1 — IP rate limit
 # ---------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_ip_rate_limit_returns_429(http_client, admin_user):
+async def test_ip_rate_limit_returns_429(
+    http_client, admin_user, disable_failure_response_floor
+):
     """동일 IP에서 짧은 시간 내 5회를 초과하면 429."""
     # rate limit 활성화 상태가 기본 (enabled=True)
     limiter.enabled = True
