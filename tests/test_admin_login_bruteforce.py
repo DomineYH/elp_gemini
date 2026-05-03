@@ -1,7 +1,8 @@
 """
 Issue #5: 관리자 로그인 brute-force 방어 회귀 테스트
 
-검증 매트릭스 (.omc/plans/2026-04-29-issue-5-admin-bruteforce-protection.md §3 인수기준):
+검증 매트릭스:
+    .omc/plans/2026-04-29-issue-5-admin-bruteforce-protection.md §3
     AC1  IP rate limit 초과 시 429 응답
     AC2  N회 실패 시 (N+1)번째 lockout
     AC3  lockout 만료 후 정상 인증 + 카운터 리셋
@@ -33,7 +34,6 @@ from app.db import Base, get_db
 from app.main import app
 from app.models.users import User
 from app.rate_limit import limiter
-
 
 ADMIN_USERNAME = "bf_admin"
 ADMIN_PASSWORD = "correct horse battery staple"

@@ -27,58 +27,45 @@
             >
                 <div>
                     <label
-                        for="user_type"
+                        for="email"
                         class="block text-sm font-medium
                         text-gray-700 mb-2"
                     >
-                        사용자 유형 선택
+                        이메일
                     </label>
-                    <select
-                        id="user_type"
-                        name="user_type"
+                    <input
+                        type="email"
+                        id="email"
+                        name="email"
+                        value="{{ email or '' }}"
                         required
+                        autocomplete="email"
                         class="w-full px-3 py-3 border
                         border-gray-300 rounded-md
                         focus:outline-none focus:ring-2
-                        focus:ring-blue-500
-                        bg-white text-gray-700
-                        cursor-pointer"
-                    >
-                        <option value="" disabled selected>
-                            -- 선택하세요 --
-                        </option>
-                        <option value="1학년">1학년</option>
-                        <option value="2학년">2학년</option>
-                        <option value="3학년">3학년</option>
-                        <option value="4학년">4학년</option>
-                        <option value="현직교사">현직교사</option>
-                    </select>
+                        focus:ring-blue-500 text-gray-700"
+                        placeholder="you@example.com"
+                    />
                 </div>
 
                 <div>
                     <label
-                        for="invite_code"
+                        for="password"
                         class="block text-sm font-medium
                         text-gray-700 mb-2"
                     >
-                        초대 코드 입력
+                        비밀번호
                     </label>
                     <input
-                        type="text"
-                        id="invite_code"
-                        name="invite_code"
+                        type="password"
+                        id="password"
+                        name="password"
                         required
-                        maxlength="6"
-                        pattern="[A-Za-z0-9]{6}"
+                        autocomplete="current-password"
                         class="w-full px-3 py-3 border
                         border-gray-300 rounded-md
                         focus:outline-none focus:ring-2
-                        focus:ring-blue-500
-                        text-gray-700 uppercase
-                        tracking-widest text-center text-lg
-                        font-mono"
-                        placeholder="예: A3X7K2"
-                        oninput="this.value = this.value.toUpperCase()"
+                        focus:ring-blue-500 text-gray-700"
                     />
                 </div>
 
@@ -92,9 +79,20 @@
                 </button>
             </form>
 
-            <div class="mt-6 text-center text-sm text-gray-500">
+            <div class="mt-6 text-center text-sm text-gray-500 space-y-2">
                 <p>
-                    학년을 선택하고 초대 코드를 입력하세요.
+                    처음 사용하는 이메일이면 등록 화면으로 이동합니다.
+                </p>
+                <p>
+                    <a
+                        href="/register{% if email %}?email={{ email|urlencode }}{% endif %}"
+                        class="text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                        새 사용자 등록
+                    </a>
+                </p>
+                <p>
+                    비밀번호를 잊은 경우 운영 담당자에게 문의하세요.
                 </p>
             </div>
         </div>

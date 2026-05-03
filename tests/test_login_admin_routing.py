@@ -15,10 +15,47 @@ import time
 
 import itsdangerous
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import StaticPool
 
 from app.config import settings
+from app.db import Base, get_db
 from app.main import app
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def isolated_auth_db():
+    """Keep admin login route tests independent of local data/app.db state."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    async def override_get_db():
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+        await engine.dispose()
 
 
 def _build_session_cookie(data: dict) -> str:
@@ -64,8 +101,8 @@ async def test_login_admin_page_renders_admin_form():
     assert 'action="/auth/login/user"' not in body
 
 
-# T2-MW: 브라우저 헤더(Accept: text/html)로도 AuthMiddleware가 가로채지 않아야 함
-# regression: WHITELIST_PATHS에 /login/admin·/admin/login 누락으로 미들웨어가 /login으로 302 보내던 이슈
+# T2-MW: 브라우저 헤더로도 AuthMiddleware가 가로채지 않아야 함
+# regression: 관리자 로그인 경로 whitelist 누락 시 /login으로 302 되던 이슈
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "url",

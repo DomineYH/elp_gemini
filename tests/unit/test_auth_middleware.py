@@ -14,8 +14,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.testclient import TestClient
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.middleware import AuthMiddleware
 from app.config import settings
+from app.middleware import AuthMiddleware
 
 
 # 테스트용 FastAPI 앱 생성
@@ -165,6 +165,8 @@ def test_middleware_whitelist_paths():
 
     # 정확한 경로 매칭
     assert middleware._is_whitelisted("/login")
+    assert middleware._is_whitelisted("/register")
+    assert middleware._is_whitelisted("/register/")
     assert middleware._is_whitelisted("/health")
     assert middleware._is_whitelisted("/docs")
 
@@ -181,7 +183,6 @@ def test_middleware_is_html_request(app):
     """
     HTML 요청 감지 로직 확인
     """
-    from fastapi import Request
 
     middleware = AuthMiddleware(app=None)
 
@@ -220,6 +221,7 @@ async def test_validate_session_user_exists_and_admin_match():
     Note: 실제 DB 사용 대신 mock으로 테스트
     """
     from unittest.mock import AsyncMock, MagicMock, patch
+
     from app.models.users import User
 
     middleware = AuthMiddleware(app=None)
@@ -287,6 +289,7 @@ async def test_validate_session_is_admin_mismatch():
     DB의 is_admin과 세션의 is_admin 불일치 → 세션 무효
     """
     from unittest.mock import AsyncMock, MagicMock, patch
+
     from app.models.users import User
 
     middleware = AuthMiddleware(app=None)
