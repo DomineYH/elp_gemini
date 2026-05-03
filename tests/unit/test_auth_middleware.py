@@ -165,6 +165,8 @@ def test_middleware_whitelist_paths():
 
     # 정확한 경로 매칭
     assert middleware._is_whitelisted("/login")
+    assert middleware._is_whitelisted("/register")
+    assert middleware._is_whitelisted("/register/")
     assert middleware._is_whitelisted("/health")
     assert middleware._is_whitelisted("/docs")
 

@@ -268,14 +268,14 @@ async def _register_preservice_teacher(
 
 # T030: GET /login - 로그인 페이지 렌더링
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
+async def login_page(request: Request, email: str = ""):
     """로그인 페이지"""
     # 이미 로그인한 경우 대시보드로 리다이렉트
     if request.session.get("user_id"):
         return RedirectResponse(url="/", status_code=302)
 
     return templates.TemplateResponse(
-        "user/login.html", _login_context(request)
+        "user/login.html", _login_context(request, email=email)
     )
 
 
