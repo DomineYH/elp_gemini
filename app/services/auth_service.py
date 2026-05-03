@@ -9,8 +9,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from passlib.context import CryptContext
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import case, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.users import User
@@ -430,7 +430,7 @@ class AuthService:
                 ),
             )
 
-        UserProfile = self._load_user_profile_model()
+        user_profile_model = self._load_user_profile_model()
 
         try:
             user = await self._create_regular_user(
@@ -438,7 +438,7 @@ class AuthService:
                 password=registration.password,
                 role=registration.role,
             )
-            profile = UserProfile(
+            profile = user_profile_model(
                 user_id=user.id,
                 role=registration.role,
                 teacher_region=registration.teacher_region,
@@ -482,7 +482,7 @@ class AuthService:
                 ),
             )
 
-        UserProfile = self._load_user_profile_model()
+        user_profile_model = self._load_user_profile_model()
 
         try:
             user = await self._create_regular_user(
@@ -490,7 +490,7 @@ class AuthService:
                 password=registration.password,
                 role=registration.role,
             )
-            profile = UserProfile(
+            profile = user_profile_model(
                 user_id=user.id,
                 role=registration.role,
                 teacher_region=None,
