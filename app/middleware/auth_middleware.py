@@ -30,8 +30,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
     인증되지 않은 요청은 /login으로 리다이렉트합니다.
 
     화이트리스트 경로는 인증 없이 통과합니다:
-    - /login
-    - /auth/*
+    - /login, /login/admin
+    - /auth/login, /auth/login/user, /auth/login/admin, /auth/logout
     - /health
     - /static/*
     - /docs, /redoc, /openapi.json (API 문서)
@@ -47,8 +47,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/login/admin/",
         "/admin/login",
         "/admin/login/",
+        # 공개 auth 엔드포인트 (접두사 /auth/ 제거, 명시적 경로만 허용)
         "/auth/login",
+        "/auth/login/",
+        "/auth/login/user",
+        "/auth/login/user/",
+        "/auth/login/admin",
+        "/auth/login/admin/",
         "/auth/logout",
+        "/auth/logout/",
         "/health",
         "/docs",
         "/redoc",
@@ -58,7 +65,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
     # 화이트리스트 경로 접두사 (하위 경로 포함)
     WHITELIST_PREFIXES = [
         "/static/",
-        "/auth/",
     ]
 
     async def dispatch(
