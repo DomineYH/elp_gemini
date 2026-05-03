@@ -2,6 +2,7 @@
 인증 서비스
 사용자 인증 및 비밀번호 관리
 """
+
 import logging
 import uuid
 from dataclasses import dataclass
@@ -103,9 +104,7 @@ class AuthService:
         """
         now = datetime.utcnow()
         stmt = (
-            update(User)
-            .where(User.id == -1)
-            .values(last_failed_login_at=now)
+            update(User).where(User.id == -1).values(last_failed_login_at=now)
         )
         await self.db.execute(stmt)
         await self.db.commit()
@@ -163,7 +162,9 @@ class AuthService:
         """
         관리자 인증 (ID + 비밀번호) — brute-force 방어 포함
 
-        - 잠긴 계정은 비밀번호 검증을 건너뛴다 (timing leak 차단)
+        - 잠긴 계정은 실제 비밀번호 검증을 건너뛴다 (timing leak 차단)
+        - 실제 비밀번호 검증 전에 실패 슬롯을 atomic 하게 예약해
+          burst-concurrency TOCTOU 우회를 막는다
         - 임계치(설정값) 도달 시 잠금 시각을 영속화한다
         - 성공 시 카운터를 리셋한다
         - 이 서비스는 bcrypt/DB 작업 비용을 보정한다. 외부 응답의
@@ -200,15 +201,44 @@ class AuthService:
                 retry_at=user.locked_until,
             )
 
-        # 4. 비밀번호 미설정 → 인증 실패로 카운터 증가
+        # 4. 실제 비밀번호 검증 전에 실패 슬롯을 먼저 예약한다.
+        #    이 atomic UPDATE 가 동시 요청 중 최대 임계치 개수만 bcrypt
+        #    검증으로 진입하도록 보장한다 (issue #12).
+        if not await self._reserve_admin_login_attempt(user, admin_id):
+            self._dummy_password_verify(password)
+            await self._mark_unavailable_admin_login_slot(user, admin_id)
+            log_auth_event(
+                "lockout_attempt_blocked",
+                user_id=user.id,
+                username=admin_id,
+                success=False,
+                reason=(
+                    "no_available_attempt_slot"
+                    if user.locked_until is None
+                    else f"locked_until={user.locked_until.isoformat()}"
+                ),
+            )
+            return AdminLoginResult(
+                user=None,
+                locked=True,
+                retry_at=user.locked_until,
+            )
+
+        # 5. 비밀번호 미설정 → 예약된 실패 슬롯을 그대로 실패로 확정
         if not user.hashed_password:
             self._dummy_password_verify(password)
-            await self._record_failed_admin_login(user, admin_id)
+            self._log_failed_admin_login(user, admin_id)
+            if self._is_account_locked(user):
+                return AdminLoginResult(
+                    user=None,
+                    locked=True,
+                    retry_at=user.locked_until,
+                )
             return AdminLoginResult(user=None, locked=False)
 
-        # 5. 비밀번호 검증
+        # 6. 비밀번호 검증
         if not self.verify_password(password, user.hashed_password):
-            await self._record_failed_admin_login(user, admin_id)
+            self._log_failed_admin_login(user, admin_id)
             # 임계치 도달로 방금 잠겼다면 lockout 응답으로 승격
             if self._is_account_locked(user):
                 return AdminLoginResult(
@@ -218,7 +248,7 @@ class AuthService:
                 )
             return AdminLoginResult(user=None, locked=False)
 
-        # 6. 성공 → 카운터 리셋
+        # 7. 성공 → 예약된 슬롯과 기존 실패 카운터 리셋
         await self._reset_admin_login_counter(user)
         return AdminLoginResult(user=user, locked=False)
 
@@ -228,13 +258,15 @@ class AuthService:
             return False
         return user.locked_until > datetime.utcnow()
 
-    async def _record_failed_admin_login(
+    async def _reserve_admin_login_attempt(
         self, user: User, admin_id: str
-    ) -> None:
-        """실패 카운터 +1, 임계치 도달 시 잠금 시각 설정.
+    ) -> bool:
+        """비밀번호 검증 전에 실패 슬롯을 atomic 하게 예약한다.
 
-        동시 실패 요청 사이의 lost-update 회피를 위해 단일 atomic
-        UPDATE로 카운터 증가와 (조건부) 잠금 시각을 함께 적용한다.
+        lock check 와 bcrypt verify 사이의 TOCTOU window 를 닫기 위해
+        검증 전 단일 UPDATE 로 failed_login_count 를 선점 증가시킨다.
+        rowcount 가 0 이면 이미 잠겼거나 임계치가 소진된 상태이므로
+        호출자는 실제 password verify 로 진입하면 안 된다.
         """
         max_attempts = int(settings.ADMIN_MAX_FAILED_ATTEMPTS)
         lockout_minutes = int(settings.ADMIN_LOCKOUT_DURATION_MINUTES)
@@ -245,10 +277,15 @@ class AuthService:
         lockout_expired = User.locked_until.is_not(None) & (
             User.locked_until <= now
         )
+        lockout_not_active = User.locked_until.is_(None) | (
+            User.locked_until <= now
+        )
 
         stmt = (
             update(User)
             .where(User.id == user.id)
+            .where(lockout_not_active)
+            .where(lockout_expired | (User.failed_login_count < max_attempts))
             .values(
                 failed_login_count=case(
                     (lockout_expired, 1),
@@ -266,9 +303,61 @@ class AuthService:
                 ),
             )
         )
-        await self.db.execute(stmt)
+        result = await self.db.execute(stmt)
         await self.db.commit()
+
+        if result.rowcount == 0:
+            await self.db.refresh(user)
+            return False
+
         await self.db.refresh(user)
+        return True
+
+    async def _mark_unavailable_admin_login_slot(
+        self, user: User, admin_id: str
+    ) -> None:
+        """소진된 실패 슬롯을 잠금 상태로 영속화하고 DB 비용을 맞춘다.
+
+        정상 경로에서는 `_reserve_admin_login_attempt` 의 마지막 허용 슬롯이
+        lockout 을 설정한다. 이 보조 경로는 과거 데이터처럼
+        failed_login_count 는 임계치 이상인데 locked_until 이 비어 있는
+        계정도 실제 password verify 없이 즉시 잠그기 위한 안전망이다.
+        """
+        max_attempts = int(settings.ADMIN_MAX_FAILED_ATTEMPTS)
+        lockout_minutes = int(settings.ADMIN_LOCKOUT_DURATION_MINUTES)
+        now = datetime.utcnow()
+        lockout_until = now + timedelta(minutes=lockout_minutes)
+
+        stmt = (
+            update(User)
+            .where(User.id == user.id)
+            .where(User.failed_login_count >= max_attempts)
+            .where(User.locked_until.is_(None) | (User.locked_until <= now))
+            .values(
+                last_failed_login_at=now,
+                locked_until=lockout_until,
+            )
+        )
+        result = await self.db.execute(stmt)
+        await self.db.commit()
+
+        if result.rowcount == 0:
+            await self._touch_locked_attempt(user)
+        else:
+            await self.db.refresh(user)
+
+        if user.locked_until is not None:
+            log_auth_event(
+                "lockout_triggered",
+                user_id=user.id,
+                username=admin_id,
+                success=False,
+                reason=f"locked_until={user.locked_until.isoformat()}",
+            )
+
+    def _log_failed_admin_login(self, user: User, admin_id: str) -> None:
+        """예약된 실패 슬롯의 감사 로그를 남긴다."""
+        max_attempts = int(settings.ADMIN_MAX_FAILED_ATTEMPTS)
 
         current = user.failed_login_count
 
@@ -329,9 +418,7 @@ class AuthService:
         # 하위 호환성을 위해 username으로만 조회
         return await self.get_user_by_username(username)
 
-    async def get_user_by_username(
-        self, username: str
-    ) -> Optional[User]:
+    async def get_user_by_username(self, username: str) -> Optional[User]:
         """
         사용자 ID로 사용자 조회
 
@@ -351,9 +438,7 @@ class AuthService:
         """이메일 저장/조회용 정규화."""
         return normalize_email_address(email)
 
-    async def get_user_by_email(
-        self, email: str
-    ) -> Optional[User]:
+    async def get_user_by_email(self, email: str) -> Optional[User]:
         """
         이메일로 사용자 조회
 
@@ -372,9 +457,7 @@ class AuthService:
         )
         return result.scalar_one_or_none()
 
-    async def get_regular_user_by_email(
-        self, email: str
-    ) -> Optional[User]:
+    async def get_regular_user_by_email(self, email: str) -> Optional[User]:
         """
         일반 사용자 이메일 조회
 
@@ -402,9 +485,7 @@ class AuthService:
         Returns:
             User 객체 또는 None
         """
-        result = await self.db.execute(
-            select(User).where(User.id == user_id)
-        )
+        result = await self.db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
 
     async def create_user(self, user_data: UserCreate) -> User:
@@ -541,13 +622,10 @@ class AuthService:
                 email=email,
                 password=password or "",
                 preservice_university_region=(
-                    preservice_university_region
-                    or university_region
+                    preservice_university_region or university_region
                 ),
                 preservice_grade=(
-                    preservice_grade
-                    if preservice_grade is not None
-                    else grade
+                    preservice_grade if preservice_grade is not None else grade
                 ),
             )
 
@@ -645,9 +723,7 @@ class AuthService:
         return pwd_context.hash(password)
 
     @staticmethod
-    def verify_password(
-        plain_password: str, hashed_password: str
-    ) -> bool:
+    def verify_password(plain_password: str, hashed_password: str) -> bool:
         """
         비밀번호 검증
 
@@ -681,19 +757,13 @@ class AuthService:
         )
 
         invite_service = InviteCodeService(self.db)
-        invite = await invite_service.validate_code(
-            code, user_type
-        )
+        invite = await invite_service.validate_code(code, user_type)
         if not invite:
-            raise ValueError(
-                "유효하지 않은 초대 코드입니다."
-            )
+            raise ValueError("유효하지 않은 초대 코드입니다.")
 
         # 이미 사용된 코드 → 기존 사용자 반환
         if invite.user_id:
-            user = await self.get_user_by_id(
-                invite.user_id
-            )
+            user = await self.get_user_by_id(invite.user_id)
             if user:
                 return user
 
@@ -703,8 +773,6 @@ class AuthService:
             nickname=user_type,
         )
         new_user = await self.create_user(user_data)
-        await invite_service.use_code(
-            code, new_user.id
-        )
+        await invite_service.use_code(code, new_user.id)
         await self.db.commit()
         return new_user

@@ -13,6 +13,7 @@ Issue #5: 관리자 로그인 brute-force 방어 회귀 테스트
     AC8  lockout_triggered / lockout_attempt_blocked 감사 로그
     +    동시 실패 요청에서 failed_login_count lost-update 없음 (Codex P2 후속)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -139,6 +140,17 @@ def disable_rate_limit(disable_failure_response_floor):
         limiter.enabled = original_limiter_enabled
 
 
+@pytest.fixture
+def small_admin_attempt_threshold():
+    """동시성 회귀 테스트용으로 관리자 실패 임계치를 낮춘다."""
+    original_max_attempts = settings.ADMIN_MAX_FAILED_ATTEMPTS
+    settings.ADMIN_MAX_FAILED_ATTEMPTS = 3
+    try:
+        yield settings.ADMIN_MAX_FAILED_ATTEMPTS
+    finally:
+        settings.ADMIN_MAX_FAILED_ATTEMPTS = original_max_attempts
+
+
 def _build_session_cookie(data: dict) -> str:
     """Starlette SessionMiddleware 호환 서명된 세션 쿠키 생성."""
     signer = itsdangerous.TimestampSigner(str(settings.SECRET_KEY))
@@ -180,13 +192,9 @@ async def test_ip_rate_limit_returns_429(
     limiter.enabled = True
     statuses = []
     for _ in range(8):
-        resp = await _post_login(
-            http_client, ADMIN_USERNAME, "wrong"
-        )
+        resp = await _post_login(http_client, ADMIN_USERNAME, "wrong")
         statuses.append(resp.status_code)
-    assert 429 in statuses, (
-        f"6번째 이후 요청이 429를 반환해야 함: {statuses}"
-    )
+    assert 429 in statuses, f"6번째 이후 요청이 429를 반환해야 함: {statuses}"
 
 
 @pytest.mark.asyncio
@@ -227,23 +235,17 @@ async def test_account_locks_after_threshold(
     threshold = settings.ADMIN_MAX_FAILED_ATTEMPTS
 
     for _ in range(threshold):
-        resp = await _post_login(
-            http_client, ADMIN_USERNAME, "wrong"
-        )
+        resp = await _post_login(http_client, ADMIN_USERNAME, "wrong")
         assert resp.status_code == 401
 
     # 임계치 도달 시점에 lockout 메시지로 전환되어야 함
-    resp = await _post_login(
-        http_client, ADMIN_USERNAME, "wrong"
-    )
+    resp = await _post_login(http_client, ADMIN_USERNAME, "wrong")
     assert resp.status_code == 401
     # issue #6: lockout 응답이 외부에는 invalid-credentials 와 동일해야 함
-    assert "ID 또는 비밀번호" in resp.text, (
-        "lockout 시에도 invalid 와 동일한 메시지여야 함 (#6)"
-    )
-    assert "잠시" not in resp.text, (
-        "lockout 임을 외부에 누설하면 안 됨 (#6)"
-    )
+    assert (
+        "ID 또는 비밀번호" in resp.text
+    ), "lockout 시에도 invalid 와 동일한 메시지여야 함 (#6)"
+    assert "잠시" not in resp.text, "lockout 임을 외부에 누설하면 안 됨 (#6)"
 
     # DB에 잠금 정보가 영속화되어 있어야 함
     async with session_factory() as session:
@@ -267,9 +269,7 @@ async def test_lockout_expires_allows_login(
         user.locked_until = datetime.utcnow() - timedelta(seconds=1)
         await session.commit()
 
-    resp = await _post_login(
-        http_client, ADMIN_USERNAME, ADMIN_PASSWORD
-    )
+    resp = await _post_login(http_client, ADMIN_USERNAME, ADMIN_PASSWORD)
     assert resp.status_code == 302
     assert resp.headers["location"] == "/admin/dashboard"
 
@@ -289,18 +289,14 @@ async def test_successful_login_resets_counter(
 ):
     # 임계치 미만 실패 누적
     for _ in range(3):
-        resp = await _post_login(
-            http_client, ADMIN_USERNAME, "wrong"
-        )
+        resp = await _post_login(http_client, ADMIN_USERNAME, "wrong")
         assert resp.status_code == 401
 
     async with session_factory() as session:
         user = await session.get(User, admin_user.id)
         assert user.failed_login_count == 3
 
-    resp = await _post_login(
-        http_client, ADMIN_USERNAME, ADMIN_PASSWORD
-    )
+    resp = await _post_login(http_client, ADMIN_USERNAME, ADMIN_PASSWORD)
     assert resp.status_code == 302
 
     async with session_factory() as session:
@@ -342,9 +338,7 @@ async def test_locked_account_skips_password_verification(
         "app.services.auth_service.AuthService.verify_password"
     ) as verify:
         verify.return_value = True
-        resp = await _post_login(
-            http_client, ADMIN_USERNAME, ADMIN_PASSWORD
-        )
+        resp = await _post_login(http_client, ADMIN_USERNAME, ADMIN_PASSWORD)
         assert resp.status_code == 401
         # issue #6: 외부 메시지는 invalid 와 동일, 단 real verify_password 는
         # 호출되지 않아 timing 절약 + 사이드이펙트 차단 (AC6 의도 유지).
@@ -359,12 +353,8 @@ async def test_locked_account_skips_password_verification(
 async def test_unknown_admin_returns_generic_message(
     http_client, admin_user, disable_rate_limit
 ):
-    resp_unknown = await _post_login(
-        http_client, "no_such_admin", "wrong"
-    )
-    resp_known = await _post_login(
-        http_client, ADMIN_USERNAME, "wrong"
-    )
+    resp_unknown = await _post_login(http_client, "no_such_admin", "wrong")
+    resp_known = await _post_login(http_client, ADMIN_USERNAME, "wrong")
     assert resp_unknown.status_code == resp_known.status_code == 401
     # 동일한 일반 실패 메시지가 노출되어야 함
     assert "ID 또는 비밀번호" in resp_unknown.text
@@ -414,9 +404,7 @@ async def test_concurrent_failed_logins_no_lost_updates(
     async def fail_once() -> None:
         async with session_factory() as session:
             service = AuthService(session)
-            result = await service.authenticate_admin(
-                ADMIN_USERNAME, "wrong"
-            )
+            result = await service.authenticate_admin(ADMIN_USERNAME, "wrong")
             # 임계치(10) 도달 전까지는 not locked, 도달 후엔 locked 가능
             assert result.user is None
 
@@ -430,9 +418,99 @@ async def test_concurrent_failed_logins_no_lost_updates(
             f"동시 10회 실패 후 카운터가 {user.failed_login_count}"
             f" — lost update 의심"
         )
-        assert user.locked_until is not None, (
-            "임계치 도달했으므로 locked_until 이 설정되어야 함"
+        assert (
+            user.locked_until is not None
+        ), "임계치 도달했으므로 locked_until 이 설정되어야 함"
+        assert user.locked_until > datetime.utcnow()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_admin_logins_reserve_slots_before_verify(
+    admin_user,
+    session_factory,
+    disable_rate_limit,
+    small_admin_attempt_threshold,
+):
+    """동시 burst 중 임계치 개수만 실제 password verify 로 진입해야 한다."""
+    from app.services.auth_service import AuthService
+
+    threshold = small_admin_attempt_threshold
+    total_attempts = threshold + 5
+
+    async def fail_once(index: int):
+        async with session_factory() as session:
+            service = AuthService(session)
+            return await service.authenticate_admin(
+                ADMIN_USERNAME, f"wrong-{index}"
+            )
+
+    with (
+        patch.object(
+            AuthService,
+            "verify_password",
+            return_value=False,
+        ) as verify,
+        patch.object(AuthService, "_dummy_password_verify") as dummy,
+    ):
+        results = await asyncio.gather(
+            *[fail_once(i) for i in range(total_attempts)]
         )
+
+    assert verify.call_count == threshold, (
+        "실제 bcrypt 검증은 예약 가능한 실패 슬롯 수까지만 허용되어야 함 "
+        f"(expected={threshold}, actual={verify.call_count})"
+    )
+    assert dummy.call_count == total_attempts - threshold
+    assert all(result.user is None for result in results)
+
+    async with session_factory() as session:
+        user = await session.get(User, admin_user.id)
+        assert user.failed_login_count == threshold
+        assert user.locked_until is not None
+        assert user.locked_until > datetime.utcnow()
+
+
+@pytest.mark.asyncio
+async def test_correct_password_cannot_bypass_exhausted_attempt_slots(
+    admin_user,
+    session_factory,
+    disable_rate_limit,
+    small_admin_attempt_threshold,
+):
+    """이미 소진된 임계치에서는 정답 비밀번호도 verify 로 진입하면 안 된다."""
+    from app.services.auth_service import AuthService
+
+    threshold = small_admin_attempt_threshold
+    async with session_factory() as session:
+        user = await session.get(User, admin_user.id)
+        user.failed_login_count = threshold
+        user.locked_until = None
+        await session.commit()
+
+    with (
+        patch.object(
+            AuthService,
+            "verify_password",
+            return_value=True,
+        ) as verify,
+        patch.object(AuthService, "_dummy_password_verify") as dummy,
+    ):
+        async with session_factory() as session:
+            service = AuthService(session)
+            result = await service.authenticate_admin(
+                ADMIN_USERNAME, ADMIN_PASSWORD
+            )
+
+    assert result.user is None
+    assert result.locked is True
+    assert result.retry_at is not None
+    verify.assert_not_called()
+    dummy.assert_called_once_with(ADMIN_PASSWORD)
+
+    async with session_factory() as session:
+        user = await session.get(User, admin_user.id)
+        assert user.failed_login_count == threshold
+        assert user.locked_until is not None
         assert user.locked_until > datetime.utcnow()
 
 
@@ -458,9 +536,7 @@ async def test_expired_lockout_resets_window(
     # when: 만료 후 잘못된 비밀번호로 로그인 시도
     async with session_factory() as session:
         service = AuthService(session)
-        result = await service.authenticate_admin(
-            ADMIN_USERNAME, "wrong"
-        )
+        result = await service.authenticate_admin(ADMIN_USERNAME, "wrong")
         assert result.user is None
         assert result.locked is False
 
@@ -488,13 +564,11 @@ async def test_rate_limit_disabled_returns_no_429(
 ):
     statuses = []
     for _ in range(15):
-        resp = await _post_login(
-            http_client, ADMIN_USERNAME, "wrong"
-        )
+        resp = await _post_login(http_client, ADMIN_USERNAME, "wrong")
         statuses.append(resp.status_code)
-    assert 429 not in statuses, (
-        f"rate limit 비활성화 시 429 가 나오면 안 됨: {statuses}"
-    )
+    assert (
+        429 not in statuses
+    ), f"rate limit 비활성화 시 429 가 나오면 안 됨: {statuses}"
 
 
 # ---------------------------------------------------------------------
@@ -559,14 +633,12 @@ async def test_admin_id_rate_limit_via_http_returns_429(
 
     statuses: list[int] = []
     for _ in range(limit_count + 3):
-        resp = await _post_login(
-            http_client, ADMIN_USERNAME, "wrong"
-        )
+        resp = await _post_login(http_client, ADMIN_USERNAME, "wrong")
         statuses.append(resp.status_code)
 
-    assert 429 in statuses, (
-        f"admin_id 한도 초과 시 429 가 응답에 포함되어야 함: {statuses}"
-    )
-    assert 500 not in statuses, (
-        f"HTTPException(429) 가 500 으로 변환되면 안 됨: {statuses}"
-    )
+    assert (
+        429 in statuses
+    ), f"admin_id 한도 초과 시 429 가 응답에 포함되어야 함: {statuses}"
+    assert (
+        500 not in statuses
+    ), f"HTTPException(429) 가 500 으로 변환되면 안 됨: {statuses}"
