@@ -459,120 +459,82 @@ async def get_session_detail(
 
 
 @router.post("/admin/api/users/{user_id}/password")
-async def change_regular_user_password(
+async def admin_change_user_password(
     user_id: int,
-    request: Request,
+    new_password: str = Form(...),
+    password_confirm: str = Form(...),
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """관리자 전용 일반 사용자 비밀번호 변경 API."""
-    if not current_admin.is_admin:
-        log_auth_event(
-            "permission_denied",
-            user_id=current_admin.id,
-            username=current_admin.username,
+    """관리자가 일반 사용자 비밀번호를 변경한다."""
+    if new_password != password_confirm:
+        log_user_action(
+            current_admin.id,
+            "admin_change_user_password",
+            {"target_user_id": user_id, "reason": "confirm_mismatch"},
             success=False,
-            reason="Admin permission required",
         )
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="관리자 권한이 필요합니다.",
+            status_code=400,
+            detail="비밀번호 확인이 일치하지 않습니다.",
         )
 
-    try:
-        new_password = await _extract_new_password(request)
-        _validate_new_password(new_password)
-    except HTTPException as exc:
-        _audit_password_change(
-            current_admin,
-            user_id,
+    if len(new_password) < 8:
+        log_user_action(
+            current_admin.id,
+            "admin_change_user_password",
+            {"target_user_id": user_id, "reason": "password_too_short"},
             success=False,
-            reason=str(exc.detail),
         )
-        raise
-
-    try:
-        result = await db.execute(
-            select(User).where(User.id == user_id)
+        raise HTTPException(
+            status_code=400,
+            detail="비밀번호는 최소 8자 이상이어야 합니다.",
         )
-        target_user = result.scalar_one_or_none()
-        if target_user is None:
-            _audit_password_change(
-                current_admin,
-                user_id,
-                success=False,
-                reason="target_not_found",
-            )
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="사용자를 찾을 수 없습니다.",
-            )
 
-        if target_user.is_admin:
-            _audit_password_change(
-                current_admin,
-                user_id,
-                success=False,
-                reason="admin_target_rejected",
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="관리자 계정 비밀번호는 이 화면에서 변경할 수 없습니다.",
-            )
-
-        target_user.hashed_password = AuthService.hash_password(
-            new_password
+    target = await db.get(User, user_id)
+    if not target:
+        log_user_action(
+            current_admin.id,
+            "admin_change_user_password",
+            {"target_user_id": user_id, "reason": "not_found"},
+            success=False,
         )
-        target_user.failed_login_count = 0
-        target_user.locked_until = None
-        target_user.last_failed_login_at = None
+        raise HTTPException(
+            status_code=404,
+            detail="사용자를 찾을 수 없습니다.",
+        )
+
+    if target.is_admin:
+        log_user_action(
+            current_admin.id,
+            "admin_change_user_password",
+            {"target_user_id": user_id, "reason": "admin_target"},
+            success=False,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="관리자 계정 비밀번호는 이 화면에서 변경할 수 없습니다.",
+        )
+
+    auth_service = AuthService(db)
+    if hasattr(auth_service, "admin_set_user_password"):
+        await auth_service.admin_set_user_password(user_id, new_password)
+    else:
+        target.hashed_password = auth_service.hash_password(new_password)
         await db.commit()
-        await db.refresh(target_user)
+        await db.refresh(target)
 
-        _audit_password_change(
-            current_admin,
-            target_user.id,
-            success=True,
-        )
-        log_auth_event(
-            "admin_password_change",
-            user_id=target_user.id,
-            username=target_user.username,
-            success=True,
-        )
-        logger.info(
-            "관리자 비밀번호 변경 성공: "
-            "admin_id=%s, target_user_id=%s",
-            current_admin.id,
-            target_user.id,
-        )
-        return {
-            "ok": True,
-            "user_id": target_user.id,
-            "message": "비밀번호가 변경되었습니다.",
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        await db.rollback()
-        _audit_password_change(
-            current_admin,
-            user_id,
-            success=False,
-            reason="internal_error",
-        )
-        logger.error(
-            "관리자 비밀번호 변경 실패: "
-            "admin_id=%s, target_user_id=%s, error=%s",
-            current_admin.id,
-            user_id,
-            e,
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="비밀번호 변경 중 오류가 발생했습니다.",
-        )
+    log_user_action(
+        current_admin.id,
+        "admin_change_user_password",
+        {"target_user_id": user_id},
+        success=True,
+    )
+    logger.info(
+        "관리자 비밀번호 변경: "
+        f"admin={current_admin.username}, target_user_id={user_id}"
+    )
+    return {"ok": True, "user_id": user_id}
 
 
 @router.get(
