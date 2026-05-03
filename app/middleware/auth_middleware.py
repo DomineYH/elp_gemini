@@ -6,16 +6,15 @@
 """
 
 import logging
-from typing import Callable, Optional
 
 from fastapi import Request
 from fastapi.responses import RedirectResponse
+from sqlalchemy import select
 from starlette.middleware.base import (
     BaseHTTPMiddleware,
     RequestResponseEndpoint,
 )
 from starlette.responses import Response
-from sqlalchemy import select
 
 from app.db import async_session_maker
 from app.models.users import User

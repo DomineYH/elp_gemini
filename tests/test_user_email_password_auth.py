@@ -32,7 +32,6 @@ from app.models.users import User
 from app.rate_limit import limiter
 from app.services.auth_service import AuthService
 
-
 TEACHER_EMAIL = "teacher@example.com"
 TEACHER_PASSWORD = "TeacherPass123"
 PRESERVICE_EMAIL = "preservice@example.com"
@@ -546,7 +545,9 @@ async def test_non_admin_cannot_change_user_password(client, session_factory):
     )
 
     assert response.status_code in {401, 403}
-    unchanged = await _fetch_user_by_email(session_factory, "target@example.com")
+    unchanged = await _fetch_user_by_email(
+        session_factory, "target@example.com"
+    )
     assert unchanged is not None
     assert AuthService.verify_password(
         TEACHER_PASSWORD, unchanged.hashed_password

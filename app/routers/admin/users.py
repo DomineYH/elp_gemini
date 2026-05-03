@@ -2,29 +2,36 @@
 관리자 사용자 관리 라우터
 학년별 통계, 세션 목록, 세션 상세 API
 """
+import logging
+from datetime import datetime
+from typing import Any
+
 from fastapi import (
-    APIRouter, Depends, Form, HTTPException, Query, Request,
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    status,
 )
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, case, or_
 from sqlalchemy.orm import selectinload
-from datetime import datetime
-from typing import Any
-import logging
 
 from app.constants import USER_TYPES
 from app.db import get_db
 from app.dependencies import get_current_admin
-from app.models.users import User
-from app.models.chat_sessions import ChatSession
-from app.models.chat_messages import (
-    ChatMessage, MessageRole,
-)
 from app.models.analysis_reports import AnalysisReport
+from app.models.chat_messages import (
+    ChatMessage,
+    MessageRole,
+)
+from app.models.chat_sessions import ChatSession
+from app.models.users import User
 from app.services.auth_service import AuthService
-from app.utils.logging import log_user_action
+from app.utils.logging import log_auth_event, log_user_action
 
 router = APIRouter(tags=["관리자-사용자관리"])
 templates = Jinja2Templates(directory="app/templates")
@@ -43,52 +50,260 @@ def _role_str(role):
         else str(role)
 
 
-PROFILE_ROLE_LABELS = {
-    "teacher": "교사",
-    "preservice_teacher": "예비교사",
-}
+def _get_user_profile_model():
+    """UserProfile 모델을 선택적으로 가져온다.
 
+    Lane D는 Lane A와 병합되기 전에도 기존 관리자 페이지를
+    깨뜨리지 않아야 하므로 프로필 모델/테이블 부재를 허용한다.
+    """
+    try:
+        from app.models.user_profiles import UserProfile
 
-def _user_profile(user: User):
-    """User.profile 관계가 아직 없는 병렬 작업 상태도 허용."""
-    return getattr(user, "profile", None)
-
-
-def _profile_role_label(profile) -> str:
-    if not profile:
-        return "레거시"
-    return PROFILE_ROLE_LABELS.get(profile.role, profile.role)
-
-
-def _profile_region(profile) -> str | None:
-    if not profile:
+        return UserProfile
+    except (ImportError, ModuleNotFoundError):
         return None
-    if profile.role == "teacher":
-        return profile.teacher_region
-    if profile.role == "preservice_teacher":
-        return profile.preservice_university_region
-    return None
-
-
-def _profile_detail(profile) -> str | None:
-    if not profile:
+    except Exception as exc:  # pragma: no cover - defensive import guard
+        logger.warning("UserProfile 모델 로드 실패: %s", exc)
         return None
-    if profile.role == "teacher":
-        years = profile.teacher_career_years
-        return f"{years}년" if years is not None else None
-    if profile.role == "preservice_teacher":
-        grade = profile.preservice_grade
-        return f"{grade}학년" if grade is not None else None
-    return None
 
 
-def _user_load_options():
-    """관계가 통합된 경우 프로필까지 eager load."""
-    user_loader = selectinload(ChatSession.user)
-    options = [selectinload(ChatSession.messages), user_loader]
-    if hasattr(User, "profile"):
-        options.append(user_loader.selectinload(User.profile))
-    return options
+def _value_str(value: Any) -> str | None:
+    """Enum/문자열 값을 JSON 친화 문자열로 변환한다."""
+    if value is None:
+        return None
+    return value.value if hasattr(value, "value") else str(value)
+
+
+def _serialize_profile(profile: Any) -> dict[str, Any]:
+    """프로필 객체를 관리자 화면/API 표시용으로 직렬화한다."""
+    if profile is None:
+        return {
+            "role": None,
+            "role_label": "-",
+            "teacher_region": None,
+            "teacher_career_years": None,
+            "preservice_university_region": None,
+            "preservice_grade": None,
+            "summary": "-",
+        }
+
+    role = _value_str(getattr(profile, "role", None))
+    role_label = PROFILE_ROLE_LABELS.get(role, role or "-")
+    teacher_region = getattr(profile, "teacher_region", None)
+    teacher_career_years = getattr(
+        profile, "teacher_career_years", None
+    )
+    preservice_university_region = getattr(
+        profile, "preservice_university_region", None
+    )
+    preservice_grade = getattr(profile, "preservice_grade", None)
+
+    if role == "teacher":
+        detail_parts = [
+            teacher_region,
+            (
+                f"{teacher_career_years}년"
+                if teacher_career_years is not None
+                else None
+            ),
+        ]
+    elif role == "preservice_teacher":
+        detail_parts = [
+            preservice_university_region,
+            (
+                f"{preservice_grade}학년"
+                if preservice_grade is not None
+                else None
+            ),
+        ]
+    else:
+        detail_parts = [
+            teacher_region or preservice_university_region,
+            (
+                f"{teacher_career_years}년"
+                if teacher_career_years is not None
+                else None
+            ),
+            (
+                f"{preservice_grade}학년"
+                if preservice_grade is not None
+                else None
+            ),
+        ]
+
+    detail = " · ".join(
+        str(part) for part in detail_parts if part not in (None, "")
+    )
+    summary = role_label if not detail else f"{role_label} · {detail}"
+
+    return {
+        "role": role,
+        "role_label": role_label,
+        "teacher_region": teacher_region,
+        "teacher_career_years": teacher_career_years,
+        "preservice_university_region": preservice_university_region,
+        "preservice_grade": preservice_grade,
+        "summary": summary,
+    }
+
+
+async def _load_profiles(
+    db: AsyncSession,
+    user_ids: set[int],
+) -> dict[int, dict[str, Any]]:
+    """사용자 프로필을 일괄 조회한다. 프로필 미구현/미마이그레이션은 무시."""
+    user_profile_model = _get_user_profile_model()
+    if user_profile_model is None or not user_ids:
+        return {}
+
+    try:
+        result = await db.execute(
+            select(user_profile_model).where(
+                user_profile_model.user_id.in_(user_ids)
+            )
+        )
+    except Exception as exc:
+        await db.rollback()
+        logger.warning("사용자 프로필 조회 생략: %s", exc)
+        return {}
+
+    return {
+        profile.user_id: _serialize_profile(profile)
+        for profile in result.scalars().all()
+    }
+
+
+async def _get_profile_totals(db: AsyncSession) -> dict[str, int]:
+    """등록 사용자/프로필 통계를 가져온다."""
+    totals = {
+        "regular_user_count": 0,
+        "teacher_count": 0,
+        "preservice_teacher_count": 0,
+        "no_profile_count": 0,
+    }
+
+    result = await db.execute(
+        select(func.count(User.id)).where(User.is_admin.is_(False))
+    )
+    totals["regular_user_count"] = result.scalar() or 0
+
+    user_profile_model = _get_user_profile_model()
+    if user_profile_model is None:
+        totals["no_profile_count"] = totals["regular_user_count"]
+        return totals
+
+    try:
+        role_counts = await db.execute(
+            select(
+                user_profile_model.role,
+                func.count(user_profile_model.user_id),
+            )
+            .join(User, User.id == user_profile_model.user_id)
+            .where(User.is_admin.is_(False))
+            .group_by(user_profile_model.role)
+        )
+    except Exception as exc:
+        await db.rollback()
+        logger.warning("사용자 프로필 통계 생략: %s", exc)
+        totals["no_profile_count"] = totals["regular_user_count"]
+        return totals
+
+    counted = 0
+    for role, count in role_counts:
+        role_value = _value_str(role)
+        count = count or 0
+        counted += count
+        if role_value == "teacher":
+            totals["teacher_count"] = count
+        elif role_value == "preservice_teacher":
+            totals["preservice_teacher_count"] = count
+
+    totals["no_profile_count"] = max(
+        totals["regular_user_count"] - counted,
+        0,
+    )
+    return totals
+
+
+async def _count_sessions_by_user(
+    db: AsyncSession,
+    user_ids: set[int],
+) -> dict[int, int]:
+    if not user_ids:
+        return {}
+    rows = await db.execute(
+        select(ChatSession.user_id, func.count(ChatSession.id))
+        .where(ChatSession.user_id.in_(user_ids))
+        .group_by(ChatSession.user_id)
+    )
+    return {user_id: count for user_id, count in rows}
+
+
+async def _count_reports_by_user(
+    db: AsyncSession,
+    user_ids: set[int],
+) -> dict[int, int]:
+    if not user_ids:
+        return {}
+    rows = await db.execute(
+        select(AnalysisReport.user_id, func.count(AnalysisReport.id))
+        .where(AnalysisReport.user_id.in_(user_ids))
+        .group_by(AnalysisReport.user_id)
+    )
+    return {user_id: count for user_id, count in rows}
+
+
+async def _extract_new_password(request: Request) -> str:
+    """JSON/form 요청에서 새 비밀번호를 추출한다."""
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="요청 본문이 올바른 JSON 형식이 아닙니다.",
+            )
+    else:
+        payload = dict(await request.form())
+
+    password = payload.get("new_password") or payload.get("password")
+    if password is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="새 비밀번호를 입력해주세요.",
+        )
+    return str(password)
+
+
+def _validate_new_password(password: str) -> None:
+    """관리자 비밀번호 변경용 최소 서버 검증."""
+    if len(password) < PASSWORD_MIN_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"비밀번호는 최소 {PASSWORD_MIN_LENGTH}자 이상이어야 "
+                "합니다."
+            ),
+        )
+
+
+def _audit_password_change(
+    current_admin: User,
+    target_user_id: int,
+    success: bool,
+    reason: str | None = None,
+) -> None:
+    """관리자 비밀번호 변경 성공/실패를 감사 로그에 남긴다."""
+    details: dict[str, Any] = {"target_user_id": target_user_id}
+    if reason:
+        details["reason"] = reason
+    log_user_action(
+        user_id=current_admin.id,
+        action="admin_user_password_change",
+        details=details,
+        success=success,
+    )
 
 
 @router.get("/admin/api/users/stats")
@@ -158,38 +373,14 @@ async def get_user_stats(
             stats.append(entry)
             for k in totals:
                 totals[k] += entry[k]
-        profile_stats = []
-        if hasattr(User, "profile"):
-            users_result = await db.execute(
-                select(User).options(selectinload(User.profile))
-                .where(User.is_admin.is_(False))
-            )
-            profile_counts = {}
-            for user in users_result.scalars().all():
-                profile = _user_profile(user)
-                key = (
-                    _profile_role_label(profile),
-                    _profile_region(profile) or "-",
-                    _profile_detail(profile) or "-",
-                )
-                profile_counts[key] = profile_counts.get(key, 0) + 1
-            profile_stats = [
-                {
-                    "role": role,
-                    "region": region,
-                    "detail": detail,
-                    "user_count": count,
-                }
-                for (role, region, detail), count
-                in sorted(profile_counts.items())
-            ]
+        profile_totals = await _get_profile_totals(db)
         logger.info(
             f"사용자 통계 조회: "
             f"admin={current_admin.username}")
         return {
             "stats": stats,
             "totals": totals,
-            "profile_stats": profile_stats,
+            "profile_totals": profile_totals,
         }
     except Exception as e:
         logger.error(
@@ -210,7 +401,10 @@ async def get_user_sessions(
     try:
         query = (
             select(ChatSession)
-            .options(*_user_load_options())
+            .options(
+                selectinload(ChatSession.messages),
+                selectinload(ChatSession.user),
+            )
             .order_by(ChatSession.created_at.desc()))
         cnt_q = select(func.count()).select_from(
             ChatSession)
@@ -240,8 +434,6 @@ async def get_user_sessions(
         profile_map = await _load_profiles(db, uids)
         sessions_data = []
         for s in sessions:
-            user = s.user
-            profile = _user_profile(user) if user else None
             msgs = sorted(
                 s.messages,
                 key=lambda m: m.created_at)
@@ -260,11 +452,19 @@ async def get_user_sessions(
             sessions_data.append({
                 "session_id": s.id,
                 "user_id": s.user_id,
-                "email": user.email if user else None,
+                "user_email": (
+                    user.email if user is not None else None
+                ),
+                "username": (
+                    user.username if user is not None else None
+                ),
+                "nickname": (
+                    user.nickname if user is not None else None
+                ),
+                "profile": profile,
+                "profile_role": profile["role"],
+                "profile_summary": profile["summary"],
                 "user_type": s.user_type,
-                "profile_role": _profile_role_label(profile),
-                "profile_region": _profile_region(profile),
-                "profile_detail": _profile_detail(profile),
                 "title": s.title,
                 "created_at": (
                     s.created_at.isoformat()),
@@ -459,82 +659,120 @@ async def get_session_detail(
 
 
 @router.post("/admin/api/users/{user_id}/password")
-async def admin_change_user_password(
+async def change_regular_user_password(
     user_id: int,
-    new_password: str = Form(...),
-    password_confirm: str = Form(...),
+    request: Request,
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """관리자가 일반 사용자 비밀번호를 변경한다."""
-    if new_password != password_confirm:
-        log_user_action(
-            current_admin.id,
-            "admin_change_user_password",
-            {"target_user_id": user_id, "reason": "confirm_mismatch"},
+    """관리자 전용 일반 사용자 비밀번호 변경 API."""
+    if not current_admin.is_admin:
+        log_auth_event(
+            "permission_denied",
+            user_id=current_admin.id,
+            username=current_admin.username,
             success=False,
+            reason="Admin permission required",
         )
         raise HTTPException(
-            status_code=400,
-            detail="비밀번호 확인이 일치하지 않습니다.",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="관리자 권한이 필요합니다.",
         )
 
-    if len(new_password) < 8:
-        log_user_action(
-            current_admin.id,
-            "admin_change_user_password",
-            {"target_user_id": user_id, "reason": "password_too_short"},
+    try:
+        new_password = await _extract_new_password(request)
+        _validate_new_password(new_password)
+    except HTTPException as exc:
+        _audit_password_change(
+            current_admin,
+            user_id,
             success=False,
+            reason=str(exc.detail),
         )
-        raise HTTPException(
-            status_code=400,
-            detail="비밀번호는 최소 8자 이상이어야 합니다.",
-        )
+        raise
 
-    target = await db.get(User, user_id)
-    if not target:
-        log_user_action(
-            current_admin.id,
-            "admin_change_user_password",
-            {"target_user_id": user_id, "reason": "not_found"},
-            success=False,
+    try:
+        result = await db.execute(
+            select(User).where(User.id == user_id)
         )
-        raise HTTPException(
-            status_code=404,
-            detail="사용자를 찾을 수 없습니다.",
-        )
+        target_user = result.scalar_one_or_none()
+        if target_user is None:
+            _audit_password_change(
+                current_admin,
+                user_id,
+                success=False,
+                reason="target_not_found",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="사용자를 찾을 수 없습니다.",
+            )
 
-    if target.is_admin:
-        log_user_action(
-            current_admin.id,
-            "admin_change_user_password",
-            {"target_user_id": user_id, "reason": "admin_target"},
-            success=False,
-        )
-        raise HTTPException(
-            status_code=400,
-            detail="관리자 계정 비밀번호는 이 화면에서 변경할 수 없습니다.",
-        )
+        if target_user.is_admin:
+            _audit_password_change(
+                current_admin,
+                user_id,
+                success=False,
+                reason="admin_target_rejected",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="관리자 계정 비밀번호는 이 화면에서 변경할 수 없습니다.",
+            )
 
-    auth_service = AuthService(db)
-    if hasattr(auth_service, "admin_set_user_password"):
-        await auth_service.admin_set_user_password(user_id, new_password)
-    else:
-        target.hashed_password = auth_service.hash_password(new_password)
+        target_user.hashed_password = AuthService.hash_password(
+            new_password
+        )
+        target_user.failed_login_count = 0
+        target_user.locked_until = None
+        target_user.last_failed_login_at = None
         await db.commit()
-        await db.refresh(target)
+        await db.refresh(target_user)
 
-    log_user_action(
-        current_admin.id,
-        "admin_change_user_password",
-        {"target_user_id": user_id},
-        success=True,
-    )
-    logger.info(
-        "관리자 비밀번호 변경: "
-        f"admin={current_admin.username}, target_user_id={user_id}"
-    )
-    return {"ok": True, "user_id": user_id}
+        _audit_password_change(
+            current_admin,
+            target_user.id,
+            success=True,
+        )
+        log_auth_event(
+            "admin_password_change",
+            user_id=target_user.id,
+            username=target_user.username,
+            success=True,
+        )
+        logger.info(
+            "관리자 비밀번호 변경 성공: "
+            "admin_id=%s, target_user_id=%s",
+            current_admin.id,
+            target_user.id,
+        )
+        return {
+            "ok": True,
+            "user_id": target_user.id,
+            "message": "비밀번호가 변경되었습니다.",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        _audit_password_change(
+            current_admin,
+            user_id,
+            success=False,
+            reason="internal_error",
+        )
+        logger.error(
+            "관리자 비밀번호 변경 실패: "
+            "admin_id=%s, target_user_id=%s, error=%s",
+            current_admin.id,
+            user_id,
+            e,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="비밀번호 변경 중 오류가 발생했습니다.",
+        )
 
 
 @router.get(

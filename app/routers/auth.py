@@ -2,29 +2,29 @@
 인증 라우터
 로그인, 로그아웃, 현재 사용자 정보 엔드포인트
 """
+import logging
+
 from fastapi import (
     APIRouter,
     Depends,
-    HTTPException,
-    status,
-    Request,
     Form,
+    Request,
+    status,
 )
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import URL
-import logging
 
 from app.config import settings
 from app.db import get_db
+from app.dependencies import get_current_user
 from app.models.users import User
 from app.rate_limit import limiter
-from app.schemas.users import UserResponse, UserLogin
+from app.schemas.users import UserResponse
 from app.services.auth_service import AuthService
 from app.utils.logging import log_auth_event
-from app.dependencies import get_current_user, get_current_admin
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
