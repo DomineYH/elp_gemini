@@ -3,6 +3,7 @@
 사용자 인증 및 비밀번호 관리
 """
 import logging
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
@@ -13,7 +14,13 @@ from sqlalchemy import case, select, update
 
 from app.config import settings
 from app.models.users import User
-from app.schemas.users import UserCreate
+from app.schemas.users import (
+    PreserviceTeacherRegistration,
+    TeacherRegistration,
+    UserCreate,
+    normalize_email_address,
+    validate_password_strength,
+)
 from app.utils.logging import log_auth_event
 
 # 비밀번호 해싱 컨텍스트 (T020)
@@ -270,6 +277,11 @@ class AuthService:
         )
         return result.scalar_one_or_none()
 
+    @staticmethod
+    def normalize_email(email: str) -> str:
+        """이메일 저장/조회용 정규화."""
+        return normalize_email_address(email)
+
     async def get_user_by_email(
         self, email: str
     ) -> Optional[User]:
@@ -282,8 +294,32 @@ class AuthService:
         Returns:
             User 객체 또는 None
         """
+        normalized_email = self.normalize_email(email)
+        if not normalized_email:
+            return None
+
         result = await self.db.execute(
-            select(User).where(User.email == email)
+            select(User).where(User.email == normalized_email)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_regular_user_by_email(
+        self, email: str
+    ) -> Optional[User]:
+        """
+        일반 사용자 이메일 조회
+
+        관리자 계정은 일반 사용자 로그인/등록 흐름에서 제외한다.
+        """
+        normalized_email = self.normalize_email(email)
+        if not normalized_email:
+            return None
+
+        result = await self.db.execute(
+            select(User).where(
+                User.email == normalized_email,
+                User.is_admin.is_(False),
+            )
         )
         return result.scalar_one_or_none()
 
@@ -328,6 +364,198 @@ class AuthService:
         await self.db.flush()
         await self.db.refresh(user)
 
+        return user
+
+    @staticmethod
+    def _generate_regular_username(role: str) -> str:
+        """이메일/실명 정보를 담지 않는 내부 사용자명 생성."""
+        return f"{role}_{uuid.uuid4().hex[:12]}"
+
+    @staticmethod
+    def _load_user_profile_model():
+        """Lane A의 UserProfile 모델을 지연 로드한다."""
+        try:
+            from app.models.user_profiles import UserProfile
+        except ModuleNotFoundError as exc:
+            if exc.name == "app.models.user_profiles":
+                raise RuntimeError(
+                    "UserProfile model is required for regular "
+                    "user registration."
+                ) from exc
+            raise
+        return UserProfile
+
+    async def _create_regular_user(
+        self,
+        email: str,
+        password: str,
+        role: str,
+    ) -> User:
+        """공통 일반 사용자 생성 로직."""
+        normalized_email = self.normalize_email(email)
+        if await self.get_user_by_email(normalized_email):
+            raise ValueError("이미 등록된 이메일입니다.")
+
+        user_data = UserCreate(
+            username=self._generate_regular_username(role),
+            nickname=role,
+            email=normalized_email,
+            password=password,
+            is_admin=False,
+        )
+        return await self.create_user(user_data)
+
+    async def register_teacher(
+        self,
+        email: str | TeacherRegistration,
+        password: str | None = None,
+        teacher_region: str | None = None,
+        teacher_career_years: int | None = None,
+        *,
+        region: str | None = None,
+        career_years: int | None = None,
+    ) -> User:
+        """현직 교사 일반 사용자 등록."""
+        if isinstance(email, TeacherRegistration):
+            registration = email
+        else:
+            registration = TeacherRegistration(
+                email=email,
+                password=password or "",
+                teacher_region=teacher_region or region,
+                teacher_career_years=(
+                    teacher_career_years
+                    if teacher_career_years is not None
+                    else career_years
+                ),
+            )
+
+        UserProfile = self._load_user_profile_model()
+
+        try:
+            user = await self._create_regular_user(
+                email=str(registration.email),
+                password=registration.password,
+                role=registration.role,
+            )
+            profile = UserProfile(
+                user_id=user.id,
+                role=registration.role,
+                teacher_region=registration.teacher_region,
+                teacher_career_years=registration.teacher_career_years,
+                preservice_university_region=None,
+                preservice_grade=None,
+            )
+            self.db.add(profile)
+            await self.db.commit()
+            await self.db.refresh(user)
+            return user
+        except Exception:
+            await self.db.rollback()
+            raise
+
+    async def register_preservice_teacher(
+        self,
+        email: str | PreserviceTeacherRegistration,
+        password: str | None = None,
+        preservice_university_region: str | None = None,
+        preservice_grade: int | None = None,
+        *,
+        university_region: str | None = None,
+        grade: int | None = None,
+    ) -> User:
+        """예비교사 일반 사용자 등록."""
+        if isinstance(email, PreserviceTeacherRegistration):
+            registration = email
+        else:
+            registration = PreserviceTeacherRegistration(
+                email=email,
+                password=password or "",
+                preservice_university_region=(
+                    preservice_university_region
+                    or university_region
+                ),
+                preservice_grade=(
+                    preservice_grade
+                    if preservice_grade is not None
+                    else grade
+                ),
+            )
+
+        UserProfile = self._load_user_profile_model()
+
+        try:
+            user = await self._create_regular_user(
+                email=str(registration.email),
+                password=registration.password,
+                role=registration.role,
+            )
+            profile = UserProfile(
+                user_id=user.id,
+                role=registration.role,
+                teacher_region=None,
+                teacher_career_years=None,
+                preservice_university_region=(
+                    registration.preservice_university_region
+                ),
+                preservice_grade=registration.preservice_grade,
+            )
+            self.db.add(profile)
+            await self.db.commit()
+            await self.db.refresh(user)
+            return user
+        except Exception:
+            await self.db.rollback()
+            raise
+
+    async def authenticate_regular_user(
+        self, email: str, password: str
+    ) -> Optional[User]:
+        """일반 사용자 이메일+비밀번호 인증."""
+        if not password:
+            return None
+
+        user = await self.get_regular_user_by_email(email)
+        if not user or not user.hashed_password:
+            return None
+
+        if not self.verify_password(password, user.hashed_password):
+            return None
+
+        return user
+
+    async def admin_set_user_password(
+        self, user_id: int, new_password: str
+    ) -> User:
+        """
+        관리자 전용 일반 사용자 비밀번호 변경 서비스.
+
+        실제 관리자 권한 확인은 라우터 의존성에서 수행하고, 이
+        서비스는 대상이 일반 사용자임을 보장한다.
+        """
+        validated_password = validate_password_strength(new_password)
+        user = await self.get_user_by_id(user_id)
+
+        if not user:
+            raise ValueError("사용자를 찾을 수 없습니다.")
+        if user.is_admin:
+            raise ValueError(
+                "관리자 계정 비밀번호는 이 기능으로 변경할 수 없습니다."
+            )
+
+        user.hashed_password = self.hash_password(validated_password)
+        user.failed_login_count = 0
+        user.locked_until = None
+        user.last_failed_login_at = None
+
+        await self.db.commit()
+        await self.db.refresh(user)
+        log_auth_event(
+            "password_change",
+            user_id=user.id,
+            username=user.username,
+            success=True,
+        )
         return user
 
     @staticmethod
