@@ -33,7 +33,7 @@ from sqlalchemy.pool import StaticPool
 from app.db import Base, get_db
 from app.main import app
 from app.models.users import User
-from app.rate_limit import limiter
+from app.rate_limit import limiter, _admin_id_limit_item
 
 ADMIN_USERNAME = "bf_admin"
 ADMIN_PASSWORD = "correct horse battery staple"
@@ -423,3 +423,45 @@ async def test_rate_limit_disabled_returns_no_429(
     assert 429 not in statuses, (
         f"rate limit 비활성화 시 429 가 나오면 안 됨: {statuses}"
     )
+
+
+# ---------------------------------------------------------------------
+# admin_id 기반 rate limit — IP 전환 brute-force 방어
+# ---------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_admin_id_rate_limit_returns_429():
+    """동일 admin_id 에 대해 시간당 제한 초과 시 HTTPException(429)."""
+    from app.rate_limit import check_admin_id_rate_limit
+
+    limiter.enabled = True
+    limit_count = _admin_id_limit_item.amount
+
+    # 제한 임계치까지는 예외 없음
+    for _ in range(limit_count):
+        check_admin_id_rate_limit(ADMIN_USERNAME)
+
+    # 초과 시 429
+    with pytest.raises(Exception) as exc_info:
+        check_admin_id_rate_limit(ADMIN_USERNAME)
+    assert exc_info.value.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_admin_id_rate_limit_isolated_per_id():
+    """서로 다른 admin_id 는 독립적인 rate limit 버킷을 가진다."""
+    from app.rate_limit import check_admin_id_rate_limit
+
+    limiter.enabled = True
+    limit_count = _admin_id_limit_item.amount
+
+    # admin1 제한 소진
+    for _ in range(limit_count):
+        check_admin_id_rate_limit(ADMIN_USERNAME)
+
+    # admin1 은 차단
+    with pytest.raises(Exception):
+        check_admin_id_rate_limit(ADMIN_USERNAME)
+
+    # admin2 는 동일 IP(호출 컨텍스트)에서도 허용
+    check_admin_id_rate_limit("other_admin")
+    # 예외 없이 통과해야 함
