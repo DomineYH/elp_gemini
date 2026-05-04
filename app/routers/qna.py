@@ -15,6 +15,7 @@ from fastapi import (
 )
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.db import get_db
 from app.dependencies import get_current_user
@@ -39,7 +40,7 @@ logger = logging.getLogger(__name__)
 SESSION_LIST_DEFAULT_LIMIT = 50
 SESSION_LIST_MAX_LIMIT = 100
 CHAT_HISTORY_DEFAULT_LIMIT = 200
-CHAT_HISTORY_MAX_LIMIT = 500
+CHAT_HISTORY_MAX_LIMIT = 200
 
 
 def _model_int(value: object) -> int:
@@ -254,7 +255,11 @@ async def ask_question(
     description="현재 로그인한 사용자의 QnA 세션 목록을 조회합니다.",
 )
 async def list_my_sessions(
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(
+        SESSION_LIST_DEFAULT_LIMIT,
+        ge=1,
+        le=SESSION_LIST_MAX_LIMIT,
+    ),
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -270,11 +275,8 @@ async def list_my_sessions(
         현재 사용자 소유 세션 목록
     """
     try:
-        total_result = await db.execute(
-            select(func.count(ChatSession.id))
-            .where(ChatSession.user_id == current_user.id)
-        )
-        total_count = int(total_result.scalar_one() or 0)
+        current_user_id = _model_int(current_user.id)
+        stats_session = aliased(ChatSession)
 
         message_stats = (
             select(
@@ -282,13 +284,15 @@ async def list_my_sessions(
                 func.count(ChatMessage.id).label("message_count"),
                 func.max(ChatMessage.created_at).label("last_message_at"),
             )
+            .join(stats_session, stats_session.id == ChatMessage.session_id)
+            .where(stats_session.user_id == current_user_id)
             .group_by(ChatMessage.session_id)
             .subquery()
         )
 
         total_result = await db.execute(
             select(func.count(ChatSession.id)).where(
-                ChatSession.user_id == _model_int(current_user.id)
+                ChatSession.user_id == current_user_id
             )
         )
         total_count = int(total_result.scalar_one() or 0)
@@ -311,7 +315,7 @@ async def list_my_sessions(
                 message_stats,
                 ChatSession.id == message_stats.c.session_id,
             )
-            .where(ChatSession.user_id == _model_int(current_user.id))
+            .where(ChatSession.user_id == current_user_id)
             .order_by(last_activity_at.desc(), ChatSession.id.desc())
             .offset(offset)
             .limit(limit)
@@ -358,7 +362,11 @@ async def list_my_sessions(
 )
 async def get_chat_history(
     session_id: int,
-    limit: int = Query(200, ge=1, le=200),
+    limit: int = Query(
+        CHAT_HISTORY_DEFAULT_LIMIT,
+        ge=1,
+        le=CHAT_HISTORY_MAX_LIMIT,
+    ),
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -400,7 +408,7 @@ async def get_chat_history(
         message_result = await db.execute(
             select(ChatMessage)
             .where(ChatMessage.session_id == session_id)
-            .order_by(ChatMessage.created_at.asc())
+            .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
             .offset(offset)
             .limit(limit)
         )

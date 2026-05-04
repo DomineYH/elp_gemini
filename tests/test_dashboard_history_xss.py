@@ -1,11 +1,43 @@
 """Regression coverage for stored chat history rendering safety."""
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 DASHBOARD_TEMPLATE = Path("app/templates/user/dashboard.html")
 
 
 def _dashboard_source() -> str:
     return DASHBOARD_TEMPLATE.read_text(encoding="utf-8")
+
+
+def _extract_js_function(source: str, name: str) -> str:
+    start = source.index(f"function {name}(")
+    brace_start = source.index("{", start)
+    depth = 0
+    for index in range(brace_start, len(source)):
+        character = source[index]
+        if character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:index + 1]
+    raise AssertionError(f"Could not extract JavaScript function: {name}")
+
+
+def _run_node_script(script: str):
+    if shutil.which("node") is None:
+        pytest.skip("Node.js runtime is unavailable")
+
+    result = subprocess.run(
+        ["node", "-e", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_past_session_assistant_messages_use_safe_markdown_renderer():
@@ -30,3 +62,65 @@ def test_safe_markdown_renderer_blocks_unsafe_markdown_urls():
     assert "['http:', 'https:', 'mailto:', 'tel:']" in source
     assert "link.removeAttribute('href');" in source
     assert "image.replaceWith(" in source
+
+
+def test_safe_markdown_url_policy_rejects_executable_protocols():
+    source = _dashboard_source()
+    function_source = _extract_js_function(source, "isSafeMarkdownUrl")
+
+    _run_node_script(f"""
+        const assert = require('node:assert/strict');
+        global.window = {{ location: {{ origin: 'https://example.test' }} }};
+        {function_source}
+
+        assert.equal(isSafeMarkdownUrl('javascript:alert(1)'), false);
+        assert.equal(isSafeMarkdownUrl('java\\nscript:alert(1)'), false);
+        const dataUrl = 'data:text/html,<svg onload=alert(1)>';
+        assert.equal(isSafeMarkdownUrl(dataUrl), false);
+        assert.equal(isSafeMarkdownUrl('https://example.test/report'), true);
+        assert.equal(isSafeMarkdownUrl('/api/qna/sessions'), true);
+        assert.equal(isSafeMarkdownUrl('mailto:teacher@example.test'), true);
+    """)
+
+
+def test_escape_html_helper_encodes_raw_html_payloads():
+    source = _dashboard_source()
+    function_source = _extract_js_function(source, "escapeHtml")
+
+    _run_node_script(f"""
+        const assert = require('node:assert/strict');
+        function encodeHtml(value) {{
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }}
+        global.document = {{
+            createElement(tag) {{
+                assert.equal(tag, 'div');
+                return {{
+                    _textContent: '',
+                    innerHTML: '',
+                    set textContent(value) {{
+                        this._textContent = String(value);
+                        this.innerHTML = encodeHtml(value);
+                    }},
+                    get textContent() {{
+                        return this._textContent;
+                    }},
+                }};
+            }},
+        }};
+        {function_source}
+
+        const payload = '<img src=x onerror=alert(1)><script>alert(2)</script>';
+        const escaped = escapeHtml(payload);
+        assert.equal(escaped.includes('<img'), false);
+        assert.equal(escaped.includes('<script>'), false);
+        assert.match(escaped, /&lt;img/);
+        assert.match(escaped, /&lt;script&gt;/);
+        assert.equal(escapeHtml(null), '');
+        assert.equal(escapeHtml(undefined), '');
+    """)

@@ -347,6 +347,48 @@ async def test_get_history_owner_receives_ordered_messages(
 
 
 @pytest.mark.asyncio
+async def test_get_history_uses_id_tiebreaker_for_equal_timestamps(
+    client,
+    seeded_history,
+):
+    same_timestamp = datetime(2026, 5, 4, 12, 0, 0)
+
+    async with TestingSessionLocal() as db:
+        first_message = ChatMessage(
+            session_id=seeded_history["session_a_old"].id,
+            role=MessageRole.USER,
+            content="같은 시각의 낮은 ID 메시지",
+            created_at=same_timestamp,
+        )
+        second_message = ChatMessage(
+            session_id=seeded_history["session_a_old"].id,
+            role=MessageRole.ASSISTANT,
+            content="같은 시각의 높은 ID 메시지",
+            model_name="gemini-test",
+            created_at=same_timestamp,
+        )
+        db.add_all([first_message, second_message])
+        await db.commit()
+
+    response = await client.get(
+        f"/api/qna/sessions/{seeded_history['session_a_old'].id}/history"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    messages = payload["messages"]
+
+    assert payload["total_count"] == 2
+    assert [message["id"] for message in messages] == sorted(
+        message["id"] for message in messages
+    )
+    assert [message["content"] for message in messages] == [
+        "같은 시각의 낮은 ID 메시지",
+        "같은 시각의 높은 ID 메시지",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_get_history_supports_pagination(
     client,
     seeded_history,
