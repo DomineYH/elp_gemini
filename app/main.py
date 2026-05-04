@@ -21,6 +21,7 @@ from app.config import settings
 from app.db import engine
 from app.middleware import AuthMiddleware
 from app.migrations import (
+    drop_invite_codes_table,
     ensure_criteria_file_path_column,
     ensure_user_profiles_table,
     ensure_users_lockout_columns,
@@ -187,6 +188,10 @@ async def startup_event():
 
         await init_db()
         logger.info("데이터베이스 초기화 완료")
+
+    invite_codes_dropped = await drop_invite_codes_table(engine)
+    if invite_codes_dropped:
+        logger.info("invite_codes 테이블이 자동 제거되었습니다.")
 
 
 @app.on_event("shutdown")
