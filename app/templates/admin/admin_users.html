@@ -26,7 +26,7 @@
     <h1 class="text-3xl font-bold mb-6">사용자 관리</h1>
 
     <!-- 통계 카드 -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 hidden">
         <div class="bg-white shadow-md rounded-lg p-4">
             <div class="text-sm font-medium text-blue-600">총 세션 수</div>
             <div id="stat-sessions" class="text-2xl font-bold text-blue-800 mt-1">-</div>
@@ -46,7 +46,7 @@
     </div>
 
     <!-- 등록 사용자 통계 카드 -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 hidden">
         <div class="bg-white shadow-md rounded-lg p-4">
             <div class="text-sm font-medium text-slate-600">등록 일반 사용자</div>
             <div id="stat-regular-users" class="text-2xl font-bold text-slate-800 mt-1">-</div>
@@ -66,7 +66,7 @@
     </div>
 
     <!-- 세션 유형별 통계 테이블 -->
-    <div class="bg-white shadow-md rounded-lg overflow-hidden mb-6">
+    <div class="bg-white shadow-md rounded-lg overflow-hidden mb-6 hidden">
         <table class="w-full">
             <thead class="bg-gray-50">
                 <tr>
@@ -547,7 +547,7 @@ function updateAccountPagination(total) {
     pagination.innerHTML = html;
 }
 
-loadStats();
+// loadStats(); // hidden by issue #17 - preserved for future re-enable
 loadAccounts(1);
 loadSessions(1);
 </script>
