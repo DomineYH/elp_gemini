@@ -91,6 +91,18 @@ class ChatHistoryResponse(BaseModel):
     total_count: int = Field(
         ..., description="전체 메시지 수"
     )
+    returned_count: int = Field(
+        ..., description="이번 응답에 포함된 메시지 수"
+    )
+    limit: int = Field(
+        ..., description="페이지당 메시지 수"
+    )
+    offset: int = Field(
+        ..., description="조회 시작 위치"
+    )
+    has_more: bool = Field(
+        ..., description="추가 메시지 존재 여부"
+    )
 
 
 class UserSessionItem(BaseModel):
@@ -130,4 +142,16 @@ class UserSessionListResponse(BaseModel):
     )
     total_count: int = Field(
         ..., description="전체 세션 수"
+    )
+    returned_count: int = Field(
+        ..., description="이번 응답에 포함된 세션 수"
+    )
+    limit: int = Field(
+        ..., description="페이지당 세션 수"
+    )
+    offset: int = Field(
+        ..., description="조회 시작 위치"
+    )
+    has_more: bool = Field(
+        ..., description="추가 세션 존재 여부"
     )

@@ -94,6 +94,13 @@ async def seeded_history(db_tables):
             created_at=base_time + timedelta(hours=1),
             updated_at=base_time + timedelta(hours=1, minutes=20),
         )
+        session_a_recent_message = ChatSession(
+            user_id=user_a.id,
+            title="A old row with recent message",
+            user_type="3학년",
+            created_at=base_time - timedelta(hours=1),
+            updated_at=base_time + timedelta(minutes=5),
+        )
         session_b = ChatSession(
             user_id=user_b.id,
             title="B private lesson",
@@ -101,7 +108,12 @@ async def seeded_history(db_tables):
             created_at=base_time + timedelta(hours=2),
             updated_at=base_time + timedelta(hours=2, minutes=5),
         )
-        db.add_all([session_a_old, session_a_new, session_b])
+        db.add_all([
+            session_a_old,
+            session_a_new,
+            session_a_recent_message,
+            session_b,
+        ])
         await db.flush()
 
         db.add_all([
@@ -130,6 +142,12 @@ async def seeded_history(db_tables):
                 content="다른 사용자 질문",
                 created_at=base_time + timedelta(hours=2, minutes=1),
             ),
+            ChatMessage(
+                session_id=session_a_recent_message.id,
+                role=MessageRole.USER,
+                content="가장 최근 활동 질문",
+                created_at=base_time + timedelta(hours=3),
+            ),
         ])
         await db.commit()
 
@@ -138,6 +156,7 @@ async def seeded_history(db_tables):
             "user_b": user_b,
             "session_a_old": session_a_old,
             "session_a_new": session_a_new,
+            "session_a_recent_message": session_a_recent_message,
             "session_b": session_b,
         }
 
@@ -162,6 +181,15 @@ async def client(seeded_history):
         yield async_client
 
 
+def assert_pagination_metadata(payload, collection_key):
+    """Lock count metadata to the returned page, not page cap semantics."""
+    returned_count = len(payload[collection_key])
+    assert payload["returned_count"] == returned_count
+    assert payload["has_more"] is (
+        payload["offset"] + returned_count < payload["total_count"]
+    )
+
+
 @pytest.mark.asyncio
 async def test_list_my_sessions_only_returns_current_user_sessions(
     client,
@@ -171,15 +199,24 @@ async def test_list_my_sessions_only_returns_current_user_sessions(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["total_count"] == 2
+    assert payload["total_count"] == 3
+    assert payload["returned_count"] == 3
+    assert payload["limit"] == 50
+    assert payload["offset"] == 0
+    assert payload["has_more"] is False
+    assert_pagination_metadata(payload, "sessions")
 
     sessions = payload["sessions"]
     returned_ids = {item["session_id"] for item in sessions}
     assert returned_ids == {
         seeded_history["session_a_old"].id,
         seeded_history["session_a_new"].id,
+        seeded_history["session_a_recent_message"].id,
     }
     assert seeded_history["session_b"].id not in returned_ids
+    assert sessions[0]["session_id"] == (
+        seeded_history["session_a_recent_message"].id
+    )
 
     for item in sessions:
         assert set(item) >= {
@@ -211,6 +248,60 @@ async def test_list_my_sessions_only_returns_current_user_sessions(
 
 
 @pytest.mark.asyncio
+async def test_list_my_sessions_supports_pagination(
+    client,
+    seeded_history,
+):
+    response = await client.get("/api/qna/sessions?limit=1&offset=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_count"] == 3
+    assert payload["returned_count"] == 1
+    assert payload["limit"] == 1
+    assert payload["offset"] == 1
+    assert payload["has_more"] is True
+    assert len(payload["sessions"]) == 1
+    assert_pagination_metadata(payload, "sessions")
+
+
+@pytest.mark.asyncio
+async def test_list_my_sessions_last_page_has_no_more_results(
+    client,
+    seeded_history,
+):
+    response = await client.get("/api/qna/sessions?limit=2&offset=2")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_count"] == 3
+    assert payload["returned_count"] == 1
+    assert payload["limit"] == 2
+    assert payload["offset"] == 2
+    assert payload["has_more"] is False
+    assert len(payload["sessions"]) == 1
+    assert_pagination_metadata(payload, "sessions")
+
+
+@pytest.mark.asyncio
+async def test_list_my_sessions_overrun_offset_keeps_total_count(
+    client,
+    seeded_history,
+):
+    response = await client.get("/api/qna/sessions?limit=10&offset=999")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_count"] == 3
+    assert payload["returned_count"] == 0
+    assert payload["limit"] == 10
+    assert payload["offset"] == 999
+    assert payload["has_more"] is False
+    assert payload["sessions"] == []
+    assert_pagination_metadata(payload, "sessions")
+
+
+@pytest.mark.asyncio
 async def test_get_history_returns_404_for_another_users_session(
     client,
     seeded_history,
@@ -235,6 +326,11 @@ async def test_get_history_owner_receives_ordered_messages(
     payload = response.json()
     assert payload["session_id"] == seeded_history["session_a_new"].id
     assert payload["total_count"] == 3
+    assert payload["returned_count"] == 3
+    assert payload["limit"] == 200
+    assert payload["offset"] == 0
+    assert payload["has_more"] is False
+    assert_pagination_metadata(payload, "messages")
 
     messages = payload["messages"]
     assert [message["role"] for message in messages] == [
@@ -248,3 +344,67 @@ async def test_get_history_owner_receives_ordered_messages(
         "두 번째 질문",
     ]
     assert all("created_at" in message for message in messages)
+
+
+@pytest.mark.asyncio
+async def test_get_history_supports_pagination(
+    client,
+    seeded_history,
+):
+    first_page = await client.get(
+        f"/api/qna/sessions/{seeded_history['session_a_new'].id}/history"
+        "?limit=2&offset=0"
+    )
+    second_page = await client.get(
+        f"/api/qna/sessions/{seeded_history['session_a_new'].id}/history"
+        "?limit=2&offset=2"
+    )
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+
+    first_payload = first_page.json()
+    second_payload = second_page.json()
+
+    assert first_payload["total_count"] == 3
+    assert first_payload["returned_count"] == 2
+    assert first_payload["limit"] == 2
+    assert first_payload["offset"] == 0
+    assert first_payload["has_more"] is True
+    assert_pagination_metadata(first_payload, "messages")
+    assert [message["content"] for message in first_payload["messages"]] == [
+        "첫 번째 질문",
+        "첫 번째 답변",
+    ]
+
+    assert second_payload["total_count"] == 3
+    assert second_payload["returned_count"] == 1
+    assert second_payload["limit"] == 2
+    assert second_payload["offset"] == 2
+    assert second_payload["has_more"] is False
+    assert_pagination_metadata(second_payload, "messages")
+    assert [message["content"] for message in second_payload["messages"]] == [
+        "두 번째 질문",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_history_overrun_offset_keeps_total_count(
+    client,
+    seeded_history,
+):
+    response = await client.get(
+        f"/api/qna/sessions/{seeded_history['session_a_new'].id}/history"
+        "?limit=10&offset=999"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session_id"] == seeded_history["session_a_new"].id
+    assert payload["total_count"] == 3
+    assert payload["returned_count"] == 0
+    assert payload["limit"] == 10
+    assert payload["offset"] == 999
+    assert payload["has_more"] is False
+    assert payload["messages"] == []
+    assert_pagination_metadata(payload, "messages")

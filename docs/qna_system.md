@@ -478,8 +478,51 @@ async def upload_document(
 }
 ```
 
-### 6.3 GET /api/qna/sessions/{session_id}/history
-**기능**: 대화 히스토리 조회
+### 6.3 GET /api/qna/sessions
+**기능**: 내 QnA 세션 목록 페이지 조회
+
+**쿼리 파라미터**:
+- `limit`: 반환할 세션 수 (기본값 `50`, 범위 `1`-`100`)
+- `offset`: 조회 시작 위치 (기본값 `0`, 최소 `0`)
+
+**페이지 메타데이터 의미**:
+- `total_count`: 현재 사용자에게 속한 전체 세션 수
+- `returned_count`: 이번 응답의 `sessions` 배열 길이
+- `has_more`: `offset + returned_count < total_count` 여부
+
+**응답**:
+```json
+{
+  "sessions": [
+    {
+      "session_id": 1,
+      "title": "lesson1.pdf",
+      "user_type": "현직교사",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:05:00Z",
+      "message_count": 2,
+      "last_message_at": "2025-01-01T00:05:00Z"
+    }
+  ],
+  "total_count": 3,
+  "returned_count": 1,
+  "limit": 1,
+  "offset": 0,
+  "has_more": true
+}
+```
+
+### 6.4 GET /api/qna/sessions/{session_id}/history
+**기능**: 대화 히스토리 페이지 조회
+
+**쿼리 파라미터**:
+- `limit`: 반환할 메시지 수 (기본값 `200`, 범위 `1`-`200`)
+- `offset`: 조회 시작 위치 (기본값 `0`, 최소 `0`)
+
+**페이지 메타데이터 의미**:
+- `total_count`: 세션에 속한 전체 메시지 수
+- `returned_count`: 이번 응답의 `messages` 배열 길이
+- `has_more`: `offset + returned_count < total_count` 여부
 
 **응답**:
 ```json
@@ -488,22 +531,28 @@ async def upload_document(
   "messages": [
     {
       "id": 1,
+      "session_id": 1,
       "role": "user",
       "content": "질문 1",
       "created_at": "..."
     },
     {
       "id": 2,
+      "session_id": 1,
       "role": "assistant",
       "content": "답변 1",
       "created_at": "..."
     }
   ],
-  "total_count": 10
+  "total_count": 10,
+  "returned_count": 2,
+  "limit": 2,
+  "offset": 0,
+  "has_more": true
 }
 ```
 
-### 6.4 POST /api/qna/{document_id:path}
+### 6.5 POST /api/qna/{document_id:path}
 **기능**: 문서와 대화하기 (자동 세션 관리)
 
 **특징**:

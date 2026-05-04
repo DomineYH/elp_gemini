@@ -727,6 +727,65 @@
         return div.innerHTML;
     }
 
+    function isSafeMarkdownUrl(rawUrl) {
+        if (!rawUrl) return true;
+
+        const compactUrl = String(rawUrl)
+            .trim()
+            .replace(/[\u0000-\u001F\u007F\s]+/g, '');
+        if (!compactUrl) return true;
+
+        try {
+            const url = new URL(compactUrl, window.location.origin);
+            return ['http:', 'https:', 'mailto:', 'tel:'].includes(
+                url.protocol
+            );
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function sanitizeRenderedMarkdown(html) {
+        const template = document.createElement('template');
+        template.innerHTML = html;
+
+        template.content.querySelectorAll('*').forEach(element => {
+            Array.from(element.attributes).forEach(attribute => {
+                const name = attribute.name.toLowerCase();
+                if (name.startsWith('on') || name === 'style') {
+                    element.removeAttribute(attribute.name);
+                }
+            });
+        });
+
+        template.content.querySelectorAll('a[href]').forEach(link => {
+            if (!isSafeMarkdownUrl(link.getAttribute('href'))) {
+                link.removeAttribute('href');
+                link.removeAttribute('target');
+                return;
+            }
+
+            link.setAttribute('rel', 'noopener noreferrer');
+            link.setAttribute('target', '_blank');
+        });
+
+        template.content.querySelectorAll('img[src]').forEach(image => {
+            if (isSafeMarkdownUrl(image.getAttribute('src'))) return;
+
+            image.replaceWith(
+                document.createTextNode(image.getAttribute('alt') || '')
+            );
+        });
+
+        return template.innerHTML;
+    }
+
+    function renderSafeMarkdown(markdown) {
+        const safeInput = escapeHtml(markdown || '');
+        const rendered = marked.parse(safeInput);
+        return sanitizeRenderedMarkdown(rendered);
+    }
+
     function formatDashboardDate(dateStr) {
         if (!dateStr) return '-';
         const date = new Date(dateStr);
@@ -760,6 +819,14 @@
             </div>`;
     }
 
+    const DASHBOARD_SESSION_PAGE_SIZE = 50;
+    const HISTORY_MESSAGE_PAGE_SIZE = 200;
+    let dashboardSessions = [];
+    let dashboardSessionNextOffset = 0;
+    let currentHistorySessionId = null;
+    let currentHistoryMessages = [];
+    let currentHistoryNextOffset = 0;
+
     async function loadDashboardHistory() {
         const sessionsBox = document.getElementById('mySessions');
         const reportsBox = document.getElementById('myReports');
@@ -769,32 +836,10 @@
         setHistoryListState(reportsBox, '보고서를 불러오는 중...');
 
         try {
-            const [sessionsResp, reportsResp] = await Promise.all([
-                fetch('/api/qna/sessions'),
-                fetch('/api/lessonplan/reports'),
+            await Promise.all([
+                loadSessionPage(0, false),
+                loadReportList(),
             ]);
-
-            if (sessionsResp.ok) {
-                const data = await sessionsResp.json();
-                renderSessionList(data.sessions || []);
-            } else {
-                setHistoryListState(
-                    sessionsBox,
-                    '세션 정보를 불러올 수 없습니다.',
-                    'error'
-                );
-            }
-
-            if (reportsResp.ok) {
-                const data = await reportsResp.json();
-                renderReportList(data.reports || []);
-            } else {
-                setHistoryListState(
-                    reportsBox,
-                    '보고서 정보를 불러올 수 없습니다.',
-                    'error'
-                );
-            }
         } catch (error) {
             console.error('대시보드 기록 로드 실패:', error);
             setHistoryListState(
@@ -810,19 +855,66 @@
         }
     }
 
-    function renderSessionList(sessions) {
+    async function loadSessionPage(offset = 0, append = false) {
+        const sessionsBox = document.getElementById('mySessions');
+        const response = await fetch(
+            `/api/qna/sessions?limit=${DASHBOARD_SESSION_PAGE_SIZE}&offset=${offset}`
+        );
+        if (!response.ok) {
+            setHistoryListState(
+                sessionsBox,
+                '세션 정보를 불러올 수 없습니다.',
+                'error'
+            );
+            return;
+        }
+
+        const data = await response.json();
+        const sessions = data.sessions || [];
+        dashboardSessions = append
+            ? dashboardSessions.concat(sessions)
+            : sessions;
+        dashboardSessionNextOffset = (
+            (data.offset ?? offset)
+            + (data.returned_count ?? sessions.length)
+        );
+        renderSessionList(dashboardSessions, data);
+    }
+
+    async function loadMoreSessions() {
+        await loadSessionPage(dashboardSessionNextOffset, true);
+    }
+
+    async function loadReportList() {
+        const reportsBox = document.getElementById('myReports');
+        const response = await fetch('/api/lessonplan/reports');
+        if (!response.ok) {
+            setHistoryListState(
+                reportsBox,
+                '보고서 정보를 불러올 수 없습니다.',
+                'error'
+            );
+            return;
+        }
+
+        const data = await response.json();
+        renderReportList(data.reports || []);
+    }
+
+    function renderSessionList(sessions, pageInfo = {}) {
         const container = document.getElementById('mySessions');
         const countEl = document.getElementById('mySessionsCount');
         if (!container) return;
 
-        if (countEl) countEl.textContent = `${sessions.length}개`;
+        const totalCount = pageInfo.total_count ?? sessions.length;
+        if (countEl) countEl.textContent = `${totalCount}개`;
 
         if (!sessions.length) {
             setHistoryListState(container, '지난 세션 기록이 없습니다.');
             return;
         }
 
-        container.innerHTML = sessions.map(session => {
+        const sessionHtml = sessions.map(session => {
             const title = session.title || `세션 #${session.session_id}`;
             const messageCount = session.message_count ?? 0;
             const lastAt = session.last_message_at || session.updated_at;
@@ -849,15 +941,22 @@
                     <p class="text-sm text-blue-600 mt-3">대화 내역 보기</p>
                 </button>`;
         }).join('');
+
+        const loadMoreHtml = pageInfo.has_more ? `
+            <button type="button"
+                onclick="loadMoreSessions()"
+                class="w-full border border-gray-200 rounded-lg p-3 text-sm text-blue-600 hover:bg-blue-50">
+                세션 더 보기
+            </button>` : '';
+
+        container.innerHTML = sessionHtml + loadMoreHtml;
     }
 
-    function normalizeStaticReportUrl(reportPath) {
-        if (!reportPath) return '#';
-        if (reportPath.startsWith('/static/')) return reportPath;
-        if (reportPath.startsWith('app/static/')) {
-            return `/static/${reportPath.slice('app/static/'.length)}`;
-        }
-        return `/static/${reportPath.replace(/^\/+/, '')}`;
+    function reportDownloadUrl(report) {
+        const reportId = Number(report?.id);
+        return Number.isInteger(reportId) && reportId > 0
+            ? `/api/lessonplan/reports/${reportId}/download`
+            : '#';
     }
 
     function renderReportList(reports) {
@@ -878,7 +977,7 @@
             const latency = report.latency_ms != null
                 ? `${(report.latency_ms / 1000).toFixed(1)}초`
                 : '-';
-            const reportUrl = normalizeStaticReportUrl(report.report_path || report.file_path || '');
+            const reportUrl = reportDownloadUrl(report);
 
             return `
                 <article class="border border-gray-200 rounded-lg p-4">
@@ -918,15 +1017,40 @@
         if (meta) meta.textContent = `세션 #${sessionId}`;
         content.innerHTML = '<p class="text-gray-500 text-center py-8">세션을 불러오는 중...</p>';
         modal.classList.remove('hidden');
+        currentHistorySessionId = sessionId;
+        currentHistoryMessages = [];
+        currentHistoryNextOffset = 0;
+
+        await loadSessionHistoryPage(sessionId, 0, false);
+    }
+
+    async function loadSessionHistoryPage(sessionId, offset = 0, append = false) {
+        const content = document.getElementById('historyModalContent');
+        const meta = document.getElementById('historyModalMeta');
+        if (!content) return;
 
         try {
-            const response = await fetch(`/api/qna/sessions/${sessionId}/history`);
+            const response = await fetch(
+                `/api/qna/sessions/${sessionId}/history?limit=${HISTORY_MESSAGE_PAGE_SIZE}&offset=${offset}`
+            );
             if (!response.ok) throw new Error('history fetch failed');
 
             const data = await response.json();
             const messages = data.messages || [];
-            if (meta) meta.textContent = `세션 #${data.session_id || sessionId} · 메시지 ${messages.length}개`;
-            renderSessionMessages(messages);
+            currentHistoryMessages = append
+                ? currentHistoryMessages.concat(messages)
+                : messages;
+            currentHistoryNextOffset = (
+                (data.offset ?? offset)
+                + (data.returned_count ?? messages.length)
+            );
+            if (meta) {
+                meta.textContent = (
+                    `세션 #${data.session_id || sessionId} · `
+                    + `메시지 ${currentHistoryMessages.length}/${data.total_count ?? currentHistoryMessages.length}개`
+                );
+            }
+            renderSessionMessages(currentHistoryMessages, data.has_more);
         } catch (error) {
             console.error('세션 히스토리 로드 실패:', error);
             content.innerHTML = `
@@ -936,7 +1060,16 @@
         }
     }
 
-    function renderSessionMessages(messages) {
+    async function loadMoreSessionHistory() {
+        if (currentHistorySessionId === null) return;
+        await loadSessionHistoryPage(
+            currentHistorySessionId,
+            currentHistoryNextOffset,
+            true
+        );
+    }
+
+    function renderSessionMessages(messages, hasMore = false) {
         const content = document.getElementById('historyModalContent');
         if (!content) return;
 
@@ -945,11 +1078,11 @@
             return;
         }
 
-        content.innerHTML = messages.map(message => {
+        const messagesHtml = messages.map(message => {
             const isUser = message.role === 'user';
             const body = isUser
                 ? `<p class="whitespace-pre-wrap">${escapeHtml(message.content)}</p>`
-                : `<div class="prose prose-sm max-w-none">${marked.parse(message.content || '')}</div>`;
+                : `<div class="prose prose-sm max-w-none">${renderSafeMarkdown(message.content)}</div>`;
 
             return `
                 <div class="flex ${isUser ? 'justify-end' : 'justify-start'}">
@@ -963,6 +1096,15 @@
                     </div>
                 </div>`;
         }).join('');
+
+        const loadMoreHtml = hasMore ? `
+            <button type="button"
+                onclick="loadMoreSessionHistory()"
+                class="w-full border border-gray-200 rounded-lg p-3 text-sm text-blue-600 bg-white hover:bg-blue-50">
+                대화 더 보기
+            </button>` : '';
+
+        content.innerHTML = messagesHtml + loadMoreHtml;
 
         content.scrollTop = 0;
     }

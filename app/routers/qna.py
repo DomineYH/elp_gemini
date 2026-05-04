@@ -10,6 +10,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Query,
     status,
 )
 from sqlalchemy import func, select
@@ -35,6 +36,11 @@ from app.schemas.sessions import (
 router = APIRouter(prefix="/api/qna", tags=["QnA"])
 logger = logging.getLogger(__name__)
 
+SESSION_LIST_DEFAULT_LIMIT = 50
+SESSION_LIST_MAX_LIMIT = 100
+CHAT_HISTORY_DEFAULT_LIMIT = 200
+CHAT_HISTORY_MAX_LIMIT = 500
+
 
 def _model_int(value: object) -> int:
     """Return SQLAlchemy model values as ints for type checkers."""
@@ -54,6 +60,11 @@ def _model_optional_str(value: object) -> Optional[str]:
 def _model_datetime(value: object) -> datetime:
     """Return SQLAlchemy model instance values as concrete datetimes."""
     return cast(datetime, value)
+
+
+def _has_more(offset: int, returned_count: int, total_count: int) -> bool:
+    """Return whether a capped list response has another page."""
+    return offset + returned_count < total_count
 
 
 async def _session_segment_label_for_user(
@@ -243,6 +254,8 @@ async def ask_question(
     description="현재 로그인한 사용자의 QnA 세션 목록을 조회합니다.",
 )
 async def list_my_sessions(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -257,6 +270,12 @@ async def list_my_sessions(
         현재 사용자 소유 세션 목록
     """
     try:
+        total_result = await db.execute(
+            select(func.count(ChatSession.id))
+            .where(ChatSession.user_id == current_user.id)
+        )
+        total_count = int(total_result.scalar_one() or 0)
+
         message_stats = (
             select(
                 ChatMessage.session_id,
@@ -265,6 +284,18 @@ async def list_my_sessions(
             )
             .group_by(ChatMessage.session_id)
             .subquery()
+        )
+
+        total_result = await db.execute(
+            select(func.count(ChatSession.id)).where(
+                ChatSession.user_id == _model_int(current_user.id)
+            )
+        )
+        total_count = int(total_result.scalar_one() or 0)
+
+        last_activity_at = func.coalesce(
+            message_stats.c.last_message_at,
+            ChatSession.updated_at,
         )
 
         result = await db.execute(
@@ -280,9 +311,10 @@ async def list_my_sessions(
                 message_stats,
                 ChatSession.id == message_stats.c.session_id,
             )
-            .where(ChatSession.user_id == current_user.id)
-            .order_by(ChatSession.updated_at.desc())
-            .limit(50)
+            .where(ChatSession.user_id == _model_int(current_user.id))
+            .order_by(last_activity_at.desc(), ChatSession.id.desc())
+            .offset(offset)
+            .limit(limit)
         )
 
         sessions = [
@@ -300,7 +332,11 @@ async def list_my_sessions(
 
         return UserSessionListResponse(
             sessions=sessions,
-            total_count=len(sessions),
+            total_count=total_count,
+            returned_count=len(sessions),
+            limit=limit,
+            offset=offset,
+            has_more=_has_more(offset, len(sessions), total_count),
         )
 
     except Exception as e:
@@ -322,6 +358,8 @@ async def list_my_sessions(
 )
 async def get_chat_history(
     session_id: int,
+    limit: int = Query(200, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -352,11 +390,19 @@ async def get_chat_history(
                 detail="세션을 찾을 수 없습니다."
             )
 
+        total_result = await db.execute(
+            select(func.count(ChatMessage.id)).where(
+                ChatMessage.session_id == session_id
+            )
+        )
+        total_count = int(total_result.scalar_one() or 0)
+
         message_result = await db.execute(
             select(ChatMessage)
             .where(ChatMessage.session_id == session_id)
             .order_by(ChatMessage.created_at.asc())
-            .limit(200)
+            .offset(offset)
+            .limit(limit)
         )
         messages = message_result.scalars().all()
 
@@ -379,7 +425,11 @@ async def get_chat_history(
         return ChatHistoryResponse(
             session_id=session_id,
             messages=message_responses,
-            total_count=len(message_responses),
+            total_count=total_count,
+            returned_count=len(message_responses),
+            limit=limit,
+            offset=offset,
+            has_more=_has_more(offset, len(message_responses), total_count),
         )
 
     except HTTPException:
