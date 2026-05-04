@@ -727,6 +727,16 @@
         return div.innerHTML;
     }
 
+    function escapeHtmlAttribute(text) {
+        if (text === null || text === undefined) return '';
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     function isSafeMarkdownUrl(rawUrl) {
         if (!rawUrl) return true;
 
@@ -927,7 +937,7 @@
                     <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
                             <h3 class="font-semibold text-gray-900 truncate"
-                                title="${escapeHtml(title)}">
+                                title="${escapeHtmlAttribute(title)}">
                                 ${escapeHtml(title)}
                             </h3>
                             <p class="text-sm text-gray-500 mt-1">
@@ -984,12 +994,12 @@
                     <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
                             <h3 class="font-semibold text-gray-900 truncate"
-                                title="${escapeHtml(filename)}">
+                                title="${escapeHtmlAttribute(filename)}">
                                 ${escapeHtml(filename)}
                             </h3>
                             ${lessonName ? `
                                 <p class="text-sm text-gray-500 mt-1 truncate"
-                                   title="${escapeHtml(lessonName)}">
+                                   title="${escapeHtmlAttribute(lessonName)}">
                                     ${escapeHtml(lessonName)}
                                 </p>` : ''}
                         </div>
@@ -998,7 +1008,7 @@
                         </span>
                     </div>
                     <div class="text-xs text-gray-500 mt-3">소요시간: ${latency}</div>
-                    <a href="${escapeHtml(reportUrl)}"
+                    <a href="${escapeHtmlAttribute(reportUrl)}"
                        target="_blank"
                        rel="noopener noreferrer"
                        class="inline-block mt-3 text-sm text-blue-600 hover:underline">

@@ -60,7 +60,7 @@ def test_dashboard_report_links_use_authenticated_download_endpoint(
     assert "const reportId = Number(report?.id);" in response.text
     assert "`/api/lessonplan/reports/${reportId}/download`" in response.text
     assert "const reportUrl = reportDownloadUrl(report);" in response.text
-    assert 'href="${escapeHtml(reportUrl)}"' in response.text
+    assert 'href="${escapeHtmlAttribute(reportUrl)}"' in response.text
 
     assert "report.report_path" not in response.text
     assert "report.file_path" not in response.text

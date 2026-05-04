@@ -64,6 +64,18 @@ def test_safe_markdown_renderer_blocks_unsafe_markdown_urls():
     assert "image.replaceWith(" in source
 
 
+def test_dashboard_history_attribute_contexts_use_attribute_escape():
+    source = _dashboard_source()
+
+    assert 'title="${escapeHtmlAttribute(title)}"' in source
+    assert 'title="${escapeHtmlAttribute(filename)}"' in source
+    assert 'title="${escapeHtmlAttribute(lessonName)}"' in source
+    assert 'href="${escapeHtmlAttribute(reportUrl)}"' in source
+    assert 'title="${escapeHtml(title)}"' not in source
+    assert 'title="${escapeHtml(filename)}"' not in source
+    assert 'title="${escapeHtml(lessonName)}"' not in source
+
+
 def test_safe_markdown_url_policy_rejects_executable_protocols():
     source = _dashboard_source()
     function_source = _extract_js_function(source, "isSafeMarkdownUrl")
@@ -93,9 +105,7 @@ def test_escape_html_helper_encodes_raw_html_payloads():
             return String(value)
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
+                .replace(/>/g, '&gt;');
         }}
         global.document = {{
             createElement(tag) {{
@@ -123,4 +133,26 @@ def test_escape_html_helper_encodes_raw_html_payloads():
         assert.match(escaped, /&lt;script&gt;/);
         assert.equal(escapeHtml(null), '');
         assert.equal(escapeHtml(undefined), '');
+    """)
+
+
+def test_escape_html_attribute_helper_blocks_quote_breakout_payloads():
+    source = _dashboard_source()
+    function_source = _extract_js_function(source, "escapeHtmlAttribute")
+
+    _run_node_script(f"""
+        const assert = require('node:assert/strict');
+        {function_source}
+
+        const payload = '" onmouseover="alert(1)\\' autofocus=\\'x';
+        const escaped = escapeHtmlAttribute(payload);
+
+        assert.equal(escaped.includes('"'), false);
+        assert.equal(escaped.includes("'"), false);
+        assert.equal(escaped.includes('<'), false);
+        assert.equal(escaped.includes('>'), false);
+        assert.match(escaped, /&quot; onmouseover=&quot;alert\\(1\\)/);
+        assert.match(escaped, /&#39; autofocus=&#39;x/);
+        assert.equal(escapeHtmlAttribute(null), '');
+        assert.equal(escapeHtmlAttribute(undefined), '');
     """)
