@@ -753,3 +753,53 @@ async def test_registration_template_collects_no_direct_pii_fields(client):
     forbidden_labels = ["이름", "닉네임", "전화번호", "휴대폰"]
     for forbidden in forbidden_labels:
         assert forbidden not in body
+
+
+@pytest.mark.asyncio
+async def test_register_endpoint_is_whitelisted_for_browser_html_requests(
+    client, session_factory
+):
+    """Browser-style POST /auth/register must not be intercepted by AuthMiddleware.
+
+    A request carrying ``Accept: text/html`` is exactly what a real browser sends.
+    If /auth/register is missing from ``WHITELIST_PATHS`` the middleware will
+    redirect to ``/login`` — this test guards against that regression.
+    """
+    email = "browser_register@example.com"
+    response = await client.post(
+        "/auth/register",
+        data={
+            "email": email,
+            "password": "TeacherPass123",
+            "password_confirm": "TeacherPass123",
+            "role": "teacher",
+            "teacher_region": "서울",
+            "teacher_career_years": "5",
+        },
+        headers={"Accept": "text/html,application/xhtml+xml"},
+        follow_redirects=False,
+    )
+
+    # Must redirect to dashboard, never to /login (the bug-class signature).
+    assert response.status_code == 302
+    location = response.headers["location"]
+    assert location == "/"
+    assert location != "/login"
+
+    # Verify the User row was persisted.
+    user = await _fetch_user_by_email(session_factory, email)
+    assert user is not None
+    assert user.email == email
+    assert user.hashed_password is not None
+    assert user.hashed_password != "TeacherPass123"
+    assert not user.is_admin
+
+    # Verify the UserProfile row exists with role="teacher".
+    profile_model = _require_user_profile_model()
+    async with session_factory() as session:
+        result = await session.execute(
+            select(profile_model).where(profile_model.user_id == user.id)
+        )
+    profile = result.scalar_one_or_none()
+    assert profile is not None
+    assert profile.role == "teacher"
