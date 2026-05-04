@@ -203,16 +203,69 @@ Content-Disposition: attachment; filename="{filename}"
 
 ---
 
-### 2.3 대화 히스토리 조회
+### 2.3 내 QnA 세션 목록 조회
+
+**Endpoint**: `GET /api/qna/sessions`
+
+**설명**: 현재 로그인한 사용자의 QnA 세션 목록을 페이지 단위로 조회합니다.
+
+**인증**: 필수
+
+**Query Parameters**:
+- `limit`: 반환할 세션 수 (기본값 `50`, 범위 `1`-`100`)
+- `offset`: 조회 시작 위치 (기본값 `0`, 최소 `0`)
+
+**페이지 메타데이터**:
+- `total_count`: 현재 사용자에게 속한 전체 세션 수
+- `returned_count`: 이번 응답의 `sessions` 배열 길이
+- `has_more`: `offset + returned_count < total_count` 여부
+
+**Response** (200 OK):
+```json
+{
+  "sessions": [
+    {
+      "session_id": 1,
+      "title": "lesson1.pdf",
+      "user_type": "현직교사",
+      "created_at": "2025-11-22T10:00:00",
+      "updated_at": "2025-11-22T10:05:00",
+      "message_count": 2,
+      "last_message_at": "2025-11-22T10:05:00"
+    }
+  ],
+  "total_count": 3,
+  "returned_count": 1,
+  "limit": 1,
+  "offset": 0,
+  "has_more": true
+}
+```
+
+**Error Responses**:
+- `500`: 세션 목록 조회 실패
+
+---
+
+### 2.4 대화 히스토리 조회
 
 **Endpoint**: `GET /api/qna/sessions/{session_id}/history`
 
-**설명**: 세션의 대화 히스토리를 조회합니다.
+**설명**: 세션의 대화 히스토리를 페이지 단위로 조회합니다.
 
 **인증**: 필수
 
 **Path Parameters**:
 - `session_id`: 세션 ID
+
+**Query Parameters**:
+- `limit`: 반환할 메시지 수 (기본값 `200`, 범위 `1`-`200`)
+- `offset`: 조회 시작 위치 (기본값 `0`, 최소 `0`)
+
+**페이지 메타데이터**:
+- `total_count`: 세션에 속한 전체 메시지 수
+- `returned_count`: 이번 응답의 `messages` 배열 길이
+- `has_more`: `offset + returned_count < total_count` 여부
 
 **Response** (200 OK):
 ```json
@@ -234,11 +287,16 @@ Content-Disposition: attachment; filename="{filename}"
       "created_at": "2025-11-22T10:00:05"
     }
   ],
-  "total_count": 2
+  "total_count": 10,
+  "returned_count": 2,
+  "limit": 2,
+  "offset": 0,
+  "has_more": true
 }
 ```
 
 **Error Responses**:
+- `404`: 세션을 찾을 수 없음
 - `500`: 히스토리 조회 실패
 
 ---

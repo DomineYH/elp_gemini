@@ -320,8 +320,33 @@
         </div>
     </div>
     {% else %}
-    <div class="text-center text-gray-500 py-12">
-        <p>문서를 업로드하면 분석 및 QnA 기능을 사용할 수 있습니다.</p>
+    <div class="space-y-6">
+        <div class="text-center text-gray-600 py-4">
+            <p>문서를 업로드하면 분석 및 QnA 기능을 사용할 수 있습니다.</p>
+            <p class="text-sm text-gray-500 mt-2">이전에 진행한 세션과 분석 보고서는 아래에서 다시 확인할 수 있습니다.</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <section class="bg-white shadow-md rounded-lg p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-bold text-gray-800">지난 세션</h2>
+                    <span id="mySessionsCount" class="text-sm text-gray-500"></span>
+                </div>
+                <div id="mySessions" class="space-y-3">
+                    <p class="text-gray-500 text-center py-6">불러오는 중...</p>
+                </div>
+            </section>
+
+            <section class="bg-white shadow-md rounded-lg p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-bold text-gray-800">내 분석 보고서</h2>
+                    <span id="myReportsCount" class="text-sm text-gray-500"></span>
+                </div>
+                <div id="myReports" class="space-y-3">
+                    <p class="text-gray-500 text-center py-6">불러오는 중...</p>
+                </div>
+            </section>
+        </div>
     </div>
     {% endif %}
 </div>
@@ -427,6 +452,33 @@
                 인쇄
             </button>
             <button onclick="closeAnalysisModal()"
+                class="bg-gray-600 text-white px-6 py-2 rounded hover:bg-gray-700 transition-colors">
+                닫기
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Session History Modal -->
+<div id="historyModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl h-[80vh] flex flex-col m-4">
+        <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-blue-600 text-white rounded-t-lg">
+            <div>
+                <h3 class="text-xl font-bold">지난 세션 대화</h3>
+                <p id="historyModalMeta" class="text-sm text-blue-100 mt-1"></p>
+            </div>
+            <button onclick="closeHistoryModal()" class="hover:text-gray-200" aria-label="지난 세션 대화 닫기">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        <div id="historyModalContent" class="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
+            <p class="text-gray-500 text-center py-8">세션을 불러오는 중...</p>
+        </div>
+        <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end rounded-b-lg">
+            <button onclick="closeHistoryModal()"
                 class="bg-gray-600 text-white px-6 py-2 rounded hover:bg-gray-700 transition-colors">
                 닫기
             </button>
@@ -666,6 +718,413 @@
             history.scrollTop = history.scrollHeight;
         }
     }
+
+    // --- Dashboard History Logic ---
+    function escapeHtml(text) {
+        if (text === null || text === undefined) return '';
+        const div = document.createElement('div');
+        div.textContent = String(text);
+        return div.innerHTML;
+    }
+
+    function escapeHtmlAttribute(text) {
+        if (text === null || text === undefined) return '';
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function isSafeMarkdownUrl(rawUrl) {
+        if (!rawUrl) return true;
+
+        const compactUrl = String(rawUrl)
+            .trim()
+            .replace(/[\u0000-\u001F\u007F\s]+/g, '');
+        if (!compactUrl) return true;
+
+        try {
+            const url = new URL(compactUrl, window.location.origin);
+            return ['http:', 'https:', 'mailto:', 'tel:'].includes(
+                url.protocol
+            );
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function sanitizeRenderedMarkdown(html) {
+        const template = document.createElement('template');
+        template.innerHTML = html;
+
+        template.content.querySelectorAll('*').forEach(element => {
+            Array.from(element.attributes).forEach(attribute => {
+                const name = attribute.name.toLowerCase();
+                if (name.startsWith('on') || name === 'style') {
+                    element.removeAttribute(attribute.name);
+                }
+            });
+        });
+
+        template.content.querySelectorAll('a[href]').forEach(link => {
+            if (!isSafeMarkdownUrl(link.getAttribute('href'))) {
+                link.removeAttribute('href');
+                link.removeAttribute('target');
+                return;
+            }
+
+            link.setAttribute('rel', 'noopener noreferrer');
+            link.setAttribute('target', '_blank');
+        });
+
+        template.content.querySelectorAll('img[src]').forEach(image => {
+            if (isSafeMarkdownUrl(image.getAttribute('src'))) return;
+
+            image.replaceWith(
+                document.createTextNode(image.getAttribute('alt') || '')
+            );
+        });
+
+        return template.innerHTML;
+    }
+
+    function renderSafeMarkdown(markdown) {
+        const safeInput = escapeHtml(markdown || '');
+        const rendered = marked.parse(safeInput);
+        return sanitizeRenderedMarkdown(rendered);
+    }
+
+    function formatDashboardDate(dateStr) {
+        if (!dateStr) return '-';
+        const date = new Date(dateStr);
+        if (Number.isNaN(date.getTime())) return '-';
+        return date.toLocaleString('ko-KR', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+
+    function formatDashboardTime(dateStr) {
+        if (!dateStr) return '-';
+        const date = new Date(dateStr);
+        if (Number.isNaN(date.getTime())) return '-';
+        return date.toLocaleString('ko-KR', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+
+    function setHistoryListState(container, message, tone = 'neutral') {
+        const toneClass = tone === 'error'
+            ? 'text-red-600 bg-red-50 border-red-100'
+            : 'text-gray-500 bg-gray-50 border-gray-100';
+        container.innerHTML = `
+            <div class="border rounded-lg p-6 text-center ${toneClass}">
+                ${escapeHtml(message)}
+            </div>`;
+    }
+
+    const DASHBOARD_SESSION_PAGE_SIZE = 50;
+    const HISTORY_MESSAGE_PAGE_SIZE = 200;
+    let dashboardSessions = [];
+    let dashboardSessionNextOffset = 0;
+    let currentHistorySessionId = null;
+    let currentHistoryMessages = [];
+    let currentHistoryNextOffset = 0;
+
+    async function loadDashboardHistory() {
+        const sessionsBox = document.getElementById('mySessions');
+        const reportsBox = document.getElementById('myReports');
+        if (!sessionsBox || !reportsBox) return;
+
+        setHistoryListState(sessionsBox, '세션을 불러오는 중...');
+        setHistoryListState(reportsBox, '보고서를 불러오는 중...');
+
+        try {
+            await Promise.all([
+                loadSessionPage(0, false),
+                loadReportList(),
+            ]);
+        } catch (error) {
+            console.error('대시보드 기록 로드 실패:', error);
+            setHistoryListState(
+                sessionsBox,
+                '세션 정보를 불러올 수 없습니다.',
+                'error'
+            );
+            setHistoryListState(
+                reportsBox,
+                '보고서 정보를 불러올 수 없습니다.',
+                'error'
+            );
+        }
+    }
+
+    async function loadSessionPage(offset = 0, append = false) {
+        const sessionsBox = document.getElementById('mySessions');
+        const response = await fetch(
+            `/api/qna/sessions?limit=${DASHBOARD_SESSION_PAGE_SIZE}&offset=${offset}`
+        );
+        if (!response.ok) {
+            setHistoryListState(
+                sessionsBox,
+                '세션 정보를 불러올 수 없습니다.',
+                'error'
+            );
+            return;
+        }
+
+        const data = await response.json();
+        const sessions = data.sessions || [];
+        dashboardSessions = append
+            ? dashboardSessions.concat(sessions)
+            : sessions;
+        dashboardSessionNextOffset = (
+            (data.offset ?? offset)
+            + (data.returned_count ?? sessions.length)
+        );
+        renderSessionList(dashboardSessions, data);
+    }
+
+    async function loadMoreSessions() {
+        await loadSessionPage(dashboardSessionNextOffset, true);
+    }
+
+    async function loadReportList() {
+        const reportsBox = document.getElementById('myReports');
+        const response = await fetch('/api/lessonplan/reports');
+        if (!response.ok) {
+            setHistoryListState(
+                reportsBox,
+                '보고서 정보를 불러올 수 없습니다.',
+                'error'
+            );
+            return;
+        }
+
+        const data = await response.json();
+        renderReportList(data.reports || []);
+    }
+
+    function renderSessionList(sessions, pageInfo = {}) {
+        const container = document.getElementById('mySessions');
+        const countEl = document.getElementById('mySessionsCount');
+        if (!container) return;
+
+        const totalCount = pageInfo.total_count ?? sessions.length;
+        if (countEl) countEl.textContent = `${totalCount}개`;
+
+        if (!sessions.length) {
+            setHistoryListState(container, '지난 세션 기록이 없습니다.');
+            return;
+        }
+
+        const sessionHtml = sessions.map(session => {
+            const title = session.title || `세션 #${session.session_id}`;
+            const messageCount = session.message_count ?? 0;
+            const lastAt = session.last_message_at || session.updated_at;
+            const userType = session.user_type || '미지정';
+
+            return `
+                <button type="button"
+                    onclick="openSessionHistory(${Number(session.session_id)})"
+                    class="w-full text-left border border-gray-200 rounded-lg p-4 hover:border-blue-300 hover:bg-blue-50 transition-colors">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <h3 class="font-semibold text-gray-900 truncate"
+                                title="${escapeHtmlAttribute(title)}">
+                                ${escapeHtml(title)}
+                            </h3>
+                            <p class="text-sm text-gray-500 mt-1">
+                                ${escapeHtml(userType)} · 메시지 ${messageCount}개
+                            </p>
+                        </div>
+                        <span class="text-xs text-gray-400 whitespace-nowrap">
+                            ${formatDashboardDate(lastAt)}
+                        </span>
+                    </div>
+                    <p class="text-sm text-blue-600 mt-3">대화 내역 보기</p>
+                </button>`;
+        }).join('');
+
+        const loadMoreHtml = pageInfo.has_more ? `
+            <button type="button"
+                onclick="loadMoreSessions()"
+                class="w-full border border-gray-200 rounded-lg p-3 text-sm text-blue-600 hover:bg-blue-50">
+                세션 더 보기
+            </button>` : '';
+
+        container.innerHTML = sessionHtml + loadMoreHtml;
+    }
+
+    function reportDownloadUrl(report) {
+        const reportId = Number(report?.id);
+        return Number.isInteger(reportId) && reportId > 0
+            ? `/api/lessonplan/reports/${reportId}/download`
+            : '#';
+    }
+
+    function renderReportList(reports) {
+        const container = document.getElementById('myReports');
+        const countEl = document.getElementById('myReportsCount');
+        if (!container) return;
+
+        if (countEl) countEl.textContent = `${reports.length}개`;
+
+        if (!reports.length) {
+            setHistoryListState(container, '분석 보고서가 없습니다.');
+            return;
+        }
+
+        container.innerHTML = reports.map(report => {
+            const filename = report.report_filename || report.filename || '보고서';
+            const lessonName = report.lessonplan_original_name || report.lessonplan_filename || '';
+            const latency = report.latency_ms != null
+                ? `${(report.latency_ms / 1000).toFixed(1)}초`
+                : '-';
+            const reportUrl = reportDownloadUrl(report);
+
+            return `
+                <article class="border border-gray-200 rounded-lg p-4">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <h3 class="font-semibold text-gray-900 truncate"
+                                title="${escapeHtmlAttribute(filename)}">
+                                ${escapeHtml(filename)}
+                            </h3>
+                            ${lessonName ? `
+                                <p class="text-sm text-gray-500 mt-1 truncate"
+                                   title="${escapeHtmlAttribute(lessonName)}">
+                                    ${escapeHtml(lessonName)}
+                                </p>` : ''}
+                        </div>
+                        <span class="text-xs text-gray-400 whitespace-nowrap">
+                            ${formatDashboardDate(report.created_at)}
+                        </span>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-3">소요시간: ${latency}</div>
+                    <a href="${escapeHtmlAttribute(reportUrl)}"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       class="inline-block mt-3 text-sm text-blue-600 hover:underline">
+                        보고서 보기
+                    </a>
+                </article>`;
+        }).join('');
+    }
+
+    async function openSessionHistory(sessionId) {
+        const modal = document.getElementById('historyModal');
+        const content = document.getElementById('historyModalContent');
+        const meta = document.getElementById('historyModalMeta');
+        if (!modal || !content) return;
+
+        if (meta) meta.textContent = `세션 #${sessionId}`;
+        content.innerHTML = '<p class="text-gray-500 text-center py-8">세션을 불러오는 중...</p>';
+        modal.classList.remove('hidden');
+        currentHistorySessionId = sessionId;
+        currentHistoryMessages = [];
+        currentHistoryNextOffset = 0;
+
+        await loadSessionHistoryPage(sessionId, 0, false);
+    }
+
+    async function loadSessionHistoryPage(sessionId, offset = 0, append = false) {
+        const content = document.getElementById('historyModalContent');
+        const meta = document.getElementById('historyModalMeta');
+        if (!content) return;
+
+        try {
+            const response = await fetch(
+                `/api/qna/sessions/${sessionId}/history?limit=${HISTORY_MESSAGE_PAGE_SIZE}&offset=${offset}`
+            );
+            if (!response.ok) throw new Error('history fetch failed');
+
+            const data = await response.json();
+            const messages = data.messages || [];
+            currentHistoryMessages = append
+                ? currentHistoryMessages.concat(messages)
+                : messages;
+            currentHistoryNextOffset = (
+                (data.offset ?? offset)
+                + (data.returned_count ?? messages.length)
+            );
+            if (meta) {
+                meta.textContent = (
+                    `세션 #${data.session_id || sessionId} · `
+                    + `메시지 ${currentHistoryMessages.length}/${data.total_count ?? currentHistoryMessages.length}개`
+                );
+            }
+            renderSessionMessages(currentHistoryMessages, data.has_more);
+        } catch (error) {
+            console.error('세션 히스토리 로드 실패:', error);
+            content.innerHTML = `
+                <div class="bg-red-50 border border-red-100 text-red-600 rounded-lg p-6 text-center">
+                    세션 대화 내역을 불러올 수 없습니다.
+                </div>`;
+        }
+    }
+
+    async function loadMoreSessionHistory() {
+        if (currentHistorySessionId === null) return;
+        await loadSessionHistoryPage(
+            currentHistorySessionId,
+            currentHistoryNextOffset,
+            true
+        );
+    }
+
+    function renderSessionMessages(messages, hasMore = false) {
+        const content = document.getElementById('historyModalContent');
+        if (!content) return;
+
+        if (!messages.length) {
+            content.innerHTML = '<p class="text-gray-500 text-center py-8">대화 내역이 없습니다.</p>';
+            return;
+        }
+
+        const messagesHtml = messages.map(message => {
+            const isUser = message.role === 'user';
+            const body = isUser
+                ? `<p class="whitespace-pre-wrap">${escapeHtml(message.content)}</p>`
+                : `<div class="prose prose-sm max-w-none">${renderSafeMarkdown(message.content)}</div>`;
+
+            return `
+                <div class="flex ${isUser ? 'justify-end' : 'justify-start'}">
+                    <div class="max-w-[85%] rounded-lg p-4 ${isUser
+                        ? 'bg-blue-100 text-blue-900'
+                        : 'bg-white border border-gray-200 text-gray-800'}">
+                        <div class="text-xs font-semibold ${isUser ? 'text-blue-700' : 'text-green-700'} mb-2">
+                            ${isUser ? '사용자' : 'AI'} · ${formatDashboardTime(message.created_at)}
+                        </div>
+                        ${body}
+                    </div>
+                </div>`;
+        }).join('');
+
+        const loadMoreHtml = hasMore ? `
+            <button type="button"
+                onclick="loadMoreSessionHistory()"
+                class="w-full border border-gray-200 rounded-lg p-3 text-sm text-blue-600 bg-white hover:bg-blue-50">
+                대화 더 보기
+            </button>` : '';
+
+        content.innerHTML = messagesHtml + loadMoreHtml;
+
+        content.scrollTop = 0;
+    }
+
+    function closeHistoryModal() {
+        const modal = document.getElementById('historyModal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    loadDashboardHistory();
 
     // --- Analysis Logic ---
     // --- Analysis Logic ---
