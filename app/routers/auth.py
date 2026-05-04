@@ -314,8 +314,8 @@ async def login_user(
     """
     일반 사용자 로그인 (이메일 + 비밀번호 기반).
 
-    등록되지 않은 이메일은 등록 화면으로 이동한다. 기존 초대코드
-    인증 메서드와 /auth/login 하위 호환 라우트는 삭제하지 않는다.
+    등록되지 않은 이메일은 등록 화면으로 이동한다. 레거시
+    /auth/login 하위 호환 차단 라우트는 삭제하지 않는다.
     """
     try:
         normalized_email, password = _validate_login_form(
@@ -689,9 +689,9 @@ async def login(
     """
     기존 username/nickname 로그인 엔드포인트.
 
-    Issue #10 이후 일반 사용자 인증은 이메일+비밀번호 또는 보존된
-    초대코드 서비스 경로만 허용한다. 이 레거시 엔드포인트는 임의의
-    passwordless 세션 생성을 막기 위해 더 이상 인증을 수행하지 않는다.
+    Issue #10 이후 일반 사용자 인증은 이메일+비밀번호 흐름만
+    허용한다. 이 레거시 엔드포인트는 임의의 passwordless 세션
+    생성을 막기 위해 더 이상 인증을 수행하지 않는다.
     """
     log_auth_event(
         "legacy_login_blocked",

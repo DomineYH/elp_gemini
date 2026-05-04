@@ -6,7 +6,6 @@
 {% if user.is_admin %}
 <a href="/admin/dashboard" class="text-blue-600 font-medium">대시보드</a>
 <a href="/admin/users" class="text-gray-600 hover:text-blue-600">사용자</a>
-<a href="/admin/codes" class="text-gray-600 hover:text-blue-600">코드 관리</a>
 <a href="/admin/qna-logs" class="text-gray-600 hover:text-blue-600">QnA 로그</a>
 <a href="/admin/prompts" class="text-gray-600 hover:text-blue-600">프롬프트</a>
 <a href="/" class="text-gray-600 hover:text-blue-600">일반 모드</a>
@@ -50,10 +49,6 @@
             <a href="/admin/users" class="block p-4 border rounded-lg hover:bg-gray-50">
                 <h3 class="font-medium text-blue-600">사용자 관리</h3>
                 <p class="text-sm text-gray-600 mt-1">사용자 목록 및 활동 조회</p>
-            </a>
-            <a href="/admin/codes" class="block p-4 border rounded-lg hover:bg-gray-50">
-                <h3 class="font-medium text-blue-600">코드 관리</h3>
-                <p class="text-sm text-gray-600 mt-1">초대 코드 생성 및 관리</p>
             </a>
             <a href="/admin/qna-logs" class="block p-4 border rounded-lg hover:bg-gray-50">
                 <h3 class="font-medium text-blue-600">QnA 로그</h3>

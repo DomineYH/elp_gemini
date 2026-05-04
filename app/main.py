@@ -21,6 +21,7 @@ from app.config import settings
 from app.db import engine
 from app.middleware import AuthMiddleware
 from app.migrations import (
+    drop_invite_codes_table,
     ensure_criteria_file_path_column,
     ensure_user_profiles_table,
     ensure_users_lockout_columns,
@@ -160,6 +161,27 @@ async def general_exception_handler(
 
 
 # 라이프사이클 이벤트
+async def _drop_legacy_invite_codes_table_if_enabled(db_engine) -> bool:
+    """
+    명시적 운영 승인 설정이 켜진 경우에만 레거시 invite_codes 테이블을 삭제한다.
+
+    일반 앱 시작은 데이터 보존/롤백 가능성을 위해 파괴적 DDL을 수행하지
+    않는다. 물리 삭제가 필요한 환경은 백업/보존 정책 확인 후
+    DROP_LEGACY_INVITE_CODES_TABLE=true 로 opt-in 해야 한다.
+    """
+    if not settings.DROP_LEGACY_INVITE_CODES_TABLE:
+        logger.info(
+            "invite_codes 테이블 삭제 비활성화: "
+            "DROP_LEGACY_INVITE_CODES_TABLE=false"
+        )
+        return False
+
+    invite_codes_dropped = await drop_invite_codes_table(db_engine)
+    if invite_codes_dropped:
+        logger.info("invite_codes 테이블이 자동 제거되었습니다.")
+    return invite_codes_dropped
+
+
 @app.on_event("startup")
 async def startup_event():
     """애플리케이션 시작 시 실행"""
@@ -187,6 +209,8 @@ async def startup_event():
 
         await init_db()
         logger.info("데이터베이스 초기화 완료")
+
+    await _drop_legacy_invite_codes_table_if_enabled(engine)
 
 
 @app.on_event("shutdown")
