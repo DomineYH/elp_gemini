@@ -49,6 +49,13 @@ class Settings(BaseSettings):
         default="sqlite+aiosqlite:///./data/app.db",
         description="데이터베이스 URL",
     )
+    DROP_LEGACY_INVITE_CODES_TABLE: bool = Field(
+        default=False,
+        description=(
+            "레거시 invite_codes 테이블을 시작 시 물리 삭제할지 여부. "
+            "데이터 보존/백업 확인 후 명시적으로만 활성화한다."
+        ),
+    )
 
     # Google Gemini API
     GOOGLE_API_KEY: str = Field(..., description="Google API 키")

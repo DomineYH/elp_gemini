@@ -2,32 +2,67 @@
 QnA 라우터
 세션 기반 질문답변 엔드포인트
 """
+import logging
+
 from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
     status,
 )
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-import logging
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.dependencies import get_current_user
-from app.models.users import User
 from app.models.chat_sessions import ChatSession
+from app.models.user_profiles import UserProfile
+from app.models.users import User
 from app.schemas.sessions import (
-    CreateSessionRequest,
-    CreateSessionResponse,
     AskQuestionRequest,
     AskQuestionResponse,
     ChatHistoryResponse,
     ChatMessageResponse,
+    CreateSessionRequest,
+    CreateSessionResponse,
 )
 from app.services.qna_service import QnAService
 
 router = APIRouter(prefix="/api/qna", tags=["QnA"])
 logger = logging.getLogger(__name__)
+
+
+async def _session_segment_label_for_user(
+    db: AsyncSession,
+    current_user: User,
+) -> str:
+    """
+    Store an analytics segment label, not an internal username, in
+    ChatSession.user_type.
+
+    Legacy invite-code sessions used grade/teacher labels in this column. New
+    email/password users should continue that reporting contract through
+    UserProfile metadata so admin filters do not depend on generated usernames.
+    """
+    result = await db.execute(
+        select(UserProfile).where(UserProfile.user_id == current_user.id)
+    )
+    profile = result.scalar_one_or_none()
+
+    if profile:
+        if profile.role == "teacher":
+            return "현직교사"
+        if profile.role == "preservice_teacher":
+            if profile.preservice_grade:
+                return f"{profile.preservice_grade}학년"
+            return "미지정"
+
+    nickname = current_user.nickname or ""
+    if nickname == "teacher":
+        return "현직교사"
+    if nickname == "preservice_teacher":
+        return "미지정"
+    return nickname or "미지정"
 
 
 @router.post(
@@ -59,11 +94,15 @@ async def create_session(
     try:
         qna_service = QnAService(db)
 
-        # 세션 생성 (title에 지도안 파일명, user_type에 사용자 유형 저장)
+        session_segment = await _session_segment_label_for_user(
+            db, current_user
+        )
+
+        # 세션 생성 (title에 지도안 파일명, user_type에 세션 세그먼트 저장)
         session = await qna_service.create_session(
             user_id=current_user.id,
             title=request.lessonplan_filename,
-            user_type=current_user.username,
+            user_type=session_segment,
         )
         await db.commit()
 
@@ -267,17 +306,22 @@ async def chat_with_document(
 
         # 2. 세션이 없으면 생성
         if not session:
+            session_segment = await _session_segment_label_for_user(
+                db, current_user
+            )
             session = await qna_service.create_session(
                 user_id=current_user.id,
                 title=document_id,
-                user_type=current_user.username,
+                user_type=session_segment,
             )
             await db.commit()
             logger.info(f"새 세션 자동 생성: {session.id} for {document_id}")
 
         # 3. 질문 처리
-        # document_id 예: fileSearchStores/user222store-j74m2v137dyv/documents/curicurumpdf-wm724i901oft
-        # 여기서 store_id 추출: fileSearchStores/user222store-j74m2v137dyv
+        # document_id 예:
+        # fileSearchStores/user222store-j74m2v137dyv/documents/...
+        # 여기서 store_id 추출:
+        # fileSearchStores/user222store-j74m2v137dyv
         store_id = None
         if "fileSearchStores/" in document_id and "/documents/" in document_id:
             parts = document_id.split("/documents/")

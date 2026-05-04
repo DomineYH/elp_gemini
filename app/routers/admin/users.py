@@ -299,7 +299,7 @@ async def get_user_stats(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """학년별 사용자 통계 API"""
+    """레거시 세션 세그먼트별 사용자 통계 API."""
     try:
         today = datetime.now().replace(
             hour=0, minute=0, second=0, microsecond=0)

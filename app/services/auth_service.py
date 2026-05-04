@@ -110,53 +110,6 @@ class AuthService:
         await self.db.execute(stmt)
         await self.db.commit()
 
-    async def authenticate_user(
-        self, username: str, nickname: str
-    ) -> Optional[User]:
-        """
-        사용자 인증 또는 생성
-
-        사용자 식별 로직 (수정됨):
-        - username만으로 사용자 식별
-        - 기존 사용자가 있으면 nickname 업데이트
-        - 새로운 사용자면 username과 nickname으로 생성
-        - DB username 필드는 원본 username을 그대로 저장
-
-        Args:
-            username: 사용자 ID (원본)
-            nickname: 닉네임
-
-        Returns:
-            인증된 User 객체 (기존 또는 새로 생성)
-        """
-        # 1. username으로 사용자 검색
-        existing_user = await self.get_user_by_username(username)
-
-        # 2. 기존 사용자가 있는 경우
-        if existing_user:
-            # nickname이 변경되었으면 업데이트
-            if existing_user.nickname != nickname:
-                existing_user.nickname = nickname
-                await self.db.commit()
-                await self.db.refresh(existing_user)
-            return existing_user
-
-        # 3. 새로운 사용자 생성
-        from app.schemas.users import UserCreate
-
-        user_data = UserCreate(
-            username=username,  # 원본 username 저장
-            nickname=nickname,
-            email=None,  # 이메일은 선택 사항
-            password=None,  # 비밀번호는 선택 사항 (간단한 로그인)
-            is_admin=False,  # 기본적으로 일반 사용자
-        )
-
-        new_user = await self.create_user(user_data)
-        await self.db.commit()
-
-        return new_user
-
     async def authenticate_admin(
         self, admin_id: str, password: str
     ) -> AdminLoginResult:

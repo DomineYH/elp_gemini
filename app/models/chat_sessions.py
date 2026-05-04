@@ -4,10 +4,10 @@
 """
 from sqlalchemy import (
     Column,
-    Integer,
-    String,
     DateTime,
     ForeignKey,
+    Integer,
+    String,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -53,7 +53,10 @@ class ChatSession(Base):
         String(50),
         nullable=True,
         index=True,
-        comment="사용자 유형 (1학년, 2학년, 3학년, 4학년, 현직교사)"
+        comment=(
+            "세션 세그먼트 라벨 "
+            "(1학년, 2학년, 3학년, 4학년, 현직교사)"
+        )
     )
 
     # 관계
