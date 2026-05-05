@@ -298,3 +298,54 @@ class TestLessonPlanAnalysisService:
         assert result["success"] is False
         assert "error" in result
         assert "시간 초과" in result["error"]
+
+    def test_post_process_strips_emojis(self, service):
+        """
+        Gemini가 이모지를 포함한 보고서를 반환해도 후처리 단계에서 모두 제거된다.
+        """
+        raw = (
+            "# 📑 수업 지도안 평가 보고서\n\n"
+            "## 1️⃣ 교육과정 목표 및 성격과의 부합\n\n"
+            "### 📊 평가 등급: 상\n\n"
+            "**💡 분석 내용**\n본문\n\n"
+            "**✅ 강점**\n- 좋음\n\n"
+            "**🔧 개선점**\n- 보완\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 보고서 본문에 어떤 이모지도 남아 있어서는 안 된다
+        for emoji_char in ["📑", "1️⃣", "📊", "💡", "✅", "🔧", "🔎", "🚀",
+                           "📝", "✨", "⚡️", "📚", "🔍", "📌", "📏", "📂"]:
+            assert emoji_char not in processed, (
+                f"이모지 '{emoji_char}' 가 후처리 후에도 남아있음"
+            )
+
+        # 헤더 구조와 한글 본문은 보존
+        assert "수업 지도안 평가 보고서" in processed
+        assert "교육과정 목표 및 성격과의 부합" in processed
+        assert "평가 등급: 상" in processed
+        assert "강점" in processed
+
+    def test_post_process_handles_vector_search_section_without_emoji(
+        self, service
+    ):
+        """
+        '🔍 Vector Search 참고 자료' 헤더에서 이모지가 사라져도 후처리가 정상 동작한다.
+        (LLM이 이모지 없이 헤더를 출력해도 기존 가독성 개선 로직이 작동해야 한다)
+        """
+        raw = (
+            "## 종합 평가\n\n"
+            "### Vector Search 참고 자료\n"
+            "이것은 100자 이상의 비구조화된 평가기준 문장입니다. "
+            "두 번째 문장입니다 추가 길이를 위해. "
+            "세 번째 문장입니다 더 길게 만들기 위해서요.\n\n"
+            "### File Search 참고 문서\n- 문서1\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 가독성 개선이 동작했다면 '- ' 로 시작하는 목록이 생성된다
+        assert "- " in processed
+        # 이모지는 어차피 없지만, 출력에도 없어야 한다
+        assert "🔍" not in processed
