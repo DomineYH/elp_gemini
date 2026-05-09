@@ -593,3 +593,103 @@ class TestLessonPlanAnalysisService:
         assert "본문 2 ✅" in processed
         # 콜론 형태의 새 라벨 라인부터는 살균
         assert "⚡" not in processed
+
+    def test_post_process_normalizes_multiline_bold_label_after_emoji(
+        self, service
+    ):
+        """
+        모델이 굵은 라벨을 여러 줄에 걸쳐 출력해도, 이모지 제거 후 잔여 공백이
+        흡수되어 strong-emphasis 가 유지된다.
+        """
+        raw = (
+            "**🚀 분석\n"
+            "내용**\n\n"
+            "본문 텍스트\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 멀티라인 굵은 영역의 잔여 공백 정리: '** 분석\n내용**' → '**분석\n내용**'
+        # (이모지 제거 후 strip 이 양 끝에 적용됨)
+        assert "**분석\n내용**" in processed
+        # 잘못된 단독 opener('** 분석') 부재
+        assert "** 분석" not in processed
+
+    def test_post_process_normalizes_multiline_bold_at_end(
+        self, service
+    ):
+        """
+        굵은 영역의 닫는 마커가 다음 줄에 나오는 경우도 정상 처리.
+        """
+        raw = (
+            "**foo\n"
+            "bar ✅**\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 닫는 마커 앞 잔여 공백 흡수: '**foo\nbar **' → '**foo\nbar**'
+        assert "**foo\nbar**" in processed
+        assert "bar **" not in processed
+
+    def test_post_process_preserves_citation_emojis_with_buffered_sanitization(
+        self, service
+    ):
+        """
+        버퍼링 변경 후에도 인용 블록의 이모지는 그대로 보존된다 (회귀 가드).
+        """
+        raw = (
+            "**근거**\n"
+            "> **수업 지도안**: \"활동지에 ✅ 표시\"\n\n"
+            "**개선점**\n"
+            "- ⚡ 검토\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        assert "✅ 표시" in processed
+        assert "⚡" not in processed
+        assert "**근거**" in processed
+        assert "**개선점**" in processed
+
+    def test_post_process_does_not_let_unclosed_bold_consume_next_header(
+        self, service
+    ):
+        """
+        모델이 굵은 마커를 닫지 않은 채 다음 섹션으로 넘어가면, 빈 줄(단락 경계)
+        에서 살균을 분리하여 다음 섹션 헤더를 침범하지 않게 한다.
+        """
+        raw = (
+            "**강점\n"
+            "\n"
+            "**개선점**\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 다음 단락의 굵은 헤더가 보존되어야 함
+        assert "**개선점**" in processed
+        # 단락 경계(빈 줄) 가 보존되어야 함
+        assert "\n\n" in processed
+        # 닫히지 않은 첫 줄이 다음 섹션과 합쳐지면 안 됨
+        assert "**강점**개선점**" not in processed
+
+    def test_post_process_does_not_collapse_blank_line_between_sections(
+        self, service
+    ):
+        """
+        섹션 간 빈 줄이 살균 과정에서 사라지지 않는다 (단락 경계 보존).
+        """
+        raw = (
+            "**🚀 첫 섹션**\n"
+            "\n"
+            "**✅ 두 번째 섹션**\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 두 굵은 라벨 모두 정상 유지
+        assert "**첫 섹션**" in processed
+        assert "**두 번째 섹션**" in processed
+        # 빈 줄 보존
+        assert "\n\n" in processed

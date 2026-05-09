@@ -160,3 +160,64 @@ class TestStripEmojis:
         result = strip_emojis(text)
         # `> ** 분석**` → `> **분석**`
         assert result == "> **분석**"
+
+    def test_does_not_collapse_space_between_dash_and_bold(self):
+        """리스트 마커('- ') 와 굵은 글씨 시작('**') 사이의 정상 공백은 보존."""
+        text = "- **항목**"
+        result = strip_emojis(text)
+        assert result == "- **항목**"
+
+    def test_does_not_collapse_space_between_numbered_list_and_bold(self):
+        """번호 매김 리스트('1. ') 와 굵은 글씨 시작('**') 사이 공백 보존."""
+        text = "1. **[비계 설정의 구체화]**"
+        result = strip_emojis(text)
+        assert result == "1. **[비계 설정의 구체화]**"
+
+    def test_does_not_collapse_space_in_blockquote_list_with_bold(self):
+        """블록인용 안의 리스트 마커와 굵은 글씨 사이 공백 보존."""
+        text = "> - **분석 일시**: 2024-05-23 15:30"
+        result = strip_emojis(text)
+        assert result == "> - **분석 일시**: 2024-05-23 15:30"
+
+    def test_does_not_collapse_space_around_bold_in_text(self):
+        """일반 본문에서 굵은 글씨 앞뒤의 단일 공백 보존."""
+        text = "이것은 **중요한** 메시지입니다"
+        result = strip_emojis(text)
+        assert result == "이것은 **중요한** 메시지입니다"
+
+    def test_normalizes_bold_padding_after_emoji_at_both_ends(self):
+        """굵은 글씨 양 끝에 이모지가 있을 때 제거 후 ** 형식 유지."""
+        text = "**🚀 word ✨**"
+        result = strip_emojis(text)
+        assert result == "**word**"
+
+    def test_normalizes_bold_with_nested_italics_after_emoji_removal(self):
+        """굵은 글씨 콘텐츠 안에 단일 별표(이탤릭 마커)가 있어도 잔여 공백 정리됨."""
+        text = "**🚀 foo *bar* baz**"
+        result = strip_emojis(text)
+        # 이모지 제거 후 잔여 공백이 흡수되어 ** 형식 유지
+        assert result == "**foo *bar* baz**"
+
+    def test_normalizes_bold_with_single_asterisk_content(self):
+        """굵은 글씨 콘텐츠 안에 단일 별표(예: A*) 가 있어도 잔여 공백 정리됨."""
+        text = "**A* search ✅**"
+        result = strip_emojis(text)
+        assert result == "**A* search**"
+
+    def test_preserves_bold_with_nested_italics_unchanged(self):
+        """이모지가 없는 굵은 글씨 + 중첩 이탤릭은 변동 없음."""
+        text = "**foo *bar* baz**"
+        result = strip_emojis(text)
+        assert result == "**foo *bar* baz**"
+
+    def test_handles_two_adjacent_bold_spans_with_text_between(self):
+        """인접한 두 굵은 글씨 사이의 텍스트 보존."""
+        text = "**foo**bar**baz**"
+        result = strip_emojis(text)
+        assert result == "**foo**bar**baz**"
+
+    def test_handles_two_adjacent_bold_spans_with_space_between(self):
+        """인접한 두 굵은 글씨 사이의 단일 공백 보존."""
+        text = "**foo** **bar**"
+        result = strip_emojis(text)
+        assert result == "**foo** **bar**"
