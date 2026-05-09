@@ -35,12 +35,11 @@ _EMOJI_PATTERN = re.compile(
 
 _MULTI_SPACE = re.compile(r"(?<=\S)[ \t]{2,}")
 _TRAILING_SPACE_BEFORE_NEWLINE = re.compile(r"[ \t]+\n")
-# 굵은 글씨 마커(`**`) 시작 직후의 잔여 공백 제거 — 이모지 제거 후 발생.
-# CommonMark 에서 `** word` 는 유효한 strong-emphasis opener 가 아님.
-# 매칭 문자: 공백·별표·블록인용 마커(`>`) 외 모든 문자 (대괄호·괄호·한글·숫자 등 포함).
-_BOLD_LEFT_PADDING = re.compile(r"\*\* +(?=[^\s*>])")
-# 굵은 글씨 마커(`**`) 종료 직전의 잔여 공백 제거 — 이모지 제거 후 발생.
-_BOLD_RIGHT_PADDING = re.compile(r"(?<=[^\s*>]) +\*\*")
+# 굵은 글씨 영역(`**...**`) 내부의 양 끝 공백만 흡수.
+# 이모지 제거로 발생한 잔여 공백(`** word`, `word **`) 을 정리하면서, 외부의
+# 리스트 마커/들여쓰기와 굵은 마커 사이 정상 공백(`- **항목**`, `1. **[제안]**`,
+# `> - **라벨**`) 은 영향받지 않게 함.
+_BOLD_SPAN = re.compile(r"\*\*([^*\n]+?)\*\*")
 _KEYCAP_DIGIT = re.compile(r"([0-9])️⃣")
 
 
@@ -63,9 +62,15 @@ def strip_emojis(text: Optional[str]) -> str:
     # 잔여 공백 정리
     text = _MULTI_SPACE.sub(" ", text)
     text = _TRAILING_SPACE_BEFORE_NEWLINE.sub("\n", text)
-    # 굵은 글씨 마커 인접 공백 흡수 (`** word` → `**word`, `word **` → `word**`)
-    text = _BOLD_LEFT_PADDING.sub("**", text)
-    text = _BOLD_RIGHT_PADDING.sub("**", text)
+
+    # 굵은 글씨 영역 내부 양 끝 공백 흡수 (`** word **` → `**word**`).
+    # 영역 외부의 리스트/들여쓰기 공백은 무영향.
+    def _strip_inner(match: "re.Match[str]") -> str:
+        content = match.group(1).strip()
+        return f"**{content}**" if content else match.group(0)
+
+    text = _BOLD_SPAN.sub(_strip_inner, text)
+
     # 줄 끝 공백 제거 (개행 없는 마지막 줄 포함)
     text = text.rstrip(" \t")
     return text
