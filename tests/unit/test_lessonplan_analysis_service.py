@@ -349,3 +349,50 @@ class TestLessonPlanAnalysisService:
         assert "- " in processed
         # 이모지는 어차피 없지만, 출력에도 없어야 한다
         assert "🔍" not in processed
+
+    def test_post_process_preserves_emojis_in_blockquote_citations(
+        self, service
+    ):
+        """
+        수업지도안 인용 블록(>) 안의 이모지는 원본 문서의 일부이므로 보존하고,
+        블록 외부의 템플릿 이모지만 제거한다.
+        """
+        raw = (
+            "## 1. 교육과정 목표 및 성격과의 부합\n\n"
+            "**근거**\n"
+            "> **평가기준**: 교육과정 부합성\n"
+            "> **수업지도안**: \"활동지에 ✅ 표시 후 제출\"\n\n"
+            "**개선점**\n"
+            "- 시간 배분 ⚡ 검토\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 인용 블록 내부의 ✅ 는 원본 문서 인용이므로 반드시 보존
+        assert "✅ 표시 후 제출" in processed
+        # 블록 외부(개선점 본문) 의 이모지는 제거
+        assert "⚡" not in processed
+        # 헤더와 본문 텍스트는 보존
+        assert "## 1. 교육과정 목표 및 성격과의 부합" in processed
+        assert "시간 배분" in processed
+
+    def test_post_process_preserves_nested_indentation_in_proposals(
+        self, service
+    ):
+        """
+        '구체적 제안' 섹션의 nested bullet 들여쓰기가 보존되어 마크다운
+        목록 계층이 깨지지 않는다.
+        """
+        raw = (
+            "## 5. 개선 및 보완을 위한 제안\n\n"
+            "**구체적 제안**\n\n"
+            "1. **[비계 설정의 구체화]**\n"
+            "   - 의사코드를 사전 자료로 제공\n"
+            "   - 학습 부진 학생의 중도 포기 방지\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 3칸 들여쓰기가 그대로 유지되어 nested bullet 으로 렌더링 가능
+        assert "   - 의사코드를 사전 자료로 제공" in processed
+        assert "   - 학습 부진 학생의 중도 포기 방지" in processed

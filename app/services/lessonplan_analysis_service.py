@@ -343,19 +343,37 @@ class LessonPlanAnalysisService:
                         + report[match.end():]
                     )
 
-            # 2) 본문 전체 이모지 제거 (마지막 단계)
-            report = strip_emojis(report)
+            # 2) 본문 이모지 제거 (블록 인용 라인은 보존 — 사용자 문서 인용 충실성 유지)
+            report = self._sanitize_report_lines(report)
 
             return report
 
         except Exception as e:
             logger.warning(f"보고서 후처리 실패 (원본 반환): {e}")
-            # 후처리 자체가 실패하더라도 최소한 이모지 제거는 시도한다
+            # 후처리 자체가 실패하더라도 최소한 줄 단위 살균은 시도한다
             try:
-                from app.utils.text_sanitizer import strip_emojis
-                return strip_emojis(report)
+                return self._sanitize_report_lines(report)
             except Exception:
                 return report
+
+    def _sanitize_report_lines(self, report: str) -> str:
+        """
+        보고서를 줄 단위로 살균한다.
+        - 블록 인용(`>` 으로 시작) 라인은 verbatim 유지 — 사용자 수업지도안에서
+          인용된 본문에 정당하게 포함된 이모지를 보존하기 위함.
+        - 그 외 라인은 strip_emojis 적용 (헤더, 라벨, 일반 본문).
+        """
+        from app.utils.text_sanitizer import strip_emojis
+
+        sanitized: list[str] = []
+        for line in report.split("\n"):
+            stripped = line.lstrip()
+            if stripped.startswith(">"):
+                # 인용 블록은 원본 그대로 보존
+                sanitized.append(line)
+            else:
+                sanitized.append(strip_emojis(line))
+        return "\n".join(sanitized)
 
     def _extract_citations(self, response) -> Optional[dict]:
         """
