@@ -467,3 +467,48 @@ class TestLessonPlanAnalysisService:
         assert "원본 ✅ 내용" in processed
         # 새 라벨 라인의 ⚡ 는 제거 (인용 모드 종료)
         assert "⚡" not in processed
+
+    def test_post_process_preserves_emoji_decorated_citation_label(
+        self, service
+    ):
+        """
+        모델이 인용 라벨을 이모지로 장식한 경우(예: '> **📄 수업지도안**:') 에도
+        인용 모드에 진입하여 인용 본문의 사용자 이모지를 보존한다.
+        """
+        raw = (
+            "**근거**\n"
+            "> **📄 수업지도안**: \"활동지에 ✅ 표시 후 제출\"\n\n"
+            "**개선점**\n"
+            "- ⚡ 검토 필요\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 인용 본문의 ✅ 는 보존
+        assert "활동지에 ✅ 표시 후 제출" in processed
+        # 외부 ⚡ 는 제거
+        assert "⚡" not in processed
+        # 라벨의 장식 이모지는 살균되지 않음 — 라인 전체가 verbatim 보존됨
+        # (라벨 자체에서 📄 가 사라지더라도 OK; 핵심은 인용 본문 ✅ 보존)
+
+    def test_post_process_recognizes_decorated_citation_with_continuation(
+        self, service
+    ):
+        """
+        장식된 인용 라벨 + 다중 라인 인용도 함께 작동: 라벨 장식이 있어도
+        continuation 라인까지 verbatim 보존된다.
+        """
+        raw = (
+            "> **📄 수업지도안**: \"활동지에\n"
+            "> ✅ 표시\n"
+            "> 후 제출\"\n\n"
+            "**개선점**\n"
+            "- ⚡ 검토\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 인용 블록의 모든 라인 verbatim 보존
+        assert "✅ 표시" in processed
+        # 외부 ⚡ 제거
+        assert "⚡" not in processed
