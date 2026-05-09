@@ -35,6 +35,11 @@ _EMOJI_PATTERN = re.compile(
 
 _MULTI_SPACE = re.compile(r"(?<=\S)[ \t]{2,}")
 _TRAILING_SPACE_BEFORE_NEWLINE = re.compile(r"[ \t]+\n")
+# 굵은 글씨 마커(`**`) 시작 직후의 잔여 공백 제거 — 이모지 제거 후 발생.
+# CommonMark 에서 `** word` 는 유효한 strong-emphasis opener 가 아님.
+_BOLD_LEFT_PADDING = re.compile(r"\*\* +(?=\w)")
+# 굵은 글씨 마커(`**`) 종료 직전의 잔여 공백 제거 — 이모지 제거 후 발생.
+_BOLD_RIGHT_PADDING = re.compile(r"(?<=\w) +\*\*")
 _KEYCAP_DIGIT = re.compile(r"([0-9])️⃣")
 
 
@@ -57,6 +62,9 @@ def strip_emojis(text: Optional[str]) -> str:
     # 잔여 공백 정리
     text = _MULTI_SPACE.sub(" ", text)
     text = _TRAILING_SPACE_BEFORE_NEWLINE.sub("\n", text)
+    # 굵은 글씨 마커 인접 공백 흡수 (`** word` → `**word`, `word **` → `word**`)
+    text = _BOLD_LEFT_PADDING.sub("**", text)
+    text = _BOLD_RIGHT_PADDING.sub("**", text)
     # 줄 끝 공백 제거 (개행 없는 마지막 줄 포함)
     text = text.rstrip(" \t")
     return text

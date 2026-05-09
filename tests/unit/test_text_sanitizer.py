@@ -97,3 +97,34 @@ class TestStripEmojis:
         # 이모지 제거
         assert "🚀" not in result
         assert "✨" not in result
+
+    def test_preserves_bold_marker_after_emoji_at_start(self):
+        """이모지가 굵은 글씨 마커 시작 직후에 있으면, 제거 후 잔여 공백을 흡수해 ** 형식이 유지된다."""
+        text = "**💡 분석 내용**"
+        result = strip_emojis(text)
+        # CommonMark 에서 ** + 공백은 유효한 strong-emphasis opener 가 아니므로,
+        # 잔여 공백을 흡수해 **content** 형식으로 유지해야 함
+        assert result == "**분석 내용**"
+
+    def test_preserves_bold_marker_after_emoji_at_end(self):
+        """이모지가 굵은 글씨 마커 종료 직전에 있으면, 제거 후 잔여 공백을 흡수해 ** 형식이 유지된다."""
+        text = "**강점 ✅**"
+        result = strip_emojis(text)
+        assert result == "**강점**"
+
+    def test_preserves_multiple_bold_labels_with_emojis(self):
+        """여러 굵은 글씨 라벨에 이모지가 섞여 있어도 각 라벨이 올바르게 보존된다."""
+        text = "**💡 분석 내용**\n**✅ 강점**\n**🔧 개선점**"
+        result = strip_emojis(text)
+        assert "**분석 내용**" in result
+        assert "**강점**" in result
+        assert "**개선점**" in result
+        # 잘못된 형식(** + 공백) 부재
+        assert "** " not in result
+
+    def test_does_not_collapse_internal_spaces_in_bold(self):
+        """굵은 글씨 마커 내부의 일반 공백(이모지 인접 아님) 은 보존한다."""
+        text = "**foo bar baz**"
+        result = strip_emojis(text)
+        # 내부 공백은 그대로
+        assert result == "**foo bar baz**"
