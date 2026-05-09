@@ -75,3 +75,22 @@ class TestStripEmojis:
         assert "교육과정" in result
         # 키캡 결합 문자는 제거됐어야 한다
         assert "⃣" not in result  # COMBINING ENCLOSING KEYCAP
+
+    def test_preserves_leading_indentation(self):
+        """줄 첫머리 들여쓰기를 보존한다 (nested 마크다운 목록 보호)."""
+        text = "1. **제안**\n   - 세부 항목\n   - 또 다른 항목"
+        result = strip_emojis(text)
+        # 들여쓰기 3칸이 그대로 유지되어야 함
+        assert "   - 세부 항목" in result
+        assert "   - 또 다른 항목" in result
+
+    def test_preserves_indentation_with_emoji_removal(self):
+        """들여쓰기 + 본문에 이모지가 섞여도, 들여쓰기는 보존하고 본문 이모지만 제거한다."""
+        text = "1. **제안**\n   - 🚀 빠른 실행\n   - ✨ 결과 공유"
+        result = strip_emojis(text)
+        # 들여쓰기 3칸 보존
+        assert "\n   - 빠른 실행" in result
+        assert "\n   - 결과 공유" in result
+        # 이모지 제거
+        assert "🚀" not in result
+        assert "✨" not in result

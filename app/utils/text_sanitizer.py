@@ -33,7 +33,7 @@ _EMOJI_PATTERN = re.compile(
     flags=re.UNICODE,
 )
 
-_MULTI_SPACE = re.compile(r"[ \t]{2,}")
+_MULTI_SPACE = re.compile(r"(?<=\S)[ \t]{2,}")
 _TRAILING_SPACE_BEFORE_NEWLINE = re.compile(r"[ \t]+\n")
 _KEYCAP_DIGIT = re.compile(r"[0-9]️⃣")
 
