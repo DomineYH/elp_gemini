@@ -128,3 +128,35 @@ class TestStripEmojis:
         result = strip_emojis(text)
         # 내부 공백은 그대로
         assert result == "**foo bar baz**"
+
+    def test_preserves_bracketed_bold_after_emoji_at_start(self):
+        """대괄호로 시작하는 굵은 헤딩(`**[제안]**`)에서 이모지 제거 후 ** 형식 유지."""
+        text = "**🚀 [제안 1 제목]**"
+        result = strip_emojis(text)
+        assert result == "**[제안 1 제목]**"
+
+    def test_preserves_bracketed_bold_after_emoji_at_end(self):
+        """대괄호로 끝나는 굵은 헤딩에서 이모지 제거 후 ** 형식 유지."""
+        text = "**[제안 1 제목] 🚀**"
+        result = strip_emojis(text)
+        assert result == "**[제안 1 제목]**"
+
+    def test_preserves_parenthesized_bold_after_emoji(self):
+        """괄호로 시작하는 굵은 헤딩에서 이모지 제거 후 ** 형식 유지."""
+        text = "**🔧 (개선 사항)**"
+        result = strip_emojis(text)
+        assert result == "**(개선 사항)**"
+
+    def test_does_not_collapse_blockquote_bold_marker(self):
+        """블록인용(`>`) 과 굵은 마커(`**`) 사이 단일 공백은 보존되어 마크다운이 깨지지 않음."""
+        text = "> **분석 내용**"
+        result = strip_emojis(text)
+        # `> **분석**` 형식은 단일 공백 그대로 유지되어야 함 (>** 로 압축되면 안 됨)
+        assert result == "> **분석 내용**"
+
+    def test_collapses_double_padding_in_blockquote_after_emoji_removal(self):
+        """블록인용 안의 굵은 헤딩에서도 이모지 제거 후 ** 인접 공백은 흡수된다."""
+        text = "> **🚀 분석**"
+        result = strip_emojis(text)
+        # `> ** 분석**` → `> **분석**`
+        assert result == "> **분석**"

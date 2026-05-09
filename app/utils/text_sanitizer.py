@@ -37,9 +37,10 @@ _MULTI_SPACE = re.compile(r"(?<=\S)[ \t]{2,}")
 _TRAILING_SPACE_BEFORE_NEWLINE = re.compile(r"[ \t]+\n")
 # 굵은 글씨 마커(`**`) 시작 직후의 잔여 공백 제거 — 이모지 제거 후 발생.
 # CommonMark 에서 `** word` 는 유효한 strong-emphasis opener 가 아님.
-_BOLD_LEFT_PADDING = re.compile(r"\*\* +(?=\w)")
+# 매칭 문자: 공백·별표·블록인용 마커(`>`) 외 모든 문자 (대괄호·괄호·한글·숫자 등 포함).
+_BOLD_LEFT_PADDING = re.compile(r"\*\* +(?=[^\s*>])")
 # 굵은 글씨 마커(`**`) 종료 직전의 잔여 공백 제거 — 이모지 제거 후 발생.
-_BOLD_RIGHT_PADDING = re.compile(r"(?<=\w) +\*\*")
+_BOLD_RIGHT_PADDING = re.compile(r"(?<=[^\s*>]) +\*\*")
 _KEYCAP_DIGIT = re.compile(r"([0-9])️⃣")
 
 
