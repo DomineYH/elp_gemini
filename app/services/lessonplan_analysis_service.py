@@ -296,9 +296,9 @@ class LessonPlanAnalysisService:
 
     def _post_process_report(self, report: str) -> str:
         """
-        보고서 후처리 - "참고 자료" 섹션 가독성 개선
-
-        Gemini가 구조화된 형식으로 출력하지 않았을 경우를 대비한 안전장치
+        보고서 후처리:
+        1. 'Vector Search 참고 자료' 섹션이 비구조화된 긴 텍스트일 경우 목록으로 정리
+        2. 본문 전체에서 이모지/픽토그램 제거 (LLM이 출력했더라도 일관된 텍스트 형식 유지)
 
         Args:
             report: 원본 Markdown 보고서
@@ -308,44 +308,93 @@ class LessonPlanAnalysisService:
         """
         import re
 
-        try:
-            # "Vector Search 참고 자료" 섹션 찾기
-            # 패턴: ### 🔍 Vector Search 참고 자료 이후의 내용
-            pattern = r'(###\s*🔍\s*Vector Search 참고 자료\s*\n)(.*?)(\n###|\Z)'
+        from app.utils.text_sanitizer import strip_emojis
 
+        try:
+            # 1) "Vector Search 참고 자료" 섹션 가독성 개선
+            # 이모지 유무와 무관하게 매칭되도록 패턴에서 🔍 의존을 제거한다.
+            pattern = (
+                r'(###\s*(?:[^\n]*?)?Vector Search 참고 자료\s*\n)'
+                r'(.*?)(\n###|\Z)'
+            )
             match = re.search(pattern, report, flags=re.DOTALL)
 
-            if not match:
-                # 패턴이 없으면 원본 반환
-                return report
+            if match:
+                header = match.group(1)
+                content = match.group(2).strip()
+                next_section = match.group(3)
 
-            header = match.group(1)
-            content = match.group(2).strip()
-            next_section = match.group(3)
+                # 이미 구조화되어 있는지 확인 (목록/번호가 있으면 이미 구조화됨)
+                already_structured = re.search(
+                    r'^\s*[0-9]+\.|\s*-|\s*\*',
+                    content,
+                    re.MULTILINE,
+                )
+                if not already_structured and len(content) > 100:
+                    sentences = re.split(r'(?<=[.!?])\s+', content)
+                    sentences = [
+                        s.strip() for s in sentences if len(s.strip()) > 20
+                    ]
+                    formatted = "\n".join([f"- {s}" for s in sentences[:8]])
+                    new_section = f"{header}\n{formatted}\n{next_section}"
+                    report = (
+                        report[: match.start()]
+                        + new_section
+                        + report[match.end():]
+                    )
 
-            # 이미 구조화되어 있는지 확인 (목록이나 번호가 있으면 이미 구조화됨)
-            if re.search(r'^\s*[0-9]+\.|\s*-|\s*\*', content, re.MULTILINE):
-                # 이미 구조화되어 있으면 원본 반환
-                return report
-
-            # 구조화되지 않은 긴 텍스트인 경우 재포맷팅
-            if len(content) > 100:
-                # 문장 단위로 분리
-                sentences = re.split(r'(?<=[.!?])\s+', content)
-                sentences = [s.strip() for s in sentences if len(s.strip()) > 20]
-
-                # 목록 형식으로 변환 (최대 8개 문장)
-                formatted = "\n".join([f"- {s}" for s in sentences[:8]])
-
-                # 재구성된 섹션으로 교체
-                new_section = f"{header}\n{formatted}\n{next_section}"
-                report = report[:match.start()] + new_section + report[match.end():]
+            # 2) 본문 이모지 제거 (블록 인용 라인은 보존 — 사용자 문서 인용 충실성 유지)
+            report = self._sanitize_report_lines(report)
 
             return report
 
         except Exception as e:
             logger.warning(f"보고서 후처리 실패 (원본 반환): {e}")
-            return report
+            # 후처리 자체가 실패하더라도 최소한 줄 단위 살균은 시도한다
+            try:
+                return self._sanitize_report_lines(report)
+            except Exception:
+                return report
+
+    def _sanitize_report_lines(self, report: str) -> str:
+        """
+        보고서를 줄 단위로 살균한다.
+        - '> **수업지도안**: ...' 라인 진입 후 인용 모드. 후속 `>` 라인 중 새 라벨
+          (`> **<다른 라벨>**:`) 이 아닌 continuation 라인은 verbatim 유지하여
+          다중 라인 인용 본문의 이모지를 모두 보존한다.
+        - 비-`>` 라인 또는 다른 `> **<라벨>**:` 라인을 만나면 인용 모드 종료, 살균.
+        - 그 외 모든 라인(헤더/라벨/메타데이터 블록인용/일반 본문)은 strip_emojis 적용.
+        """
+        import re
+
+        from app.utils.text_sanitizer import strip_emojis
+
+        # 모델이 라벨을 장식하거나 띄어쓰기를 사용해도(예: '> **📄 수업 지도안**:')
+        # 인용으로 인정. `**` 사이 임의의 비-별표 문자 사이에 '수업\s*지도안' 토큰
+        # (붙여쓴 '수업지도안' 또는 띄어쓴 '수업 지도안') 이 포함되면 매칭.
+        citation_start = re.compile(
+            r"^\s*>\s*\*\*[^*]*수업\s*지도안[^*]*\*\*"
+        )
+        # 새 라벨은 '> **<텍스트>**:' 콜론 형태로만 인식. 콜론 없는 굵은 블록인용은
+        # 인용 본문의 일부로 보존 (예: '> **준비물** ✅').
+        blockquote_label = re.compile(r"^\s*>\s*\*\*[^*\n]+\*\*\s*:")
+        blockquote_any = re.compile(r"^\s*>")
+
+        sanitized: list[str] = []
+        in_citation = False
+        for line in report.split("\n"):
+            if citation_start.match(line):
+                # 새 인용 시작 — verbatim 보존
+                in_citation = True
+                sanitized.append(line)
+            elif in_citation and blockquote_any.match(line) and not blockquote_label.match(line):
+                # continuation 라인 (> 로 시작하지만 새 라벨 없음) — verbatim 보존
+                sanitized.append(line)
+            else:
+                # 인용 모드 종료 또는 비인용 — 살균
+                in_citation = False
+                sanitized.append(strip_emojis(line))
+        return "\n".join(sanitized)
 
     def _extract_citations(self, response) -> Optional[dict]:
         """
