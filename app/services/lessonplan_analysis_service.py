@@ -358,42 +358,52 @@ class LessonPlanAnalysisService:
 
     def _sanitize_report_lines(self, report: str) -> str:
         """
-        보고서를 줄 단위로 살균한다.
-        - '> **수업지도안**: ...' 라인 진입 후 인용 모드. 후속 `>` 라인 중 새 라벨
-          (`> **<다른 라벨>**:`) 이 아닌 continuation 라인은 verbatim 유지하여
-          다중 라인 인용 본문의 이모지를 모두 보존한다.
-        - 비-`>` 라인 또는 다른 `> **<라벨>**:` 라인을 만나면 인용 모드 종료, 살균.
-        - 그 외 모든 라인(헤더/라벨/메타데이터 블록인용/일반 본문)은 strip_emojis 적용.
+        보고서를 살균한다 — 비-인용 라인들은 멀티라인 블록 단위로 묶어 한 번에
+        strip_emojis 를 호출하여, 굵은 영역(`**...**`) 이 여러 줄에 걸친 경우에도
+        잔여 공백 정리가 작동하게 한다. 인용 블록(`> **수업 지도안**: ...` 진입,
+        새 라벨 또는 비-`>` 라인 만날 때까지) 라인은 verbatim 보존한다.
         """
         import re
 
         from app.utils.text_sanitizer import strip_emojis
 
         # 모델이 라벨을 장식하거나 띄어쓰기를 사용해도(예: '> **📄 수업 지도안**:')
-        # 인용으로 인정. `**` 사이 임의의 비-별표 문자 사이에 '수업\s*지도안' 토큰
-        # (붙여쓴 '수업지도안' 또는 띄어쓴 '수업 지도안') 이 포함되면 매칭.
+        # 인용으로 인정.
         citation_start = re.compile(
             r"^\s*>\s*\*\*[^*]*수업\s*지도안[^*]*\*\*"
         )
         # 새 라벨은 '> **<텍스트>**:' 콜론 형태로만 인식. 콜론 없는 굵은 블록인용은
-        # 인용 본문의 일부로 보존 (예: '> **준비물** ✅').
+        # 인용 본문의 일부로 보존.
         blockquote_label = re.compile(r"^\s*>\s*\*\*[^*\n]+\*\*\s*:")
         blockquote_any = re.compile(r"^\s*>")
 
         sanitized: list[str] = []
+        buffer: list[str] = []
         in_citation = False
+
+        def flush_buffer() -> None:
+            if buffer:
+                sanitized.append(strip_emojis("\n".join(buffer)))
+                buffer.clear()
+
         for line in report.split("\n"):
             if citation_start.match(line):
-                # 새 인용 시작 — verbatim 보존
+                flush_buffer()
                 in_citation = True
                 sanitized.append(line)
-            elif in_citation and blockquote_any.match(line) and not blockquote_label.match(line):
-                # continuation 라인 (> 로 시작하지만 새 라벨 없음) — verbatim 보존
+            elif (
+                in_citation
+                and blockquote_any.match(line)
+                and not blockquote_label.match(line)
+            ):
+                # continuation 라인 — verbatim 보존
                 sanitized.append(line)
             else:
-                # 인용 모드 종료 또는 비인용 — 살균
+                # 인용 모드 종료 또는 비인용 — 버퍼에 누적해 멀티라인 단위로 살균
                 in_citation = False
-                sanitized.append(strip_emojis(line))
+                buffer.append(line)
+
+        flush_buffer()
         return "\n".join(sanitized)
 
     def _extract_citations(self, response) -> Optional[dict]:

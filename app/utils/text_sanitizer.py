@@ -42,7 +42,9 @@ _TRAILING_SPACE_BEFORE_NEWLINE = re.compile(r"[ \t]+\n")
 # `(?:(?!\*\*).)+?` 콘텐츠 매칭: 단일 별표(`*` 인라인 이탤릭/리터럴) 는 허용하고
 # `**` 시퀀스만 종결자로 인식. `\n` 은 비매칭(`re.DOTALL` 미사용) — 줄바꿈으로
 # 굵은 영역이 끝나는 게 자연스러움.
-_BOLD_SPAN = re.compile(r"\*\*((?:(?!\*\*).)+?)\*\*")
+# `re.DOTALL` 로 콘텐츠가 줄바꿈을 포함할 수 있게 함 — 멀티라인 굵은 영역
+# (예: '**foo\nbar**') 도 양 끝 공백 정리 대상.
+_BOLD_SPAN = re.compile(r"\*\*((?:(?!\*\*).)+?)\*\*", re.DOTALL)
 _KEYCAP_DIGIT = re.compile(r"([0-9])️⃣")
 
 
