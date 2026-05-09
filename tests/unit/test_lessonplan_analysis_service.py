@@ -651,3 +651,45 @@ class TestLessonPlanAnalysisService:
         assert "⚡" not in processed
         assert "**근거**" in processed
         assert "**개선점**" in processed
+
+    def test_post_process_does_not_let_unclosed_bold_consume_next_header(
+        self, service
+    ):
+        """
+        모델이 굵은 마커를 닫지 않은 채 다음 섹션으로 넘어가면, 빈 줄(단락 경계)
+        에서 살균을 분리하여 다음 섹션 헤더를 침범하지 않게 한다.
+        """
+        raw = (
+            "**강점\n"
+            "\n"
+            "**개선점**\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 다음 단락의 굵은 헤더가 보존되어야 함
+        assert "**개선점**" in processed
+        # 단락 경계(빈 줄) 가 보존되어야 함
+        assert "\n\n" in processed
+        # 닫히지 않은 첫 줄이 다음 섹션과 합쳐지면 안 됨
+        assert "**강점**개선점**" not in processed
+
+    def test_post_process_does_not_collapse_blank_line_between_sections(
+        self, service
+    ):
+        """
+        섹션 간 빈 줄이 살균 과정에서 사라지지 않는다 (단락 경계 보존).
+        """
+        raw = (
+            "**🚀 첫 섹션**\n"
+            "\n"
+            "**✅ 두 번째 섹션**\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 두 굵은 라벨 모두 정상 유지
+        assert "**첫 섹션**" in processed
+        assert "**두 번째 섹션**" in processed
+        # 빈 줄 보존
+        assert "\n\n" in processed

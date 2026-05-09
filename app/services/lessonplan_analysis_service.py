@@ -399,9 +399,16 @@ class LessonPlanAnalysisService:
                 # continuation 라인 — verbatim 보존
                 sanitized.append(line)
             else:
-                # 인용 모드 종료 또는 비인용 — 버퍼에 누적해 멀티라인 단위로 살균
                 in_citation = False
-                buffer.append(line)
+                if line.strip() == "":
+                    # 빈 줄 = 단락 경계: 누적 블록을 flush 하고 빈 줄은 그대로 유지.
+                    # 닫히지 않은 굵은 마커(`**강점` 같은) 가 다음 단락의 헤더를
+                    # 침범해 멀티라인 _BOLD_SPAN 이 가로질러 매칭하는 것을 방지.
+                    flush_buffer()
+                    sanitized.append(line)
+                else:
+                    # 비인용 라인 누적 — 단락 단위로 멀티라인 굵은 영역 정리 가능.
+                    buffer.append(line)
 
         flush_buffer()
         return "\n".join(sanitized)
