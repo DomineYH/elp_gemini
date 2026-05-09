@@ -396,3 +396,29 @@ class TestLessonPlanAnalysisService:
         # 3칸 들여쓰기가 그대로 유지되어 nested bullet 으로 렌더링 가능
         assert "   - 의사코드를 사전 자료로 제공" in processed
         assert "   - 학습 부진 학생의 중도 포기 방지" in processed
+
+    def test_post_process_sanitizes_non_citation_blockquotes(
+        self, service
+    ):
+        """
+        '> **수업지도안**:' 가 아닌 블록 인용 라인(분석 개요, 평가기준 라벨 등)은
+        살균된다. 실제 사용자 인용만 verbatim 보존.
+        """
+        raw = (
+            "> **분석 개요**\n"
+            "> - **분석 모델**: 📑gemini\n\n"
+            "## 1. 교육과정 부합성\n\n"
+            "**근거**\n"
+            "> **평가기준**: ✅ 교육과정 부합성\n"
+            "> **수업지도안**: \"활동지에 ✅ 표시 후 제출\"\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 분석 개요 블록(인용 아님): 이모지 제거됨
+        assert "📑" not in processed
+        # 평가기준 라벨 라인(인용 아님): 이모지 제거됨
+        # 해당 라인은 "> **평가기준**: 교육과정 부합성" 으로 살균되어야 함
+        assert "**평가기준**: 교육과정 부합성" in processed
+        # 수업지도안 인용 라인(실제 인용): 이모지 보존
+        assert "활동지에 ✅ 표시 후 제출" in processed

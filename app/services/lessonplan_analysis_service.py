@@ -359,17 +359,20 @@ class LessonPlanAnalysisService:
     def _sanitize_report_lines(self, report: str) -> str:
         """
         보고서를 줄 단위로 살균한다.
-        - 블록 인용(`>` 으로 시작) 라인은 verbatim 유지 — 사용자 수업지도안에서
-          인용된 본문에 정당하게 포함된 이모지를 보존하기 위함.
-        - 그 외 라인은 strip_emojis 적용 (헤더, 라벨, 일반 본문).
+        - 사용자가 업로드한 수업지도안의 직접 인용 라인('> **수업지도안**: ...') 만
+          verbatim 유지하여, 원본 문서에 정당하게 포함된 이모지를 보존한다.
+        - 그 외 모든 라인(헤더/라벨/메타데이터 블록인용/일반 본문)은 strip_emojis 적용.
         """
+        import re
+
         from app.utils.text_sanitizer import strip_emojis
+
+        citation_pattern = re.compile(r"^\s*>\s*\*\*수업지도안\*\*")
 
         sanitized: list[str] = []
         for line in report.split("\n"):
-            stripped = line.lstrip()
-            if stripped.startswith(">"):
-                # 인용 블록은 원본 그대로 보존
+            if citation_pattern.match(line):
+                # 사용자 문서 직접 인용 — verbatim 보존
                 sanitized.append(line)
             else:
                 sanitized.append(strip_emojis(line))
