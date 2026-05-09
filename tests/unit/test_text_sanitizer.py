@@ -16,15 +16,19 @@ class TestStripEmojis:
         assert result == "hello world"
 
     def test_removes_report_template_emojis(self):
-        """보고서 템플릿에서 사용된 모든 이모지를 제거한다."""
+        """보고서 템플릿에서 사용된 모든 이모지/픽토그램/결합 문자를 제거한다.
+        키캡 시퀀스(1️⃣)의 결합 문자(️⃣) 는 제거되고 숫자(1) 는 보존된다."""
         text = "📑 1️⃣ 📊 💡 🔎 ✅ 🔧 🚀 📝 ✨ ⚡️ 📚 🔍 📌 📏 📂 🚨 ✍️ ❌"
         result = strip_emojis(text)
-        # 공백만 남아야 함 (혹은 빈 문자열)
         assert "📑" not in result
-        assert "1️⃣" not in result
+        assert "📊" not in result
         assert "✅" not in result
         assert "🚨" not in result
-        assert result.strip() == ""
+        # 키캡 결합 문자는 제거됨
+        assert "️⃣" not in result
+        assert "⃣" not in result
+        # 키캡 숫자(1) 외의 텍스트 토큰은 모두 제거되어야 함
+        assert result.replace("1", "").strip() == ""
 
     def test_preserves_korean_and_ascii(self):
         """한글과 ASCII는 보존한다."""
@@ -65,16 +69,15 @@ class TestStripEmojis:
         assert strip_emojis(None) == ""
 
     def test_keeps_keycap_digits(self):
-        """키캡 시퀀스(1️⃣, 2️⃣ 등)에서 숫자 자체는 보존되거나 완전히 제거된다.
-        보고서 헤더 '## 1️⃣ 교육과정' 의 경우 '## 1 교육과정' 또는 '## 교육과정' 둘 다 허용한다.
-        """
+        """키캡 시퀀스(1️⃣, 2️⃣ 등)에서 결합 문자만 제거하고 숫자는 보존한다.
+        '## 1️⃣ 교육과정' → '## 1 교육과정' (숫자 1 보존)."""
         text = "## 1️⃣ 교육과정"
         result = strip_emojis(text)
-        # 헤더 포맷과 한글은 살아있어야 한다
-        assert result.startswith("## ")
-        assert "교육과정" in result
-        # 키캡 결합 문자는 제거됐어야 한다
+        # 키캡 숫자(1) 보존 + 헤더 마커 보존
+        assert "## 1 교육과정" in result
+        # 결합 문자는 제거
         assert "⃣" not in result  # COMBINING ENCLOSING KEYCAP
+        assert "️⃣" not in result  # variation selector + keycap
 
     def test_preserves_leading_indentation(self):
         """줄 첫머리 들여쓰기를 보존한다 (nested 마크다운 목록 보호)."""

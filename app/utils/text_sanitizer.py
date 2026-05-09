@@ -35,7 +35,7 @@ _EMOJI_PATTERN = re.compile(
 
 _MULTI_SPACE = re.compile(r"(?<=\S)[ \t]{2,}")
 _TRAILING_SPACE_BEFORE_NEWLINE = re.compile(r"[ \t]+\n")
-_KEYCAP_DIGIT = re.compile(r"[0-9]️⃣")
+_KEYCAP_DIGIT = re.compile(r"([0-9])️⃣")
 
 
 def strip_emojis(text: Optional[str]) -> str:
@@ -50,8 +50,8 @@ def strip_emojis(text: Optional[str]) -> str:
     if not text:
         return ""
 
-    # 키캡 시퀀스 전체 제거 (숫자 + 결합 문자)
-    text = _KEYCAP_DIGIT.sub("", text)
+    # 키캡 시퀀스의 결합 문자만 제거하고 숫자는 보존 ('1️⃣' → '1')
+    text = _KEYCAP_DIGIT.sub(r"\1", text)
     # 그 외 이모지·픽토그램·VS·ZWJ 제거
     text = _EMOJI_PATTERN.sub("", text)
     # 잔여 공백 정리
