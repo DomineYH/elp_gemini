@@ -359,22 +359,33 @@ class LessonPlanAnalysisService:
     def _sanitize_report_lines(self, report: str) -> str:
         """
         보고서를 줄 단위로 살균한다.
-        - 사용자가 업로드한 수업지도안의 직접 인용 라인('> **수업지도안**: ...') 만
-          verbatim 유지하여, 원본 문서에 정당하게 포함된 이모지를 보존한다.
+        - '> **수업지도안**: ...' 라인 진입 후 인용 모드. 후속 `>` 라인 중 새 라벨
+          (`> **<다른 라벨>**:`) 이 아닌 continuation 라인은 verbatim 유지하여
+          다중 라인 인용 본문의 이모지를 모두 보존한다.
+        - 비-`>` 라인 또는 다른 `> **<라벨>**:` 라인을 만나면 인용 모드 종료, 살균.
         - 그 외 모든 라인(헤더/라벨/메타데이터 블록인용/일반 본문)은 strip_emojis 적용.
         """
         import re
 
         from app.utils.text_sanitizer import strip_emojis
 
-        citation_pattern = re.compile(r"^\s*>\s*\*\*수업지도안\*\*")
+        citation_start = re.compile(r"^\s*>\s*\*\*수업지도안\*\*")
+        blockquote_label = re.compile(r"^\s*>\s*\*\*")
+        blockquote_any = re.compile(r"^\s*>")
 
         sanitized: list[str] = []
+        in_citation = False
         for line in report.split("\n"):
-            if citation_pattern.match(line):
-                # 사용자 문서 직접 인용 — verbatim 보존
+            if citation_start.match(line):
+                # 새 인용 시작 — verbatim 보존
+                in_citation = True
+                sanitized.append(line)
+            elif in_citation and blockquote_any.match(line) and not blockquote_label.match(line):
+                # continuation 라인 (> 로 시작하지만 새 라벨 없음) — verbatim 보존
                 sanitized.append(line)
             else:
+                # 인용 모드 종료 또는 비인용 — 살균
+                in_citation = False
                 sanitized.append(strip_emojis(line))
         return "\n".join(sanitized)
 

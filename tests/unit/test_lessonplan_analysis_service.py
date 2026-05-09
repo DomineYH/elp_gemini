@@ -422,3 +422,48 @@ class TestLessonPlanAnalysisService:
         assert "**평가기준**: 교육과정 부합성" in processed
         # 수업지도안 인용 라인(실제 인용): 이모지 보존
         assert "활동지에 ✅ 표시 후 제출" in processed
+
+    def test_post_process_preserves_multiline_citation_block(
+        self, service
+    ):
+        """
+        수업지도안 인용이 여러 줄에 걸쳐 있을 때, 라벨 라인 + 후속 continuation
+        라인 모두 verbatim 보존되어 사용자 문서 이모지가 살아남는다.
+        """
+        raw = (
+            "**근거**\n"
+            "> **평가기준**: 부합성\n"
+            "> **수업지도안**: \"활동지에\n"
+            "> ✅ 표시 후\n"
+            "> 🚀 제출하기\"\n\n"
+            "**개선점**\n"
+            "- ⚡ 검토 필요\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 인용 블록의 모든 라인 보존 (✅, 🚀 모두)
+        assert "✅ 표시 후" in processed
+        assert "🚀 제출하기" in processed
+        # 평가기준 라벨 라인은 살균 (이 라인엔 이모지 없으므로 변동 없음)
+        assert "**평가기준**: 부합성" in processed
+        # 인용 외부의 ⚡ 는 제거
+        assert "⚡" not in processed
+
+    def test_post_process_exits_citation_on_new_label(self, service):
+        """
+        수업지도안 인용 후 다른 라벨('> **개선**:' 등) 이 나오면 그 라인부터는
+        살균이 다시 적용된다 (인용 모드 종료).
+        """
+        raw = (
+            "**근거**\n"
+            "> **수업지도안**: \"원본 ✅ 내용\"\n"
+            "> **추가**: \"이건 인용 아님 ⚡\"\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 수업지도안 라인의 ✅ 는 보존
+        assert "원본 ✅ 내용" in processed
+        # 새 라벨 라인의 ⚡ 는 제거 (인용 모드 종료)
+        assert "⚡" not in processed
