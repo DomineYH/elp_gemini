@@ -33,7 +33,7 @@ class LessonPlanAnalysisResponse(BaseModel):
         json_schema_extra = {
             "example": {
                 "success": True,
-                "report": "# 📚 수업 지도안 평가 보고서\n\n...",
+                "report": "# 수업 지도안 평가 보고서\n\n...",
                 "citations": {
                     "used_criteria": ["평가기준 1", "평가기준 2"],
                     "grounding_chunks": [...]
