@@ -369,9 +369,12 @@ class LessonPlanAnalysisService:
 
         from app.utils.text_sanitizer import strip_emojis
 
-        # 모델이 라벨을 장식하더라도(예: '> **📄 수업지도안**:') 인용으로 인정.
-        # `**` 사이 임의의 비-별표 문자 사이에 '수업지도안' 토큰이 포함되면 매칭.
-        citation_start = re.compile(r"^\s*>\s*\*\*[^*]*수업지도안[^*]*\*\*")
+        # 모델이 라벨을 장식하거나 띄어쓰기를 사용해도(예: '> **📄 수업 지도안**:')
+        # 인용으로 인정. `**` 사이 임의의 비-별표 문자 사이에 '수업\s*지도안' 토큰
+        # (붙여쓴 '수업지도안' 또는 띄어쓴 '수업 지도안') 이 포함되면 매칭.
+        citation_start = re.compile(
+            r"^\s*>\s*\*\*[^*]*수업\s*지도안[^*]*\*\*"
+        )
         blockquote_label = re.compile(r"^\s*>\s*\*\*")
         blockquote_any = re.compile(r"^\s*>")
 

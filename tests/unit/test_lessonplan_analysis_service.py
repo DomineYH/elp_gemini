@@ -512,3 +512,38 @@ class TestLessonPlanAnalysisService:
         assert "✅ 표시" in processed
         # 외부 ⚡ 제거
         assert "⚡" not in processed
+
+    def test_post_process_recognizes_spaced_citation_label(self, service):
+        """
+        '수업 지도안' (띄어쓴 형태) 라벨도 인용으로 인식한다 — prompt/UI 에서
+        실제로 사용되는 자연스러운 표기.
+        """
+        raw = (
+            "**근거**\n"
+            "> **수업 지도안**: \"활동지에 ✅ 표시 후 제출\"\n\n"
+            "**개선점**\n"
+            "- ⚡ 검토 필요\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 띄어쓴 라벨의 인용 본문도 ✅ 보존
+        assert "활동지에 ✅ 표시 후 제출" in processed
+        # 외부 ⚡ 제거
+        assert "⚡" not in processed
+
+    def test_post_process_recognizes_decorated_spaced_citation_label(
+        self, service
+    ):
+        """
+        장식 + 띄어쓰기 결합('> **📄 수업 지도안**:') 도 인용으로 인식.
+        """
+        raw = (
+            "> **📄 수업 지도안**: \"문서 본문 ✅\"\n\n"
+            "- ⚡ 외부\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        assert "문서 본문 ✅" in processed
+        assert "⚡" not in processed
