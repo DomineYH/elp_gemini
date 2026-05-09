@@ -547,3 +547,49 @@ class TestLessonPlanAnalysisService:
 
         assert "문서 본문 ✅" in processed
         assert "⚡" not in processed
+
+    def test_post_process_keeps_bold_lines_inside_citation_block(
+        self, service
+    ):
+        """
+        다중 라인 인용 본문 안에 굵은 텍스트(`> **준비물**`) 가 있어도 인용 모드를
+        종료하지 않고 verbatim 보존한다. 새 라벨은 콜론 형태(`> **라벨**:`) 로만 인식.
+        """
+        raw = (
+            "**근거**\n"
+            "> **수업지도안**: \"활동 흐름은 다음과 같다\n"
+            "> **준비물** ✅: 색종이, 풀, 활동지\n"
+            "> **유의사항** 🚀: 모둠별 협력\"\n\n"
+            "**개선점**\n"
+            "- ⚡ 외부\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 인용 본문의 굵은 라인들도 verbatim 보존 (✅, 🚀 모두)
+        assert "**준비물** ✅" in processed
+        assert "**유의사항** 🚀" in processed
+        # 외부 ⚡ 는 제거
+        assert "⚡" not in processed
+
+    def test_post_process_exits_citation_only_on_label_with_colon(
+        self, service
+    ):
+        """
+        인용 모드는 콜론 형태의 새 라벨('> **<라벨>**:') 을 만났을 때만 종료된다.
+        콜론 없는 굵은 블록인용은 continuation 으로 간주.
+        """
+        raw = (
+            "> **수업지도안**: \"본문 1\n"
+            "> **소제목**\n"
+            "> 본문 2 ✅\"\n"
+            "> **다음 라벨**: 새 콘텐츠 ⚡\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 인용 안의 굵은 줄 + 본문 보존
+        assert "**소제목**" in processed
+        assert "본문 2 ✅" in processed
+        # 콜론 형태의 새 라벨 라인부터는 살균
+        assert "⚡" not in processed

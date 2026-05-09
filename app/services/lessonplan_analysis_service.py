@@ -375,7 +375,9 @@ class LessonPlanAnalysisService:
         citation_start = re.compile(
             r"^\s*>\s*\*\*[^*]*수업\s*지도안[^*]*\*\*"
         )
-        blockquote_label = re.compile(r"^\s*>\s*\*\*")
+        # 새 라벨은 '> **<텍스트>**:' 콜론 형태로만 인식. 콜론 없는 굵은 블록인용은
+        # 인용 본문의 일부로 보존 (예: '> **준비물** ✅').
+        blockquote_label = re.compile(r"^\s*>\s*\*\*[^*\n]+\*\*\s*:")
         blockquote_any = re.compile(r"^\s*>")
 
         sanitized: list[str] = []
