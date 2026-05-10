@@ -1,7 +1,7 @@
 """
 HTML 뷰 라우터
 """
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 import logging
@@ -205,3 +205,36 @@ async def cleanup_dashboard(
     except Exception as e:
         logger.error(f"대시보드 정리 실패: {str(e)}")
         return {"status": "error", "message": str(e)}
+
+
+@router.get(
+    "/reports/view/{report_id}",
+    response_class=HTMLResponse,
+    summary="분석 보고서 뷰어",
+    description="분석 보고서 내용을 새 창에서 렌더링하는 HTML 페이지",
+)
+async def view_analysis_report(
+    request: Request,
+    report_id: int,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    보고서 뷰어 페이지 (HTML shell)
+
+    소유권/존재 검증은 페이지에서 호출되는
+    `/api/lessonplan/reports/{report_id}` JSON 엔드포인트가 수행한다.
+    """
+    if report_id <= 0:
+        raise HTTPException(status_code=404, detail="보고서를 찾을 수 없습니다.")
+
+    logger.info(
+        f"보고서 뷰어 접근: user={current_user.username}, report_id={report_id}"
+    )
+    return templates.TemplateResponse(
+        "user/report_viewer.html",
+        {
+            "request": request,
+            "user": current_user,
+            "report_id": report_id,
+        },
+    )
