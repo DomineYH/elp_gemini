@@ -62,7 +62,7 @@
 
     function isSafeMarkdownUrl(rawUrl) {
         if (!rawUrl) return true;
-        const compact = String(rawUrl).trim().replace(/[ -\s]+/g, '');
+        const compact = String(rawUrl).trim().replace(/[\u0000-\u001F\u007F\s]+/g, '');
         if (!compact) return true;
         try {
             const url = new URL(compact, window.location.origin);
