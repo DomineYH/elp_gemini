@@ -31,23 +31,29 @@ def test_report_viewer_renders_html_shell(mock_current_user):
     assert "const REPORT_ID = 42;" in response.text
 
 
-def test_report_viewer_unauth_returns_401():
-    app.dependency_overrides = {}
-    response = client.get("/reports/view/42")
-    assert response.status_code == 401
+def test_report_viewer_unauthenticated_redirects_to_login():
+    response = client.get(
+        "/reports/view/42",
+        follow_redirects=False,
+        headers={"accept": "text/html"},
+    )
+    assert response.status_code in (302, 303, 307)
+    assert "/login" in response.headers.get("location", "")
 
 
-def test_report_viewer_invalid_report_id_returns_404(mock_current_user):
+def test_report_viewer_invalid_id_returns_404(mock_current_user):
     app.dependency_overrides[get_current_user] = lambda: mock_current_user
     try:
-        response = client.get("/reports/view/0")
+        response = client.get(
+            "/reports/view/0",
+            headers={"accept": "application/json"},
+        )
     finally:
         app.dependency_overrides = {}
-
     assert response.status_code == 404
 
 
-def test_report_viewer_shows_download_link(mock_current_user):
+def test_report_viewer_exposes_download_link(mock_current_user):
     app.dependency_overrides[get_current_user] = lambda: mock_current_user
     try:
         response = client.get("/reports/view/42")
@@ -55,5 +61,5 @@ def test_report_viewer_shows_download_link(mock_current_user):
         app.dependency_overrides = {}
 
     assert response.status_code == 200
-    assert 'id="downloadLink"' in response.text
-    assert "/api/lessonplan/reports/42/download" in response.text
+    assert 'href="/api/lessonplan/reports/42/download"' in response.text
+    assert "/api/lessonplan/reports/${REPORT_ID}/download" not in response.text

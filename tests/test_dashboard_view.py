@@ -41,7 +41,7 @@ def test_dashboard_view_authenticated(mock_current_user, mock_criteria_service):
     assert "이전에 진행한 세션" in response.text
     assert "대시보드" in response.text
     assert "/reports/view/${reportId}" in response.text
-    assert "reportViewerUrl" in response.text
+    assert "/api/lessonplan/reports/${reportId}/download" not in response.text
     assert "normalizeStaticReportUrl" not in response.text
     assert "report.report_path || report.file_path" not in response.text
 
@@ -49,7 +49,7 @@ def test_dashboard_view_authenticated(mock_current_user, mock_criteria_service):
     app.dependency_overrides = {}
 
 
-def test_dashboard_report_links_use_viewer_url(
+def test_dashboard_report_links_use_viewer_endpoint(
     mock_current_user, mock_criteria_service
 ):
     app.dependency_overrides[get_current_user] = lambda: mock_current_user
@@ -63,6 +63,7 @@ def test_dashboard_report_links_use_viewer_url(
     assert "const reportUrl = reportViewerUrl(report);" in response.text
     assert 'href="${escapeHtmlAttribute(reportUrl)}"' in response.text
 
+    assert "function reportDownloadUrl(report)" not in response.text
     assert "report.report_path" not in response.text
     assert "report.file_path" not in response.text
     assert "`/static/${" not in response.text
