@@ -59,3 +59,12 @@ htmlcov/
 
 # Project specific
 .gstack/
+
+# Claude Code local state (per-developer; project-shared slash commands stay tracked under .claude/commands/)
+.claude/__MACOSX/
+.claude/settings.json
+.claude/skills/
+
+# Locally generated user analysis artifacts — do NOT commit user data into the publicly served /static tree
+app/static/reports/teacher_*
+app/static/uploads/teacher_*
