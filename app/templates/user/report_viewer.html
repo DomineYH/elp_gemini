@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}분석 보고서 - AI 문서 평가 플랫폼{% endblock %}
+
+{% block head %}
+<style>
+    .prose h1 { font-size: 1.875rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: 1rem; }
+    .prose h2 { font-size: 1.5rem; font-weight: 700; margin-top: 1.25rem; margin-bottom: 0.75rem; }
+    .prose h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; }
+    .prose p { margin: 0.75rem 0; line-height: 1.7; }
+    .prose ul, .prose ol { margin: 0.75rem 0 0.75rem 1.5rem; }
+    .prose li { margin: 0.25rem 0; }
+    .prose blockquote { border-left: 4px solid #93c5fd; padding-left: 1rem; color: #4b5563; margin: 1rem 0; }
+    .prose code { background: #f3f4f6; padding: 0.1rem 0.3rem; border-radius: 0.25rem; font-size: 0.9em; }
+    .prose pre { background: #1f2937; color: #f9fafb; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+    .prose pre code { background: transparent; padding: 0; color: inherit; }
+    .prose table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    .prose th, .prose td { border: 1px solid #e5e7eb; padding: 0.5rem 0.75rem; text-align: left; }
+    .prose th { background: #f9fafb; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="mb-4 flex items-center justify-between gap-4 flex-wrap">
+        <a href="/dashboard" class="text-blue-600 hover:underline text-sm">
+            ← 대시보드로 돌아가기
+        </a>
+        <a id="downloadLink"
+           href="/api/lessonplan/reports/{{ report_id }}/download"
+           class="text-sm text-gray-600 hover:text-blue-600 underline">
+            원본(.md) 다운로드
+        </a>
+    </div>
+
+    <header class="bg-white shadow-sm rounded-lg p-6 mb-4">
+        <h1 id="reportTitle" class="text-2xl font-bold text-gray-900 break-all">
+            보고서 불러오는 중...
+        </h1>
+        <p id="reportMeta" class="text-sm text-gray-500 mt-2">&nbsp;</p>
+    </header>
+
+    <section class="bg-white shadow-sm rounded-lg p-6">
+        <article id="reportContent" class="prose max-w-none text-gray-800">
+            <p class="text-gray-500 text-center py-8">보고서를 불러오는 중...</p>
+        </article>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+    const REPORT_ID = {{ report_id | int }};
+
+    function escapeHtml(text) {
+        if (text === null || text === undefined) return '';
+        const div = document.createElement('div');
+        div.textContent = String(text);
+        return div.innerHTML;
+    }
+
+    function isSafeMarkdownUrl(rawUrl) {
+        if (!rawUrl) return true;
+        const compact = String(rawUrl).trim().replace(/[ -\s]+/g, '');
+        if (!compact) return true;
+        try {
+            const url = new URL(compact, window.location.origin);
+            return ['http:', 'https:', 'mailto:', 'tel:'].includes(url.protocol);
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function sanitizeRenderedMarkdown(html) {
+        const tpl = document.createElement('template');
+        tpl.innerHTML = html;
+        tpl.content.querySelectorAll('*').forEach(el => {
+            Array.from(el.attributes).forEach(attr => {
+                const name = attr.name.toLowerCase();
+                if (name.startsWith('on') || name === 'style') {
+                    el.removeAttribute(attr.name);
+                }
+            });
+        });
+        tpl.content.querySelectorAll('a[href]').forEach(a => {
+            if (!isSafeMarkdownUrl(a.getAttribute('href'))) {
+                a.removeAttribute('href');
+                a.removeAttribute('target');
+                return;
+            }
+            a.setAttribute('rel', 'noopener noreferrer');
+            a.setAttribute('target', '_blank');
+        });
+        tpl.content.querySelectorAll('img[src]').forEach(img => {
+            if (isSafeMarkdownUrl(img.getAttribute('src'))) return;
+            img.replaceWith(document.createTextNode(img.getAttribute('alt') || ''));
+        });
+        return tpl.innerHTML;
+    }
+
+    function renderSafeMarkdown(markdown) {
+        const safe = escapeHtml(markdown || '');
+        const rendered = marked.parse(safe);
+        return sanitizeRenderedMarkdown(rendered);
+    }
+
+    function formatDate(iso) {
+        if (!iso) return '';
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return '';
+        return d.toLocaleString('ko-KR', {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+        });
+    }
+
+    async function loadReport() {
+        const titleEl = document.getElementById('reportTitle');
+        const metaEl = document.getElementById('reportMeta');
+        const contentEl = document.getElementById('reportContent');
+        try {
+            const res = await fetch(`/api/lessonplan/reports/${REPORT_ID}`, {
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' }
+            });
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+            }
+            const data = await res.json();
+
+            const title = data.report_filename
+                || data.lessonplan_original_name
+                || `보고서 #${REPORT_ID}`;
+            titleEl.textContent = title;
+            document.title = `${title} - AI 문서 평가 플랫폼`;
+
+            const lesson = data.lessonplan_original_name
+                || data.lessonplan_filename
+                || '';
+            const created = formatDate(data.created_at);
+            metaEl.textContent = [lesson, created].filter(Boolean).join(' · ');
+
+            contentEl.innerHTML = renderSafeMarkdown(data.content);
+        } catch (err) {
+            contentEl.innerHTML =
+                '<p class="text-red-600 text-center py-8">보고서를 불러올 수 없습니다.</p>';
+            console.error('보고서 로드 실패:', err);
+        }
+    }
+
+    loadReport();
+</script>
+{% endblock %}
