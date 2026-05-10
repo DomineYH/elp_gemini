@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-from typing import Callable
+from types import ModuleType
 
 import pytest
 
@@ -15,8 +15,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = PROJECT_ROOT / "scripts" / "check_no_emojis_in_reports.py"
 
 
-def _load_main() -> Callable[[list[str] | None], int]:
-    """스크립트의 main(argv) 함수를 동적으로 임포트한다."""
+def _load_module() -> ModuleType:
+    """스크립트를 모듈로서 동적으로 로드한다 (monkeypatch 가능하게 노출)."""
     spec = importlib.util.spec_from_file_location(
         "check_no_emojis_in_reports", str(SCRIPT_PATH)
     )
@@ -24,10 +24,11 @@ def _load_main() -> Callable[[list[str] | None], int]:
         raise ImportError(f"Cannot load spec for {SCRIPT_PATH}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.main
+    return module
 
 
-main = _load_main()
+_GUARD_MODULE = _load_module()
+main = _GUARD_MODULE.main
 
 
 # 가드 블록 안에서만 등장이 허용되는 부정 예시 이모지
@@ -167,6 +168,43 @@ class TestPromptHeuristic:
         assert rc == 0
         assert capsys.readouterr().err == ""
 
+    def test_emoji_after_code_fenced_separators_still_detected(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """`_scan_prompt`'s `in_code_fence` flag prevents internal `---`
+        separators inside a fenced markdown template from prematurely closing
+        the lesson_analysis section. Real prompt.md uses this structure
+        (lines 133-342). Without the fence-awareness the section would close
+        at the first `---` inside the fence and the post-fence emoji would
+        be missed entirely."""
+        prompt = _write(
+            tmp_path,
+            "prompt.md",
+            "## evaluation\n\n"
+            "Some content.\n\n"
+            "---\n\n"
+            "## lesson_analysis\n\n"
+            "Body text.\n\n"
+            "```markdown\n"
+            "## 1. Section\n"
+            "---\n"
+            "## 2. Section\n"
+            "---\n"
+            "## 3. Section\n"
+            "```\n\n"
+            "📊 emoji after the fence — must be detected.\n\n"
+            "---\n",
+        )
+
+        rc = main([str(prompt)])
+
+        captured = capsys.readouterr()
+        assert rc == 1
+        # 코드 펜스 안의 `---` 들이 섹션을 조기 종료시키지 않았기 때문에
+        # 펜스 종료 후 본문에 있는 📊 가 정상적으로 검출된다.
+        assert "📊" in captured.err
+        assert f"{prompt}:" in captured.err
+
 
 class TestSchemaHeuristic:
     def test_emoji_in_schema_file_detected(
@@ -302,6 +340,47 @@ class TestAccumulationAndArgs:
         captured2 = capsys.readouterr()
         assert rc2 == 1
         assert "📑" in captured2.err
+
+
+class TestDefaultTargets:
+    def test_main_with_no_args_uses_default_targets(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Empty argv triggers the default scan target resolution path
+        (DEFAULT_PROMPT_PATH, DEFAULT_SCHEMA_PATH, DEFAULT_REPORTS_GLOB).
+        This is the production CI invocation; without coverage a future
+        refactor of `_resolve_targets` could break the default path
+        without any test failing."""
+        # Build a clean tmp prompt (no emojis, with a lesson_analysis section)
+        clean_prompt = tmp_path / "prompt.md"
+        clean_prompt.write_text(
+            "## lesson_analysis\n\nClean body.\n\n---\n",
+            encoding="utf-8",
+        )
+        clean_schema = tmp_path / "schema.py"
+        clean_schema.write_text("# clean python file\n", encoding="utf-8")
+        # Empty reports dir → glob matches nothing
+        reports_dir = tmp_path / "reports"
+        reports_dir.mkdir()
+
+        monkeypatch.setattr(_GUARD_MODULE, "DEFAULT_PROMPT_PATH", clean_prompt)
+        monkeypatch.setattr(_GUARD_MODULE, "DEFAULT_SCHEMA_PATH", clean_schema)
+        monkeypatch.setattr(
+            _GUARD_MODULE,
+            "DEFAULT_REPORTS_GLOB",
+            str(reports_dir / "*_reports.md"),
+        )
+
+        rc = main([])
+
+        captured = capsys.readouterr()
+        assert rc == 0
+        assert captured.err == ""
+        # 기본 대상 2개(prompt + schema)가 실제로 사용되었는지 — 보고서 글로브는 비어있음
+        assert "OK: scanned 2 files" in captured.out
 
 
 def test_script_runs_as_cli_subprocess(tmp_path):

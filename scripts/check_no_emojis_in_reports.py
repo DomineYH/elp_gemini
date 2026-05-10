@@ -22,14 +22,13 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
+# 프로젝트 루트 — sys.path 부트스트랩(`from app...` CLI 직접 실행 호환) 과
+# 기본 스캔 대상 경로 해석에 모두 사용한다.
+PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.utils.text_sanitizer import _EMOJI_PATTERN  # noqa: E402
-
-# 프로젝트 루트 (기본 스캔 대상 경로 해석용 상수)
-PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
 
 DEFAULT_PROMPT_PATH: Path = PROJECT_ROOT / "prompt" / "prompt.md"
 DEFAULT_SCHEMA_PATH: Path = (
