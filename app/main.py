@@ -240,6 +240,7 @@ from app.routers import (  # noqa: E402
     views,
 )
 from app.routers.admin import router as admin_router  # noqa: E402
+from app.routers.admin import exports as admin_exports  # noqa: E402
 
 
 # 루트 엔드포인트 - 역할 기반 리다이렉트
@@ -279,6 +280,7 @@ app.include_router(evaluations.router)
 app.include_router(lessonplan_analysis.router)
 app.include_router(views.router)
 app.include_router(admin_router)
+app.include_router(admin_exports.router)
 
 
 if __name__ == "__main__":

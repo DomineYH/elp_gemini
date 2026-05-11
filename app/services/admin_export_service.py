@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
+import json
 import os
+import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Iterable
+from typing import Iterable, Iterator
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,6 +53,7 @@ class ReportEntry:
     original_name: str
     archive_path: str
     source_path: str  # on-disk .md path
+    source_status: str = "OK"
 
 
 @dataclass(frozen=True)
@@ -74,6 +78,7 @@ class LessonplanEntry:
     original_name: str
     archive_path: str
     source_path: str  # data/lessonplan/<filename>
+    source_status: str = "OK"
 
 
 @dataclass(frozen=True)
@@ -201,6 +206,9 @@ class AdminExportService:
                     f"{ctx.filename_prefix}__report_{r.id}__"
                     f"{slugify_original_name(_strip_ext(original))}.md"
                 )
+                report_status = (
+                    "OK" if os.path.exists(r.report_path) else "MISSING"
+                )
                 reports.append(
                     ReportEntry(
                         kind="report",
@@ -211,6 +219,7 @@ class AdminExportService:
                         original_name=original,
                         archive_path=f"reports/{fname}",
                         source_path=r.report_path,
+                        source_status=report_status,
                     )
                 )
             if "lessonplans" in filters.include:
@@ -220,6 +229,9 @@ class AdminExportService:
                 )
                 lp_path = os.path.join(
                     LESSONPLAN_BASE_DIR, r.lessonplan_filename
+                )
+                lp_status = (
+                    "OK" if os.path.exists(lp_path) else "MISSING"
                 )
                 lessonplans.append(
                     LessonplanEntry(
@@ -231,6 +243,7 @@ class AdminExportService:
                         original_name=original,
                         archive_path=f"lessonplans/{lp_name}",
                         source_path=lp_path,
+                        source_status=lp_status,
                     )
                 )
         return reports, lessonplans
@@ -292,6 +305,112 @@ def _strip_ext(name: str) -> str:
     return os.path.splitext(name)[0] if name else name
 
 
+# -------- ZIP streaming --------
+
+
+class _ChunkBuffer:
+    def __init__(self):
+        self._buf = bytearray()
+
+    def write(self, data):
+        self._buf.extend(data)
+        return len(data)
+
+    def flush(self):
+        pass
+
+    def take(self) -> bytes:
+        chunk = bytes(self._buf)
+        self._buf.clear()
+        return chunk
+
+
+
+def _sv_stream_zip(self, plan):
+    buf = _ChunkBuffer()
+    with zipfile.ZipFile(
+        buf, mode="w", compression=zipfile.ZIP_DEFLATED
+    ) as zf:
+        yield from self._emit_meta(zf, buf, plan)
+        yield from self._emit_reports(zf, buf, plan)
+        yield from self._emit_conversations(zf, buf, plan)
+        yield from self._emit_lessonplans(zf, buf, plan)
+    yield buf.take()
+
+
+def _sv_emit_meta(self, zf, buf, plan):
+    if "meta" in plan.filters.include:
+        zf.writestr("README.txt", build_readme(plan))
+        yield buf.take()
+        zf.writestr("manifest.csv", build_manifest_csv(plan))
+        yield buf.take()
+        zf.writestr("users.csv", build_users_csv(plan))
+        yield buf.take()
+
+
+def _sv_emit_reports(self, zf, buf, plan):
+    if "reports" not in plan.filters.include:
+        return
+    for r in plan.reports:
+        data, _ = _read_file_or_missing(r.source_path)
+        zf.writestr(r.archive_path, data)
+        yield buf.take()
+
+
+def _sv_emit_conversations(self, zf, buf, plan):
+    if "conversations" not in plan.filters.include:
+        return
+    for s in plan.sessions:
+        payload = _serialize_session_jsonl(
+            s, plan.session_messages.get(s.session_id, [])
+        )
+        zf.writestr(s.archive_path, payload)
+        yield buf.take()
+
+
+def _sv_emit_lessonplans(self, zf, buf, plan):
+    if "lessonplans" not in plan.filters.include:
+        return
+    for l in plan.lessonplans:
+        data, _ = _read_file_or_missing(l.source_path)
+        zf.writestr(l.archive_path, data)
+        yield buf.take()
+
+
+AdminExportService.stream_zip = _sv_stream_zip
+AdminExportService._emit_meta = _sv_emit_meta
+AdminExportService._emit_reports = _sv_emit_reports
+AdminExportService._emit_conversations = _sv_emit_conversations
+AdminExportService._emit_lessonplans = _sv_emit_lessonplans
+
+
+def _read_file_or_missing(path: str) -> tuple[bytes, str]:
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+        return data, hashlib.sha256(data).hexdigest()
+    except FileNotFoundError:
+        return b"", "MISSING"
+
+
+def _serialize_session_jsonl(
+    session_entry, messages
+) -> bytes:
+    lines = []
+    for m in messages:
+        lines.append(json.dumps({
+            "session_id": session_entry.session_id,
+            "message_id": m.id,
+            "role": m.role.value if hasattr(m.role, "value")
+                    else str(m.role),
+            "content": m.content,
+            "created_at": (
+                m.created_at.isoformat() if m.created_at else None
+            ),
+        }, ensure_ascii=False))
+    return ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
+
+
 # -------- CSV / README builders --------
 
 
@@ -308,6 +427,7 @@ _MANIFEST_COLUMNS = [
     "created_at",
     "original_name",
     "archive_path",
+    "source_status",
     "byte_size",
     "sha256",
 ]
@@ -353,6 +473,7 @@ def build_manifest_csv(plan: ExportPlan) -> bytes:
             ),
             "original_name": e.original_name,
             "archive_path": e.archive_path,
+            "source_status": getattr(e, "source_status", "OK"),
             "byte_size": "",
             "sha256": "",
         })
