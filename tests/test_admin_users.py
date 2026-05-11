@@ -425,3 +425,27 @@ async def test_admin_user_reports_unknown_user_returns_404(db_tables):
     with TestClient(app) as client:
         resp = client.get("/admin/api/users/99999/reports")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_user_profile_returns_identity_and_counts(seed_data):
+    target_user_id = seed_data["user_id"]
+    with TestClient(app) as client:
+        resp = client.get(f"/admin/api/users/{target_user_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["user_id"] == target_user_id
+    assert body["email"] == "stu1@test.com"
+    assert body["username"] == "stu1"
+    assert body["is_admin"] is False
+    assert body["session_count"] == 2
+    assert "report_count" in body
+    assert "profile" in body
+    assert "summary" in body["profile"]
+
+
+@pytest.mark.asyncio
+async def test_admin_user_profile_unknown_user_returns_404(db_tables):
+    with TestClient(app) as client:
+        resp = client.get("/admin/api/users/99999")
+    assert resp.status_code == 404

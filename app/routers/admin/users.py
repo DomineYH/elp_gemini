@@ -801,6 +801,41 @@ async def get_user_reports_for_admin(
     }
 
 
+@router.get("/admin/api/users/{user_id}")
+async def get_user_profile_for_admin(
+    user_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자 화면 헤더용 사용자 식별/프로필/카운트 조회."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="사용자를 찾을 수 없습니다.",
+        )
+
+    profile_map = await _load_profiles(db, {target.id})
+    profile = profile_map.get(target.id, _serialize_profile(None))
+    session_counts = await _count_sessions_by_user(db, {target.id})
+    report_counts = await _count_reports_by_user(db, {target.id})
+
+    return {
+        "user_id": target.id,
+        "username": target.username,
+        "nickname": target.nickname,
+        "email": target.email,
+        "is_admin": target.is_admin,
+        "created_at": (
+            target.created_at.isoformat() if target.created_at else None
+        ),
+        "profile": profile,
+        "session_count": session_counts.get(target.id, 0),
+        "report_count": report_counts.get(target.id, 0),
+    }
+
+
 @router.get("/admin/api/reports/{report_id}")
 async def get_admin_report_detail(
     report_id: int,
