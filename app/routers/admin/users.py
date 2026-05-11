@@ -695,6 +695,35 @@ async def get_admin_report_detail(
     }
 
 
+@router.get(
+    "/admin/reports/view/{report_id}",
+    response_class=HTMLResponse,
+)
+async def admin_report_viewer_page(
+    request: Request,
+    report_id: int,
+    current_admin: User = Depends(get_current_admin),
+):
+    """관리자 분석 보고서 뷰어 페이지 (HTML shell).
+
+    실제 보고서 존재 검증은 페이지 내 `fetch`가 호출하는
+    `/admin/api/reports/{report_id}`에서 수행한다.
+    """
+    if report_id <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="보고서를 찾을 수 없습니다.",
+        )
+    return templates.TemplateResponse(
+        "admin/admin_report_viewer.html",
+        {
+            "request": request,
+            "user": current_admin,
+            "report_id": report_id,
+        },
+    )
+
+
 @router.post("/admin/api/users/{user_id}/password")
 async def change_regular_user_password(
     user_id: int,
