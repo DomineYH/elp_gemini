@@ -5,12 +5,12 @@ import csv
 import io
 import os
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Iterable
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import contains_eager, joinedload, selectinload
 
 from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage
@@ -122,26 +122,26 @@ class AdminExportService:
     async def _collect_users(
         self, filters: ExportFilters
     ) -> list[UserContext]:
-        stmt = (
-            select(User)
-            .options(joinedload(User.profile))
-            .order_by(User.id.asc())
-        )
-        needs_join = filters.role or filters.region
-        if needs_join:
-            stmt = stmt.join(User.profile)
+        needs_join = bool(filters.role) or bool(filters.region)
+        stmt = select(User).order_by(User.id.asc())
         if filters.user_ids:
             stmt = stmt.where(User.id.in_(filters.user_ids))
-        if filters.role:
-            stmt = stmt.where(UserProfile.role == filters.role)
-        if filters.region:
-            stmt = stmt.where(
-                (UserProfile.teacher_region == filters.region)
-                | (
-                    UserProfile.preservice_university_region
-                    == filters.region
-                )
+        if needs_join:
+            stmt = stmt.join(User.profile).options(
+                contains_eager(User.profile)
             )
+            if filters.role:
+                stmt = stmt.where(UserProfile.role == filters.role)
+            if filters.region:
+                stmt = stmt.where(
+                    (UserProfile.teacher_region == filters.region)
+                    | (
+                        UserProfile.preservice_university_region
+                        == filters.region
+                    )
+                )
+        else:
+            stmt = stmt.options(joinedload(User.profile))
         result = await self.db.execute(stmt)
         users = result.unique().scalars().all()
 
@@ -186,8 +186,8 @@ class AdminExportService:
             stmt = stmt.where(
                 AnalysisReport.created_at
                 < datetime.combine(
-                    filters.date_to, datetime.max.time()
-                )
+                    filters.date_to, datetime.min.time()
+                ) + timedelta(days=1)
             )
         rows = (await self.db.execute(stmt)).scalars().all()
 
@@ -257,8 +257,8 @@ class AdminExportService:
             stmt = stmt.where(
                 ChatSession.created_at
                 < datetime.combine(
-                    filters.date_to, datetime.max.time()
-                )
+                    filters.date_to, datetime.min.time()
+                ) + timedelta(days=1)
             )
         rows = (await self.db.execute(stmt)).scalars().all()
 

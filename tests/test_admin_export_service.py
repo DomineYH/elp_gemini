@@ -135,6 +135,29 @@ async def test_collect_filters_by_date_range(db_session):
 
 
 @pytest.mark.asyncio
+async def test_collect_filters_date_to_inclusive(db_session):
+    await _seed_user(
+        db_session, user_id=1, email="a@x.com",
+        role="teacher", region="서울", tenure=5,
+    )
+    edge = AnalysisReport(
+        user_id=1,
+        lessonplan_filename="1_edge.pdf",
+        lessonplan_original_name="edge.pdf",
+        report_filename="1_edge_reports.md",
+        report_path="/tmp/edge.md",
+        created_at=datetime(2026, 4, 30, 23, 59, 59),
+    )
+    db_session.add(edge)
+    await db_session.commit()
+    svc = AdminExportService(db_session)
+    plan = await svc.collect(
+        ExportFilters(date_to=datetime(2026, 4, 30).date())
+    )
+    assert {r.resource_id for r in plan.reports} == {edge.id}
+
+
+@pytest.mark.asyncio
 async def test_collect_filters_by_user_ids(db_session):
     await _seed_user(
         db_session, user_id=1, email="a@x.com",
