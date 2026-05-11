@@ -1045,3 +1045,40 @@ async def user_session_detail_page(
         {"request": request,
          "user": current_admin,
          "session_id": session_id})
+
+
+@router.get(
+    "/admin/users/{user_id}",
+    response_class=HTMLResponse,
+)
+async def admin_user_detail_page(
+    request: Request,
+    user_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자 사용자 상세 페이지(HTML 셸).
+
+    실제 데이터는 페이지 JS가 `/admin/api/users/{user_id}` 계열을 호출한다.
+    """
+    if user_id <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="사용자를 찾을 수 없습니다.",
+        )
+    result = await db.execute(
+        select(User.id).where(User.id == user_id)
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="사용자를 찾을 수 없습니다.",
+        )
+    return templates.TemplateResponse(
+        "admin/admin_user_detail.html",
+        {
+            "request": request,
+            "user": current_admin,
+            "target_user_id": user_id,
+        },
+    )

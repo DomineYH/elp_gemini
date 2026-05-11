@@ -449,3 +449,27 @@ async def test_admin_user_profile_unknown_user_returns_404(db_tables):
     with TestClient(app) as client:
         resp = client.get("/admin/api/users/99999")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_user_detail_page_renders(seed_data):
+    target_user_id = seed_data["user_id"]
+    with TestClient(app) as client:
+        resp = client.get(f"/admin/users/{target_user_id}")
+    assert resp.status_code == 200
+    html = resp.text
+    # Page identifies the target user and hosts both lists
+    assert f"data-user-id=\"{target_user_id}\"" in html
+    assert "id=\"adminSessionList\"" in html
+    assert "id=\"adminReportList\"" in html
+    # Calls the three Task 1-3 endpoints
+    assert f"/admin/api/users/{target_user_id}/sessions" in html
+    assert f"/admin/api/users/{target_user_id}/reports" in html
+    assert f"/admin/api/users/{target_user_id}\"" in html or f"/admin/api/users/{target_user_id}'" in html
+
+
+@pytest.mark.asyncio
+async def test_admin_user_detail_page_rejects_unknown_user(db_tables):
+    with TestClient(app) as client:
+        resp = client.get("/admin/users/99999")
+    assert resp.status_code == 404

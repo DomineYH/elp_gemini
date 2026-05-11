@@ -8,50 +8,150 @@
 <a href="/admin/users" class="text-blue-600 font-medium">사용자</a>
 <a href="/admin/qna-logs" class="text-gray-600 hover:text-blue-600">QnA 로그</a>
 <a href="/admin/prompts" class="text-gray-600 hover:text-blue-600">프롬프트</a>
+<a href="/admin/criteria" class="text-gray-600 hover:text-blue-600">평가기준</a>
 {% endif %}
-<span class="text-gray-600">{{ user.email }}</span>
+<span class="text-gray-600">{{ user.username }}</span>
 <form method="POST" action="/auth/logout" class="inline">
     <button type="submit" class="text-gray-600 hover:text-red-600">로그아웃</button>
 </form>
 {% endblock %}
 
 {% block content %}
-<div class="max-w-6xl mx-auto">
+<div class="max-w-6xl mx-auto" data-user-id="{{ target_user_id }}">
     <div class="mb-4">
         <a href="/admin/users" class="text-blue-600 hover:underline">← 사용자 목록</a>
     </div>
 
-    <h1 class="text-3xl font-bold mb-6">{{ target_user.email }}</h1>
-
-    <div class="grid gap-6">
-        <!-- 문서 목록 -->
-        <div class="bg-white shadow-md rounded-lg p-6">
-            <h2 class="text-xl font-semibold mb-4">문서 ({{ target_user.documents|length }})</h2>
-            <div class="space-y-2">
-                {% for doc in target_user.documents %}
-                <div class="flex justify-between items-center p-3 border rounded">
-                    <div>
-                        <p class="font-medium">{{ doc.title }}</p>
-                        <p class="text-sm text-gray-500">{{ doc.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</p>
-                    </div>
-                    <span class="px-2 py-1 rounded text-xs {% if doc.status == 'ready' %}bg-green-100 text-green-800{% else %}bg-yellow-100 text-yellow-800{% endif %}">{{ doc.status }}</span>
-                </div>
-                {% endfor %}
-            </div>
+    <!-- 사용자 헤더 -->
+    <section class="bg-white shadow-md rounded-lg p-6 mb-6" id="userHeader">
+        <h1 class="text-2xl font-bold text-gray-900" id="userEmail">불러오는 중...</h1>
+        <p class="text-sm text-gray-500 mt-1" id="userMeta">&nbsp;</p>
+        <div class="mt-3 flex gap-4 text-sm text-gray-700">
+            <span>세션 <strong id="sessionTotal">-</strong></span>
+            <span>보고서 <strong id="reportTotal">-</strong></span>
         </div>
+    </section>
 
-        <!-- 최근 QnA -->
-        <div class="bg-white shadow-md rounded-lg p-6">
-            <h2 class="text-xl font-semibold mb-4">최근 QnA ({{ target_user.recent_qna_logs|length }})</h2>
-            <div class="space-y-2">
-                {% for log in target_user.recent_qna_logs %}
-                <div class="p-3 border rounded">
-                    <p class="text-sm font-medium">{{ log.question }}</p>
-                    <p class="text-xs text-gray-500 mt-1">{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
-                </div>
-                {% endfor %}
+    <div class="grid gap-6 md:grid-cols-2">
+        <!-- 대화 목록 -->
+        <section class="bg-white shadow-md rounded-lg p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold">대화</h2>
+                <span class="text-xs text-gray-500" id="sessionCount"></span>
             </div>
-        </div>
+            <ul id="adminSessionList" class="divide-y divide-gray-200">
+                <li class="py-4 text-sm text-gray-500">로딩 중...</li>
+            </ul>
+        </section>
+
+        <!-- 보고서 목록 -->
+        <section class="bg-white shadow-md rounded-lg p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold">분석 보고서</h2>
+                <span class="text-xs text-gray-500" id="reportCount"></span>
+            </div>
+            <ul id="adminReportList" class="divide-y divide-gray-200">
+                <li class="py-4 text-sm text-gray-500">로딩 중...</li>
+            </ul>
+        </section>
     </div>
 </div>
+
+<script>
+const TARGET_USER_ID = {{ target_user_id | tojson }};
+const PROFILE_URL = "/admin/api/users/{{ target_user_id }}";
+const SESSIONS_URL = "/admin/api/users/{{ target_user_id }}/sessions";
+const REPORTS_URL = "/admin/api/users/{{ target_user_id }}/reports";
+
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function formatDate(value) {
+    if (!value) return '-';
+    try {
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return value;
+        return d.toLocaleString('ko-KR');
+    } catch (_) {
+        return value;
+    }
+}
+
+async function loadProfile() {
+    const resp = await fetch(PROFILE_URL);
+    if (!resp.ok) {
+        document.getElementById('userEmail').textContent = '사용자를 불러올 수 없습니다.';
+        return;
+    }
+    const data = await resp.json();
+    document.getElementById('userEmail').textContent = data.email || data.username;
+    const meta = [data.username, data.profile && data.profile.summary].filter(Boolean).join(' · ');
+    document.getElementById('userMeta').textContent = meta;
+    document.getElementById('sessionTotal').textContent = data.session_count;
+    document.getElementById('reportTotal').textContent = data.report_count;
+}
+
+async function loadSessions() {
+    const list = document.getElementById('adminSessionList');
+    const countLabel = document.getElementById('sessionCount');
+    const resp = await fetch(`${SESSIONS_URL}?limit=50&offset=0`);
+    if (!resp.ok) {
+        list.innerHTML = '<li class="py-4 text-sm text-red-500">세션을 불러올 수 없습니다.</li>';
+        return;
+    }
+    const data = await resp.json();
+    countLabel.textContent = `${data.total_count}건`;
+    if (!data.sessions.length) {
+        list.innerHTML = '<li class="py-4 text-sm text-gray-500">대화가 없습니다.</li>';
+        return;
+    }
+    list.innerHTML = data.sessions.map((s) => `
+        <li class="py-3">
+            <a href="/admin/users/session/${s.session_id}" class="block hover:bg-gray-50 rounded p-2 -m-2">
+                <div class="font-medium text-blue-700">${escapeHtml(s.title || '제목 없음')}</div>
+                <div class="text-xs text-gray-500 mt-1">
+                    메시지 ${s.message_count} · 최근 ${formatDate(s.last_message_at || s.updated_at || s.created_at)}
+                </div>
+            </a>
+        </li>
+    `).join('');
+}
+
+async function loadReports() {
+    const list = document.getElementById('adminReportList');
+    const countLabel = document.getElementById('reportCount');
+    const resp = await fetch(`${REPORTS_URL}?limit=100&offset=0`);
+    if (!resp.ok) {
+        list.innerHTML = '<li class="py-4 text-sm text-red-500">보고서를 불러올 수 없습니다.</li>';
+        return;
+    }
+    const data = await resp.json();
+    countLabel.textContent = `${data.total_count}건`;
+    if (!data.reports.length) {
+        list.innerHTML = '<li class="py-4 text-sm text-gray-500">보고서가 없습니다.</li>';
+        return;
+    }
+    list.innerHTML = data.reports.map((r) => `
+        <li class="py-3">
+            <a href="/admin/reports/view/${r.id}" class="block hover:bg-gray-50 rounded p-2 -m-2">
+                <div class="font-medium text-blue-700">${escapeHtml(r.lessonplan_original_name || r.report_filename)}</div>
+                <div class="text-xs text-gray-500 mt-1">생성일 ${formatDate(r.created_at)}</div>
+            </a>
+        </li>
+    `).join('');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadProfile();
+    loadSessions();
+    loadReports();
+});
+</script>
 {% endblock %}
