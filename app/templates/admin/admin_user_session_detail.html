@@ -344,8 +344,8 @@ function renderReports(reports) {
                 ? (r.latency_ms / 1000).toFixed(1) + '초'
                 : '-';
         const reportUrl =
-            r.report_path
-                ? `/static/${r.report_path}`
+            Number.isInteger(r.id) && r.id > 0
+                ? `/admin/reports/view/${r.id}`
                 : '#';
 
         return `

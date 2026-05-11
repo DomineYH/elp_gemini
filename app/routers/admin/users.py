@@ -5,6 +5,7 @@
 import logging
 import secrets
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from fastapi import (
@@ -646,6 +647,81 @@ async def get_session_detail(
             f"세션 상세 조회 실패: {e}",
             exc_info=True)
         raise
+
+
+@router.get("/admin/api/reports/{report_id}")
+async def get_admin_report_detail(
+    report_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자 전용 분석 보고서 상세 조회 (소유자 우회).
+
+    `app.routers.lessonplan_analysis.get_analysis_report`와 동일한 응답
+    스키마를 반환하되, `AnalysisReport.user_id == current_user.id` 검사를
+    수행하지 않는다. 관리자 권한 검증은 `get_current_admin`이 담당한다.
+    """
+    result = await db.execute(
+        select(AnalysisReport).where(AnalysisReport.id == report_id)
+    )
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="보고서를 찾을 수 없습니다.",
+        )
+
+    report_path = Path(report.report_path)
+    if not report_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="보고서 파일이 존재하지 않습니다.",
+        )
+
+    content = report_path.read_text(encoding="utf-8")
+    logger.info(
+        "관리자 보고서 조회: admin=%s, report_id=%s",
+        current_admin.username,
+        report_id,
+    )
+    return {
+        "id": report.id,
+        "lessonplan_filename": report.lessonplan_filename,
+        "lessonplan_original_name": report.lessonplan_original_name,
+        "report_filename": report.report_filename,
+        "content": content,
+        "latency_ms": report.latency_ms,
+        "created_at": report.created_at.isoformat(),
+    }
+
+
+@router.get(
+    "/admin/reports/view/{report_id}",
+    response_class=HTMLResponse,
+)
+async def admin_report_viewer_page(
+    request: Request,
+    report_id: int,
+    current_admin: User = Depends(get_current_admin),
+):
+    """관리자 분석 보고서 뷰어 페이지 (HTML shell).
+
+    실제 보고서 존재 검증은 페이지 내 `fetch`가 호출하는
+    `/admin/api/reports/{report_id}`에서 수행한다.
+    """
+    if report_id <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="보고서를 찾을 수 없습니다.",
+        )
+    return templates.TemplateResponse(
+        "admin/admin_report_viewer.html",
+        {
+            "request": request,
+            "user": current_admin,
+            "report_id": report_id,
+        },
+    )
 
 
 @router.post("/admin/api/users/{user_id}/password")
