@@ -127,8 +127,17 @@ class AdminExportService:
     async def _collect_users(
         self, filters: ExportFilters
     ) -> list[UserContext]:
-        needs_join = bool(filters.role) or bool(filters.region)
-        stmt = select(User).order_by(User.id.asc())
+        needs_join = (
+            bool(filters.role)
+            or bool(filters.region)
+            or filters.career_min is not None
+            or filters.career_max is not None
+        )
+        stmt = (
+            select(User)
+            .where(User.is_admin.is_(False))
+            .order_by(User.id.asc())
+        )
         if filters.user_ids:
             stmt = stmt.where(User.id.in_(filters.user_ids))
         if needs_join:
@@ -143,6 +152,40 @@ class AdminExportService:
                     | (
                         UserProfile.preservice_university_region
                         == filters.region
+                    )
+                )
+            if filters.career_min is not None:
+                stmt = stmt.where(
+                    (
+                        (UserProfile.role == "teacher")
+                        & (
+                            UserProfile.teacher_career_years
+                            >= filters.career_min
+                        )
+                    )
+                    | (
+                        (UserProfile.role == "preservice_teacher")
+                        & (
+                            UserProfile.preservice_grade
+                            >= filters.career_min
+                        )
+                    )
+                )
+            if filters.career_max is not None:
+                stmt = stmt.where(
+                    (
+                        (UserProfile.role == "teacher")
+                        & (
+                            UserProfile.teacher_career_years
+                            <= filters.career_max
+                        )
+                    )
+                    | (
+                        (UserProfile.role == "preservice_teacher")
+                        & (
+                            UserProfile.preservice_grade
+                            <= filters.career_max
+                        )
                     )
                 )
         else:

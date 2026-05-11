@@ -76,3 +76,36 @@ def test_parse_filters_unknown_include_token():
 def test_parse_filters_empty_user_ids_becomes_none():
     f = parse_filters(user_ids="")
     assert f.user_ids is None
+
+
+def test_parse_filters_career_range():
+    f = parse_filters(career_min="3", career_max="10")
+    assert f.career_min == 3
+    assert f.career_max == 10
+
+
+def test_parse_filters_career_min_only():
+    f = parse_filters(career_min="5")
+    assert f.career_min == 5
+    assert f.career_max is None
+
+
+def test_parse_filters_invalid_career():
+    with pytest.raises(HTTPException) as exc:
+        parse_filters(career_min="abc")
+    assert exc.value.status_code == 400
+    assert "career_min" in exc.value.detail
+
+
+def test_parse_filters_negative_career():
+    with pytest.raises(HTTPException) as exc:
+        parse_filters(career_min="-1")
+    assert exc.value.status_code == 400
+    assert "career_min" in exc.value.detail
+
+
+def test_parse_filters_inverted_career_range():
+    with pytest.raises(HTTPException) as exc:
+        parse_filters(career_min="10", career_max="5")
+    assert exc.value.status_code == 400
+    assert "career_min must be <= career_max" in exc.value.detail

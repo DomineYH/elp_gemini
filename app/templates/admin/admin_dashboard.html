@@ -61,6 +61,24 @@
           </div>
 
           <div>
+            <label class="block text-sm font-medium">
+              경력/학년 범위 (선택)
+            </label>
+            <div class="flex gap-2 items-center">
+              <input type="number" name="career_min" min="0"
+                     placeholder="최소"
+                     class="border rounded px-2 py-1 w-full" />
+              <span class="text-gray-500">~</span>
+              <input type="number" name="career_max" min="0"
+                     placeholder="최대"
+                     class="border rounded px-2 py-1 w-full" />
+            </div>
+            <p class="text-xs text-gray-500 mt-1">
+              현직교사: 경력 연수 / 예비교원: 학년
+            </p>
+          </div>
+
+          <div>
             <label class="block text-sm font-medium">포함 데이터</label>
             <div class="flex flex-wrap gap-3 text-sm">
               <label><input type="checkbox" name="include" value="reports"
@@ -102,10 +120,14 @@
         const dateTo = fd.get("date_to");
         const role = fd.get("role");
         const region = (fd.get("region") || "").trim();
+        const careerMin = (fd.get("career_min") || "").trim();
+        const careerMax = (fd.get("career_max") || "").trim();
         if (dateFrom) params.set("date_from", dateFrom);
         if (dateTo) params.set("date_to", dateTo);
         if (role) params.set("role", role);
         if (region) params.set("region", region);
+        if (careerMin) params.set("career_min", careerMin);
+        if (careerMax) params.set("career_max", careerMax);
         const include = fd.getAll("include");
         params.set("include", include.length ? include.join(",") : "meta");
         window.location.href =

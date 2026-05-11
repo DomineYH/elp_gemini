@@ -339,3 +339,96 @@ async def test_users_csv_neutralizes_formula_email(db_session):
         io.StringIO(build_users_csv(plan).decode("utf-8"))
     ))
     assert rows[0]["user_email"].startswith("'+")
+
+
+@pytest.mark.asyncio
+async def test_collect_excludes_admin_users(db_session):
+    await _seed_user(
+        db_session, user_id=1, email="t@x.com",
+        role="teacher", region="서울", tenure=5,
+    )
+    admin = User(
+        id=2, username="adm", nickname="adm",
+        email="adm@x.com", is_admin=True,
+    )
+    db_session.add(admin)
+    await db_session.commit()
+
+    svc = AdminExportService(db_session)
+    plan = await svc.collect(ExportFilters())
+    assert {u.user_id for u in plan.users} == {1}
+
+
+@pytest.mark.asyncio
+async def test_collect_excludes_admin_even_in_user_ids(db_session):
+    await _seed_user(
+        db_session, user_id=1, email="t@x.com",
+        role="teacher", region="서울", tenure=5,
+    )
+    admin = User(
+        id=2, username="adm", nickname="adm",
+        email="adm@x.com", is_admin=True,
+    )
+    db_session.add(admin)
+    await db_session.commit()
+
+    svc = AdminExportService(db_session)
+    plan = await svc.collect(ExportFilters(user_ids=[1, 2]))
+    assert {u.user_id for u in plan.users} == {1}
+
+
+@pytest.mark.asyncio
+async def test_collect_career_filter_teacher(db_session):
+    await _seed_user(
+        db_session, user_id=1, email="a@x.com",
+        role="teacher", region="서울", tenure=3,
+    )
+    await _seed_user(
+        db_session, user_id=2, email="b@x.com",
+        role="teacher", region="서울", tenure=10,
+    )
+    await _seed_user(
+        db_session, user_id=3, email="c@x.com",
+        role="teacher", region="서울", tenure=20,
+    )
+    svc = AdminExportService(db_session)
+    plan = await svc.collect(
+        ExportFilters(career_min=5, career_max=15)
+    )
+    assert {u.user_id for u in plan.users} == {2}
+
+
+@pytest.mark.asyncio
+async def test_collect_career_filter_preservice(db_session):
+    await _seed_user(
+        db_session, user_id=1, email="a@x.com",
+        role="preservice_teacher", region="부산", tenure=1,
+    )
+    await _seed_user(
+        db_session, user_id=2, email="b@x.com",
+        role="preservice_teacher", region="부산", tenure=3,
+    )
+    svc = AdminExportService(db_session)
+    plan = await svc.collect(ExportFilters(career_min=2))
+    assert {u.user_id for u in plan.users} == {2}
+
+
+@pytest.mark.asyncio
+async def test_collect_career_filter_unions_both_roles(db_session):
+    await _seed_user(
+        db_session, user_id=1, email="t@x.com",
+        role="teacher", region="서울", tenure=4,
+    )
+    await _seed_user(
+        db_session, user_id=2, email="p@x.com",
+        role="preservice_teacher", region="부산", tenure=4,
+    )
+    await _seed_user(
+        db_session, user_id=3, email="t2@x.com",
+        role="teacher", region="서울", tenure=15,
+    )
+    svc = AdminExportService(db_session)
+    plan = await svc.collect(
+        ExportFilters(career_min=3, career_max=5)
+    )
+    assert {u.user_id for u in plan.users} == {1, 2}
