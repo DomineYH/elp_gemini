@@ -473,3 +473,13 @@ async def test_admin_user_detail_page_rejects_unknown_user(db_tables):
     with TestClient(app) as client:
         resp = client.get("/admin/users/99999")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_users_page_has_per_user_detail_link(seed_data):
+    """The accounts table on /admin/users links to the per-user detail page."""
+    with TestClient(app) as client:
+        resp = client.get("/admin/users")
+    assert resp.status_code == 200
+    # The accounts row template builds /admin/users/${account.user_id}
+    assert "/admin/users/${account.user_id}" in resp.text
