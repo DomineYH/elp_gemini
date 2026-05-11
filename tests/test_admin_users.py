@@ -4,6 +4,7 @@
 """
 import pytest
 import pytest_asyncio
+from fastapi import HTTPException, status as http_status
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -217,4 +218,121 @@ async def test_session_detail_not_found(db_tables):
         resp = client.get(
             "/admin/api/users/session/99999"
         )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_report_detail_happy(seed_data, tmp_path):
+    """관리자가 임의 사용자의 보고서 조회 (소유권 우회)"""
+    content_text = "# Hello\n관리자 보고서 본문\n"
+    report_file = tmp_path / "rpt2.md"
+    report_file.write_text(content_text, encoding="utf-8")
+
+    async with TestingSessionLocal() as db:
+        rpt = AnalysisReport(
+            user_id=seed_data["user"].id,
+            lessonplan_filename="lp2.pdf",
+            lessonplan_original_name="원본2.pdf",
+            report_filename="rpt2.md",
+            report_path=str(report_file),
+            latency_ms=2200,
+        )
+        db.add(rpt)
+        await db.commit()
+        await db.refresh(rpt)
+        rpt_id = rpt.id
+
+    with TestClient(app) as client:
+        resp = client.get(f"/admin/api/reports/{rpt_id}")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == rpt_id
+    assert data["report_filename"] == "rpt2.md"
+    assert data["lessonplan_filename"] == "lp2.pdf"
+    assert data["lessonplan_original_name"] == "원본2.pdf"
+    assert data["latency_ms"] == 2200
+    assert data["content"] == content_text
+    assert data["content"].startswith("# Hello")
+
+
+@pytest.mark.asyncio
+async def test_admin_report_detail_row_missing(db_tables):
+    """존재하지 않는 보고서 ID → 404"""
+    with TestClient(app) as client:
+        resp = client.get("/admin/api/reports/999999")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "보고서를 찾을 수 없습니다."
+
+
+@pytest.mark.asyncio
+async def test_admin_report_detail_file_missing(db_tables):
+    """DB 행은 있으나 파일이 디스크에 없음 → 404"""
+    async with TestingSessionLocal() as db:
+        user = User(
+            username="ghost",
+            nickname="Ghost",
+            email="ghost@test.com",
+            hashed_password="h",
+            is_admin=False,
+        )
+        db.add(user)
+        await db.flush()
+        rpt = AnalysisReport(
+            user_id=user.id,
+            lessonplan_filename="lp.pdf",
+            lessonplan_original_name="원본.pdf",
+            report_filename="rpt.md",
+            report_path="/nonexistent/__no__/missing.md",
+            latency_ms=0,
+        )
+        db.add(rpt)
+        await db.commit()
+        await db.refresh(rpt)
+        rpt_id = rpt.id
+
+    with TestClient(app) as client:
+        resp = client.get(f"/admin/api/reports/{rpt_id}")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "보고서 파일이 존재하지 않습니다."
+
+
+@pytest.mark.asyncio
+async def test_admin_report_detail_forbidden_for_non_admin(db_tables):
+    """비관리자 호출 시 403"""
+    def _deny_admin():
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="관리자 권한이 필요합니다.",
+        )
+
+    app.dependency_overrides[get_current_admin] = _deny_admin
+    try:
+        with TestClient(app) as client:
+            resp = client.get("/admin/api/reports/1")
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "관리자 권한이 필요합니다."
+    finally:
+        # 본 테스트 내 다른 단언이 추가되더라도 안전하도록 admin 오버라이드 복원
+        app.dependency_overrides[get_current_admin] = (
+            override_admin(_admin)
+        )
+
+
+@pytest.mark.asyncio
+async def test_admin_report_viewer_page_renders(db_tables):
+    """뷰어 HTML 페이지 렌더링: JS 상수와 API URL 포함"""
+    with TestClient(app) as client:
+        resp = client.get("/admin/reports/view/1")
+    assert resp.status_code == 200
+    body = resp.text
+    assert "REPORT_ID = 1" in body
+    assert "/admin/api/reports/" in body
+
+
+@pytest.mark.asyncio
+async def test_admin_report_viewer_rejects_non_positive_id(db_tables):
+    """뷰어가 0/음수 id를 404로 거부"""
+    with TestClient(app) as client:
+        resp = client.get("/admin/reports/view/0")
     assert resp.status_code == 404
