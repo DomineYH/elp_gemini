@@ -29,7 +29,7 @@
     </a>
     <script>
       (() => {
-        const userId = document.body.dataset.userId
+        const userId = document.querySelector("[data-user-id]")?.dataset.userId
           || new URL(window.location.href).pathname.split("/").pop();
         const link = document.getElementById("exportUserLink");
         link.href = "/admin/api/exports/all.zip?user_ids=" + userId;
