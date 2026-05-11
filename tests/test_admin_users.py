@@ -2,6 +2,8 @@
 관리자 사용자 관리 API 테스트
 통계, 세션 목록, 세션 상세 엔드포인트 검증
 """
+from datetime import datetime, timedelta
+
 import pytest
 import pytest_asyncio
 from fastapi import HTTPException, status as http_status
@@ -98,6 +100,7 @@ async def seed_data(db_tables):
         )
         db.add_all([m1, m2])
 
+        now = datetime.utcnow()
         rpt = AnalysisReport(
             user_id=user.id,
             lessonplan_filename="lp.pdf",
@@ -105,8 +108,18 @@ async def seed_data(db_tables):
             report_filename="rpt.md",
             report_path="/reports/rpt.md",
             latency_ms=1200,
+            created_at=now - timedelta(minutes=5),
         )
-        db.add(rpt)
+        rpt2 = AnalysisReport(
+            user_id=user.id,
+            lessonplan_filename="lp_b.pdf",
+            lessonplan_original_name="원본B.pdf",
+            report_filename="rpt_b.md",
+            report_path="/reports/rpt_b.md",
+            latency_ms=1500,
+            created_at=now,
+        )
+        db.add_all([rpt, rpt2])
         await db.commit()
 
         await db.refresh(s1)
@@ -383,4 +396,32 @@ async def test_admin_user_sessions_unknown_user_returns_empty(db_tables):
     """Unknown user id returns 404 (not silent empty) to surface bad links."""
     with TestClient(app) as client:
         resp = client.get("/admin/api/users/99999/sessions")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_user_reports_returns_target_user_reports(seed_data):
+    """Admin per-user reports endpoint returns only that user's reports, newest first."""
+    target_user_id = seed_data["user_id"]
+    with TestClient(app) as client:
+        resp = client.get(
+            f"/admin/api/users/{target_user_id}/reports"
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["user_id"] == target_user_id
+    assert body["total_count"] == len(body["reports"])
+    # Sorted newest first
+    if len(body["reports"]) >= 2:
+        first = body["reports"][0]["created_at"]
+        second = body["reports"][1]["created_at"]
+        assert first >= second
+    for item in body["reports"]:
+        assert {"id", "report_filename", "lessonplan_filename", "created_at"} <= set(item)
+
+
+@pytest.mark.asyncio
+async def test_admin_user_reports_unknown_user_returns_404(db_tables):
+    with TestClient(app) as client:
+        resp = client.get("/admin/api/users/99999/reports")
     assert resp.status_code == 404

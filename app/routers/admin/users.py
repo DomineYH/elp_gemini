@@ -739,6 +739,68 @@ async def get_user_sessions_for_admin(
     }
 
 
+@router.get("/admin/api/users/{user_id}/reports")
+async def get_user_reports_for_admin(
+    user_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자가 특정 사용자의 분석 보고서 목록을 조회한다.
+
+    사용자 측 `/api/lessonplan/reports`와 동일한 정렬(생성일 desc)·필드를 반환한다.
+    """
+    user_row = await db.execute(
+        select(User.id).where(User.id == user_id)
+    )
+    if user_row.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="사용자를 찾을 수 없습니다.",
+        )
+
+    total_result = await db.execute(
+        select(func.count(AnalysisReport.id)).where(
+            AnalysisReport.user_id == user_id
+        )
+    )
+    total_count = int(total_result.scalar_one() or 0)
+
+    result = await db.execute(
+        select(AnalysisReport)
+        .where(AnalysisReport.user_id == user_id)
+        .order_by(AnalysisReport.created_at.desc(), AnalysisReport.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    reports = [
+        {
+            "id": r.id,
+            "report_filename": r.report_filename,
+            "lessonplan_filename": r.lessonplan_filename,
+            "lessonplan_original_name": getattr(r, "lessonplan_original_name", None),
+            "latency_ms": r.latency_ms,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in result.scalars().all()
+    ]
+
+    logger.info(
+        "관리자 사용자 보고서 목록: admin=%s, target=%s, total=%s",
+        current_admin.username, user_id, total_count,
+    )
+    return {
+        "user_id": user_id,
+        "reports": reports,
+        "total_count": total_count,
+        "returned_count": len(reports),
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(reports) < total_count,
+    }
+
+
 @router.get("/admin/api/reports/{report_id}")
 async def get_admin_report_detail(
     report_id: int,
