@@ -300,6 +300,54 @@ class AdminExportService:
             msgs[s.id] = sorted_msgs
         return sessions, msgs
 
+    # -------- ZIP streaming --------
+
+    def stream_zip(self, plan: ExportPlan) -> Iterator[bytes]:
+        buf = _ChunkBuffer()
+        with zipfile.ZipFile(
+            buf, mode="w", compression=zipfile.ZIP_DEFLATED
+        ) as zf:
+            yield from self._emit_meta(zf, buf, plan)
+            yield from self._emit_reports(zf, buf, plan)
+            yield from self._emit_conversations(zf, buf, plan)
+            yield from self._emit_lessonplans(zf, buf, plan)
+        yield buf.take()
+
+    def _emit_meta(self, zf, buf, plan):
+        if "meta" in plan.filters.include:
+            zf.writestr("README.txt", build_readme(plan))
+            yield buf.take()
+            zf.writestr("manifest.csv", build_manifest_csv(plan))
+            yield buf.take()
+            zf.writestr("users.csv", build_users_csv(plan))
+            yield buf.take()
+
+    def _emit_reports(self, zf, buf, plan):
+        if "reports" not in plan.filters.include:
+            return
+        for r in plan.reports:
+            data, _ = _read_file_or_missing(r.source_path)
+            zf.writestr(r.archive_path, data)
+            yield buf.take()
+
+    def _emit_conversations(self, zf, buf, plan):
+        if "conversations" not in plan.filters.include:
+            return
+        for s in plan.sessions:
+            payload = _serialize_session_jsonl(
+                s, plan.session_messages.get(s.session_id, [])
+            )
+            zf.writestr(s.archive_path, payload)
+            yield buf.take()
+
+    def _emit_lessonplans(self, zf, buf, plan):
+        if "lessonplans" not in plan.filters.include:
+            return
+        for l in plan.lessonplans:
+            data, _ = _read_file_or_missing(l.source_path)
+            zf.writestr(l.archive_path, data)
+            yield buf.take()
+
 
 def _strip_ext(name: str) -> str:
     return os.path.splitext(name)[0] if name else name
@@ -324,64 +372,6 @@ class _ChunkBuffer:
         self._buf.clear()
         return chunk
 
-
-
-def _sv_stream_zip(self, plan):
-    buf = _ChunkBuffer()
-    with zipfile.ZipFile(
-        buf, mode="w", compression=zipfile.ZIP_DEFLATED
-    ) as zf:
-        yield from self._emit_meta(zf, buf, plan)
-        yield from self._emit_reports(zf, buf, plan)
-        yield from self._emit_conversations(zf, buf, plan)
-        yield from self._emit_lessonplans(zf, buf, plan)
-    yield buf.take()
-
-
-def _sv_emit_meta(self, zf, buf, plan):
-    if "meta" in plan.filters.include:
-        zf.writestr("README.txt", build_readme(plan))
-        yield buf.take()
-        zf.writestr("manifest.csv", build_manifest_csv(plan))
-        yield buf.take()
-        zf.writestr("users.csv", build_users_csv(plan))
-        yield buf.take()
-
-
-def _sv_emit_reports(self, zf, buf, plan):
-    if "reports" not in plan.filters.include:
-        return
-    for r in plan.reports:
-        data, _ = _read_file_or_missing(r.source_path)
-        zf.writestr(r.archive_path, data)
-        yield buf.take()
-
-
-def _sv_emit_conversations(self, zf, buf, plan):
-    if "conversations" not in plan.filters.include:
-        return
-    for s in plan.sessions:
-        payload = _serialize_session_jsonl(
-            s, plan.session_messages.get(s.session_id, [])
-        )
-        zf.writestr(s.archive_path, payload)
-        yield buf.take()
-
-
-def _sv_emit_lessonplans(self, zf, buf, plan):
-    if "lessonplans" not in plan.filters.include:
-        return
-    for l in plan.lessonplans:
-        data, _ = _read_file_or_missing(l.source_path)
-        zf.writestr(l.archive_path, data)
-        yield buf.take()
-
-
-AdminExportService.stream_zip = _sv_stream_zip
-AdminExportService._emit_meta = _sv_emit_meta
-AdminExportService._emit_reports = _sv_emit_reports
-AdminExportService._emit_conversations = _sv_emit_conversations
-AdminExportService._emit_lessonplans = _sv_emit_lessonplans
 
 
 def _read_file_or_missing(path: str) -> tuple[bytes, str]:
