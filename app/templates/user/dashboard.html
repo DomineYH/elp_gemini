@@ -962,10 +962,10 @@
         container.innerHTML = sessionHtml + loadMoreHtml;
     }
 
-    function reportDownloadUrl(report) {
+    function reportViewerUrl(report) {
         const reportId = Number(report?.id);
         return Number.isInteger(reportId) && reportId > 0
-            ? `/api/lessonplan/reports/${reportId}/download`
+            ? `/reports/view/${reportId}`
             : '#';
     }
 
@@ -987,7 +987,7 @@
             const latency = report.latency_ms != null
                 ? `${(report.latency_ms / 1000).toFixed(1)}초`
                 : '-';
-            const reportUrl = reportDownloadUrl(report);
+            const reportUrl = reportViewerUrl(report);
 
             return `
                 <article class="border border-gray-200 rounded-lg p-4">
