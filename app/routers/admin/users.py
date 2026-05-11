@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from app.constants import USER_TYPES
 from app.db import get_db
@@ -649,6 +649,193 @@ async def get_session_detail(
         raise
 
 
+@router.get("/admin/api/users/{user_id}/sessions")
+async def get_user_sessions_for_admin(
+    user_id: int,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자가 특정 사용자의 대화 세션 목록을 조회한다.
+
+    사용자 측 `/api/qna/sessions`와 동일한 정렬/필드 셰입을 반환하되,
+    소유권 검사 없이 관리자 권한으로 접근한다.
+    """
+    user_row = await db.execute(
+        select(User.id).where(User.id == user_id)
+    )
+    if user_row.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="사용자를 찾을 수 없습니다.",
+        )
+
+    stats_session = aliased(ChatSession)
+    message_stats = (
+        select(
+            ChatMessage.session_id,
+            func.count(ChatMessage.id).label("message_count"),
+            func.max(ChatMessage.created_at).label("last_message_at"),
+        )
+        .join(stats_session, stats_session.id == ChatMessage.session_id)
+        .where(stats_session.user_id == user_id)
+        .group_by(ChatMessage.session_id)
+        .subquery()
+    )
+
+    total_result = await db.execute(
+        select(func.count(ChatSession.id)).where(
+            ChatSession.user_id == user_id
+        )
+    )
+    total_count = int(total_result.scalar_one() or 0)
+
+    last_activity_at = func.coalesce(
+        message_stats.c.last_message_at,
+        ChatSession.updated_at,
+    )
+
+    result = await db.execute(
+        select(
+            ChatSession,
+            func.coalesce(message_stats.c.message_count, 0).label("message_count"),
+            message_stats.c.last_message_at,
+        )
+        .outerjoin(
+            message_stats,
+            ChatSession.id == message_stats.c.session_id,
+        )
+        .where(ChatSession.user_id == user_id)
+        .order_by(last_activity_at.desc(), ChatSession.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+
+    sessions = []
+    for session, message_count, last_message_at in result.all():
+        sessions.append({
+            "session_id": session.id,
+            "title": session.title,
+            "user_type": session.user_type,
+            "created_at": session.created_at.isoformat(),
+            "updated_at": session.updated_at.isoformat() if session.updated_at else None,
+            "message_count": int(message_count or 0),
+            "last_message_at": last_message_at.isoformat() if last_message_at else None,
+        })
+
+    logger.info(
+        "관리자 사용자 세션 목록: admin=%s, target=%s, total=%s",
+        current_admin.username, user_id, total_count,
+    )
+    return {
+        "user_id": user_id,
+        "sessions": sessions,
+        "total_count": total_count,
+        "returned_count": len(sessions),
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(sessions) < total_count,
+    }
+
+
+@router.get("/admin/api/users/{user_id}/reports")
+async def get_user_reports_for_admin(
+    user_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자가 특정 사용자의 분석 보고서 목록을 조회한다.
+
+    사용자 측 `/api/lessonplan/reports`와 동일한 정렬(생성일 desc)·필드를 반환한다.
+    """
+    user_row = await db.execute(
+        select(User.id).where(User.id == user_id)
+    )
+    if user_row.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="사용자를 찾을 수 없습니다.",
+        )
+
+    total_result = await db.execute(
+        select(func.count(AnalysisReport.id)).where(
+            AnalysisReport.user_id == user_id
+        )
+    )
+    total_count = int(total_result.scalar_one() or 0)
+
+    result = await db.execute(
+        select(AnalysisReport)
+        .where(AnalysisReport.user_id == user_id)
+        .order_by(AnalysisReport.created_at.desc(), AnalysisReport.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    reports = [
+        {
+            "id": r.id,
+            "report_filename": r.report_filename,
+            "lessonplan_filename": r.lessonplan_filename,
+            "lessonplan_original_name": getattr(r, "lessonplan_original_name", None),
+            "latency_ms": r.latency_ms,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in result.scalars().all()
+    ]
+
+    logger.info(
+        "관리자 사용자 보고서 목록: admin=%s, target=%s, total=%s",
+        current_admin.username, user_id, total_count,
+    )
+    return {
+        "user_id": user_id,
+        "reports": reports,
+        "total_count": total_count,
+        "returned_count": len(reports),
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(reports) < total_count,
+    }
+
+
+@router.get("/admin/api/users/{user_id}")
+async def get_user_profile_for_admin(
+    user_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자 화면 헤더용 사용자 식별/프로필/카운트 조회."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="사용자를 찾을 수 없습니다.",
+        )
+
+    profile_map = await _load_profiles(db, {target.id})
+    profile = profile_map.get(target.id, _serialize_profile(None))
+    session_counts = await _count_sessions_by_user(db, {target.id})
+    report_counts = await _count_reports_by_user(db, {target.id})
+
+    return {
+        "user_id": target.id,
+        "username": target.username,
+        "nickname": target.nickname,
+        "email": target.email,
+        "is_admin": target.is_admin,
+        "created_at": (
+            target.created_at.isoformat() if target.created_at else None
+        ),
+        "profile": profile,
+        "session_count": session_counts.get(target.id, 0),
+        "report_count": report_counts.get(target.id, 0),
+    }
+
+
 @router.get("/admin/api/reports/{report_id}")
 async def get_admin_report_detail(
     report_id: int,
@@ -858,3 +1045,40 @@ async def user_session_detail_page(
         {"request": request,
          "user": current_admin,
          "session_id": session_id})
+
+
+@router.get(
+    "/admin/users/{user_id}",
+    response_class=HTMLResponse,
+)
+async def admin_user_detail_page(
+    request: Request,
+    user_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자 사용자 상세 페이지(HTML 셸).
+
+    실제 데이터는 페이지 JS가 `/admin/api/users/{user_id}` 계열을 호출한다.
+    """
+    if user_id <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="사용자를 찾을 수 없습니다.",
+        )
+    result = await db.execute(
+        select(User.id).where(User.id == user_id)
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="사용자를 찾을 수 없습니다.",
+        )
+    return templates.TemplateResponse(
+        "admin/admin_user_detail.html",
+        {
+            "request": request,
+            "user": current_admin,
+            "target_user_id": user_id,
+        },
+    )

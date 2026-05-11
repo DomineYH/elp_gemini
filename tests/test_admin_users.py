@@ -2,6 +2,8 @@
 관리자 사용자 관리 API 테스트
 통계, 세션 목록, 세션 상세 엔드포인트 검증
 """
+from datetime import datetime, timedelta
+
 import pytest
 import pytest_asyncio
 from fastapi import HTTPException, status as http_status
@@ -71,15 +73,20 @@ async def seed_data(db_tables):
         db.add(user)
         await db.flush()
 
+        base_time = datetime(2026, 5, 11, 9, 0, 0)
         s1 = ChatSession(
             user_id=user.id,
             user_type="1학년",
             title="세션A",
+            created_at=base_time,
+            updated_at=base_time + timedelta(minutes=10),
         )
         s2 = ChatSession(
             user_id=user.id,
             user_type="2학년",
             title="세션B",
+            created_at=base_time + timedelta(hours=1),
+            updated_at=base_time + timedelta(hours=1, minutes=5),
         )
         db.add_all([s1, s2])
         await db.flush()
@@ -88,6 +95,7 @@ async def seed_data(db_tables):
             session_id=s1.id,
             role=MessageRole.USER,
             content="질문입니다",
+            created_at=base_time + timedelta(hours=2),
         )
         m2 = ChatMessage(
             session_id=s1.id,
@@ -95,6 +103,7 @@ async def seed_data(db_tables):
             content="답변입니다",
             model_name="gemini-2.5-flash",
             citations=[{"title": "참고"}],
+            created_at=base_time + timedelta(hours=2, minutes=1),
         )
         db.add_all([m1, m2])
 
@@ -105,8 +114,18 @@ async def seed_data(db_tables):
             report_filename="rpt.md",
             report_path="/reports/rpt.md",
             latency_ms=1200,
+            created_at=base_time - timedelta(minutes=5),
         )
-        db.add(rpt)
+        rpt2 = AnalysisReport(
+            user_id=user.id,
+            lessonplan_filename="lp_b.pdf",
+            lessonplan_original_name="원본B.pdf",
+            report_filename="rpt_b.md",
+            report_path="/reports/rpt_b.md",
+            latency_ms=1500,
+            created_at=base_time,
+        )
+        db.add_all([rpt, rpt2])
         await db.commit()
 
         await db.refresh(s1)
@@ -114,6 +133,7 @@ async def seed_data(db_tables):
 
         yield {
             "user": user,
+            "user_id": user.id,
             "sessions": [s1, s2],
             "session1_id": s1.id,
         }
@@ -336,3 +356,140 @@ async def test_admin_report_viewer_rejects_non_positive_id(db_tables):
     with TestClient(app) as client:
         resp = client.get("/admin/reports/view/0")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_user_sessions_returns_target_user_sessions(seed_data):
+    """Admin per-user sessions endpoint returns only the target user's sessions, newest first."""
+    target_user_id = seed_data["user_id"]
+    with TestClient(app) as client:
+        resp = client.get(
+            f"/admin/api/users/{target_user_id}/sessions"
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["user_id"] == target_user_id
+    assert body["total_count"] == 2
+    assert body["returned_count"] == 2
+    titles = [s["title"] for s in body["sessions"]]
+    assert titles == ["세션A", "세션B"]
+    # Each item carries message_count + last_message_at (parity with user endpoint)
+    for item in body["sessions"]:
+        assert "session_id" in item
+        assert "message_count" in item
+        assert "last_message_at" in item
+        assert "created_at" in item
+        assert "updated_at" in item
+
+
+@pytest.mark.asyncio
+async def test_admin_user_sessions_pagination(seed_data):
+    """limit/offset paginate and has_more flag is set correctly."""
+    target_user_id = seed_data["user_id"]
+    with TestClient(app) as client:
+        resp = client.get(
+            f"/admin/api/users/{target_user_id}/sessions?limit=1&offset=0"
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["returned_count"] == 1
+    assert body["total_count"] == 2
+    assert body["has_more"] is True
+
+
+@pytest.mark.asyncio
+async def test_admin_user_sessions_unknown_user_returns_404(db_tables):
+    """Unknown user id returns 404 (not silent empty) to surface bad links."""
+    with TestClient(app) as client:
+        resp = client.get("/admin/api/users/99999/sessions")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_user_reports_returns_target_user_reports(seed_data):
+    """Admin per-user reports endpoint returns only that user's reports, newest first."""
+    target_user_id = seed_data["user_id"]
+    with TestClient(app) as client:
+        resp = client.get(
+            f"/admin/api/users/{target_user_id}/reports"
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["user_id"] == target_user_id
+    assert body["total_count"] == len(body["reports"])
+    # Sorted newest first
+    if len(body["reports"]) >= 2:
+        first = body["reports"][0]["created_at"]
+        second = body["reports"][1]["created_at"]
+        assert first >= second
+    for item in body["reports"]:
+        assert {"id", "report_filename", "lessonplan_filename", "created_at"} <= set(item)
+
+
+@pytest.mark.asyncio
+async def test_admin_user_reports_unknown_user_returns_404(db_tables):
+    with TestClient(app) as client:
+        resp = client.get("/admin/api/users/99999/reports")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_user_profile_returns_identity_and_counts(seed_data):
+    target_user_id = seed_data["user_id"]
+    with TestClient(app) as client:
+        resp = client.get(f"/admin/api/users/{target_user_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["user_id"] == target_user_id
+    assert body["email"] == "stu1@test.com"
+    assert body["username"] == "stu1"
+    assert body["is_admin"] is False
+    assert body["session_count"] == 2
+    assert "report_count" in body
+    assert "profile" in body
+    assert "summary" in body["profile"]
+
+
+@pytest.mark.asyncio
+async def test_admin_user_profile_unknown_user_returns_404(db_tables):
+    with TestClient(app) as client:
+        resp = client.get("/admin/api/users/99999")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_user_detail_page_renders(seed_data):
+    target_user_id = seed_data["user_id"]
+    with TestClient(app) as client:
+        resp = client.get(f"/admin/users/{target_user_id}")
+    assert resp.status_code == 200
+    html = resp.text
+    # Page identifies the target user and hosts both lists
+    assert f"data-user-id=\"{target_user_id}\"" in html
+    assert "id=\"adminSessionList\"" in html
+    assert "id=\"adminReportList\"" in html
+    # Calls the three Task 1-3 endpoints
+    assert f"/admin/api/users/{target_user_id}/sessions" in html
+    assert f"/admin/api/users/{target_user_id}/reports" in html
+    assert f"/admin/api/users/{target_user_id}\"" in html or f"/admin/api/users/{target_user_id}'" in html
+    # The detail page must not silently truncate large per-user histories.
+    assert "function loadMoreAdminSessions()" in html
+    assert "function loadMoreAdminReports()" in html
+    assert "data.has_more" in html
+
+
+@pytest.mark.asyncio
+async def test_admin_user_detail_page_rejects_unknown_user(db_tables):
+    with TestClient(app) as client:
+        resp = client.get("/admin/users/99999")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_users_page_has_per_user_detail_link(seed_data):
+    """The accounts table on /admin/users links to the per-user detail page."""
+    with TestClient(app) as client:
+        resp = client.get("/admin/users")
+    assert resp.status_code == 200
+    # The accounts row template builds /admin/users/${account.user_id}
+    assert "/admin/users/${account.user_id}" in resp.text
