@@ -73,15 +73,20 @@ async def seed_data(db_tables):
         db.add(user)
         await db.flush()
 
+        base_time = datetime(2026, 5, 11, 9, 0, 0)
         s1 = ChatSession(
             user_id=user.id,
             user_type="1학년",
             title="세션A",
+            created_at=base_time,
+            updated_at=base_time + timedelta(minutes=10),
         )
         s2 = ChatSession(
             user_id=user.id,
             user_type="2학년",
             title="세션B",
+            created_at=base_time + timedelta(hours=1),
+            updated_at=base_time + timedelta(hours=1, minutes=5),
         )
         db.add_all([s1, s2])
         await db.flush()
@@ -90,6 +95,7 @@ async def seed_data(db_tables):
             session_id=s1.id,
             role=MessageRole.USER,
             content="질문입니다",
+            created_at=base_time + timedelta(hours=2),
         )
         m2 = ChatMessage(
             session_id=s1.id,
@@ -97,10 +103,10 @@ async def seed_data(db_tables):
             content="답변입니다",
             model_name="gemini-2.5-flash",
             citations=[{"title": "참고"}],
+            created_at=base_time + timedelta(hours=2, minutes=1),
         )
         db.add_all([m1, m2])
 
-        now = datetime.utcnow()
         rpt = AnalysisReport(
             user_id=user.id,
             lessonplan_filename="lp.pdf",
@@ -108,7 +114,7 @@ async def seed_data(db_tables):
             report_filename="rpt.md",
             report_path="/reports/rpt.md",
             latency_ms=1200,
-            created_at=now - timedelta(minutes=5),
+            created_at=base_time - timedelta(minutes=5),
         )
         rpt2 = AnalysisReport(
             user_id=user.id,
@@ -117,7 +123,7 @@ async def seed_data(db_tables):
             report_filename="rpt_b.md",
             report_path="/reports/rpt_b.md",
             latency_ms=1500,
-            created_at=now,
+            created_at=base_time,
         )
         db.add_all([rpt, rpt2])
         await db.commit()
@@ -366,7 +372,7 @@ async def test_admin_user_sessions_returns_target_user_sessions(seed_data):
     assert body["total_count"] == 2
     assert body["returned_count"] == 2
     titles = [s["title"] for s in body["sessions"]]
-    assert titles == ["세션A", "세션B"] or titles == ["세션B", "세션A"]
+    assert titles == ["세션A", "세션B"]
     # Each item carries message_count + last_message_at (parity with user endpoint)
     for item in body["sessions"]:
         assert "session_id" in item
@@ -392,7 +398,7 @@ async def test_admin_user_sessions_pagination(seed_data):
 
 
 @pytest.mark.asyncio
-async def test_admin_user_sessions_unknown_user_returns_empty(db_tables):
+async def test_admin_user_sessions_unknown_user_returns_404(db_tables):
     """Unknown user id returns 404 (not silent empty) to surface bad links."""
     with TestClient(app) as client:
         resp = client.get("/admin/api/users/99999/sessions")
@@ -466,6 +472,10 @@ async def test_admin_user_detail_page_renders(seed_data):
     assert f"/admin/api/users/{target_user_id}/sessions" in html
     assert f"/admin/api/users/{target_user_id}/reports" in html
     assert f"/admin/api/users/{target_user_id}\"" in html or f"/admin/api/users/{target_user_id}'" in html
+    # The detail page must not silently truncate large per-user histories.
+    assert "function loadMoreAdminSessions()" in html
+    assert "function loadMoreAdminReports()" in html
+    assert "data.has_more" in html
 
 
 @pytest.mark.asyncio

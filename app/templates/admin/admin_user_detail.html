@@ -61,6 +61,12 @@
 const PROFILE_URL = "/admin/api/users/{{ target_user_id }}";
 const SESSIONS_URL = "/admin/api/users/{{ target_user_id }}/sessions";
 const REPORTS_URL = "/admin/api/users/{{ target_user_id }}/reports";
+const ADMIN_SESSION_PAGE_SIZE = 50;
+const ADMIN_REPORT_PAGE_SIZE = 100;
+let adminSessions = [];
+let adminReports = [];
+let adminSessionNextOffset = 0;
+let adminReportNextOffset = 0;
 
 function escapeHtml(value) {
     if (value === null || value === undefined) return '';
@@ -97,21 +103,15 @@ async function loadProfile() {
     document.getElementById('reportTotal').textContent = data.report_count;
 }
 
-async function loadSessions() {
+function renderSessions(totalCount, hasMore) {
     const list = document.getElementById('adminSessionList');
     const countLabel = document.getElementById('sessionCount');
-    const resp = await fetch(`${SESSIONS_URL}?limit=50&offset=0`);
-    if (!resp.ok) {
-        list.innerHTML = '<li class="py-4 text-sm text-red-500">세션을 불러올 수 없습니다.</li>';
-        return;
-    }
-    const data = await resp.json();
-    countLabel.textContent = `${data.total_count}건`;
-    if (!data.sessions.length) {
+    countLabel.textContent = `${totalCount}건`;
+    if (!adminSessions.length) {
         list.innerHTML = '<li class="py-4 text-sm text-gray-500">대화가 없습니다.</li>';
         return;
     }
-    list.innerHTML = data.sessions.map((s) => `
+    const itemsHtml = adminSessions.map((s) => `
         <li class="py-3">
             <a href="/admin/users/session/${s.session_id}" class="block hover:bg-gray-50 rounded p-2 -m-2">
                 <div class="font-medium text-blue-700">${escapeHtml(s.title || '제목 없음')}</div>
@@ -121,23 +121,45 @@ async function loadSessions() {
             </a>
         </li>
     `).join('');
+    const moreHtml = hasMore ? `
+        <li class="pt-3">
+            <button type="button"
+                onclick="loadMoreAdminSessions()"
+                class="w-full border border-gray-200 rounded p-3 text-sm text-blue-600 hover:bg-blue-50">
+                대화 더 보기
+            </button>
+        </li>
+    ` : '';
+    list.innerHTML = itemsHtml + moreHtml;
 }
 
-async function loadReports() {
-    const list = document.getElementById('adminReportList');
-    const countLabel = document.getElementById('reportCount');
-    const resp = await fetch(`${REPORTS_URL}?limit=100&offset=0`);
+async function loadSessions(offset = 0, append = false) {
+    const list = document.getElementById('adminSessionList');
+    const resp = await fetch(`${SESSIONS_URL}?limit=${ADMIN_SESSION_PAGE_SIZE}&offset=${offset}`);
     if (!resp.ok) {
-        list.innerHTML = '<li class="py-4 text-sm text-red-500">보고서를 불러올 수 없습니다.</li>';
+        list.innerHTML = '<li class="py-4 text-sm text-red-500">세션을 불러올 수 없습니다.</li>';
         return;
     }
     const data = await resp.json();
-    countLabel.textContent = `${data.total_count}건`;
-    if (!data.reports.length) {
+    const pageSessions = data.sessions || [];
+    adminSessions = append ? adminSessions.concat(pageSessions) : pageSessions;
+    adminSessionNextOffset = (data.offset ?? offset) + (data.returned_count ?? pageSessions.length);
+    renderSessions(data.total_count, Boolean(data.has_more));
+}
+
+function loadMoreAdminSessions() {
+    return loadSessions(adminSessionNextOffset, true);
+}
+
+function renderReports(totalCount, hasMore) {
+    const list = document.getElementById('adminReportList');
+    const countLabel = document.getElementById('reportCount');
+    countLabel.textContent = `${totalCount}건`;
+    if (!adminReports.length) {
         list.innerHTML = '<li class="py-4 text-sm text-gray-500">보고서가 없습니다.</li>';
         return;
     }
-    list.innerHTML = data.reports.map((r) => `
+    const itemsHtml = adminReports.map((r) => `
         <li class="py-3">
             <a href="/admin/reports/view/${r.id}" class="block hover:bg-gray-50 rounded p-2 -m-2">
                 <div class="font-medium text-blue-700">${escapeHtml(r.lessonplan_original_name || r.report_filename)}</div>
@@ -145,6 +167,34 @@ async function loadReports() {
             </a>
         </li>
     `).join('');
+    const moreHtml = hasMore ? `
+        <li class="pt-3">
+            <button type="button"
+                onclick="loadMoreAdminReports()"
+                class="w-full border border-gray-200 rounded p-3 text-sm text-blue-600 hover:bg-blue-50">
+                보고서 더 보기
+            </button>
+        </li>
+    ` : '';
+    list.innerHTML = itemsHtml + moreHtml;
+}
+
+async function loadReports(offset = 0, append = false) {
+    const list = document.getElementById('adminReportList');
+    const resp = await fetch(`${REPORTS_URL}?limit=${ADMIN_REPORT_PAGE_SIZE}&offset=${offset}`);
+    if (!resp.ok) {
+        list.innerHTML = '<li class="py-4 text-sm text-red-500">보고서를 불러올 수 없습니다.</li>';
+        return;
+    }
+    const data = await resp.json();
+    const pageReports = data.reports || [];
+    adminReports = append ? adminReports.concat(pageReports) : pageReports;
+    adminReportNextOffset = (data.offset ?? offset) + (data.returned_count ?? pageReports.length);
+    renderReports(data.total_count, Boolean(data.has_more));
+}
+
+function loadMoreAdminReports() {
+    return loadReports(adminReportNextOffset, true);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
