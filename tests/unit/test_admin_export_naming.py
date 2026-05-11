@@ -133,6 +133,8 @@ def test_slugify_email(raw, expected):
         ("back\\slash:colon*star?.md", "back_slash_colon_star_.md"),
         ("  leading_trail  ", "leading_trail"),
         ("", "untitled"),
+        ("foo\x00bar", "foo_bar"),
+        ("line\nbreak", "line_break"),
     ],
 )
 def test_slugify_original_name(raw, expected):

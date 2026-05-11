@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 
 
-_FORBIDDEN_FILENAME_CHARS = re.compile(r"[\\/:*?\"<>|]+")
+_FORBIDDEN_FILENAME_CHARS = re.compile(r"[\x00-\x1f\\/:*?\"<>|]+")
 _EMAIL_SAFE_CHARS = re.compile(r"[^a-z0-9_]+")
 _COLLAPSE_UNDERSCORES = re.compile(r"_+")
 
@@ -31,7 +31,7 @@ def slugify_email(email: str | None) -> str:
     return slug or "noemail"
 
 
-def slugify_original_name(name: str) -> str:
+def slugify_original_name(name: str | None) -> str:
     if not name:
         return "untitled"
     cleaned = _FORBIDDEN_FILENAME_CHARS.sub("_", name).strip()
