@@ -218,3 +218,37 @@ async def test_export_missing_lessonplan_marks_in_manifest(
     zf = zipfile.ZipFile(io.BytesIO(resp.content))
     manifest = zf.read("manifest.csv").decode("utf-8")
     assert "MISSING" in manifest
+
+
+@pytest.mark.asyncio
+async def test_export_include_meta_only_skips_data_dirs(
+    client_admin, db_session
+):
+    db_session.add(User(
+        id=1, username="t", nickname="t", email="t@x.com"
+    ))
+    db_session.add(UserProfile(
+        user_id=1, role="teacher",
+        teacher_region="서울", teacher_career_years=5,
+    ))
+    db_session.add(AnalysisReport(
+        user_id=1,
+        lessonplan_filename="1_lp.pdf",
+        lessonplan_original_name="lp.pdf",
+        report_filename="1_lp_reports.md",
+        report_path="/tmp/lp.md",
+    ))
+    await db_session.commit()
+
+    resp = await client_admin.get(
+        "/admin/api/exports/all.zip?include=meta"
+    )
+    assert resp.status_code == 200
+    zf = zipfile.ZipFile(io.BytesIO(resp.content))
+    names = zf.namelist()
+    assert "manifest.csv" in names
+    assert "users.csv" in names
+    assert "README.txt" in names
+    assert not any(n.startswith("reports/") for n in names)
+    assert not any(n.startswith("conversations/") for n in names)
+    assert not any(n.startswith("lessonplans/") for n in names)

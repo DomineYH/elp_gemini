@@ -266,3 +266,76 @@ async def test_readme_mentions_filters(db_session):
     assert "role=teacher" in text
     assert "region=서울" in text
     assert "manifest.csv" in text
+
+
+@pytest.mark.asyncio
+async def test_session_messages_stable_order_on_tied_timestamps(
+    db_session,
+):
+    await _seed_user(
+        db_session, user_id=1, email="a@x.com",
+        role="teacher", region="서울", tenure=5,
+    )
+    s = ChatSession(user_id=1, title="t1")
+    db_session.add(s)
+    await db_session.flush()
+    same_ts = datetime(2026, 3, 1, 10, 0, 0)
+    db_session.add_all([
+        ChatMessage(
+            session_id=s.id, role=MessageRole.USER,
+            content="질문", created_at=same_ts,
+        ),
+        ChatMessage(
+            session_id=s.id, role=MessageRole.ASSISTANT,
+            content="답변", created_at=same_ts,
+        ),
+    ])
+    await db_session.commit()
+
+    svc = AdminExportService(db_session)
+    plan = await svc.collect(ExportFilters())
+    ordered = plan.session_messages[s.id]
+    assert [m.id for m in ordered] == sorted(m.id for m in ordered)
+    assert ordered[0].role == MessageRole.USER
+    assert ordered[1].role == MessageRole.ASSISTANT
+
+
+@pytest.mark.asyncio
+async def test_manifest_csv_neutralizes_formula_filenames(db_session):
+    await _seed_user(
+        db_session, user_id=1, email="=hacker@x.com",
+        role="teacher", region="서울", tenure=5,
+    )
+    db_session.add(AnalysisReport(
+        user_id=1,
+        lessonplan_filename="1_evil.pdf",
+        lessonplan_original_name="=cmd|' /C calc'!A0",
+        report_filename="1_evil_reports.md",
+        report_path="/tmp/evil.md",
+        created_at=datetime(2026, 3, 1),
+    ))
+    await db_session.commit()
+
+    svc = AdminExportService(db_session)
+    plan = await svc.collect(ExportFilters())
+    rows = list(csv.DictReader(
+        io.StringIO(build_manifest_csv(plan).decode("utf-8"))
+    ))
+    report_row = next(r for r in rows if r["kind"] == "report")
+    assert report_row["original_name"].startswith("'=")
+    assert report_row["user_email"].startswith("'=")
+
+
+@pytest.mark.asyncio
+async def test_users_csv_neutralizes_formula_email(db_session):
+    await _seed_user(
+        db_session, user_id=1, email="+evil@x.com",
+        role="teacher", region="서울", tenure=5,
+    )
+    await db_session.commit()
+    svc = AdminExportService(db_session)
+    plan = await svc.collect(ExportFilters())
+    rows = list(csv.DictReader(
+        io.StringIO(build_users_csv(plan).decode("utf-8"))
+    ))
+    assert rows[0]["user_email"].startswith("'+")

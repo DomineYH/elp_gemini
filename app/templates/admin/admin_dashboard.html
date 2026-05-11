@@ -107,7 +107,7 @@
         if (role) params.set("role", role);
         if (region) params.set("region", region);
         const include = fd.getAll("include");
-        if (include.length) params.set("include", include.join(","));
+        params.set("include", include.length ? include.join(",") : "meta");
         window.location.href =
           "/admin/api/exports/all.zip?" + params.toString();
         modal.classList.add("hidden");

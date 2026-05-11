@@ -283,7 +283,7 @@ class AdminExportService:
                 f"{ctx.filename_prefix}__session_{s.id}.jsonl"
             )
             sorted_msgs = sorted(
-                s.messages, key=lambda m: m.created_at
+                s.messages, key=lambda m: (m.created_at, m.id)
             )
             sessions.append(
                 SessionEntry(
@@ -437,6 +437,18 @@ _USERS_COLUMNS = [
 ]
 
 
+_CSV_FORMULA_LEADERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: str | None) -> str:
+    """Neutralize CSV-injection formula starters in user-controlled strings."""
+    if not value:
+        return ""
+    if value[0] in _CSV_FORMULA_LEADERS:
+        return "'" + value
+    return value
+
+
 def build_manifest_csv(plan: ExportPlan) -> bytes:
     """sha256/byte_size는 ZIP 단계에서 채워지므로 빈 칸으로 둔다."""
     buf = io.StringIO()
@@ -451,7 +463,7 @@ def build_manifest_csv(plan: ExportPlan) -> bytes:
         w.writerow({
             "kind": e.kind,
             "user_id": e.user_id,
-            "user_email": ctx.user_email or "",
+            "user_email": _csv_safe(ctx.user_email),
             "role": ctx.role or "",
             "region": ctx.profile.region_slug,
             "tenure": ctx.profile.tenure,
@@ -461,7 +473,7 @@ def build_manifest_csv(plan: ExportPlan) -> bytes:
             "created_at": (
                 e.created_at.isoformat() if e.created_at else ""
             ),
-            "original_name": e.original_name,
+            "original_name": _csv_safe(e.original_name),
             "archive_path": e.archive_path,
             "source_status": getattr(e, "source_status", "OK"),
             "byte_size": "",
@@ -487,7 +499,7 @@ def build_users_csv(plan: ExportPlan) -> bytes:
     for u in plan.users:
         w.writerow({
             "user_id": u.user_id,
-            "user_email": u.user_email or "",
+            "user_email": _csv_safe(u.user_email),
             "role": u.role or "",
             "region": u.profile.region_slug,
             "tenure": u.profile.tenure,
