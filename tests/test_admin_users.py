@@ -114,6 +114,7 @@ async def seed_data(db_tables):
 
         yield {
             "user": user,
+            "user_id": user.id,
             "sessions": [s1, s2],
             "session1_id": s1.id,
         }
@@ -335,4 +336,51 @@ async def test_admin_report_viewer_rejects_non_positive_id(db_tables):
     """뷰어가 0/음수 id를 404로 거부"""
     with TestClient(app) as client:
         resp = client.get("/admin/reports/view/0")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_user_sessions_returns_target_user_sessions(seed_data):
+    """Admin per-user sessions endpoint returns only the target user's sessions, newest first."""
+    target_user_id = seed_data["user_id"]
+    with TestClient(app) as client:
+        resp = client.get(
+            f"/admin/api/users/{target_user_id}/sessions"
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["user_id"] == target_user_id
+    assert body["total_count"] == 2
+    assert body["returned_count"] == 2
+    titles = [s["title"] for s in body["sessions"]]
+    assert titles == ["세션A", "세션B"] or titles == ["세션B", "세션A"]
+    # Each item carries message_count + last_message_at (parity with user endpoint)
+    for item in body["sessions"]:
+        assert "session_id" in item
+        assert "message_count" in item
+        assert "last_message_at" in item
+        assert "created_at" in item
+        assert "updated_at" in item
+
+
+@pytest.mark.asyncio
+async def test_admin_user_sessions_pagination(seed_data):
+    """limit/offset paginate and has_more flag is set correctly."""
+    target_user_id = seed_data["user_id"]
+    with TestClient(app) as client:
+        resp = client.get(
+            f"/admin/api/users/{target_user_id}/sessions?limit=1&offset=0"
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["returned_count"] == 1
+    assert body["total_count"] == 2
+    assert body["has_more"] is True
+
+
+@pytest.mark.asyncio
+async def test_admin_user_sessions_unknown_user_returns_empty(db_tables):
+    """Unknown user id returns 404 (not silent empty) to surface bad links."""
+    with TestClient(app) as client:
+        resp = client.get("/admin/api/users/99999/sessions")
     assert resp.status_code == 404

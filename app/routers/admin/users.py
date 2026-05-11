@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from app.constants import USER_TYPES
 from app.db import get_db
@@ -647,6 +647,96 @@ async def get_session_detail(
             f"세션 상세 조회 실패: {e}",
             exc_info=True)
         raise
+
+
+@router.get("/admin/api/users/{user_id}/sessions")
+async def get_user_sessions_for_admin(
+    user_id: int,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자가 특정 사용자의 대화 세션 목록을 조회한다.
+
+    사용자 측 `/api/qna/sessions`와 동일한 정렬/필드 셰입을 반환하되,
+    소유권 검사 없이 관리자 권한으로 접근한다.
+    """
+    user_row = await db.execute(
+        select(User.id).where(User.id == user_id)
+    )
+    if user_row.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="사용자를 찾을 수 없습니다.",
+        )
+
+    stats_session = aliased(ChatSession)
+    message_stats = (
+        select(
+            ChatMessage.session_id,
+            func.count(ChatMessage.id).label("message_count"),
+            func.max(ChatMessage.created_at).label("last_message_at"),
+        )
+        .join(stats_session, stats_session.id == ChatMessage.session_id)
+        .where(stats_session.user_id == user_id)
+        .group_by(ChatMessage.session_id)
+        .subquery()
+    )
+
+    total_result = await db.execute(
+        select(func.count(ChatSession.id)).where(
+            ChatSession.user_id == user_id
+        )
+    )
+    total_count = int(total_result.scalar_one() or 0)
+
+    last_activity_at = func.coalesce(
+        message_stats.c.last_message_at,
+        ChatSession.updated_at,
+    )
+
+    result = await db.execute(
+        select(
+            ChatSession,
+            func.coalesce(message_stats.c.message_count, 0).label("message_count"),
+            message_stats.c.last_message_at,
+        )
+        .outerjoin(
+            message_stats,
+            ChatSession.id == message_stats.c.session_id,
+        )
+        .where(ChatSession.user_id == user_id)
+        .order_by(last_activity_at.desc(), ChatSession.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+
+    sessions = []
+    for session, message_count, last_message_at in result.all():
+        sessions.append({
+            "session_id": session.id,
+            "title": session.title,
+            "user_type": session.user_type,
+            "created_at": session.created_at.isoformat(),
+            "updated_at": session.updated_at.isoformat() if session.updated_at else None,
+            "message_count": int(message_count or 0),
+            "last_message_at": last_message_at.isoformat() if last_message_at else None,
+        })
+
+    logger.info(
+        "관리자 사용자 세션 목록: admin=%s, target=%s, total=%s",
+        current_admin.username, user_id, total_count,
+    )
+    return {
+        "user_id": user_id,
+        "sessions": sessions,
+        "total_count": total_count,
+        "returned_count": len(sessions),
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(sessions) < total_count,
+    }
 
 
 @router.get("/admin/api/reports/{report_id}")
