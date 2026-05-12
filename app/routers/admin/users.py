@@ -1244,11 +1244,13 @@ async def admin_user_detail_page(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="사용자를 찾을 수 없습니다.",
         )
+    csrf_token = ensure_admin_csrf_token(request)
     return templates.TemplateResponse(
         "admin/admin_user_detail.html",
         {
             "request": request,
             "user": current_admin,
             "target_user_id": user_id,
+            "csrf_token": csrf_token,
         },
     )
