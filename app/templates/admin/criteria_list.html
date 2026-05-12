@@ -156,6 +156,12 @@
                         text-gray-900">
                             {{ item.title }}
                         </div>
+                        {% if item.display_alias %}
+                        <div class="text-xs text-blue-600
+                            mt-1">
+                            표시명: {{ item.display_alias }}
+                        </div>
+                        {% endif %}
                         <div class="text-xs text-gray-500
                             mt-1">
                             ID: {{ item.id }}
@@ -330,6 +336,10 @@
                     <tr>
                         <th class="px-6 py-3 text-left text-xs
                             font-medium text-gray-500 uppercase">
+                            평가기준 제목
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs
+                            font-medium text-gray-500 uppercase">
                             표시 이름
                         </th>
                         <th class="px-6 py-3 text-left text-xs
@@ -342,7 +352,18 @@
                     {% for doc in cloud_documents %}
                     <tr class="hover:bg-gray-50">
                         <td class="px-6 py-4 text-sm text-gray-900">
-                            {{ doc.display_name }}
+                            {{ doc.title or '(매칭 없음)' }}
+                        </td>
+                        <td class="px-6 py-4 text-sm">
+                            {% if doc.criteria_id %}
+                            <span class="alias-cell cursor-pointer hover:bg-blue-50 px-2 py-1 rounded"
+                                  data-criteria-id="{{ doc.criteria_id }}"
+                                  data-original="{{ doc.alias or '' }}">
+                                {{ doc.alias or '(미설정)' }}
+                            </span>
+                            {% else %}
+                            <span class="text-gray-400">-</span>
+                            {% endif %}
                         </td>
                         <td class="px-6 py-4 text-xs text-gray-500 font-mono">
                             {{ doc.document_id }}
