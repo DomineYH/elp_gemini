@@ -92,7 +92,7 @@
                 <option value="2학년">2학년</option>
                 <option value="3학년">3학년</option>
                 <option value="4학년">4학년</option>
-                <option value="현직교사">현직교사</option>
+                <option value="교사">교사</option>
             </select>
             <button onclick="loadSessions(1)" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
                 필터 적용
@@ -183,14 +183,13 @@ const pageSize = 20;
 
 function getBadgeClass(userType) {
     const classes = {
-        '1학년': 'bg-blue-100 text-blue-800',
-        '2학년': 'bg-green-100 text-green-800',
-        '3학년': 'bg-yellow-100 text-yellow-800',
-        '4학년': 'bg-purple-100 text-purple-800',
-        '현직교사': 'bg-red-100 text-red-800',
-        'teacher': 'bg-emerald-100 text-emerald-800',
+        '1학년': 'bg-indigo-50 text-indigo-700',
+        '2학년': 'bg-indigo-100 text-indigo-800',
+        '3학년': 'bg-indigo-200 text-indigo-900',
+        '4학년': 'bg-indigo-300 text-indigo-900',
+        'teacher': 'bg-red-100 text-red-800',
         'preservice_teacher': 'bg-indigo-100 text-indigo-800',
-        '교사': 'bg-emerald-100 text-emerald-800',
+        '교사': 'bg-red-100 text-red-800',
         '예비교사': 'bg-indigo-100 text-indigo-800',
     };
     return classes[userType] || 'bg-gray-100 text-gray-800';
