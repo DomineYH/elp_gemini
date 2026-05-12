@@ -26,6 +26,7 @@ from app.migrations import (
     ensure_criteria_display_alias_column,
     ensure_user_profiles_table,
     ensure_users_lockout_columns,
+    rename_chat_session_in_service_teacher_label,
 )
 from app.rate_limit import limiter
 from app.utils.logging import setup_logging
@@ -208,6 +209,13 @@ async def startup_event():
     if profiles_patched:
         logger.info(
             "user_profiles 테이블이 자동 생성되었습니다."
+        )
+
+    renamed = await rename_chat_session_in_service_teacher_label(engine)
+    if renamed:
+        logger.info(
+            "chat_sessions.user_type '현직교사' → '교사' 갱신: %d 행",
+            renamed,
         )
 
     # 데이터베이스 초기화 (개발 모드에서만)
