@@ -474,7 +474,7 @@ class QnAService:
         Args:
             user_id: 사용자 ID
             title: 세션 제목 (선택)
-            user_type: 사용자 유형 (1학년, 2학년, 3학년, 4학년, 현직교사)
+            user_type: 사용자 유형 (1학년, 2학년, 3학년, 4학년, 교사)
 
         Returns:
             생성된 ChatSession
