@@ -3,7 +3,7 @@
 Vector DB 기반 평가기준 관리
 """
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 
 class UploadCriteriaResponse(BaseModel):
@@ -50,3 +50,30 @@ class DeleteSingleCriteriaResponse(BaseModel):
     criteria_id: int = Field(
         ..., description="삭제된 평가기준 ID"
     )
+
+
+class UpdateDisplayAliasRequest(BaseModel):
+    """평가기준 표시명(alias) 업데이트 요청"""
+
+    display_alias: Optional[str] = None
+
+    @validator("display_alias")
+    def validate_alias(cls, v):
+        if v is None:
+            return None
+        v = v.strip()
+        if v == "":
+            return None
+        if not v.isascii():
+            raise ValueError("ASCII 문자만 허용됩니다.")
+        if len(v) > 255:
+            raise ValueError("표시명은 255자 이내로 입력하세요.")
+        return v
+
+
+class UpdateDisplayAliasResponse(BaseModel):
+    """평가기준 표시명 업데이트 응답"""
+
+    success: bool
+    criteria_id: int
+    display_alias: Optional[str]
