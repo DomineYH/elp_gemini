@@ -117,7 +117,7 @@ class AdminExportService:
         sessions, messages = await self._collect_sessions(
             user_ids, ctx_by_id, filters
         )
-        lessonplans = self._collect_lessonplans(users, filters)
+        lessonplans = await self._collect_lessonplans(users, filters)
 
         return ExportPlan(
             users=users,
@@ -271,10 +271,10 @@ class AdminExportService:
             )
         return reports
 
-    def _collect_lessonplans(
+    async def _collect_lessonplans(
         self, users, filters
     ) -> list[LessonplanEntry]:
-        """원본 지도안 파일을 분석 보고서와 무관하게 파일시스템에서 직접 열거.
+        """원본 지도안 파일을 파일시스템에서 열거하고 보고서 참조도 보강.
 
         스토리지 컨벤션: data/lessonplan/{username}_{원본명}
         """
@@ -283,10 +283,10 @@ class AdminExportService:
         from pathlib import Path
 
         base = Path(self._lessonplan_base_dir)
-        if not base.exists():
-            return []
-
         entries: list[LessonplanEntry] = []
+        seen: set[tuple[int, str]] = set()
+        ctx_by_id = {ctx.user_id: ctx for ctx in users}
+        user_ids = [ctx.user_id for ctx in users]
         lower_bound = (
             datetime.combine(
                 filters.date_from, datetime.min.time()
@@ -303,41 +303,92 @@ class AdminExportService:
             else None
         )
 
-        for ctx in users:
-            if not ctx.username:
-                continue
-            prefix = f"{ctx.username}_"
-            files = sorted(base.glob(f"{prefix}*"))
-            for ordinal, fpath in enumerate(files, start=1):
-                if not fpath.is_file():
+        if base.exists():
+            for ctx in users:
+                if not ctx.username:
                     continue
-                try:
-                    stat = fpath.stat()
-                except OSError:
-                    continue
-                mtime = datetime.fromtimestamp(stat.st_mtime)
-                if lower_bound and mtime < lower_bound:
-                    continue
-                if upper_bound and mtime >= upper_bound:
-                    continue
-                original = fpath.name[len(prefix):]
-                archive_name = (
-                    f"{ctx.filename_prefix}__lessonplan_{ordinal}__"
-                    f"{slugify_original_name(original)}"
-                )
-                entries.append(
-                    LessonplanEntry(
-                        kind="lessonplan",
-                        user_id=ctx.user_id,
-                        resource_id=ordinal,
-                        session_id=None,
-                        created_at=mtime,
-                        original_name=original,
-                        archive_path=f"lessonplans/{archive_name}",
-                        source_path=str(fpath),
-                        source_status="OK",
+                prefix = f"{ctx.username}_"
+                files = sorted(base.glob(f"{prefix}*"))
+                for ordinal, fpath in enumerate(files, start=1):
+                    if not fpath.is_file():
+                        continue
+                    try:
+                        stat = fpath.stat()
+                    except OSError:
+                        continue
+                    mtime = datetime.fromtimestamp(stat.st_mtime)
+                    if lower_bound and mtime < lower_bound:
+                        continue
+                    if upper_bound and mtime >= upper_bound:
+                        continue
+                    original = fpath.name[len(prefix):]
+                    archive_name = (
+                        f"{ctx.filename_prefix}__lessonplan_{ordinal}__"
+                        f"{slugify_original_name(original)}"
                     )
+                    seen.add((ctx.user_id, fpath.name))
+                    entries.append(
+                        LessonplanEntry(
+                            kind="lessonplan",
+                            user_id=ctx.user_id,
+                            resource_id=ordinal,
+                            session_id=None,
+                            created_at=mtime,
+                            original_name=original,
+                            archive_path=f"lessonplans/{archive_name}",
+                            source_path=str(fpath),
+                            source_status="OK",
+                        )
+                    )
+
+        stmt = (
+            select(AnalysisReport)
+            .where(AnalysisReport.user_id.in_(user_ids))
+            .order_by(AnalysisReport.created_at.asc())
+        )
+        if filters.date_from:
+            stmt = stmt.where(
+                AnalysisReport.created_at
+                >= datetime.combine(
+                    filters.date_from, datetime.min.time()
                 )
+            )
+        if filters.date_to:
+            stmt = stmt.where(
+                AnalysisReport.created_at
+                < datetime.combine(
+                    filters.date_to, datetime.min.time()
+                ) + timedelta(days=1)
+            )
+        rows = (await self.db.execute(stmt)).scalars().all()
+
+        for r in rows:
+            key = (r.user_id, r.lessonplan_filename)
+            if key in seen:
+                continue
+            ctx = ctx_by_id[r.user_id]
+            original = r.lessonplan_original_name or r.lessonplan_filename
+            source_path = base / r.lessonplan_filename
+            archive_name = (
+                f"{ctx.filename_prefix}__lessonplan_{r.id}__"
+                f"{slugify_original_name(original)}"
+            )
+            entries.append(
+                LessonplanEntry(
+                    kind="lessonplan",
+                    user_id=r.user_id,
+                    resource_id=r.id,
+                    session_id=None,
+                    created_at=r.created_at,
+                    original_name=original,
+                    archive_path=f"lessonplans/{archive_name}",
+                    source_path=str(source_path),
+                    source_status=(
+                        "OK" if source_path.is_file() else "MISSING"
+                    ),
+                )
+            )
+            seen.add(key)
         return entries
 
     async def _collect_sessions(

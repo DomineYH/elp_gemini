@@ -1,5 +1,6 @@
 # tests/test_admin_export_service.py
 import csv
+import inspect
 import io
 from datetime import datetime, timedelta
 
@@ -20,10 +21,13 @@ from app.models.users import User
 from app.schemas.admin_export import ExportFilters
 from app.services.admin_export_service import (
     AdminExportService,
+    ExportPlan,
+    UserContext,
     build_manifest_csv,
     build_readme,
     build_users_csv,
 )
+from app.utils.admin_export_naming import NormalizedProfile
 
 
 @pytest.fixture
@@ -455,6 +459,62 @@ async def test_collect_lessonplans_includes_orphan_uploads(
     plan = await svc.collect(ExportFilters())
     originals = {l.original_name for l in plan.lessonplans}
     assert originals == {"orphan_지도안.pdf", "another.pdf"}
+
+
+@pytest.mark.asyncio
+async def test_collect_lessonplans_marks_deleted_report_source_missing(
+    tmp_path
+):
+    class Result:
+        def scalars(self):
+            return self
+
+        def all(self):
+            return [report]
+
+    class Db:
+        async def execute(self, stmt):
+            return Result()
+
+    user = UserContext(
+        user_id=1,
+        user_email="a@x.com",
+        role="teacher",
+        profile=NormalizedProfile(
+            role_code="T",
+            region_slug="서울",
+            tenure="5",
+            tenure_kind="years",
+            email_slug="a_at_x_com",
+        ),
+        filename_prefix="T-서울-5y__u00001__a_at_x_com",
+        username="u1",
+    )
+    report = AnalysisReport(
+        id=10,
+        user_id=1,
+        lessonplan_filename="u1_deleted.pdf",
+        lessonplan_original_name="deleted.pdf",
+        report_filename="u1_deleted_reports.md",
+        report_path="/tmp/deleted_report.md",
+        created_at=datetime(2026, 3, 1),
+    )
+
+    svc = AdminExportService(
+        Db(), lessonplan_base_dir=str(tmp_path / "missing")
+    )
+    result = svc._collect_lessonplans([user], ExportFilters())
+    lessonplans = await result if inspect.isawaitable(result) else result
+    plan = ExportPlan(users=[user], lessonplans=lessonplans)
+    rows = list(csv.DictReader(
+        io.StringIO(build_manifest_csv(plan).decode("utf-8"))
+    ))
+    lessonplan_row = next(
+        r for r in rows
+        if r["kind"] == "lessonplan"
+        and r["original_name"] == "deleted.pdf"
+    )
+    assert lessonplan_row["source_status"] == "MISSING"
 
 
 @pytest.mark.asyncio
