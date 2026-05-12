@@ -292,6 +292,8 @@ async def test_bulk_delete_reports_happy(seeded, tmp_path):
 
     assert result["ok"] is True
     assert result["deleted"] == 2
-    assert result["files_removed"] >= 2
+    # seeded.report.md + seeded.lessonplan.pdf + r2.md = 3
+    # (r2.lessonplan_filename은 빈 문자열이라 미삭제)
+    assert result["files_removed"] == 3
     assert not seeded["report_file"].exists()
     assert not f2.exists()

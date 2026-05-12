@@ -105,10 +105,15 @@ class AdminDeletionService:
         if report is None:
             raise LookupError("분석 보고서를 찾을 수 없습니다.")
 
-        files_removed = self._remove_report_files([report])
+        # delete_user와 동일 순서: DB commit 먼저, 그 다음 파일 제거.
+        # 파일 제거가 실패해도 고아 DB 행이 남지 않도록 한다
+        # (expire_on_commit=False라 in-memory 속성은 commit 후에도 유효).
+        reports_snapshot = [report]
 
         await self.db.delete(report)
         await self.db.commit()
+
+        files_removed = self._remove_report_files(reports_snapshot)
 
         log_user_action(
             user_id=current_admin_id,
@@ -134,6 +139,9 @@ class AdminDeletionService:
     ) -> dict[str, Any]:
         if not session_ids:
             return {"ok": True, "deleted": 0, "files_removed": 0}
+
+        # dedup, preserve insertion order (audit log 가독성 유지)
+        session_ids = list(dict.fromkeys(session_ids))
 
         rows = await self.db.execute(
             select(ChatSession).where(ChatSession.id.in_(session_ids))
@@ -175,6 +183,9 @@ class AdminDeletionService:
         if not report_ids:
             return {"ok": True, "deleted": 0, "files_removed": 0}
 
+        # dedup, preserve insertion order (audit log 가독성 유지)
+        report_ids = list(dict.fromkeys(report_ids))
+
         rows = await self.db.execute(
             select(AnalysisReport).where(
                 AnalysisReport.id.in_(report_ids)
@@ -188,10 +199,15 @@ class AdminDeletionService:
                 "요청한 보고서 중 일부가 해당 사용자 소유가 아니거나 존재하지 않습니다."
             )
 
-        files_removed = self._remove_report_files(reports)
+        # delete_user와 동일 순서: DB commit 먼저, 그 다음 파일 제거.
+        # expire_on_commit=False라 in-memory 속성은 commit 후에도 유효하다.
+        reports_snapshot = list(reports)
+
         for report in reports:
             await self.db.delete(report)
         await self.db.commit()
+
+        files_removed = self._remove_report_files(reports_snapshot)
 
         log_user_action(
             user_id=current_admin_id,
