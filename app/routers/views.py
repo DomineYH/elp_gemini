@@ -61,12 +61,6 @@ async def user_dashboard(
         {
             "request": request,
             "user": current_user,
-            "document": {
-                "title": "",
-                "file_size": 0,
-                "status": "",
-                "file_url": "",
-            },
             "criteria_documents": criteria_documents,
         }
     )
