@@ -2,6 +2,10 @@
 
 {% block title %}QnA 로그 - 관리자{% endblock %}
 
+{% block head %}
+<meta name="csrf-token" content="{{ csrf_token }}">
+{% endblock %}
+
 {% block nav_links %}
 {% if user.is_admin %}
 <a href="/admin/dashboard" class="text-gray-600 hover:text-blue-600">대시보드</a>
@@ -93,6 +97,9 @@ async function loadLogs(page = 1) {
                     </div>
                     <div class="flex items-center gap-3">
                         <span class="text-xs text-gray-500">${formatDate(session.created_at)}</span>
+                        <button type="button"
+                            onclick="event.stopPropagation(); deleteQnaSession(${session.session_id})"
+                            class="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700">삭제</button>
                         <svg id="chevron-${index}" class="w-5 h-5 text-gray-400 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                         </svg>
@@ -179,6 +186,31 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+
+async function deleteQnaSession(sessionId) {
+    if (!window.confirm('이 대화 세션을 삭제하시겠습니까? 메시지가 모두 함께 삭제됩니다.')) {
+        return;
+    }
+    try {
+        const resp = await fetch(`/admin/api/chat-sessions/${sessionId}`, {
+            method: 'DELETE',
+            headers: { 'X-CSRF-Token': getCsrfToken() },
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            alert(data.detail || '삭제에 실패했습니다.');
+            return;
+        }
+        loadLogs(currentPage);
+    } catch (error) {
+        console.error('QnA 세션 삭제 실패:', error);
+        alert('삭제 중 오류가 발생했습니다.');
+    }
 }
 
 function updatePagination(total) {
