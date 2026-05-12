@@ -1042,6 +1042,62 @@ async def delete_user(
     return result
 
 
+@router.delete("/admin/api/chat-sessions/{session_id}")
+async def delete_chat_session(
+    session_id: int,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자 전용 단일 대화 세션 삭제 (messages cascade)."""
+    require_admin_csrf_token(request)
+    service = AdminDeletionService(db)
+    try:
+        result = await service.delete_chat_session(
+            session_id=session_id,
+            current_admin_id=current_admin.id,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    logger.info(
+        "관리자 대화 세션 삭제: admin_id=%s, session_id=%s",
+        current_admin.id,
+        session_id,
+    )
+    return result
+
+
+@router.delete("/admin/api/reports/{report_id}")
+async def delete_analysis_report(
+    report_id: int,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자 전용 단일 분석 보고서 삭제 (.md/.pdf 파일 포함)."""
+    require_admin_csrf_token(request)
+    service = AdminDeletionService(db)
+    try:
+        result = await service.delete_analysis_report(
+            report_id=report_id,
+            current_admin_id=current_admin.id,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    logger.info(
+        "관리자 분석 보고서 삭제: admin_id=%s, report_id=%s",
+        current_admin.id,
+        report_id,
+    )
+    return result
+
+
 @router.get(
     "/admin/users", response_class=HTMLResponse)
 async def users_page(

@@ -172,3 +172,59 @@ async def test_delete_user_not_found(seeded):
             headers={ADMIN_CSRF_HEADER: token},
         )
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_chat_session_happy(seeded):
+    with TestClient(app) as client:
+        token = _get_token(client)
+        resp = client.delete(
+            f"/admin/api/chat-sessions/{seeded['session_id']}",
+            headers={ADMIN_CSRF_HEADER: token},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 1
+
+
+@pytest.mark.asyncio
+async def test_delete_chat_session_not_found(seeded):
+    with TestClient(app) as client:
+        token = _get_token(client)
+        resp = client.delete(
+            "/admin/api/chat-sessions/99999",
+            headers={ADMIN_CSRF_HEADER: token},
+        )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_chat_session_csrf_required(seeded):
+    with TestClient(app) as client:
+        resp = client.delete(
+            f"/admin/api/chat-sessions/{seeded['session_id']}"
+        )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delete_report_happy_removes_file(seeded):
+    with TestClient(app) as client:
+        token = _get_token(client)
+        resp = client.delete(
+            f"/admin/api/reports/{seeded['report_id']}",
+            headers={ADMIN_CSRF_HEADER: token},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 1
+    assert not seeded["report_file"].exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_report_not_found(seeded):
+    with TestClient(app) as client:
+        token = _get_token(client)
+        resp = client.delete(
+            "/admin/api/reports/99999",
+            headers={ADMIN_CSRF_HEADER: token},
+        )
+    assert resp.status_code == 404
