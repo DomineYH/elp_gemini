@@ -85,7 +85,7 @@ class Criteria(Base):
         String(255),
         nullable=True,
         comment=(
-            "관리자 편집용 표시명. ASCII printable 또는 한글 허용 "
+            "관리자 편집용 표시명. ASCII printable 또는 한글 문자만 허용 "
             "(NULL이면 title을 fallback)"
         ),
     )
