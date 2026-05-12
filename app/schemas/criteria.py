@@ -3,7 +3,7 @@
 Vector DB 기반 평가기준 관리
 """
 from typing import Optional, List
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class UploadCriteriaResponse(BaseModel):
@@ -60,7 +60,7 @@ class UpdateDisplayAliasRequest(BaseModel):
         description="ASCII-only 표시명. None/빈 문자열이면 alias 제거"
     )
 
-    @validator("display_alias")
+    @field_validator("display_alias")
     def validate_alias(cls, v):
         if v is None:
             return None
