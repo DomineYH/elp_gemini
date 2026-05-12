@@ -92,3 +92,15 @@ async def test_no_rows_to_rename(tmp_path):
     assert await _count_user_type(engine, "교사") == 1
 
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_skips_when_table_missing(tmp_path):
+    db_path = tmp_path / "empty.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+
+    updated = await rename_chat_session_in_service_teacher_label(engine)
+
+    assert updated == 0
+
+    await engine.dispose()

@@ -5,10 +5,17 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 logger = logging.getLogger(__name__)
+
+
+def _chat_sessions_table_exists(sync_conn) -> bool:
+    """
+    chat_sessions 테이블 존재 여부를 확인.
+    """
+    return inspect(sync_conn).has_table("chat_sessions")
 
 
 async def rename_chat_session_in_service_teacher_label(
@@ -21,6 +28,13 @@ async def rename_chat_session_in_service_teacher_label(
         갱신된 행 수. 멱등이므로 두 번째 호출부터는 0.
     """
     async with engine.begin() as conn:
+        table_exists = await conn.run_sync(_chat_sessions_table_exists)
+        if not table_exists:
+            logger.warning(
+                "chat_sessions 테이블이 없어 user_type 라벨 정규화를 건너뜀"
+            )
+            return 0
+
         result = await conn.execute(
             text(
                 "UPDATE chat_sessions "
