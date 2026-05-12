@@ -85,11 +85,15 @@ async def test_get_criteria_map_by_document_ids(db_session):
     )
     assert mapping["doc-aaa"].id == c1.id
     assert mapping["doc-aaa"].title == "a.pdf"
+    assert mapping["doc-aaa"].display_alias is None  # 기본값
     assert mapping["doc-bbb"].id == c2.id
     assert "doc-missing" not in mapping
 
 
 @pytest.mark.asyncio
-async def test_get_criteria_map_empty_input(db_session):
+async def test_get_criteria_map_skips_unknown_ids(db_session):
     repo = CriteriaRepository(db_session)
-    assert await repo.get_criteria_map_by_document_ids([]) == {}
+    mapping = await repo.get_criteria_map_by_document_ids(
+        ["doc-unknown"]
+    )
+    assert mapping == {}
