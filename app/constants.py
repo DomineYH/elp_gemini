@@ -5,7 +5,7 @@ SESSION_USER_TYPE_LABELS = [
     "2학년",
     "3학년",
     "4학년",
-    "현직교사",
+    "교사",
 ]
 
 # Backward-compatible alias for existing admin analytics code.

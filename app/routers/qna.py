@@ -90,7 +90,7 @@ async def _session_segment_label_for_user(
     if profile:
         profile_role = _model_optional_str(profile.role)
         if profile_role == "teacher":
-            return "현직교사"
+            return "교사"
         if profile_role == "preservice_teacher":
             preservice_grade = cast(Optional[int], profile.preservice_grade)
             if preservice_grade:
@@ -99,7 +99,7 @@ async def _session_segment_label_for_user(
 
     nickname = _model_optional_str(current_user.nickname) or ""
     if nickname == "teacher":
-        return "현직교사"
+        return "교사"
     if nickname == "preservice_teacher":
         return "미지정"
     return nickname or "미지정"
