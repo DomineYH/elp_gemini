@@ -32,6 +32,7 @@ from app.models.chat_messages import (
 from app.models.chat_sessions import ChatSession
 from app.models.user_profiles import UserProfile
 from app.models.users import User
+from app.services.admin_deletion_service import AdminDeletionService
 from app.services.auth_service import AuthService
 from app.utils.admin_csrf import (
     ensure_admin_csrf_token,
@@ -991,6 +992,54 @@ async def change_regular_user_password(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="비밀번호 변경 중 오류가 발생했습니다.",
         )
+
+
+@router.delete("/admin/api/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자 전용 사용자 삭제 API.
+
+    cascade: chat_sessions / chat_messages / analysis_reports / user_profiles.
+    파일: 각 AnalysisReport의 report_path(.md) + lessonplan_filename(.pdf).
+    """
+    require_admin_csrf_token(request)
+
+    service = AdminDeletionService(db)
+    try:
+        result = await service.delete_user(
+            target_user_id=user_id,
+            current_admin_id=current_admin.id,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except PermissionError as exc:
+        log_user_action(
+            user_id=current_admin.id,
+            action="admin_user_delete",
+            details={
+                "target_user_id": user_id,
+                "reason": str(exc),
+            },
+            success=False,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+    logger.info(
+        "관리자 사용자 삭제: admin_id=%s, target_user_id=%s",
+        current_admin.id,
+        user_id,
+    )
+    return result
 
 
 @router.get(
