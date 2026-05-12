@@ -45,3 +45,16 @@ def test_rejects_over_255_chars():
     with pytest.raises(ValidationError) as exc_info:
         UpdateDisplayAliasRequest(display_alias="a" * 256)
     assert "255" in str(exc_info.value)
+
+
+def test_accepts_exactly_255_chars():
+    s = "a" * 255
+    req = UpdateDisplayAliasRequest(display_alias=s)
+    assert req.display_alias == s
+
+
+def test_rejects_control_characters():
+    with pytest.raises(ValidationError):
+        UpdateDisplayAliasRequest(display_alias="a\x00b")
+    with pytest.raises(ValidationError):
+        UpdateDisplayAliasRequest(display_alias="line1\nline2")

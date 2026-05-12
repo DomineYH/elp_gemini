@@ -55,7 +55,10 @@ class DeleteSingleCriteriaResponse(BaseModel):
 class UpdateDisplayAliasRequest(BaseModel):
     """평가기준 표시명(alias) 업데이트 요청"""
 
-    display_alias: Optional[str] = None
+    display_alias: Optional[str] = Field(
+        default=None,
+        description="ASCII-only 표시명. None/빈 문자열이면 alias 제거"
+    )
 
     @validator("display_alias")
     def validate_alias(cls, v):
@@ -64,8 +67,8 @@ class UpdateDisplayAliasRequest(BaseModel):
         v = v.strip()
         if v == "":
             return None
-        if not v.isascii():
-            raise ValueError("ASCII 문자만 허용됩니다.")
+        if not all(0x20 <= ord(c) < 0x7F for c in v):
+            raise ValueError("표시 가능한 ASCII 문자만 허용됩니다.")
         if len(v) > 255:
             raise ValueError("표시명은 255자 이내로 입력하세요.")
         return v
@@ -74,6 +77,6 @@ class UpdateDisplayAliasRequest(BaseModel):
 class UpdateDisplayAliasResponse(BaseModel):
     """평가기준 표시명 업데이트 응답"""
 
-    success: bool
-    criteria_id: int
-    display_alias: Optional[str]
+    success: bool = Field(description="성공 여부")
+    criteria_id: int = Field(description="평가기준 ID")
+    display_alias: Optional[str] = Field(description="업데이트 후 alias (None 가능)")
