@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analysis_reports import AnalysisReport
+from app.models.chat_sessions import ChatSession
 from app.models.users import User
 from app.services.admin_export_service import LESSONPLAN_BASE_DIR
 from app.utils.logging import log_user_action
@@ -66,6 +67,147 @@ class AdminDeletionService:
             success=True,
         )
         return {"ok": True, "deleted": 1, "files_removed": files_removed}
+
+    # ----- 대화 세션 -----
+    async def delete_chat_session(
+        self,
+        session_id: int,
+        current_admin_id: int,
+    ) -> dict[str, Any]:
+        result = await self.db.execute(
+            select(ChatSession).where(ChatSession.id == session_id)
+        )
+        session = result.scalar_one_or_none()
+        if session is None:
+            raise LookupError("대화 세션을 찾을 수 없습니다.")
+
+        await self.db.delete(session)  # cascade: messages
+        await self.db.commit()
+
+        log_user_action(
+            user_id=current_admin_id,
+            action="admin_chat_session_delete",
+            details={"session_id": session_id},
+            success=True,
+        )
+        return {"ok": True, "deleted": 1, "files_removed": 0}
+
+    # ----- 분석 보고서 -----
+    async def delete_analysis_report(
+        self,
+        report_id: int,
+        current_admin_id: int,
+    ) -> dict[str, Any]:
+        result = await self.db.execute(
+            select(AnalysisReport).where(AnalysisReport.id == report_id)
+        )
+        report = result.scalar_one_or_none()
+        if report is None:
+            raise LookupError("분석 보고서를 찾을 수 없습니다.")
+
+        files_removed = self._remove_report_files([report])
+
+        await self.db.delete(report)
+        await self.db.commit()
+
+        log_user_action(
+            user_id=current_admin_id,
+            action="admin_analysis_report_delete",
+            details={
+                "report_id": report_id,
+                "files_removed": files_removed,
+            },
+            success=True,
+        )
+        return {
+            "ok": True,
+            "deleted": 1,
+            "files_removed": files_removed,
+        }
+
+    # ----- bulk -----
+    async def bulk_delete_sessions(
+        self,
+        user_id: int,
+        session_ids: list[int],
+        current_admin_id: int,
+    ) -> dict[str, Any]:
+        if not session_ids:
+            return {"ok": True, "deleted": 0, "files_removed": 0}
+
+        rows = await self.db.execute(
+            select(ChatSession).where(ChatSession.id.in_(session_ids))
+        )
+        sessions = list(rows.scalars().all())
+
+        # 모든 세션이 user_id에 속해야 한다
+        bad = [s.id for s in sessions if s.user_id != user_id]
+        if len(sessions) != len(session_ids) or bad:
+            raise ValueError(
+                "요청한 세션 중 일부가 해당 사용자 소유가 아니거나 존재하지 않습니다."
+            )
+
+        for session in sessions:
+            await self.db.delete(session)
+        await self.db.commit()
+
+        log_user_action(
+            user_id=current_admin_id,
+            action="admin_chat_session_bulk_delete",
+            details={
+                "target_user_id": user_id,
+                "session_ids": session_ids,
+            },
+            success=True,
+        )
+        return {
+            "ok": True,
+            "deleted": len(sessions),
+            "files_removed": 0,
+        }
+
+    async def bulk_delete_reports(
+        self,
+        user_id: int,
+        report_ids: list[int],
+        current_admin_id: int,
+    ) -> dict[str, Any]:
+        if not report_ids:
+            return {"ok": True, "deleted": 0, "files_removed": 0}
+
+        rows = await self.db.execute(
+            select(AnalysisReport).where(
+                AnalysisReport.id.in_(report_ids)
+            )
+        )
+        reports = list(rows.scalars().all())
+
+        bad = [r.id for r in reports if r.user_id != user_id]
+        if len(reports) != len(report_ids) or bad:
+            raise ValueError(
+                "요청한 보고서 중 일부가 해당 사용자 소유가 아니거나 존재하지 않습니다."
+            )
+
+        files_removed = self._remove_report_files(reports)
+        for report in reports:
+            await self.db.delete(report)
+        await self.db.commit()
+
+        log_user_action(
+            user_id=current_admin_id,
+            action="admin_analysis_report_bulk_delete",
+            details={
+                "target_user_id": user_id,
+                "report_ids": report_ids,
+                "files_removed": files_removed,
+            },
+            success=True,
+        )
+        return {
+            "ok": True,
+            "deleted": len(reports),
+            "files_removed": files_removed,
+        }
 
     # ----- 파일 정리 헬퍼 -----
     def _resolve_lessonplan_path(

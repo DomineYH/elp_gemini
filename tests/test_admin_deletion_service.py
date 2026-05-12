@@ -161,3 +161,137 @@ async def test_delete_user_not_found(seeded):
                 target_user_id=99999,
                 current_admin_id=seeded["admin_id"],
             )
+
+
+@pytest.mark.asyncio
+async def test_delete_chat_session_cascades_messages(seeded):
+    async with TestingSessionLocal() as db:
+        service = AdminDeletionService(db)
+        result = await service.delete_chat_session(
+            session_id=seeded["session_id"],
+            current_admin_id=seeded["admin_id"],
+        )
+
+    assert result["ok"] is True
+    assert result["deleted"] == 1
+
+    async with TestingSessionLocal() as db:
+        from sqlalchemy import select
+        from app.models.chat_messages import ChatMessage
+        msg_rows = await db.execute(select(ChatMessage))
+        assert msg_rows.scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_delete_chat_session_not_found(seeded):
+    async with TestingSessionLocal() as db:
+        service = AdminDeletionService(db)
+        with pytest.raises(LookupError):
+            await service.delete_chat_session(
+                session_id=99999,
+                current_admin_id=seeded["admin_id"],
+            )
+
+
+@pytest.mark.asyncio
+async def test_delete_analysis_report_removes_files(seeded):
+    async with TestingSessionLocal() as db:
+        service = AdminDeletionService(db)
+        result = await service.delete_analysis_report(
+            report_id=seeded["report_id"],
+            current_admin_id=seeded["admin_id"],
+        )
+
+    assert result["ok"] is True
+    assert result["deleted"] == 1
+    assert result["files_removed"] == 2
+    assert not seeded["report_file"].exists()
+    assert not seeded["lessonplan_file"].exists()
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_sessions_requires_ownership(seeded):
+    """타 사용자 세션이 섞이면 0건 삭제 + ValueError."""
+    async with TestingSessionLocal() as db:
+        # 두 번째 사용자 + 세션 생성
+        from app.models.users import User
+        from app.models.chat_sessions import ChatSession
+        other = User(
+            username="stu2",
+            nickname="S2",
+            email="s2@test.com",
+            hashed_password="h",
+            is_admin=False,
+        )
+        db.add(other)
+        await db.flush()
+        other_session = ChatSession(
+            user_id=other.id, user_type="1학년", title="B"
+        )
+        db.add(other_session)
+        await db.commit()
+        await db.refresh(other_session)
+
+        service = AdminDeletionService(db)
+        with pytest.raises(ValueError):
+            await service.bulk_delete_sessions(
+                user_id=seeded["user_id"],
+                session_ids=[seeded["session_id"], other_session.id],
+                current_admin_id=seeded["admin_id"],
+            )
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_sessions_happy(seeded):
+    async with TestingSessionLocal() as db:
+        # 두 번째 세션 추가
+        from app.models.chat_sessions import ChatSession
+        s2 = ChatSession(
+            user_id=seeded["user_id"], user_type="2학년", title="B"
+        )
+        db.add(s2)
+        await db.commit()
+        await db.refresh(s2)
+        ids = [seeded["session_id"], s2.id]
+
+        service = AdminDeletionService(db)
+        result = await service.bulk_delete_sessions(
+            user_id=seeded["user_id"],
+            session_ids=ids,
+            current_admin_id=seeded["admin_id"],
+        )
+
+    assert result["ok"] is True
+    assert result["deleted"] == 2
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_reports_happy(seeded, tmp_path):
+    async with TestingSessionLocal() as db:
+        from app.models.analysis_reports import AnalysisReport
+        f2 = tmp_path / "report2.md"
+        f2.write_text("# r2", encoding="utf-8")
+        r2 = AnalysisReport(
+            user_id=seeded["user_id"],
+            lessonplan_filename="",  # 빈 값 — 파일 미삭제
+            lessonplan_original_name="b.pdf",
+            report_filename=f2.name,
+            report_path=str(f2),
+            latency_ms=100,
+        )
+        db.add(r2)
+        await db.commit()
+        await db.refresh(r2)
+
+        service = AdminDeletionService(db)
+        result = await service.bulk_delete_reports(
+            user_id=seeded["user_id"],
+            report_ids=[seeded["report_id"], r2.id],
+            current_admin_id=seeded["admin_id"],
+        )
+
+    assert result["ok"] is True
+    assert result["deleted"] == 2
+    assert result["files_removed"] >= 2
+    assert not seeded["report_file"].exists()
+    assert not f2.exists()
