@@ -52,7 +52,7 @@ async def user_dashboard(
     repo = CriteriaRepository(db)
     active_list = await repo.get_active_criteria()
     criteria_documents = [
-        {"id": c.id, "display_name": c.display_alias or c.title}
+        {"id": c.id, "name": c.display_alias or c.title}
         for c in active_list
     ]
 
@@ -168,7 +168,7 @@ async def upload_document(
         repo = CriteriaRepository(db)
         active_list = await repo.get_active_criteria()
         criteria_documents = [
-            {"id": c.id, "display_name": c.display_alias or c.title}
+            {"id": c.id, "name": c.display_alias or c.title}
             for c in active_list
         ]
 
