@@ -59,6 +59,8 @@ def _is_allowed_alias_char(ch: str) -> bool:
     거부: 제어 문자, 이모지, 그 외 모든 스크립트.
     """
     code = ord(ch)
+    if code in {0x115F, 0x1160, 0x3164}:  # Hangul filler characters render blank
+        return False
     if 0x20 <= code < 0x7F:  # ASCII printable
         return True
     if 0xAC00 <= code <= 0xD7A3:  # Hangul Syllables

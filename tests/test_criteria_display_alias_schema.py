@@ -40,6 +40,12 @@ def test_accepts_pure_korean():
     assert req.display_alias == "수학기준"
 
 
+def test_rejects_hangul_fillers():
+    for alias in ("ㅤ", "ᅟ", "ᅠ", "ㅤᅟ"):
+        with pytest.raises(ValidationError):
+            UpdateDisplayAliasRequest(display_alias=alias)
+
+
 def test_rejects_emoji():
     with pytest.raises(ValidationError):
         UpdateDisplayAliasRequest(display_alias="alias-🎯")

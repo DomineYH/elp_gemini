@@ -301,9 +301,9 @@ function deleteCriteria(criteriaId, title) {
 // 평가기준 alias 인라인 편집
 
 function isAllowedAliasChars(s) {
-    // ASCII printable + Hangul (Syllables, Jamo, Compatibility Jamo)
+    // ASCII printable + Hangul, excluding blank Hangul filler characters
     // 서버측 _is_allowed_alias_char와 동일한 규칙
-    return /^[\x20-\x7E가-힣ᄀ-ᇿ㄰-㆏]*$/.test(s);
+    return /^[\x20-\x7E\uAC00-\uD7A3\u1100-\u115E\u1161-\u11FF\u3130-\u3163\u3165-\u318F]*$/.test(s);
 }
 
 async function updateDisplayAlias(criteriaId, newAlias) {
