@@ -134,10 +134,11 @@
                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">가입일</th>
                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">상세</th>
                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">비밀번호 변경</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">삭제</th>
                     </tr>
                 </thead>
                 <tbody id="accountBody" class="divide-y divide-gray-200">
-                    <tr><td colspan="9" class="px-3 py-3 text-sm text-gray-500 text-center">로딩 중...</td></tr>
+                    <tr><td colspan="10" class="px-3 py-3 text-sm text-gray-500 text-center">로딩 중...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -174,6 +175,7 @@
 
 {% block scripts %}
 <script>
+const CURRENT_ADMIN_ID = {{ user.id }};
 let currentPage = 1;
 let totalPages = 1;
 let accountPage = 1;
@@ -307,7 +309,7 @@ async function loadAccounts(page = 1) {
         const tbody = document.getElementById('accountBody');
 
         if (!data.accounts || data.accounts.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9" class="px-3 py-3 text-sm text-gray-500 text-center">사용자가 없습니다</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="px-3 py-3 text-sm text-gray-500 text-center">사용자가 없습니다</td></tr>';
             document.getElementById('accountPagination').innerHTML = '';
             return;
         }
@@ -333,6 +335,13 @@ async function loadAccounts(page = 1) {
                 </div>
             ` : '<span class="text-xs text-gray-400">관리자 변경 불가</span>';
 
+            const safeLabel = (account.email || account.username || '')
+                .replace(/'/g, "\\'");
+            const deleteAction = (account.is_admin || account.user_id === CURRENT_ADMIN_ID)
+                ? '<span class="text-xs text-gray-400">불가</span>'
+                : `<button onclick="deleteUser(${account.user_id}, '${safeLabel}')"
+                       class="bg-red-600 text-white px-3 py-1 rounded-md text-sm hover:bg-red-700">삭제</button>`;
+
             return `
                 <tr class="hover:bg-gray-50">
                     <td class="px-3 py-3 text-sm font-mono text-gray-600 whitespace-nowrap">${account.user_id}</td>
@@ -352,6 +361,7 @@ async function loadAccounts(page = 1) {
                         <a href="/admin/users/${account.user_id}" class="text-blue-600 hover:underline">상세보기</a>
                     </td>
                     <td class="px-3 py-3 text-sm whitespace-nowrap">${passwordAction}</td>
+                    <td class="px-3 py-3 text-sm whitespace-nowrap">${deleteAction}</td>
                 </tr>
             `;
         }).join('');
@@ -361,7 +371,7 @@ async function loadAccounts(page = 1) {
     } catch (error) {
         console.error('사용자 계정 목록 로드 실패:', error);
         document.getElementById('accountBody').innerHTML =
-            '<tr><td colspan="9" class="px-3 py-3 text-sm text-red-500 text-center">사용자 계정 목록을 불러올 수 없습니다</td></tr>';
+            '<tr><td colspan="10" class="px-3 py-3 text-sm text-red-500 text-center">사용자 계정 목록을 불러올 수 없습니다</td></tr>';
     }
 }
 
@@ -394,6 +404,34 @@ async function changePassword(userId) {
     } catch (error) {
         console.error('비밀번호 변경 실패:', error);
         alert('비밀번호 변경 중 오류가 발생했습니다.');
+    }
+}
+
+async function deleteUser(userId, label) {
+    const confirmed = window.confirm(
+        `정말 사용자 [${label}]를 삭제하시겠습니까?\n` +
+        `대화 기록·분석 보고서·업로드 파일이 모두 삭제됩니다.\n` +
+        `이 작업은 되돌릴 수 없습니다.`
+    );
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch(`/admin/api/users/${userId}`, {
+            method: 'DELETE',
+            headers: { 'X-CSRF-Token': getCsrfToken() },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            alert(data.detail || '사용자 삭제에 실패했습니다.');
+            return;
+        }
+        alert(`사용자가 삭제되었습니다. 파일 ${data.files_removed}건 정리.`);
+        loadAccounts(accountPage);
+        loadSessions(currentPage);
+        loadStats();
+    } catch (error) {
+        console.error('사용자 삭제 실패:', error);
+        alert('사용자 삭제 중 오류가 발생했습니다.');
     }
 }
 
