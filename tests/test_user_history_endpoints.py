@@ -83,7 +83,7 @@ async def seeded_history(db_tables):
         session_a_old = ChatSession(
             user_id=user_a.id,
             title="A old lesson",
-            user_type="현직교사",
+            user_type="교사",
             created_at=base_time,
             updated_at=base_time + timedelta(minutes=10),
         )

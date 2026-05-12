@@ -38,7 +38,7 @@ async def get_qna_logs(
     Args:
         page: 페이지 번호 (1부터 시작)
         page_size: 페이지당 세션 수
-        user_type: 사용자 유형 필터 (1학년, 2학년, 3학년, 4학년, 현직교사)
+        user_type: 사용자 유형 필터 (1학년, 2학년, 3학년, 4학년, 교사)
 
     Returns:
         세션 목록과 페이징 정보

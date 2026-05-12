@@ -55,7 +55,7 @@ class ChatSession(Base):
         index=True,
         comment=(
             "세션 세그먼트 라벨 "
-            "(1학년, 2학년, 3학년, 4학년, 현직교사)"
+            "(1학년, 2학년, 3학년, 4학년, 교사)"
         )
     )
 

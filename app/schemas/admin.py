@@ -93,7 +93,7 @@ class QnASessionLogResponse(BaseModel):
 
     session_id: int
     user_type: Optional[str] = Field(
-        None, description="사용자 유형 (1학년, 2학년, 3학년, 4학년, 현직교사)"
+        None, description="사용자 유형 (1학년, 2학년, 3학년, 4학년, 교사)"
     )
     title: Optional[str] = Field(None, description="세션 제목 (지도안 파일명)")
     messages: List[QnAMessageItem] = Field(
