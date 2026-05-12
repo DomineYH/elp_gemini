@@ -645,9 +645,11 @@ async def get_sync_status(
     "/{criteria_id}/display-alias",
     response_model=UpdateDisplayAliasResponse,
     summary="평가기준 표시명(alias) 업데이트",
-    description="DB-only 업데이트. 클라우드 재업로드 없음. "
-    "표시 가능한 ASCII 문자만 허용. NULL/빈 문자열로 보내면 "
-    "alias 제거.",
+    description=(
+        "DB-only 업데이트. 클라우드 재업로드 없음. "
+        "ASCII printable 또는 한글 문자만 허용. "
+        "NULL/빈 문자열로 보내면 alias 제거."
+    ),
 )
 async def update_display_alias(
     criteria_id: int,

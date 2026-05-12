@@ -30,10 +30,20 @@ def test_none_stays_none():
     assert req.display_alias is None
 
 
-def test_rejects_korean():
-    with pytest.raises(ValidationError) as exc_info:
-        UpdateDisplayAliasRequest(display_alias="평가기준-1")
-    assert "ASCII" in str(exc_info.value)
+def test_accepts_korean():
+    req = UpdateDisplayAliasRequest(display_alias="평가기준-1")
+    assert req.display_alias == "평가기준-1"
+
+
+def test_accepts_pure_korean():
+    req = UpdateDisplayAliasRequest(display_alias="수학기준")
+    assert req.display_alias == "수학기준"
+
+
+def test_rejects_hangul_fillers():
+    for alias in ("ㅤ", "ᅟ", "ᅠ", "ㅤᅟ"):
+        with pytest.raises(ValidationError):
+            UpdateDisplayAliasRequest(display_alias=alias)
 
 
 def test_rejects_emoji():
@@ -58,3 +68,22 @@ def test_rejects_control_characters():
         UpdateDisplayAliasRequest(display_alias="a\x00b")
     with pytest.raises(ValidationError):
         UpdateDisplayAliasRequest(display_alias="line1\nline2")
+
+
+def test_accepts_mixed_korean_and_ascii():
+    req = UpdateDisplayAliasRequest(
+        display_alias="Math 수학 grade-6"
+    )
+    assert req.display_alias == "Math 수학 grade-6"
+
+
+def test_rejects_hanja_kanji():
+    """한자(CJK 통합)는 한글이 아니므로 거부되어야 한다."""
+    with pytest.raises(ValidationError):
+        UpdateDisplayAliasRequest(display_alias="数学")
+
+
+def test_rejects_hiragana():
+    """일본어 히라가나는 한글이 아니므로 거부되어야 한다."""
+    with pytest.raises(ValidationError):
+        UpdateDisplayAliasRequest(display_alias="ひらがな")

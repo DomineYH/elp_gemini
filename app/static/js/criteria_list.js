@@ -300,9 +300,10 @@ function deleteCriteria(criteriaId, title) {
 
 // 평가기준 alias 인라인 편집
 
-function isPrintableAscii(s) {
-    // 0x20 - 0x7E 범위만 허용 (server-side와 일치)
-    return /^[\x20-\x7E]*$/.test(s);
+function isAllowedAliasChars(s) {
+    // ASCII printable + Hangul, excluding blank Hangul filler characters
+    // 서버측 _is_allowed_alias_char와 동일한 규칙
+    return /^[\x20-\x7E\uAC00-\uD7A3\u1100-\u115E\u1161-\u11FF\u3130-\u3163\u3165-\u318F]*$/.test(s);
 }
 
 async function updateDisplayAlias(criteriaId, newAlias) {
@@ -352,8 +353,8 @@ function activateAliasEdit(span) {
         if (finalized) return;
         finalized = true;
         const v = input.value.trim();
-        if (v && !isPrintableAscii(v)) {
-            alert('표시 가능한 ASCII 문자만 허용됩니다.');
+        if (v && !isAllowedAliasChars(v)) {
+            alert('표시명에는 영문/숫자/기호 또는 한글만 입력할 수 있습니다.');
             restore(original);
             return;
         }

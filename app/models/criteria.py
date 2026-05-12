@@ -84,7 +84,10 @@ class Criteria(Base):
     display_alias = Column(
         String(255),
         nullable=True,
-        comment="관리자 편집용 ASCII 표시명 (NULL이면 title을 fallback)"
+        comment=(
+            "관리자 편집용 표시명. ASCII printable 또는 한글 문자만 허용 "
+            "(NULL이면 title을 fallback)"
+        ),
     )
 
     def __repr__(self):

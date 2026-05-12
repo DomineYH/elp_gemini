@@ -108,13 +108,17 @@ async def test_patch_alias_not_found(admin_client):
 
 
 @pytest.mark.asyncio
-async def test_patch_alias_rejects_korean(admin_client, make_criteria):
+async def test_patch_alias_accepts_korean(admin_client, make_criteria):
+    """한글 alias가 정상적으로 저장·반환되는지 검증"""
     c = await make_criteria()
     res = await admin_client.patch(
         f"/api/admin/criteria/{c.id}/display-alias",
-        json={"display_alias": "한글"},
+        json={"display_alias": "수학 평가기준"},
     )
-    assert res.status_code == 422
+    assert res.status_code == 200
+    body = res.json()
+    assert body["success"] is True
+    assert body["display_alias"] == "수학 평가기준"
 
 
 @pytest.mark.asyncio
