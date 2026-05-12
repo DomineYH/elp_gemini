@@ -15,6 +15,7 @@ from app.dependencies import get_current_admin
 from app.models.users import User
 from app.models.chat_sessions import ChatSession
 from app.models.chat_messages import ChatMessage
+from app.utils.admin_csrf import ensure_admin_csrf_token
 
 router = APIRouter(tags=["관리자-QnA로그"])
 templates = Jinja2Templates(directory="app/templates")
@@ -122,9 +123,14 @@ async def qna_logs_page(
     """
     QnA 로그 페이지 렌더링
 
-    관리자 대시보드의 QnA 로그 화면을 렌더링합니다.
+    세션 삭제 작업을 위해 CSRF 토큰을 함께 주입한다.
     """
+    csrf_token = ensure_admin_csrf_token(request)
     return templates.TemplateResponse(
         "admin/admin_qna_logs.html",
-        {"request": request, "user": current_admin}
+        {
+            "request": request,
+            "user": current_admin,
+            "csrf_token": csrf_token,
+        },
     )
