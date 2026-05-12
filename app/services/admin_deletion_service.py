@@ -13,8 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analysis_reports import AnalysisReport
-from app.models.chat_sessions import ChatSession
 from app.models.users import User
+from app.services.admin_export_service import LESSONPLAN_BASE_DIR
 from app.utils.logging import log_user_action
 
 logger = logging.getLogger(__name__)
@@ -68,20 +68,36 @@ class AdminDeletionService:
         return {"ok": True, "deleted": 1, "files_removed": files_removed}
 
     # ----- 파일 정리 헬퍼 -----
+    def _resolve_lessonplan_path(
+        self, raw: str | None
+    ) -> Path | None:
+        """lessonplan_filename을 실제 파일 경로로 해석한다.
+
+        프로덕션에서는 bare filename으로 저장되므로 base dir과 결합한다.
+        절대 경로로 저장된 레거시 행은 그대로 사용한다.
+        """
+        if not raw:
+            return None
+        path = Path(raw)
+        if path.is_absolute():
+            return path
+        return Path(LESSONPLAN_BASE_DIR) / raw
+
     def _remove_report_files(
         self, reports: list[AnalysisReport]
     ) -> int:
-        """report_path(.md) + lessonplan_filename(.pdf 경로) 삭제.
+        """report_path(.md) + lessonplan_filename(.pdf) 삭제.
 
-        경로가 절대 경로이고 실제로 존재할 때만 삭제하여 오삭제를 방지한다.
+        실제로 존재할 때만 삭제하여 오삭제를 방지한다.
         """
         removed = 0
         for report in reports:
-            for raw_path in (report.report_path, report.lessonplan_filename):
-                if not raw_path:
-                    continue
-                path = Path(raw_path)
-                if not path.exists():
+            candidates: list[Path | None] = [
+                Path(report.report_path) if report.report_path else None,
+                self._resolve_lessonplan_path(report.lessonplan_filename),
+            ]
+            for path in candidates:
+                if path is None or not path.exists():
                     continue
                 try:
                     path.unlink()

@@ -1,5 +1,4 @@
 """AdminDeletionService 단위 테스트."""
-from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -25,8 +24,19 @@ async def db_tables():
 
 
 @pytest_asyncio.fixture
-async def seeded(db_tables, tmp_path):
-    """관리자 + 일반 사용자 + 세션 + 보고서 시드."""
+async def seeded(db_tables, tmp_path, monkeypatch):
+    """관리자 + 일반 사용자 + 세션 + 보고서 시드.
+
+    프로덕션과 동일하게 lessonplan_filename은 bare filename으로 저장하고
+    LESSONPLAN_BASE_DIR을 tmp_path의 lessonplan 디렉터리로 patch한다.
+    """
+    lessonplan_base = tmp_path / "data" / "lessonplan"
+    lessonplan_base.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.LESSONPLAN_BASE_DIR",
+        str(lessonplan_base),
+    )
+
     async with TestingSessionLocal() as db:
         admin = User(
             username="admin1",
@@ -64,14 +74,14 @@ async def seeded(db_tables, tmp_path):
         report_file = tmp_path / "report.md"
         report_file.write_text("# 보고서", encoding="utf-8")
 
-        lessonplan_dir = tmp_path / "uploads"
-        lessonplan_dir.mkdir()
-        lessonplan_file = lessonplan_dir / "stu1_20260101000000_plan.pdf"
+        lessonplan_filename = "stu1_20260101000000_plan.pdf"
+        lessonplan_file = lessonplan_base / lessonplan_filename
         lessonplan_file.write_bytes(b"%PDF-1.4\n")
 
         report = AnalysisReport(
             user_id=user.id,
-            lessonplan_filename=str(lessonplan_file),
+            # 프로덕션 컨벤션: bare filename
+            lessonplan_filename=lessonplan_filename,
             lessonplan_original_name="plan.pdf",
             report_filename=report_file.name,
             report_path=str(report_file),
@@ -108,36 +118,37 @@ async def test_delete_user_cascades_and_removes_files(seeded):
 
 @pytest.mark.asyncio
 async def test_delete_user_blocks_admin_target(seeded):
+    """다른 관리자(서로 다른 id)를 삭제 시도하면 PermissionError."""
     async with TestingSessionLocal() as db:
+        # 별도 admin 계정 생성하여 self-delete 가드와 분리한다.
+        target_admin = User(
+            username="admin_target",
+            nickname="AdminTarget",
+            email="admin_target@test.com",
+            hashed_password="h",
+            is_admin=True,
+        )
+        db.add(target_admin)
+        await db.commit()
+        await db.refresh(target_admin)
+
         service = AdminDeletionService(db)
-        with pytest.raises(PermissionError):
+        with pytest.raises(PermissionError, match="관리자 계정"):
             await service.delete_user(
-                target_user_id=seeded["admin_id"],
+                target_user_id=target_admin.id,
                 current_admin_id=seeded["admin_id"],
             )
 
 
 @pytest.mark.asyncio
 async def test_delete_user_blocks_self(seeded):
-    """다른 관리자가 자기 자신을 지우려는 경우도 PermissionError."""
+    """관리자가 자기 자신을 지우려는 경우 PermissionError."""
     async with TestingSessionLocal() as db:
-        # 두 번째 관리자 추가
-        another_admin = User(
-            username="admin2",
-            nickname="Admin2",
-            email="admin2@test.com",
-            hashed_password="h",
-            is_admin=True,
-        )
-        db.add(another_admin)
-        await db.commit()
-        await db.refresh(another_admin)
-
         service = AdminDeletionService(db)
-        with pytest.raises(PermissionError):
+        with pytest.raises(PermissionError, match="자기 자신"):
             await service.delete_user(
-                target_user_id=another_admin.id,
-                current_admin_id=another_admin.id,
+                target_user_id=seeded["admin_id"],
+                current_admin_id=seeded["admin_id"],
             )
 
 
