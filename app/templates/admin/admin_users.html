@@ -122,19 +122,19 @@
             </div>
         </div>
         <div class="overflow-x-auto">
-            <table class="w-full">
+            <table class="w-full min-w-[1200px]">
                 <thead class="bg-gray-50">
                     <tr>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">이메일</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">내부 ID</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">역할</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">지역/대학교지역</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">경력/학년</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">활동</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">가입일</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">상세</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">비밀번호 변경</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">ID</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">이메일</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">내부 ID</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">역할</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">지역/대학교지역</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">경력/학년</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">활동</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">가입일</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">상세</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">비밀번호 변경</th>
                     </tr>
                 </thead>
                 <tbody id="accountBody" class="divide-y divide-gray-200">
@@ -147,19 +147,19 @@
 
     <!-- 세션 목록 테이블 -->
     <div class="bg-white shadow-md rounded-lg overflow-hidden">
-        <table class="w-full">
+        <table class="w-full min-w-[1200px]">
             <thead class="bg-gray-50">
                 <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">세션 유형</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">이메일</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">프로필</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">접속일시</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">세션ID</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">QnA</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">보고서</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">마지막 활동</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">상태</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">작업</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">세션 유형</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">이메일</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">프로필</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">접속일시</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">세션ID</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">QnA</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">보고서</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">마지막 활동</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">상태</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">작업</th>
                 </tr>
             </thead>
             <tbody id="sessionBody" class="divide-y divide-gray-200">
@@ -336,24 +336,24 @@ async function loadAccounts(page = 1) {
 
             return `
                 <tr class="hover:bg-gray-50">
-                    <td class="px-4 py-4 text-sm font-mono text-gray-600">${account.user_id}</td>
-                    <td class="px-4 py-4 text-sm text-gray-900">${escapeHtml(account.email)}</td>
-                    <td class="px-4 py-4 text-sm text-gray-500">${escapeHtml(account.username)}</td>
-                    <td class="px-4 py-4 text-sm">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getBadgeClass(profile.role || profile.role_label)}">
+                    <td class="px-4 py-4 text-sm font-mono text-gray-600 whitespace-nowrap">${account.user_id}</td>
+                    <td class="px-4 py-4 text-sm text-gray-900 whitespace-nowrap">${escapeHtml(account.email)}</td>
+                    <td class="px-4 py-4 text-sm text-gray-500 whitespace-nowrap max-w-[200px] truncate" title="${escapeHtml(account.username)}">${escapeHtml(account.username)}</td>
+                    <td class="px-4 py-4 text-sm whitespace-nowrap">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getBadgeClass(profile.role || profile.role_label)} whitespace-nowrap">
                             ${escapeHtml(getProfileRole(profile))}
                         </span>
                     </td>
-                    <td class="px-4 py-4 text-sm text-gray-600">${escapeHtml(getProfileRegion(profile))}</td>
-                    <td class="px-4 py-4 text-sm text-gray-600">${escapeHtml(getProfileCareerOrGrade(profile))}</td>
-                    <td class="px-4 py-4 text-sm text-gray-600">
+                    <td class="px-4 py-4 text-sm text-gray-600 whitespace-nowrap">${escapeHtml(getProfileRegion(profile))}</td>
+                    <td class="px-4 py-4 text-sm text-gray-600 whitespace-nowrap">${escapeHtml(getProfileCareerOrGrade(profile))}</td>
+                    <td class="px-4 py-4 text-sm text-gray-600 whitespace-nowrap">
                         세션 ${account.session_count} · 보고서 ${account.report_count}
                     </td>
-                    <td class="px-4 py-4 text-sm text-gray-500">${formatDate(account.created_at)}</td>
-                    <td class="px-4 py-4 text-sm">
+                    <td class="px-4 py-4 text-sm text-gray-500 whitespace-nowrap">${formatDate(account.created_at)}</td>
+                    <td class="px-4 py-4 text-sm whitespace-nowrap">
                         <a href="/admin/users/${account.user_id}" class="text-blue-600 hover:underline">상세보기</a>
                     </td>
-                    <td class="px-4 py-4 text-sm">${passwordAction}</td>
+                    <td class="px-4 py-4 text-sm whitespace-nowrap">${passwordAction}</td>
                 </tr>
             `;
         }).join('');
@@ -421,24 +421,24 @@ async function loadSessions(page = 1) {
 
         tbody.innerHTML = data.sessions.map(s => `
             <tr class="hover:bg-gray-50">
-                <td class="px-6 py-4 text-sm">
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getBadgeClass(s.user_type)}">
+                <td class="px-6 py-4 text-sm whitespace-nowrap">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getBadgeClass(s.user_type)} whitespace-nowrap">
                         ${escapeHtml(s.user_type || '미지정')}
                     </span>
                 </td>
-                <td class="px-6 py-4 text-sm text-gray-600">${escapeHtml(s.user_email)}</td>
-                <td class="px-6 py-4 text-sm text-gray-600">${escapeHtml(s.profile_summary)}</td>
-                <td class="px-6 py-4 text-sm text-gray-500">${formatDate(s.created_at)}</td>
-                <td class="px-6 py-4 text-sm font-mono text-gray-600">${s.session_id}</td>
-                <td class="px-6 py-4 text-sm">${s.qna_count}</td>
-                <td class="px-6 py-4 text-sm">${s.report_count}</td>
-                <td class="px-6 py-4 text-sm text-gray-500">${formatDate(s.last_activity)}</td>
-                <td class="px-6 py-4 text-sm">
-                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${s.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
+                <td class="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">${escapeHtml(s.user_email)}</td>
+                <td class="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">${escapeHtml(s.profile_summary)}</td>
+                <td class="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">${formatDate(s.created_at)}</td>
+                <td class="px-6 py-4 text-sm font-mono text-gray-600 whitespace-nowrap">${s.session_id}</td>
+                <td class="px-6 py-4 text-sm whitespace-nowrap">${s.qna_count}</td>
+                <td class="px-6 py-4 text-sm whitespace-nowrap">${s.report_count}</td>
+                <td class="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">${formatDate(s.last_activity)}</td>
+                <td class="px-6 py-4 text-sm whitespace-nowrap">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${s.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'} whitespace-nowrap">
                         ${s.status === 'active' ? '활성' : '비활성'}
                     </span>
                 </td>
-                <td class="px-6 py-4 text-sm">
+                <td class="px-6 py-4 text-sm whitespace-nowrap">
                     <a href="/admin/users/session/${s.session_id}" class="text-blue-600 hover:underline">상세보기</a>
                 </td>
             </tr>
