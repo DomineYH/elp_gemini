@@ -228,3 +228,116 @@ async def test_delete_report_not_found(seeded):
             headers={ADMIN_CSRF_HEADER: token},
         )
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_sessions_happy(seeded):
+    # 두 번째 세션을 추가
+    async with TestingSessionLocal() as db:
+        s2 = ChatSession(
+            user_id=seeded["user_id"], user_type="2학년", title="B"
+        )
+        db.add(s2)
+        await db.commit()
+        await db.refresh(s2)
+        ids = [seeded["session_id"], s2.id]
+
+    with TestClient(app) as client:
+        token = _get_token(client)
+        resp = client.post(
+            f"/admin/api/users/{seeded['user_id']}/sessions/bulk-delete",
+            headers={ADMIN_CSRF_HEADER: token},
+            json={"session_ids": ids},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 2
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_sessions_rejects_cross_user(seeded):
+    async with TestingSessionLocal() as db:
+        other = User(
+            username="stuX",
+            nickname="X",
+            email="x@t.com",
+            hashed_password="h",
+            is_admin=False,
+        )
+        db.add(other)
+        await db.flush()
+        bad_session = ChatSession(
+            user_id=other.id, user_type="1학년", title="X"
+        )
+        db.add(bad_session)
+        await db.commit()
+        await db.refresh(bad_session)
+
+    with TestClient(app) as client:
+        token = _get_token(client)
+        resp = client.post(
+            f"/admin/api/users/{seeded['user_id']}/sessions/bulk-delete",
+            headers={ADMIN_CSRF_HEADER: token},
+            json={"session_ids": [seeded["session_id"], bad_session.id]},
+        )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_reports_happy(seeded, tmp_path):
+    async with TestingSessionLocal() as db:
+        f2 = tmp_path / "r2.md"
+        f2.write_text("x", encoding="utf-8")
+        r2 = AnalysisReport(
+            user_id=seeded["user_id"],
+            lessonplan_filename="",
+            lessonplan_original_name="b.pdf",
+            report_filename="r2.md",
+            report_path=str(f2),
+            latency_ms=1,
+        )
+        db.add(r2)
+        await db.commit()
+        await db.refresh(r2)
+        ids = [seeded["report_id"], r2.id]
+
+    with TestClient(app) as client:
+        token = _get_token(client)
+        resp = client.post(
+            f"/admin/api/users/{seeded['user_id']}/reports/bulk-delete",
+            headers={ADMIN_CSRF_HEADER: token},
+            json={"report_ids": ids},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 2
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_csrf_required(seeded):
+    with TestClient(app) as client:
+        resp = client.post(
+            f"/admin/api/users/{seeded['user_id']}/sessions/bulk-delete",
+            json={"session_ids": [seeded["session_id"]]},
+        )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_sessions_invalid_payload(seeded):
+    """session_ids가 누락되거나 잘못된 타입이면 400."""
+    with TestClient(app) as client:
+        token = _get_token(client)
+        # 누락
+        resp = client.post(
+            f"/admin/api/users/{seeded['user_id']}/sessions/bulk-delete",
+            headers={ADMIN_CSRF_HEADER: token},
+            json={},
+        )
+        assert resp.status_code == 400
+
+        # 잘못된 타입
+        resp = client.post(
+            f"/admin/api/users/{seeded['user_id']}/sessions/bulk-delete",
+            headers={ADMIN_CSRF_HEADER: token},
+            json={"session_ids": "not-a-list"},
+        )
+        assert resp.status_code == 400

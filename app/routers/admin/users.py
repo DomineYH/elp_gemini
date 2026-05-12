@@ -1098,6 +1098,92 @@ async def delete_analysis_report(
     return result
 
 
+async def _read_id_list(request: Request, key: str) -> list[int]:
+    """JSON 본문에서 정수 ID 배열을 읽는다. 실패 시 400."""
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="요청 본문이 올바른 JSON 형식이 아닙니다.",
+        ) from exc
+    raw = payload.get(key)
+    if not isinstance(raw, list) or not all(
+        isinstance(item, int) for item in raw
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{key}는 정수 배열이어야 합니다.",
+        )
+    return raw
+
+
+@router.post(
+    "/admin/api/users/{user_id}/sessions/bulk-delete"
+)
+async def bulk_delete_user_sessions(
+    user_id: int,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    require_admin_csrf_token(request)
+    session_ids = await _read_id_list(request, "session_ids")
+
+    service = AdminDeletionService(db)
+    try:
+        result = await service.bulk_delete_sessions(
+            user_id=user_id,
+            session_ids=session_ids,
+            current_admin_id=current_admin.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    logger.info(
+        "관리자 일괄 세션 삭제: admin_id=%s, target_user_id=%s, count=%s",
+        current_admin.id,
+        user_id,
+        result["deleted"],
+    )
+    return result
+
+
+@router.post(
+    "/admin/api/users/{user_id}/reports/bulk-delete"
+)
+async def bulk_delete_user_reports(
+    user_id: int,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    require_admin_csrf_token(request)
+    report_ids = await _read_id_list(request, "report_ids")
+
+    service = AdminDeletionService(db)
+    try:
+        result = await service.bulk_delete_reports(
+            user_id=user_id,
+            report_ids=report_ids,
+            current_admin_id=current_admin.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    logger.info(
+        "관리자 일괄 보고서 삭제: admin_id=%s, target_user_id=%s, count=%s",
+        current_admin.id,
+        user_id,
+        result["deleted"],
+    )
+    return result
+
+
 @router.get(
     "/admin/users", response_class=HTMLResponse)
 async def users_page(
