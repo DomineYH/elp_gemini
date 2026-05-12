@@ -297,3 +297,97 @@ function deleteCriteria(criteriaId, title) {
             button.disabled = false;
         });
 }
+
+// 평가기준 alias 인라인 편집
+
+function isPrintableAscii(s) {
+    // 0x20 - 0x7E 범위만 허용 (server-side와 일치)
+    return /^[\x20-\x7E]*$/.test(s);
+}
+
+async function updateDisplayAlias(criteriaId, newAlias) {
+    const payload = newAlias && newAlias.length > 0
+        ? { display_alias: newAlias }
+        : { display_alias: null };
+    const res = await fetch(
+        `/api/admin/criteria/${criteriaId}/display-alias`,
+        {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        }
+    );
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return await res.json();
+}
+
+function bindAliasCell(span) {
+    span.addEventListener('click', () => activateAliasEdit(span));
+}
+
+function activateAliasEdit(span) {
+    const original = span.dataset.original || '';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = original;
+    input.maxLength = 255;
+    input.className = 'border rounded px-2 py-1 text-sm w-full';
+
+    let finalized = false;
+
+    const restore = (text) => {
+        const newSpan = document.createElement('span');
+        newSpan.className = 'alias-cell cursor-pointer hover:bg-blue-50 px-2 py-1 rounded';
+        newSpan.dataset.criteriaId = span.dataset.criteriaId;
+        newSpan.dataset.original = text;
+        newSpan.textContent = text || '(미설정)';
+        bindAliasCell(newSpan);
+        input.replaceWith(newSpan);
+    };
+
+    const commit = async () => {
+        if (finalized) return;
+        finalized = true;
+        const v = input.value.trim();
+        if (v && !isPrintableAscii(v)) {
+            alert('표시 가능한 ASCII 문자만 허용됩니다.');
+            restore(original);
+            return;
+        }
+        try {
+            const result = await updateDisplayAlias(span.dataset.criteriaId, v);
+            restore(result.display_alias || '');
+        } catch (e) {
+            alert('업데이트 실패: ' + e.message);
+            restore(original);
+        }
+    };
+
+    const cancel = () => {
+        if (finalized) return;
+        finalized = true;
+        restore(original);
+    };
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancel();
+        }
+    });
+    input.addEventListener('blur', commit);
+
+    span.replaceWith(input);
+    input.focus();
+    input.select();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.alias-cell').forEach(bindAliasCell);
+});
