@@ -57,7 +57,10 @@ class UpdateDisplayAliasRequest(BaseModel):
 
     display_alias: Optional[str] = Field(
         default=None,
-        description="ASCII-only 표시명. None/빈 문자열이면 alias 제거"
+        description=(
+            "표시명. ASCII printable(U+0020–U+007E) 및 한글(Hangul) 문자만 "
+            "허용. None/빈 문자열이면 alias 제거."
+        ),
     )
 
     @field_validator("display_alias")
@@ -67,11 +70,32 @@ class UpdateDisplayAliasRequest(BaseModel):
         v = v.strip()
         if v == "":
             return None
-        if not all(0x20 <= ord(c) < 0x7F for c in v):
-            raise ValueError("표시 가능한 ASCII 문자만 허용됩니다.")
+        if not all(_is_allowed_alias_char(c) for c in v):
+            raise ValueError(
+                "표시명에 허용되지 않는 문자가 포함되어 있습니다. "
+                "ASCII 또는 한글만 입력하세요."
+            )
         if len(v) > 255:
             raise ValueError("표시명은 255자 이내로 입력하세요.")
         return v
+
+
+def _is_allowed_alias_char(ch: str) -> bool:
+    """display_alias에 허용되는 문자인지 판별.
+
+    허용: ASCII printable + Hangul Syllables/Jamo/Compatibility Jamo.
+    거부: 제어 문자, 이모지, 그 외 모든 스크립트.
+    """
+    code = ord(ch)
+    if 0x20 <= code < 0x7F:
+        return True
+    if 0xAC00 <= code <= 0xD7A3:
+        return True
+    if 0x1100 <= code <= 0x11FF:
+        return True
+    if 0x3130 <= code <= 0x318F:
+        return True
+    return False
 
 
 class UpdateDisplayAliasResponse(BaseModel):
