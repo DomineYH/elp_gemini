@@ -47,7 +47,8 @@ async def admin_client(tmp_path):
         client._session_factory = session_factory
         yield client
 
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
+    app.dependency_overrides.pop(get_current_admin, None)
     await engine.dispose()
 
 

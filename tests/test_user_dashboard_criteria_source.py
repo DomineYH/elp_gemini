@@ -67,7 +67,9 @@ async def authed_client(db_session):
     ] = _override_user
     client = TestClient(app, base_url="http://testserver")
     yield client
-    app.dependency_overrides.clear()
+    from app.dependencies import get_current_user as _get_current_user
+    app.dependency_overrides.pop(get_db, None)
+    app.dependency_overrides.pop(_get_current_user, None)
 
 
 @pytest.mark.asyncio
