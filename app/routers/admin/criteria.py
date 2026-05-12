@@ -22,6 +22,8 @@ from app.schemas.criteria import (
     UploadCriteriaResponse,
     DeleteCriteriaResponse,
     DeleteSingleCriteriaResponse,
+    UpdateDisplayAliasRequest,
+    UpdateDisplayAliasResponse,
 )
 from app.services.criteria_vector_service import (
     CriteriaVectorService
@@ -637,3 +639,53 @@ async def get_sync_status(
         "pending_count": len(pending_criteria),
         "pending_titles": [c.title for c in pending_criteria]
     }
+
+
+@router.patch(
+    "/{criteria_id}/display-alias",
+    response_model=UpdateDisplayAliasResponse,
+    summary="평가기준 표시명(alias) 업데이트",
+    description="DB-only 업데이트. 클라우드 재업로드 없음. "
+    "표시 가능한 ASCII 문자만 허용. NULL/빈 문자열로 보내면 "
+    "alias 제거.",
+)
+async def update_display_alias(
+    criteria_id: int,
+    payload: UpdateDisplayAliasRequest,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자 전용. DB만 업데이트."""
+    try:
+        repo = CriteriaRepository(db)
+        updated = await repo.update_display_alias(
+            criteria_id, payload.display_alias
+        )
+        if updated is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="평가기준을 찾을 수 없습니다.",
+            )
+        await db.commit()
+        logger.info(
+            f"display_alias 업데이트: "
+            f"admin={current_admin.username}, "
+            f"id={criteria_id}, alias={payload.display_alias!r}"
+        )
+        return UpdateDisplayAliasResponse(
+            success=True,
+            criteria_id=criteria_id,
+            display_alias=updated.display_alias,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(
+            f"display_alias 업데이트 실패: {str(e)}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="표시명 업데이트 중 오류가 발생했습니다.",
+        )
