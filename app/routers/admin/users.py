@@ -3,7 +3,6 @@
 학년별 통계, 세션 목록, 세션 상세 API
 """
 import logging
-import secrets
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -34,6 +33,10 @@ from app.models.chat_sessions import ChatSession
 from app.models.user_profiles import UserProfile
 from app.models.users import User
 from app.services.auth_service import AuthService
+from app.utils.admin_csrf import (
+    ensure_admin_csrf_token,
+    require_admin_csrf_token,
+)
 from app.utils.logging import log_auth_event, log_user_action
 
 router = APIRouter(tags=["관리자-사용자관리"])
@@ -44,8 +47,6 @@ PROFILE_ROLE_LABELS = {
     "teacher": "교사",
     "preservice_teacher": "예비교사",
 }
-ADMIN_CSRF_SESSION_KEY = "admin_csrf_token"
-ADMIN_CSRF_HEADER = "x-csrf-token"
 
 
 def _role_str(role):
@@ -132,28 +133,6 @@ def _serialize_profile(profile: Any) -> dict[str, Any]:
         "preservice_grade": preservice_grade,
         "summary": summary,
     }
-
-
-def _ensure_admin_csrf_token(request: Request) -> str:
-    """관리자 상태 변경 요청용 CSRF 토큰을 세션에 보관한다."""
-    token = request.session.get(ADMIN_CSRF_SESSION_KEY)
-    if not token:
-        token = secrets.token_urlsafe(32)
-        request.session[ADMIN_CSRF_SESSION_KEY] = token
-    return str(token)
-
-
-def _require_admin_csrf_token(request: Request) -> None:
-    """세션 CSRF 토큰과 요청 헤더를 상수 시간 비교한다."""
-    expected = request.session.get(ADMIN_CSRF_SESSION_KEY)
-    provided = request.headers.get(ADMIN_CSRF_HEADER)
-    if not expected or not provided or not secrets.compare_digest(
-        str(expected), str(provided)
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="CSRF 토큰이 유효하지 않습니다.",
-        )
 
 
 async def _load_profiles(
@@ -932,7 +911,7 @@ async def change_regular_user_password(
             detail="관리자 권한이 필요합니다.",
         )
 
-    _require_admin_csrf_token(request)
+    require_admin_csrf_token(request)
 
     try:
         new_password = await _extract_new_password(request)
@@ -1021,7 +1000,7 @@ async def users_page(
     current_admin: User = Depends(get_current_admin),
 ):
     """사용자 관리 페이지 렌더링"""
-    csrf_token = _ensure_admin_csrf_token(request)
+    csrf_token = ensure_admin_csrf_token(request)
     return templates.TemplateResponse(
         "admin/admin_users.html",
         {
