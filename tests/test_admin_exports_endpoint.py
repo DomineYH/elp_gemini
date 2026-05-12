@@ -195,9 +195,10 @@ async def test_export_invalid_date_returns_400(client_admin):
 
 
 @pytest.mark.asyncio
-async def test_export_missing_lessonplan_marks_in_manifest(
+async def test_export_missing_report_file_marks_in_manifest(
     client_admin, db_session
 ):
+    """원본 보고서 .md 파일이 사라진 경우 manifest에 MISSING으로 표시."""
     db_session.add(User(
         id=1, username="t", nickname="t", email="t@x.com"
     ))

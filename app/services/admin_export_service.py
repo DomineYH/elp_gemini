@@ -39,6 +39,7 @@ class UserContext:
     role: str | None
     profile: NormalizedProfile
     filename_prefix: str
+    username: str | None = None
     last_login_at: datetime | None = None
     created_at: datetime | None = None
 
@@ -95,8 +96,13 @@ class ExportPlan:
 
 
 class AdminExportService:
-    def __init__(self, db: AsyncSession):
+    def __init__(
+        self,
+        db: AsyncSession,
+        lessonplan_base_dir: str = LESSONPLAN_BASE_DIR,
+    ):
         self.db = db
+        self._lessonplan_base_dir = lessonplan_base_dir
 
     async def collect(self, filters: ExportFilters) -> ExportPlan:
         users = await self._collect_users(filters)
@@ -105,12 +111,13 @@ class AdminExportService:
         user_ids = [u.user_id for u in users]
         ctx_by_id = {u.user_id: u for u in users}
 
-        reports, lessonplans = await self._collect_reports(
+        reports = await self._collect_reports(
             user_ids, ctx_by_id, filters
         )
         sessions, messages = await self._collect_sessions(
             user_ids, ctx_by_id, filters
         )
+        lessonplans = self._collect_lessonplans(users, filters)
 
         return ExportPlan(
             users=users,
@@ -205,6 +212,7 @@ class AdminExportService:
                     role=role,
                     profile=norm,
                     filename_prefix=build_filename_prefix(u.id, norm),
+                    username=u.username,
                     last_login_at=None,
                     created_at=u.created_at,
                 )
@@ -213,11 +221,9 @@ class AdminExportService:
 
     async def _collect_reports(
         self, user_ids, ctx_by_id, filters
-    ) -> tuple[list[ReportEntry], list[LessonplanEntry]]:
-        if "reports" not in filters.include and (
-            "lessonplans" not in filters.include
-        ):
-            return [], []
+    ) -> list[ReportEntry]:
+        if "reports" not in filters.include:
+            return []
         stmt = (
             select(AnalysisReport)
             .where(AnalysisReport.user_id.in_(user_ids))
@@ -240,56 +246,99 @@ class AdminExportService:
         rows = (await self.db.execute(stmt)).scalars().all()
 
         reports: list[ReportEntry] = []
-        lessonplans: list[LessonplanEntry] = []
         for r in rows:
             ctx = ctx_by_id[r.user_id]
             original = r.lessonplan_original_name or r.lessonplan_filename
-            if "reports" in filters.include:
-                fname = (
-                    f"{ctx.filename_prefix}__report_{r.id}__"
-                    f"{slugify_original_name(_strip_ext(original))}.md"
+            fname = (
+                f"{ctx.filename_prefix}__report_{r.id}__"
+                f"{slugify_original_name(_strip_ext(original))}.md"
+            )
+            report_status = (
+                "OK" if os.path.exists(r.report_path) else "MISSING"
+            )
+            reports.append(
+                ReportEntry(
+                    kind="report",
+                    user_id=r.user_id,
+                    resource_id=r.id,
+                    session_id=None,
+                    created_at=r.created_at,
+                    original_name=original,
+                    archive_path=f"reports/{fname}",
+                    source_path=r.report_path,
+                    source_status=report_status,
                 )
-                report_status = (
-                    "OK" if os.path.exists(r.report_path) else "MISSING"
-                )
-                reports.append(
-                    ReportEntry(
-                        kind="report",
-                        user_id=r.user_id,
-                        resource_id=r.id,
-                        session_id=None,
-                        created_at=r.created_at,
-                        original_name=original,
-                        archive_path=f"reports/{fname}",
-                        source_path=r.report_path,
-                        source_status=report_status,
-                    )
-                )
-            if "lessonplans" in filters.include:
-                lp_name = (
-                    f"{ctx.filename_prefix}__lessonplan_{r.id}__"
+            )
+        return reports
+
+    def _collect_lessonplans(
+        self, users, filters
+    ) -> list[LessonplanEntry]:
+        """원본 지도안 파일을 분석 보고서와 무관하게 파일시스템에서 직접 열거.
+
+        스토리지 컨벤션: data/lessonplan/{username}_{원본명}
+        """
+        if "lessonplans" not in filters.include:
+            return []
+        from pathlib import Path
+
+        base = Path(self._lessonplan_base_dir)
+        if not base.exists():
+            return []
+
+        entries: list[LessonplanEntry] = []
+        lower_bound = (
+            datetime.combine(
+                filters.date_from, datetime.min.time()
+            )
+            if filters.date_from
+            else None
+        )
+        upper_bound = (
+            datetime.combine(
+                filters.date_to, datetime.min.time()
+            )
+            + timedelta(days=1)
+            if filters.date_to
+            else None
+        )
+
+        for ctx in users:
+            if not ctx.username:
+                continue
+            prefix = f"{ctx.username}_"
+            files = sorted(base.glob(f"{prefix}*"))
+            for ordinal, fpath in enumerate(files, start=1):
+                if not fpath.is_file():
+                    continue
+                try:
+                    stat = fpath.stat()
+                except OSError:
+                    continue
+                mtime = datetime.fromtimestamp(stat.st_mtime)
+                if lower_bound and mtime < lower_bound:
+                    continue
+                if upper_bound and mtime >= upper_bound:
+                    continue
+                original = fpath.name[len(prefix):]
+                archive_name = (
+                    f"{ctx.filename_prefix}__lessonplan_{ordinal}__"
                     f"{slugify_original_name(original)}"
                 )
-                lp_path = os.path.join(
-                    LESSONPLAN_BASE_DIR, r.lessonplan_filename
-                )
-                lp_status = (
-                    "OK" if os.path.exists(lp_path) else "MISSING"
-                )
-                lessonplans.append(
+                entries.append(
                     LessonplanEntry(
                         kind="lessonplan",
-                        user_id=r.user_id,
-                        resource_id=r.id,
+                        user_id=ctx.user_id,
+                        resource_id=ordinal,
                         session_id=None,
-                        created_at=r.created_at,
+                        created_at=mtime,
                         original_name=original,
-                        archive_path=f"lessonplans/{lp_name}",
-                        source_path=lp_path,
-                        source_status=lp_status,
+                        archive_path=f"lessonplans/{archive_name}",
+                        source_path=str(fpath),
+                        source_status="OK",
                     )
                 )
-        return reports, lessonplans
+        return entries
 
     async def _collect_sessions(
         self, user_ids, ctx_by_id, filters
@@ -572,6 +621,8 @@ def build_readme(plan: ExportPlan) -> bytes:
         f"  user_ids={plan.filters.user_ids}",
         f"  role={plan.filters.role}",
         f"  region={plan.filters.region}",
+        f"  career_min={plan.filters.career_min}",
+        f"  career_max={plan.filters.career_max}",
         f"  include={sorted(plan.filters.include)}",
         "",
         f"Counts:",

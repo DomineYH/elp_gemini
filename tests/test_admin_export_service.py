@@ -232,21 +232,24 @@ async def test_manifest_csv_shape(db_session):
 
 
 @pytest.mark.asyncio
-async def test_users_csv_counts(db_session):
+async def test_users_csv_counts(db_session, tmp_path):
     await _seed_user(
         db_session, user_id=1, email="a@x.com",
         role="teacher", region="서울", tenure=5,
     )
     db_session.add(AnalysisReport(
         user_id=1,
-        lessonplan_filename="1_a.pdf",
+        lessonplan_filename="u1_a.pdf",
         lessonplan_original_name="a.pdf",
         report_filename="1_a_reports.md",
         report_path="/tmp/a.md",
         created_at=datetime(2026, 3, 1),
     ))
+    (tmp_path / "u1_a.pdf").write_bytes(b"x")
     await db_session.commit()
-    svc = AdminExportService(db_session)
+    svc = AdminExportService(
+        db_session, lessonplan_base_dir=str(tmp_path)
+    )
     plan = await svc.collect(ExportFilters())
     raw = build_users_csv(plan)
     rows = list(csv.DictReader(io.StringIO(raw.decode("utf-8"))))
@@ -432,3 +435,76 @@ async def test_collect_career_filter_unions_both_roles(db_session):
         ExportFilters(career_min=3, career_max=5)
     )
     assert {u.user_id for u in plan.users} == {1, 2}
+
+
+@pytest.mark.asyncio
+async def test_collect_lessonplans_includes_orphan_uploads(
+    db_session, tmp_path
+):
+    """보고서가 없는 사용자도 업로드한 지도안 파일이 ZIP에 포함되어야 한다."""
+    await _seed_user(
+        db_session, user_id=7, email="solo@x.com",
+        role="teacher", region="서울", tenure=3,
+    )
+    await db_session.commit()
+    (tmp_path / "u7_orphan_지도안.pdf").write_bytes(b"data")
+    (tmp_path / "u7_another.pdf").write_bytes(b"more")
+    svc = AdminExportService(
+        db_session, lessonplan_base_dir=str(tmp_path)
+    )
+    plan = await svc.collect(ExportFilters())
+    originals = {l.original_name for l in plan.lessonplans}
+    assert originals == {"orphan_지도안.pdf", "another.pdf"}
+
+
+@pytest.mark.asyncio
+async def test_collect_lessonplans_respects_username_prefix(
+    db_session, tmp_path
+):
+    """다른 사용자의 파일은 포함되지 않아야 한다."""
+    await _seed_user(
+        db_session, user_id=1, email="a@x.com",
+        role="teacher", region="서울", tenure=5,
+    )
+    await _seed_user(
+        db_session, user_id=2, email="b@x.com",
+        role="teacher", region="서울", tenure=5,
+    )
+    await db_session.commit()
+    (tmp_path / "u1_mine.pdf").write_bytes(b"x")
+    (tmp_path / "u2_yours.pdf").write_bytes(b"y")
+    svc = AdminExportService(
+        db_session, lessonplan_base_dir=str(tmp_path)
+    )
+    plan = await svc.collect(ExportFilters(user_ids=[1]))
+    assert {l.original_name for l in plan.lessonplans} == {"mine.pdf"}
+
+
+@pytest.mark.asyncio
+async def test_collect_lessonplans_skipped_when_excluded(
+    db_session, tmp_path
+):
+    await _seed_user(
+        db_session, user_id=1, email="a@x.com",
+        role="teacher", region="서울", tenure=5,
+    )
+    await db_session.commit()
+    (tmp_path / "u1_x.pdf").write_bytes(b"x")
+    svc = AdminExportService(
+        db_session, lessonplan_base_dir=str(tmp_path)
+    )
+    plan = await svc.collect(
+        ExportFilters(include=frozenset({"reports", "meta"}))
+    )
+    assert plan.lessonplans == []
+
+
+@pytest.mark.asyncio
+async def test_readme_mentions_career_filters(db_session):
+    svc = AdminExportService(db_session)
+    plan = await svc.collect(
+        ExportFilters(career_min=3, career_max=10)
+    )
+    text = build_readme(plan).decode("utf-8")
+    assert "career_min=3" in text
+    assert "career_max=10" in text
