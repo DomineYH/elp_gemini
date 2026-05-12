@@ -47,7 +47,8 @@ async def admin_client(tmp_path):
         client._session_factory = session_factory
         yield client
 
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
+    app.dependency_overrides.pop(get_current_admin, None)
     await engine.dispose()
 
 
@@ -126,3 +127,30 @@ async def test_patch_alias_rejects_control_chars(
         json={"display_alias": "a\x00b"},
     )
     assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_patch_alias_forbidden_for_non_admin(admin_client, make_criteria):
+    """비관리자 사용자가 PATCH 호출 시 401/403 반환을 검증"""
+    from fastapi import HTTPException, status
+
+    c = await make_criteria()
+
+    def deny_admin():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="not admin",
+        )
+
+    original_admin = app.dependency_overrides.pop(get_current_admin, None)
+    app.dependency_overrides[get_current_admin] = deny_admin
+    try:
+        res = await admin_client.patch(
+            f"/api/admin/criteria/{c.id}/display-alias",
+            json={"display_alias": "x"},
+        )
+        assert res.status_code in (401, 403)
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        if original_admin is not None:
+            app.dependency_overrides[get_current_admin] = original_admin
