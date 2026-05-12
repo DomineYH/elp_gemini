@@ -52,6 +52,24 @@ class DeleteSingleCriteriaResponse(BaseModel):
     )
 
 
+def _is_allowed_alias_char(ch: str) -> bool:
+    """display_alias에 허용되는 문자인지 판별.
+
+    허용: ASCII printable + Hangul Syllables/Jamo/Compatibility Jamo.
+    거부: 제어 문자, 이모지, 그 외 모든 스크립트.
+    """
+    code = ord(ch)
+    if 0x20 <= code < 0x7F:  # ASCII printable
+        return True
+    if 0xAC00 <= code <= 0xD7A3:  # Hangul Syllables
+        return True
+    if 0x1100 <= code <= 0x11FF:  # Hangul Jamo
+        return True
+    if 0x3130 <= code <= 0x318F:  # Hangul Compatibility Jamo
+        return True
+    return False
+
+
 class UpdateDisplayAliasRequest(BaseModel):
     """평가기준 표시명(alias) 업데이트 요청"""
 
@@ -78,24 +96,6 @@ class UpdateDisplayAliasRequest(BaseModel):
         if len(v) > 255:
             raise ValueError("표시명은 255자 이내로 입력하세요.")
         return v
-
-
-def _is_allowed_alias_char(ch: str) -> bool:
-    """display_alias에 허용되는 문자인지 판별.
-
-    허용: ASCII printable + Hangul Syllables/Jamo/Compatibility Jamo.
-    거부: 제어 문자, 이모지, 그 외 모든 스크립트.
-    """
-    code = ord(ch)
-    if 0x20 <= code < 0x7F:
-        return True
-    if 0xAC00 <= code <= 0xD7A3:
-        return True
-    if 0x1100 <= code <= 0x11FF:
-        return True
-    if 0x3130 <= code <= 0x318F:
-        return True
-    return False
 
 
 class UpdateDisplayAliasResponse(BaseModel):
