@@ -4,13 +4,15 @@ HTML 뷰 라우터
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
+from app.db import get_db
 from app.dependencies import get_current_user
 from app.models.users import User
 from app.services.lessonplan_storage_service import LessonPlanStorageService
 from app.services.file_search_service import FileSearchService, _sanitize_display_name
-from app.services.criteria_vector_service import CriteriaVectorService
+from app.repositories.criteria_repository import CriteriaRepository
 from datetime import datetime
 import shutil
 import os
@@ -32,6 +34,7 @@ templates = Jinja2Templates(directory="app/templates")
 async def user_dashboard(
     request: Request,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     사용자 대시보드
@@ -45,9 +48,13 @@ async def user_dashboard(
     """
     logger.info(f"사용자 대시보드 접근: user={current_user.username}")
 
-    # 평가 기준 목록 조회
-    criteria_service = CriteriaVectorService()
-    criteria_documents = await criteria_service.list_criteria_documents()
+    # 평가 기준 목록 조회 (DB 기반)
+    repo = CriteriaRepository(db)
+    active_list = await repo.get_active_criteria()
+    criteria_documents = [
+        {"id": c.id, "name": c.display_alias or c.title}
+        for c in active_list
+    ]
 
     return templates.TemplateResponse(
         "user/dashboard.html",
@@ -69,6 +76,7 @@ async def upload_document(
     request: Request,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     문서 업로드 및 처리
@@ -150,9 +158,13 @@ async def upload_document(
             "file_url": file_url
         }
 
-        # 평가 기준 목록 조회
-        criteria_service = CriteriaVectorService()
-        criteria_documents = await criteria_service.list_criteria_documents()
+        # 평가 기준 목록 조회 (DB 기반)
+        repo = CriteriaRepository(db)
+        active_list = await repo.get_active_criteria()
+        criteria_documents = [
+            {"id": c.id, "name": c.display_alias or c.title}
+            for c in active_list
+        ]
 
         return templates.TemplateResponse(
             "user/dashboard.html",

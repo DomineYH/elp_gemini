@@ -23,6 +23,7 @@ from app.middleware import AuthMiddleware
 from app.migrations import (
     drop_invite_codes_table,
     ensure_criteria_file_path_column,
+    ensure_criteria_display_alias_column,
     ensure_user_profiles_table,
     ensure_users_lockout_columns,
 )
@@ -190,6 +191,12 @@ async def startup_event():
     patched = await ensure_criteria_file_path_column(engine)
     if patched:
         logger.info("criteria.file_path 컬럼이 자동 복구되었습니다.")
+
+    alias_patched = await ensure_criteria_display_alias_column(engine)
+    if alias_patched:
+        logger.info(
+            "criteria.display_alias 컬럼이 자동 추가되었습니다."
+        )
 
     lockout_patched = await ensure_users_lockout_columns(engine)
     if lockout_patched:

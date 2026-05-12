@@ -357,3 +357,56 @@ class CriteriaRepository:
         """
         pending = await self.get_criteria_needing_sync()
         return len(pending) > 0
+
+    async def update_display_alias(
+        self,
+        criteria_id: int,
+        alias: Optional[str],
+    ) -> Optional[Criteria]:
+        """
+        criteria.display_alias 업데이트
+
+        Args:
+            criteria_id: 평가기준 ID
+            alias: 새로운 display_alias 값
+
+        Returns:
+            업데이트된 Criteria 객체 또는 None
+        """
+        criteria = await self.get_criteria_by_id(criteria_id)
+        if criteria is None:
+            logger.warning(
+                f"display_alias 업데이트 실패 (없음): "
+                f"id={criteria_id}"
+            )
+            return None
+        criteria.display_alias = alias
+        await self.db.flush()
+        await self.db.refresh(criteria)
+
+        logger.info(
+            f"평가기준 display_alias 업데이트: "
+            f"id={criteria_id}, alias={alias}"
+        )
+        return criteria
+
+    async def get_criteria_map_by_document_ids(
+        self,
+        doc_ids: List[str],
+    ) -> dict[str, Criteria]:
+        """
+        document_id 리스트로 Criteria를 일괄 조회하여 dict로 반환
+
+        Args:
+            doc_ids: 클라우드 문서 ID 목록
+
+        Returns:
+            { document_id: Criteria } — 매칭되지 않는 ID는 키에 포함되지 않음
+        """
+        if not doc_ids:
+            return {}
+        stmt = select(Criteria).where(
+            Criteria.document_id.in_(doc_ids)
+        )
+        result = await self.db.execute(stmt)
+        return {c.document_id: c for c in result.scalars().all()}

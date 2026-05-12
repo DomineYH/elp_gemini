@@ -64,7 +64,36 @@ async def criteria_list(
             cloud_error = str(e)
 
         # document_id 매핑 생성 (DB ↔ 클라우드 연동 확인용)
-        cloud_doc_ids = {doc["document_id"] for doc in cloud_documents}
+        cloud_doc_ids_list = [
+            doc["document_id"] for doc in cloud_documents
+        ]
+        cloud_doc_ids = set(cloud_doc_ids_list)
+
+        # 클라우드 문서 → DB Criteria 매핑
+        doc_map = await criteria_repo.get_criteria_map_by_document_ids(
+            cloud_doc_ids_list
+        )
+
+        # 하단 클라우드 표용 enrichment
+        cloud_documents = [
+            {
+                "document_id": d["document_id"],
+                "display_name": d.get("display_name"),
+                "title": (
+                    doc_map[d["document_id"]].title
+                    if d["document_id"] in doc_map else None
+                ),
+                "alias": (
+                    doc_map[d["document_id"]].display_alias
+                    if d["document_id"] in doc_map else None
+                ),
+                "criteria_id": (
+                    doc_map[d["document_id"]].id
+                    if d["document_id"] in doc_map else None
+                ),
+            }
+            for d in cloud_documents
+        ]
 
         # 템플릿에 맞게 데이터 변환
         criteria_items = {
@@ -72,6 +101,7 @@ async def criteria_list(
                 {
                     "id": criteria.id,
                     "title": criteria.title,
+                    "display_alias": criteria.display_alias,
                     "status": criteria.status,
                     "file_size": criteria.file_size,
                     "created_at": criteria.created_at,

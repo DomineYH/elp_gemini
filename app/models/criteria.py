@@ -81,6 +81,11 @@ class Criteria(Base):
         nullable=True,
         comment="Vector Store 동기화 시각"
     )
+    display_alias = Column(
+        String(255),
+        nullable=True,
+        comment="관리자 편집용 ASCII 표시명 (NULL이면 title을 fallback)"
+    )
 
     def __repr__(self):
         return (

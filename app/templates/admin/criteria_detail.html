@@ -49,6 +49,11 @@
         <h1 class="text-3xl font-bold text-gray-800">
             {{ criteria.title }}
         </h1>
+        {% if criteria.display_alias %}
+        <p class="text-sm text-blue-700 mt-1">
+            표시명: {{ criteria.display_alias }}
+        </p>
+        {% endif %}
     </div>
 
     <!-- 상태 배지 -->

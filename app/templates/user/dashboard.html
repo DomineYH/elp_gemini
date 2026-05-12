@@ -270,46 +270,44 @@
         </form>
     </div>
 
+    <!-- 평가 기준 목록 (항상 표시) -->
+    <div class="bg-white shadow-md rounded-lg p-6 mb-6">
+        <h2 class="text-xl font-bold mb-4">활성 평가 기준</h2>
+        {% if criteria_documents %}
+        <ul class="space-y-2 max-h-40 overflow-y-auto">
+            {% for criteria in criteria_documents %}
+            <li class="flex items-center text-sm text-gray-700 bg-gray-50 p-2 rounded">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-blue-500" fill="none"
+                    viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {{ criteria.name }}
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-gray-500">등록된 평가 기준이 없습니다.</p>
+        {% endif %}
+    </div>
+
     <!-- 하단: 문서 뷰어 및 정보 (문서가 있을 때만 활성화) -->
     {% if document %}
     <div class="space-y-6">
-        <!-- 중간: 문서 정보 및 평가 기준 (Grid) -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- 문서 정보 -->
-            <div class="bg-white shadow-md rounded-lg p-6">
-                <h2 class="text-xl font-bold mb-4">문서 정보</h2>
-                <div class="space-y-2 text-sm text-gray-600">
-                    <p><span class="font-medium">파일명:</span> {{ document.title }}</p>
-                    <p><span class="font-medium">크기:</span> {{ (document.file_size / 1024 / 1024)|round(2) }} MB</p>
-                    <p><span class="font-medium">상태:</span>
-                        <span class="px-2 py-1 rounded text-xs bg-green-100 text-green-800">
-                            {{ document.status }}
-                        </span>
-                    </p>
-                </div>
-            </div>
-
-            <!-- 평가 기준 목록 -->
-            <div class="bg-white shadow-md rounded-lg p-6">
-                <h2 class="text-xl font-bold mb-4">활성 평가 기준</h2>
-                {% if criteria_documents %}
-                <ul class="space-y-2 max-h-40 overflow-y-auto">
-                    {% for criteria in criteria_documents %}
-                    <li class="flex items-center text-sm text-gray-700 bg-gray-50 p-2 rounded">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-blue-500" fill="none"
-                            viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        {{ criteria.display_name }}
-                    </li>
-                    {% endfor %}
-                </ul>
-                {% else %}
-                <p class="text-sm text-gray-500">등록된 평가 기준이 없습니다.</p>
-                {% endif %}
+        <!-- 중간: 문서 정보 -->
+        <div class="bg-white shadow-md rounded-lg p-6">
+            <h2 class="text-xl font-bold mb-4">문서 정보</h2>
+            <div class="space-y-2 text-sm text-gray-600">
+                <p><span class="font-medium">파일명:</span> {{ document.title }}</p>
+                <p><span class="font-medium">크기:</span> {{ (document.file_size / 1024 / 1024)|round(2) }} MB</p>
+                <p><span class="font-medium">상태:</span>
+                    <span class="px-2 py-1 rounded text-xs bg-green-100 text-green-800">
+                        {{ document.status }}
+                    </span>
+                </p>
             </div>
         </div>
+
 
         <!-- 하단: 문서 뷰어 (Full Width) -->
         <div class="bg-white shadow-md rounded-lg p-6">

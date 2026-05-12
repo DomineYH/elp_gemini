@@ -131,7 +131,7 @@ class CriteriaContextService:
                                 criteria_ids.append(criteria.id)
                                 criteria_metadata.append({
                                     "id": criteria.id,
-                                    "title": criteria.title,
+                                    "title": criteria.display_alias or criteria.title,
                                     "file_path": criteria.file_path
                                 })
 

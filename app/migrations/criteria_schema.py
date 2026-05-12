@@ -80,3 +80,33 @@ async def ensure_criteria_file_path_column(
         )
         return True
 
+
+async def ensure_criteria_display_alias_column(
+    engine: AsyncEngine,
+) -> bool:
+    """
+    criteria.display_alias 컬럼이 없을 경우 추가.
+    Returns True 컬럼이 새로 추가됨, False 이미 존재하거나 테이블 없음.
+    """
+    async with engine.begin() as conn:
+        columns = await conn.run_sync(_collect_criteria_columns)
+        if columns is None:
+            logger.warning(
+                "criteria 테이블이 없어 display_alias 패치를 건너뜀"
+            )
+            return False
+        if "display_alias" in columns:
+            logger.debug(
+                "criteria.display_alias 컬럼이 이미 존재하여 패치를 건너뜀"
+            )
+            return False
+
+        await conn.execute(
+            text(
+                "ALTER TABLE criteria "
+                "ADD COLUMN display_alias VARCHAR(255) NULL"
+            )
+        )
+        logger.info("criteria.display_alias 컬럼을 추가함")
+        return True
+
