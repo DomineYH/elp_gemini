@@ -393,17 +393,15 @@ class CriteriaRepository:
     async def get_criteria_map_by_document_ids(
         self,
         doc_ids: List[str],
-    ) -> dict:
+    ) -> dict[str, Criteria]:
         """
-        document_id 리스트로 Criteria를 일괄 조회하여
-        {document_id: {"id": int, "name": str}} dict로 반환.
-        name은 display_alias가 있으면 그 값을, 없으면 title을 사용.
+        document_id 리스트로 Criteria를 일괄 조회하여 dict로 반환
 
         Args:
-            doc_ids: Vector Store 문서 ID 리스트
+            doc_ids: 클라우드 문서 ID 목록
 
         Returns:
-            document_id → {"id", "name"} 매핑 dict
+            { document_id: Criteria } — 매칭되지 않는 ID는 키에 포함되지 않음
         """
         if not doc_ids:
             return {}
@@ -411,10 +409,4 @@ class CriteriaRepository:
             Criteria.document_id.in_(doc_ids)
         )
         result = await self.db.execute(stmt)
-        return {
-            c.document_id: {
-                "id": c.id,
-                "name": c.display_alias or c.title,
-            }
-            for c in result.scalars().all()
-        }
+        return {c.document_id: c for c in result.scalars().all()}

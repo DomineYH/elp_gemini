@@ -62,41 +62,34 @@ async def test_update_display_alias_returns_none_for_missing(db_session):
 @pytest.mark.asyncio
 async def test_get_criteria_map_by_document_ids(db_session):
     repo = CriteriaRepository(db_session)
-
-    c1 = Criteria(
+    c1 = await repo.save_criteria(
         title="a.pdf",
-        file_size=10,
+        file_size=1,
         uploaded_by="admin",
-        file_path="/a.pdf",
-        document_id="doc-1",
+        file_path="/tmp/a.pdf",
+        document_id="doc-aaa",
         status="active",
-        display_alias="별명A",
     )
-    c2 = Criteria(
+    c2 = await repo.save_criteria(
         title="b.pdf",
-        file_size=20,
+        file_size=1,
         uploaded_by="admin",
-        file_path="/b.pdf",
-        document_id="doc-2",
+        file_path="/tmp/b.pdf",
+        document_id="doc-bbb",
         status="active",
-        display_alias=None,
     )
-    db_session.add_all([c1, c2])
     await db_session.commit()
 
     mapping = await repo.get_criteria_map_by_document_ids(
-        ["doc-1", "doc-2"]
+        ["doc-aaa", "doc-bbb", "doc-missing"]
     )
-    assert mapping == {
-        "doc-1": {"id": c1.id, "name": "별명A"},
-        "doc-2": {"id": c2.id, "name": "b.pdf"},
-    }
+    assert mapping["doc-aaa"].id == c1.id
+    assert mapping["doc-aaa"].title == "a.pdf"
+    assert mapping["doc-bbb"].id == c2.id
+    assert "doc-missing" not in mapping
 
 
 @pytest.mark.asyncio
-async def test_get_criteria_map_skips_unknown_ids(db_session):
+async def test_get_criteria_map_empty_input(db_session):
     repo = CriteriaRepository(db_session)
-    mapping = await repo.get_criteria_map_by_document_ids(
-        ["nonexistent"]
-    )
-    assert mapping == {}
+    assert await repo.get_criteria_map_by_document_ids([]) == {}
