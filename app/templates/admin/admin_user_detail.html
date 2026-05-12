@@ -22,6 +22,20 @@
         <a href="/admin/users" class="text-blue-600 hover:underline">← 사용자 목록</a>
     </div>
 
+    <a id="exportUserLink"
+       href="#"
+       class="inline-block px-3 py-1 border rounded text-sm hover:bg-gray-50 mb-4">
+      이 사용자만 ZIP으로 내보내기
+    </a>
+    <script>
+      (() => {
+        const userId = document.querySelector("[data-user-id]")?.dataset.userId
+          || new URL(window.location.href).pathname.split("/").pop();
+        const link = document.getElementById("exportUserLink");
+        link.href = "/admin/api/exports/all.zip?user_ids=" + userId;
+      })();
+    </script>
+
     <!-- 사용자 헤더 -->
     <section class="bg-white shadow-md rounded-lg p-6 mb-6" id="userHeader">
         <h1 class="text-2xl font-bold text-gray-900" id="userEmail">불러오는 중...</h1>
