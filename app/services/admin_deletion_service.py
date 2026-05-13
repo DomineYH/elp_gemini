@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analysis_reports import AnalysisReport
@@ -118,6 +118,9 @@ class AdminDeletionService:
         await self.db.commit()
 
         files_removed = self._remove_report_md_files(reports_snapshot)
+        files_removed += await self._remove_unreferenced_lessonplans(
+            reports_snapshot
+        )
 
         log_user_action(
             user_id=current_admin_id,
@@ -212,6 +215,9 @@ class AdminDeletionService:
         await self.db.commit()
 
         files_removed = self._remove_report_md_files(reports_snapshot)
+        files_removed += await self._remove_unreferenced_lessonplans(
+            reports_snapshot
+        )
 
         log_user_action(
             user_id=current_admin_id,
@@ -252,6 +258,45 @@ class AdminDeletionService:
                     "파일 삭제 실패: path=%s, err=%s", path, exc
                 )
         return removed
+
+    async def _remove_unreferenced_lessonplans(
+        self, reports: list[AnalysisReport]
+    ) -> int:
+        """DB에서 더 이상 참조하지 않는 lessonplan 파일을 삭제한다."""
+        filenames = {
+            report.lessonplan_filename
+            for report in reports
+            if report.lessonplan_filename
+        }
+        if not filenames:
+            return 0
+
+        removed = 0
+        for name in sorted(filenames):
+            result = await self.db.execute(
+                text(
+                    "SELECT count(1) FROM analysis_reports "
+                    "WHERE lessonplan_filename = :name"
+                ),
+                {"name": name},
+            )
+            if result.scalar_one() != 0:
+                continue
+
+            path = self._resolve_lessonplan_path(name)
+            if not path.is_file() or path.is_symlink():
+                continue
+            try:
+                path.unlink()
+                removed += 1
+            except OSError as exc:
+                logger.warning(
+                    "파일 삭제 실패: path=%s, err=%s", path, exc
+                )
+        return removed
+
+    def _resolve_lessonplan_path(self, filename: str) -> Path:
+        return Path(LESSONPLAN_BASE_DIR) / Path(filename).name
 
     def _remove_user_upload_files(self, username: str) -> int:
         """사용자 prefix로 저장된 업로드 파일을 삭제한다."""

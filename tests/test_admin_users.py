@@ -3,6 +3,7 @@
 통계, 세션 목록, 세션 상세 엔드포인트 검증
 """
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -493,3 +494,25 @@ async def test_admin_users_page_has_per_user_detail_link(seed_data):
     assert resp.status_code == 200
     # The accounts row template builds /admin/users/${account.user_id}
     assert "/admin/users/${account.user_id}" in resp.text
+
+
+def test_admin_users_delete_button_uses_data_attributes():
+    """Delete labels are passed through escaped data attributes."""
+    source = Path("app/templates/admin/admin_users.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "const safeLabel" not in source
+    assert 'onclick="deleteUser' not in source
+    assert (
+        "class=\"delete-user-btn bg-red-600 text-white px-3 py-1 "
+        "rounded-md text-sm hover:bg-red-700\""
+        in source
+    )
+    assert 'data-user-id="${account.user_id}"' in source
+    assert (
+        'data-user-label="${escapeHtml(account.email || account.username || \'\')}"'
+        in source
+    )
+    assert "btn.addEventListener('click'" in source
+    assert "deleteUser(userId, userLabel);" in source

@@ -335,12 +335,9 @@ async function loadAccounts(page = 1) {
                 </div>
             ` : '<span class="text-xs text-gray-400">관리자 변경 불가</span>';
 
-            const safeLabel = (account.email || account.username || '')
-                .replace(/'/g, "\\'");
             const deleteAction = (account.is_admin || account.user_id === CURRENT_ADMIN_ID)
                 ? '<span class="text-xs text-gray-400">불가</span>'
-                : `<button onclick="deleteUser(${account.user_id}, '${safeLabel}')"
-                       class="bg-red-600 text-white px-3 py-1 rounded-md text-sm hover:bg-red-700">삭제</button>`;
+                : `<button type="button" class="delete-user-btn bg-red-600 text-white px-3 py-1 rounded-md text-sm hover:bg-red-700" data-user-id="${account.user_id}" data-user-label="${escapeHtml(account.email || account.username || '')}">삭제</button>`;
 
             return `
                 <tr class="hover:bg-gray-50">
@@ -365,6 +362,14 @@ async function loadAccounts(page = 1) {
                 </tr>
             `;
         }).join('');
+
+        document.querySelectorAll('.delete-user-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const userId = Number(btn.dataset.userId);
+                const userLabel = btn.dataset.userLabel || '';
+                deleteUser(userId, userLabel);
+            });
+        });
 
         accountTotalPages = Math.ceil(data.total / pageSize);
         updateAccountPagination(data.total);

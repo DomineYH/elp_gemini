@@ -226,8 +226,21 @@ async def test_delete_chat_session_not_found(seeded):
 
 
 @pytest.mark.asyncio
-async def test_delete_analysis_report_does_not_touch_lessonplan(seeded):
+async def test_delete_analysis_report_keeps_shared_lessonplan(seeded):
     async with TestingSessionLocal() as db:
+        shared_report_file = seeded["report_file"].parent / "shared.md"
+        shared_report_file.write_text("# shared", encoding="utf-8")
+        shared_report = AnalysisReport(
+            user_id=seeded["user_id"],
+            lessonplan_filename=seeded["lessonplan_file"].name,
+            lessonplan_original_name="plan.pdf",
+            report_filename=shared_report_file.name,
+            report_path=str(shared_report_file),
+            latency_ms=100,
+        )
+        db.add(shared_report)
+        await db.commit()
+
         service = AdminDeletionService(db)
         result = await service.delete_analysis_report(
             report_id=seeded["report_id"],
@@ -239,6 +252,23 @@ async def test_delete_analysis_report_does_not_touch_lessonplan(seeded):
     assert result["files_removed"] == 1
     assert not seeded["report_file"].exists()
     assert seeded["lessonplan_file"].exists()
+    assert shared_report_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_analysis_report_removes_unreferenced_lessonplan(seeded):
+    async with TestingSessionLocal() as db:
+        service = AdminDeletionService(db)
+        result = await service.delete_analysis_report(
+            report_id=seeded["report_id"],
+            current_admin_id=seeded["admin_id"],
+        )
+
+    assert result["ok"] is True
+    assert result["deleted"] == 1
+    assert result["files_removed"] == 2
+    assert not seeded["report_file"].exists()
+    assert not seeded["lessonplan_file"].exists()
 
 
 @pytest.mark.asyncio
@@ -324,8 +354,51 @@ async def test_bulk_delete_reports_happy(seeded, tmp_path):
 
     assert result["ok"] is True
     assert result["deleted"] == 2
-    # seeded.report.md + r2.md = 2; lessonplan PDF는 보존한다.
+    # seeded.report.md + r2.md + now-unreferenced lessonplan PDF = 3.
+    assert result["files_removed"] == 3
+    assert not seeded["report_file"].exists()
+    assert not f2.exists()
+    assert not seeded["lessonplan_file"].exists()
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_reports_keeps_shared_lessonplan(seeded, tmp_path):
+    async with TestingSessionLocal() as db:
+        f2 = tmp_path / "report2.md"
+        f3 = tmp_path / "report3.md"
+        f2.write_text("# r2", encoding="utf-8")
+        f3.write_text("# r3", encoding="utf-8")
+        r2 = AnalysisReport(
+            user_id=seeded["user_id"],
+            lessonplan_filename=seeded["lessonplan_file"].name,
+            lessonplan_original_name="plan.pdf",
+            report_filename=f2.name,
+            report_path=str(f2),
+            latency_ms=100,
+        )
+        r3 = AnalysisReport(
+            user_id=seeded["user_id"],
+            lessonplan_filename=seeded["lessonplan_file"].name,
+            lessonplan_original_name="plan.pdf",
+            report_filename=f3.name,
+            report_path=str(f3),
+            latency_ms=100,
+        )
+        db.add_all([r2, r3])
+        await db.commit()
+        await db.refresh(r2)
+
+        service = AdminDeletionService(db)
+        result = await service.bulk_delete_reports(
+            user_id=seeded["user_id"],
+            report_ids=[seeded["report_id"], r2.id],
+            current_admin_id=seeded["admin_id"],
+        )
+
+    assert result["ok"] is True
+    assert result["deleted"] == 2
     assert result["files_removed"] == 2
     assert not seeded["report_file"].exists()
     assert not f2.exists()
     assert seeded["lessonplan_file"].exists()
+    assert f3.exists()
