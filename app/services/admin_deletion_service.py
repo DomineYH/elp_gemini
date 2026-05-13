@@ -65,11 +65,6 @@ class AdminDeletionService:
         )
         reports_snapshot = list(reports_result.scalars().all())
         username = user.username
-        report_filenames = {
-            report.lessonplan_filename
-            for report in reports_snapshot
-            if report.lessonplan_filename
-        }
         other_usernames_result = await self.db.execute(
             select(User.username).where(User.id != target_user_id)
         )
@@ -80,8 +75,8 @@ class AdminDeletionService:
         await self.db.commit()
 
         md_count = await self._remove_report_md_files(reports_snapshot)
-        upload_count = self._remove_user_upload_files(
-            username, report_filenames, other_usernames
+        upload_count = await self._remove_user_upload_files(
+            username, reports_snapshot, other_usernames
         )
         files_removed = md_count + upload_count
         await self._delete_file_search_store(username)
@@ -356,25 +351,19 @@ class AdminDeletionService:
     def _resolve_lessonplan_path(self, filename: str) -> Path:
         return Path(LESSONPLAN_BASE_DIR) / Path(filename).name
 
-    def _remove_user_upload_files(
+    async def _remove_user_upload_files(
         self,
         username: str,
-        report_lessonplan_filenames: set[str],
+        reports: list[AnalysisReport],
         other_usernames: list[str],
     ) -> int:
         """DB에 기록된 lessonplan 파일과 대시보드 업로드 파일을 삭제한다."""
-        removed = 0
-        for filename in sorted(report_lessonplan_filenames):
-            path = self._resolve_lessonplan_path(filename)
-            if not path.is_file() or path.is_symlink():
-                continue
-            try:
-                path.unlink()
-                removed += 1
-            except OSError as exc:
-                logger.warning(
-                    "파일 삭제 실패: path=%s, err=%s", path, exc
-                )
+        removed = await self._remove_unreferenced_lessonplans(reports)
+        report_lessonplan_filenames = {
+            report.lessonplan_filename
+            for report in reports
+            if report.lessonplan_filename
+        }
 
         lessonplan_dir = Path(LESSONPLAN_BASE_DIR)
         try:
@@ -421,6 +410,24 @@ class AdminDeletionService:
             )
             return removed
 
+        safe_username = _sanitize_display_name(username)
+        other_sanitized = {
+            _sanitize_display_name(other) for other in other_usernames
+        }
+        if safe_username in other_sanitized:
+            logger.warning(
+                "static uploads 정리 생략: 다른 사용자(%s)와 sanitized "
+                "충돌. username=%s safe=%s",
+                [
+                    other
+                    for other in other_usernames
+                    if _sanitize_display_name(other) == safe_username
+                ],
+                username,
+                safe_username,
+            )
+            return removed
+
         uploads_dir = Path(STATIC_UPLOADS_DIR)
         try:
             files = list(uploads_dir.iterdir())
@@ -432,7 +439,6 @@ class AdminDeletionService:
             )
             return removed
 
-        safe_username = _sanitize_display_name(username)
         upload_pattern = re.compile(
             rf"^{re.escape(safe_username)}_\d{{14}}_"
         )
