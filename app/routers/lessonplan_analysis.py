@@ -53,9 +53,15 @@ async def analyze_lesson_plan(
         )
 
         if not result.get("success"):
+            if result.get("error_code") == "RESOURCE_EXHAUSTED":
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=result.get("error", "잠시 후 다시 시도해주세요."),
+                    headers={"Retry-After": "30"},
+                )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=result.get("error", "분석 중 오류 발생")
+                detail=result.get("error", "분석 중 오류 발생"),
             )
 
         return LessonPlanAnalysisResponse(**result)
