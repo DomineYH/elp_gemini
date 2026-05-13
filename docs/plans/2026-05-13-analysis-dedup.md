@@ -1427,29 +1427,14 @@ success path uses."
 
 ---
 
-## Task 7: Cleanup — delete superseded 503 plan, close issue #53
+## Task 7: Cleanup — close issue #53
 
 **Files:**
-- Delete: `docs/plans/2026-05-13-fix-503-unavailable-retry.md`
 - GitHub: close issue [#53](https://github.com/DomineYH/elp_gemini/issues/53)
 
-- [ ] **Step 1: Delete the superseded plan file**
+The superseded 503 retry plan file was never committed to the branch (it was a mid-session artifact removed before implementation began), so no file deletion is needed.
 
-```bash
-git rm docs/plans/2026-05-13-fix-503-unavailable-retry.md
-```
-
-- [ ] **Step 2: Commit the deletion**
-
-```bash
-git commit -m "docs(plans): delete superseded 503 retry plan
-
-Replaced by docs/superpowers/specs/2026-05-13-analysis-dedup-design.md
-and docs/plans/2026-05-13-analysis-dedup.md, which prevent the
-duplicate-analysis path that the 503 retry was trying to recover from."
-```
-
-- [ ] **Step 3: Close GitHub issue #53**
+- [ ] **Step 1: Close GitHub issue #53**
 
 ```bash
 gh issue close 53 \
@@ -1457,7 +1442,7 @@ gh issue close 53 \
   --comment "Superseded by the analysis-dedup design (docs/superpowers/specs/2026-05-13-analysis-dedup-design.md) and its implementation plan (docs/plans/2026-05-13-analysis-dedup.md). Blocking duplicate analysis at the service layer addresses the root cause of repeated Gemini calls; the 503 retry treated a symptom. PR #52's 429 retry is preserved unchanged."
 ```
 
-- [ ] **Step 4: (Optional) Open a tracking issue for the dedup work**
+- [ ] **Step 2: (Optional) Open a tracking issue for the dedup work**
 
 ```bash
 gh issue create \
