@@ -79,7 +79,7 @@ class AdminDeletionService:
             username, reports_snapshot, other_usernames
         )
         files_removed = md_count + upload_count
-        await self._delete_file_search_store(username)
+        await self._delete_file_search_store(username, other_usernames)
 
         log_user_action(
             user_id=current_admin_id,
@@ -258,20 +258,38 @@ class AdminDeletionService:
         }
 
     # ----- 파일 정리 헬퍼 -----
-    async def _delete_file_search_store(self, username: str) -> None:
-        """사용자별 File Search store를 best-effort로 삭제한다."""
+    async def _delete_file_search_store(
+        self,
+        username: str,
+        other_usernames: list[str],
+    ) -> None:
+        """사용자 전용 File Search 스토어를 삭제한다."""
         try:
             from app.services.file_search_service import (
                 FileSearchService,
                 _sanitize_display_name,
             )
 
+            target = _sanitize_display_name(f"user-{username}-store")
+            colliding = [
+                other
+                for other in other_usernames
+                if _sanitize_display_name(f"user-{other}-store") == target
+            ]
+            if colliding:
+                logger.warning(
+                    "File Search 스토어 삭제 생략: 다른 사용자(%s)와 "
+                    "sanitized 충돌. username=%s safe=%s",
+                    colliding,
+                    username,
+                    target,
+                )
+                return
             service = FileSearchService()
-            store_name = _sanitize_display_name(f"user-{username}-store")
-            await service.delete_store_by_display_name(store_name)
+            await service.delete_store_by_display_name(target)
         except Exception as exc:
             logger.warning(
-                "File Search store 삭제 실패: username=%s, err=%s",
+                "File Search 스토어 삭제 실패 (무시): username=%s, err=%s",
                 username,
                 exc,
             )

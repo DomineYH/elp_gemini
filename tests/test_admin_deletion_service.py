@@ -316,6 +316,81 @@ async def test_delete_user_sanitizes_file_search_store_name(
 
 
 @pytest.mark.asyncio
+async def test_delete_user_skips_file_search_store_on_sanitized_collision(
+    db_tables, tmp_path, monkeypatch, caplog
+):
+    """If another user shares the sanitized store name, skip deletion."""
+    lessonplan_base = tmp_path / "data" / "lessonplan"
+    lessonplan_base.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.LESSONPLAN_BASE_DIR",
+        str(lessonplan_base),
+    )
+    static_uploads_dir = tmp_path / "app" / "static" / "uploads"
+    static_uploads_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.STATIC_UPLOADS_DIR",
+        str(static_uploads_dir),
+        raising=False,
+    )
+
+    called_with = []
+
+    class FakeFSS:
+        async def delete_store_by_display_name(self, display_name):
+            called_with.append(display_name)
+
+    import app.services.file_search_service as fss_module
+    monkeypatch.setattr(
+        fss_module, "FileSearchService", lambda *a, **k: FakeFSS()
+    )
+
+    async with TestingSessionLocal() as db:
+        admin = User(
+            username="admin1",
+            nickname="A",
+            email="a@t.com",
+            hashed_password="h",
+            is_admin=True,
+        )
+        # Two users that sanitize to the same store name
+        user_a = User(
+            username="Jose",
+            nickname="J",
+            email="jose@t.com",
+            hashed_password="h",
+            is_admin=False,
+        )
+        user_b = User(
+            username="José",
+            nickname="J2",
+            email="josew@t.com",
+            hashed_password="h",
+            is_admin=False,
+        )
+        db.add_all([admin, user_a, user_b])
+        await db.commit()
+        await db.refresh(admin)
+        await db.refresh(user_a)
+
+        service = AdminDeletionService(db)
+        with caplog.at_level("WARNING"):
+            await service.delete_user(
+                target_user_id=user_a.id,
+                current_admin_id=admin.id,
+            )
+
+    # The fake store deletion was NOT called
+    assert called_with == []
+    # A warning was logged about the collision
+    assert any(
+        "sanitized 충돌" in record.message
+        for record in caplog.records
+        if record.levelname == "WARNING"
+    )
+
+
+@pytest.mark.asyncio
 async def test_delete_user_skips_static_uploads_for_nondeterministic_username(
     db_tables, tmp_path, monkeypatch, caplog
 ):
