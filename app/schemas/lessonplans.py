@@ -10,17 +10,13 @@ from pydantic import BaseModel, Field
 class LessonPlanUploadResponse(BaseModel):
     """지도안 업로드 응답"""
 
-    filename: str = Field(
-        ..., description="저장된 파일명"
-    )
-    original_filename: str = Field(
-        ..., description="원본 파일명"
-    )
-    file_size: int = Field(
-        ..., description="파일 크기 (bytes)"
-    )
-    saved_path: str = Field(
-        ..., description="저장 경로"
+    filename: str = Field(..., description="저장된 파일명")
+    original_filename: str = Field(..., description="원본 파일명")
+    file_size: int = Field(..., description="파일 크기 (bytes)")
+    saved_path: str = Field(..., description="저장 경로")
+    upload_id: int = Field(..., description="업로드 이벤트 ID")
+    file_hash: str = Field(
+        ..., description="파일 SHA-256 (64자 hex)"
     )
 
 

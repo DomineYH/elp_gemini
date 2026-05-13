@@ -14,7 +14,11 @@ from fastapi.responses import FileResponse
 import logging
 from pathlib import Path
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db import get_db
 from app.dependencies import get_current_user
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
 from app.schemas.lessonplans import (
     LessonPlanUploadResponse,
@@ -39,60 +43,61 @@ logger = logging.getLogger(__name__)
 async def upload_lessonplan(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    지도안 파일 업로드
-
-    Args:
-        file: 업로드할 파일
-        current_user: 현재 로그인한 사용자
-
-    Returns:
-        업로드 결과 정보
-
-    Raises:
-        HTTPException: 파일 검증 실패 또는 저장 오류
+    지도안 파일 업로드 + lessonplan_uploads 행 생성
     """
     try:
-        # 파일 검증
         validator = FileValidator()
         validation_result = await validator.validate_file(file)
-
         if not validation_result["valid"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=validation_result["error"]
+                detail=validation_result["error"],
             )
 
-        # 파일 내용 읽기
         file_content = await file.read()
 
-        # 저장 서비스 호출
         storage_service = LessonPlanStorageService()
-        result = storage_service.save_lessonplan(
+        saved = storage_service.save_lessonplan(
             username=current_user.username,
             original_filename=file.filename,
             file_content=file_content,
         )
 
+        upload = LessonPlanUpload(
+            user_id=current_user.id,
+            filename=saved["filename"],
+            original_filename=file.filename,
+            file_hash=saved["file_hash"],
+        )
+        db.add(upload)
+        await db.flush()
+
         logger.info(
-            f"지도안 업로드 성공: "
-            f"user={current_user.username}, "
-            f"file={result['filename']}"
+            f"지도안 업로드 성공: user={current_user.username}, "
+            f"file={saved['filename']}, upload_id={upload.id}"
         )
 
-        return LessonPlanUploadResponse(**result)
+        return LessonPlanUploadResponse(
+            filename=saved["filename"],
+            original_filename=file.filename,
+            file_size=len(file_content),
+            saved_path=saved["file_path"],
+            upload_id=upload.id,
+            file_hash=saved["file_hash"],
+        )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(
-            f"지도안 업로드 실패: {str(e)}",
-            exc_info=True
+            f"지도안 업로드 실패: {str(e)}", exc_info=True,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="파일 업로드 중 오류가 발생했습니다."
+            detail="파일 업로드 중 오류가 발생했습니다.",
         )
 
 
