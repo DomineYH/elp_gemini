@@ -79,8 +79,6 @@ class LessonPlanAnalysisService:
                     }
 
                 # Store ID 분리 및 역할 명확화
-                # (removed criteria_context pre-fetch — the main generate_content
-                #  call already retrieves evaluation criteria via File Search)
                 user_store_id = store_ids[0]      # 사용자 업로드 수업 지도안
                 rubric_store_id = store_ids[1]    # 평가기준 문서
 
