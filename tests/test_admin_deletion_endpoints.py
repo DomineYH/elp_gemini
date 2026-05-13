@@ -47,7 +47,17 @@ async def db_tables():
 
 
 @pytest_asyncio.fixture
-async def seeded(db_tables, tmp_path):
+async def seeded(db_tables, tmp_path, monkeypatch):
+    import app.services.file_search_service as fss_module
+
+    class _NoopFSS:
+        async def delete_store_by_display_name(self, display_name):
+            return None
+
+    monkeypatch.setattr(
+        fss_module, "FileSearchService", lambda *a, **k: _NoopFSS()
+    )
+
     async with TestingSessionLocal() as db:
         # 테스트용 admin도 DB에 저장 (FK 무결성/감사 기록을 위해)
         admin_row = User(

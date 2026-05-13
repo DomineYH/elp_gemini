@@ -73,6 +73,7 @@ class AdminDeletionService:
             username, report_filenames, other_usernames
         )
         files_removed = md_count + upload_count
+        await self._delete_file_search_store(username)
 
         log_user_action(
             user_id=current_admin_id,
@@ -81,6 +82,7 @@ class AdminDeletionService:
                 "target_user_id": target_user_id,
                 "md_files_removed": md_count,
                 "upload_files_removed": upload_count,
+                "file_search_store_cleanup_attempted": True,
             },
             success=True,
         )
@@ -250,6 +252,22 @@ class AdminDeletionService:
         }
 
     # ----- 파일 정리 헬퍼 -----
+    async def _delete_file_search_store(self, username: str) -> None:
+        """사용자별 File Search store를 best-effort로 삭제한다."""
+        try:
+            from app.services.file_search_service import FileSearchService
+
+            service = FileSearchService()
+            await service.delete_store_by_display_name(
+                f"user-{username}-store"
+            )
+        except Exception as exc:
+            logger.warning(
+                "File Search store 삭제 실패: username=%s, err=%s",
+                username,
+                exc,
+            )
+
     def _remove_report_md_files(
         self, reports: list[AnalysisReport]
     ) -> int:

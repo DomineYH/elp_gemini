@@ -24,6 +24,18 @@ async def db_tables():
         await conn.run_sync(Base.metadata.drop_all)
 
 
+def _stub_file_search_service(monkeypatch):
+    import app.services.file_search_service as fss_module
+
+    class _NoopFSS:
+        async def delete_store_by_display_name(self, display_name):
+            return None
+
+    monkeypatch.setattr(
+        fss_module, "FileSearchService", lambda *a, **k: _NoopFSS()
+    )
+
+
 @pytest_asyncio.fixture
 async def seeded(db_tables, tmp_path, monkeypatch):
     """관리자 + 일반 사용자 + 세션 + 보고서 시드.
@@ -44,6 +56,7 @@ async def seeded(db_tables, tmp_path, monkeypatch):
         str(static_uploads_dir),
         raising=False,
     )
+    _stub_file_search_service(monkeypatch)
 
     async with TestingSessionLocal() as db:
         admin = User(
@@ -135,6 +148,30 @@ async def test_delete_user_cascades_and_removes_files(seeded):
 
 
 @pytest.mark.asyncio
+async def test_delete_user_calls_file_search_cleanup(seeded, monkeypatch):
+    import app.services.file_search_service as fss_module
+
+    called_with = []
+
+    class FakeFSS:
+        async def delete_store_by_display_name(self, display_name):
+            called_with.append(display_name)
+
+    monkeypatch.setattr(
+        fss_module, "FileSearchService", lambda *a, **k: FakeFSS()
+    )
+
+    async with TestingSessionLocal() as db:
+        service = AdminDeletionService(db)
+        await service.delete_user(
+            target_user_id=seeded["user_id"],
+            current_admin_id=seeded["admin_id"],
+        )
+
+    assert called_with == ["user-stu1-store"]
+
+
+@pytest.mark.asyncio
 async def test_delete_user_removes_orphaned_upload(seeded):
     orphan_file = seeded["static_uploads_dir"] / (
         "orphan1_20260101000000_orphan.pdf"
@@ -182,6 +219,7 @@ async def test_delete_user_removes_lessonplan_orphan_without_report(
         str(static_uploads_dir),
         raising=False,
     )
+    _stub_file_search_service(monkeypatch)
     orphan_file = lessonplan_base / "lonely1_plan.pdf"
     orphan_file.write_bytes(b"%PDF-1.4\n")
 
@@ -234,6 +272,7 @@ async def test_delete_user_skips_other_user_files(
         str(static_uploads_dir),
         raising=False,
     )
+    _stub_file_search_service(monkeypatch)
 
     async with TestingSessionLocal() as db:
         admin = User(
