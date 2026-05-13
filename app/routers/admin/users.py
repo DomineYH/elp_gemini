@@ -3,7 +3,6 @@
 학년별 통계, 세션 목록, 세션 상세 API
 """
 import logging
-import secrets
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -33,7 +32,12 @@ from app.models.chat_messages import (
 from app.models.chat_sessions import ChatSession
 from app.models.user_profiles import UserProfile
 from app.models.users import User
+from app.services.admin_deletion_service import AdminDeletionService
 from app.services.auth_service import AuthService
+from app.utils.admin_csrf import (
+    ensure_admin_csrf_token,
+    require_admin_csrf_token,
+)
 from app.utils.logging import log_auth_event, log_user_action
 
 router = APIRouter(tags=["관리자-사용자관리"])
@@ -44,8 +48,6 @@ PROFILE_ROLE_LABELS = {
     "teacher": "교사",
     "preservice_teacher": "예비교사",
 }
-ADMIN_CSRF_SESSION_KEY = "admin_csrf_token"
-ADMIN_CSRF_HEADER = "x-csrf-token"
 
 
 def _role_str(role):
@@ -132,28 +134,6 @@ def _serialize_profile(profile: Any) -> dict[str, Any]:
         "preservice_grade": preservice_grade,
         "summary": summary,
     }
-
-
-def _ensure_admin_csrf_token(request: Request) -> str:
-    """관리자 상태 변경 요청용 CSRF 토큰을 세션에 보관한다."""
-    token = request.session.get(ADMIN_CSRF_SESSION_KEY)
-    if not token:
-        token = secrets.token_urlsafe(32)
-        request.session[ADMIN_CSRF_SESSION_KEY] = token
-    return str(token)
-
-
-def _require_admin_csrf_token(request: Request) -> None:
-    """세션 CSRF 토큰과 요청 헤더를 상수 시간 비교한다."""
-    expected = request.session.get(ADMIN_CSRF_SESSION_KEY)
-    provided = request.headers.get(ADMIN_CSRF_HEADER)
-    if not expected or not provided or not secrets.compare_digest(
-        str(expected), str(provided)
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="CSRF 토큰이 유효하지 않습니다.",
-        )
 
 
 async def _load_profiles(
@@ -932,7 +912,7 @@ async def change_regular_user_password(
             detail="관리자 권한이 필요합니다.",
         )
 
-    _require_admin_csrf_token(request)
+    require_admin_csrf_token(request)
 
     try:
         new_password = await _extract_new_password(request)
@@ -1014,6 +994,201 @@ async def change_regular_user_password(
         )
 
 
+@router.delete("/admin/api/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자 전용 사용자 삭제 API.
+
+    cascade: chat_sessions / chat_messages / analysis_reports / user_profiles.
+    파일: 각 AnalysisReport의 report_path(.md) + lessonplan_filename(.pdf).
+    """
+    require_admin_csrf_token(request)
+
+    service = AdminDeletionService(db)
+    try:
+        result = await service.delete_user(
+            target_user_id=user_id,
+            current_admin_id=current_admin.id,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except PermissionError as exc:
+        log_user_action(
+            user_id=current_admin.id,
+            action="admin_user_delete",
+            details={
+                "target_user_id": user_id,
+                "reason": str(exc),
+            },
+            success=False,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+    logger.info(
+        "관리자 사용자 삭제: admin_id=%s, target_user_id=%s",
+        current_admin.id,
+        user_id,
+    )
+    return result
+
+
+@router.delete("/admin/api/chat-sessions/{session_id}")
+async def delete_chat_session(
+    session_id: int,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자 전용 단일 대화 세션 삭제 (messages cascade)."""
+    require_admin_csrf_token(request)
+    service = AdminDeletionService(db)
+    try:
+        result = await service.delete_chat_session(
+            session_id=session_id,
+            current_admin_id=current_admin.id,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    logger.info(
+        "관리자 대화 세션 삭제: admin_id=%s, session_id=%s",
+        current_admin.id,
+        session_id,
+    )
+    return result
+
+
+@router.delete("/admin/api/reports/{report_id}")
+async def delete_analysis_report(
+    report_id: int,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """관리자 전용 단일 분석 보고서 삭제 (.md/.pdf 파일 포함)."""
+    require_admin_csrf_token(request)
+    service = AdminDeletionService(db)
+    try:
+        result = await service.delete_analysis_report(
+            report_id=report_id,
+            current_admin_id=current_admin.id,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    logger.info(
+        "관리자 분석 보고서 삭제: admin_id=%s, report_id=%s",
+        current_admin.id,
+        report_id,
+    )
+    return result
+
+
+async def _read_id_list(request: Request, key: str) -> list[int]:
+    """JSON 본문에서 정수 ID 배열을 읽는다. 실패 시 400."""
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="요청 본문이 올바른 JSON 형식이 아닙니다.",
+        ) from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="요청 본문은 JSON 객체여야 합니다.",
+        )
+    raw = payload.get(key)
+    if not isinstance(raw, list) or not all(
+        isinstance(item, int) for item in raw
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{key}는 정수 배열이어야 합니다.",
+        )
+    return raw
+
+
+@router.post(
+    "/admin/api/users/{user_id}/sessions/bulk-delete"
+)
+async def bulk_delete_user_sessions(
+    user_id: int,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    require_admin_csrf_token(request)
+    session_ids = await _read_id_list(request, "session_ids")
+
+    service = AdminDeletionService(db)
+    try:
+        result = await service.bulk_delete_sessions(
+            user_id=user_id,
+            session_ids=session_ids,
+            current_admin_id=current_admin.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    logger.info(
+        "관리자 일괄 세션 삭제: admin_id=%s, target_user_id=%s, count=%s",
+        current_admin.id,
+        user_id,
+        result["deleted"],
+    )
+    return result
+
+
+@router.post(
+    "/admin/api/users/{user_id}/reports/bulk-delete"
+)
+async def bulk_delete_user_reports(
+    user_id: int,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    require_admin_csrf_token(request)
+    report_ids = await _read_id_list(request, "report_ids")
+
+    service = AdminDeletionService(db)
+    try:
+        result = await service.bulk_delete_reports(
+            user_id=user_id,
+            report_ids=report_ids,
+            current_admin_id=current_admin.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    logger.info(
+        "관리자 일괄 보고서 삭제: admin_id=%s, target_user_id=%s, count=%s",
+        current_admin.id,
+        user_id,
+        result["deleted"],
+    )
+    return result
+
+
 @router.get(
     "/admin/users", response_class=HTMLResponse)
 async def users_page(
@@ -1021,7 +1196,7 @@ async def users_page(
     current_admin: User = Depends(get_current_admin),
 ):
     """사용자 관리 페이지 렌더링"""
-    csrf_token = _ensure_admin_csrf_token(request)
+    csrf_token = ensure_admin_csrf_token(request)
     return templates.TemplateResponse(
         "admin/admin_users.html",
         {
@@ -1074,11 +1249,13 @@ async def admin_user_detail_page(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="사용자를 찾을 수 없습니다.",
         )
+    csrf_token = ensure_admin_csrf_token(request)
     return templates.TemplateResponse(
         "admin/admin_user_detail.html",
         {
             "request": request,
             "user": current_admin,
             "target_user_id": user_id,
+            "csrf_token": csrf_token,
         },
     )

@@ -2,6 +2,10 @@
 
 {% block title %}사용자 상세 - 관리자{% endblock %}
 
+{% block head %}
+<meta name="csrf-token" content="{{ csrf_token }}">
+{% endblock %}
+
 {% block nav_links %}
 {% if user.is_admin %}
 <a href="/admin/dashboard" class="text-gray-600 hover:text-blue-600">대시보드</a>
@@ -53,6 +57,11 @@
                 <h2 class="text-xl font-semibold">대화</h2>
                 <span class="text-xs text-gray-500" id="sessionCount"></span>
             </div>
+            <div class="flex items-center justify-between mb-2 hidden" id="bulkSessionBar">
+                <span class="text-xs text-gray-500" id="bulkSessionCount">0건 선택</span>
+                <button type="button" onclick="bulkDeleteSessions()"
+                    class="bg-red-600 text-white px-3 py-1 rounded text-xs hover:bg-red-700">선택 삭제</button>
+            </div>
             <ul id="adminSessionList" class="divide-y divide-gray-200">
                 <li class="py-4 text-sm text-gray-500">로딩 중...</li>
             </ul>
@@ -63,6 +72,11 @@
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-xl font-semibold">분석 보고서</h2>
                 <span class="text-xs text-gray-500" id="reportCount"></span>
+            </div>
+            <div class="flex items-center justify-between mb-2 hidden" id="bulkReportBar">
+                <span class="text-xs text-gray-500" id="bulkReportCount">0건 선택</span>
+                <button type="button" onclick="bulkDeleteReports()"
+                    class="bg-red-600 text-white px-3 py-1 rounded text-xs hover:bg-red-700">선택 삭제</button>
             </div>
             <ul id="adminReportList" class="divide-y divide-gray-200">
                 <li class="py-4 text-sm text-gray-500">로딩 중...</li>
@@ -126,13 +140,17 @@ function renderSessions(totalCount, hasMore) {
         return;
     }
     const itemsHtml = adminSessions.map((s) => `
-        <li class="py-3">
-            <a href="/admin/users/session/${s.session_id}" class="block hover:bg-gray-50 rounded p-2 -m-2">
+        <li class="py-3 flex items-start gap-3">
+            <input type="checkbox" class="session-check mt-2" data-id="${s.session_id}">
+            <a href="/admin/users/session/${s.session_id}" class="flex-1 block hover:bg-gray-50 rounded p-2 -m-2">
                 <div class="font-medium text-blue-700">${escapeHtml(s.title || '제목 없음')}</div>
                 <div class="text-xs text-gray-500 mt-1">
                     메시지 ${s.message_count} · 최근 ${formatDate(s.last_message_at || s.updated_at || s.created_at)}
                 </div>
             </a>
+            <button type="button"
+                onclick="deleteOneSession(${s.session_id})"
+                class="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700">삭제</button>
         </li>
     `).join('');
     const moreHtml = hasMore ? `
@@ -145,6 +163,9 @@ function renderSessions(totalCount, hasMore) {
         </li>
     ` : '';
     list.innerHTML = itemsHtml + moreHtml;
+    list.querySelectorAll('.session-check').forEach((cb) => {
+        cb.addEventListener('change', updateBulkSessionBar);
+    });
 }
 
 async function loadSessions(offset = 0, append = false) {
@@ -174,11 +195,15 @@ function renderReports(totalCount, hasMore) {
         return;
     }
     const itemsHtml = adminReports.map((r) => `
-        <li class="py-3">
-            <a href="/admin/reports/view/${r.id}" class="block hover:bg-gray-50 rounded p-2 -m-2">
+        <li class="py-3 flex items-start gap-3">
+            <input type="checkbox" class="report-check mt-2" data-id="${r.id}">
+            <a href="/admin/reports/view/${r.id}" class="flex-1 block hover:bg-gray-50 rounded p-2 -m-2">
                 <div class="font-medium text-blue-700">${escapeHtml(r.lessonplan_original_name || r.report_filename)}</div>
                 <div class="text-xs text-gray-500 mt-1">생성일 ${formatDate(r.created_at)}</div>
             </a>
+            <button type="button"
+                onclick="deleteOneReport(${r.id})"
+                class="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700">삭제</button>
         </li>
     `).join('');
     const moreHtml = hasMore ? `
@@ -191,6 +216,9 @@ function renderReports(totalCount, hasMore) {
         </li>
     ` : '';
     list.innerHTML = itemsHtml + moreHtml;
+    list.querySelectorAll('.report-check').forEach((cb) => {
+        cb.addEventListener('change', updateBulkReportBar);
+    });
 }
 
 async function loadReports(offset = 0, append = false) {
@@ -209,6 +237,103 @@ async function loadReports(offset = 0, append = false) {
 
 function loadMoreAdminReports() {
     return loadReports(adminReportNextOffset, true);
+}
+
+const TARGET_USER_ID = {{ target_user_id }};
+
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+
+function collectIds(selector) {
+    return Array.from(document.querySelectorAll(selector + ':checked'))
+        .map((cb) => Number(cb.dataset.id));
+}
+
+function updateBulkSessionBar() {
+    const ids = collectIds('.session-check');
+    document.getElementById('bulkSessionBar').classList.toggle('hidden', ids.length === 0);
+    document.getElementById('bulkSessionCount').textContent = `${ids.length}건 선택`;
+}
+
+function updateBulkReportBar() {
+    const ids = collectIds('.report-check');
+    document.getElementById('bulkReportBar').classList.toggle('hidden', ids.length === 0);
+    document.getElementById('bulkReportCount').textContent = `${ids.length}건 선택`;
+}
+
+async function deleteOneSession(id) {
+    if (!window.confirm('대화 세션을 삭제하시겠습니까? 메시지가 모두 함께 삭제됩니다.')) return;
+    const resp = await fetch(`/admin/api/chat-sessions/${id}`, {
+        method: 'DELETE',
+        headers: { 'X-CSRF-Token': getCsrfToken() },
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+        alert(data.detail || '삭제 실패'); return;
+    }
+    await loadSessions();
+    loadProfile();
+}
+
+async function deleteOneReport(id) {
+    if (!window.confirm('분석 보고서를 삭제하시겠습니까? 보고서/지도안 파일도 함께 삭제됩니다.')) return;
+    const resp = await fetch(`/admin/api/reports/${id}`, {
+        method: 'DELETE',
+        headers: { 'X-CSRF-Token': getCsrfToken() },
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+        alert(data.detail || '삭제 실패'); return;
+    }
+    await loadReports();
+    loadProfile();
+}
+
+async function bulkDeleteSessions() {
+    const ids = collectIds('.session-check');
+    if (ids.length === 0) return;
+    if (!window.confirm(`${ids.length}개 대화 세션을 삭제하시겠습니까?`)) return;
+    const resp = await fetch(
+        `/admin/api/users/${TARGET_USER_ID}/sessions/bulk-delete`,
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': getCsrfToken(),
+            },
+            body: JSON.stringify({ session_ids: ids }),
+        },
+    );
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+        alert(data.detail || '일괄 삭제 실패'); return;
+    }
+    await loadSessions();
+    loadProfile();
+}
+
+async function bulkDeleteReports() {
+    const ids = collectIds('.report-check');
+    if (ids.length === 0) return;
+    if (!window.confirm(`${ids.length}개 보고서를 삭제하시겠습니까? 파일도 함께 삭제됩니다.`)) return;
+    const resp = await fetch(
+        `/admin/api/users/${TARGET_USER_ID}/reports/bulk-delete`,
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': getCsrfToken(),
+            },
+            body: JSON.stringify({ report_ids: ids }),
+        },
+    );
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+        alert(data.detail || '일괄 삭제 실패'); return;
+    }
+    await loadReports();
+    loadProfile();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
