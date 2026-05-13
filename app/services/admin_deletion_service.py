@@ -43,26 +43,30 @@ class AdminDeletionService:
         if user.is_admin:
             raise PermissionError("관리자 계정은 삭제할 수 없습니다.")
 
-        # 파일 정리를 위해 보고서 목록을 먼저 수집
+        # 파일 정리를 위해 보고서 목록과 username을 먼저 수집
         reports_result = await self.db.execute(
             select(AnalysisReport).where(
                 AnalysisReport.user_id == target_user_id
             )
         )
         reports = list(reports_result.scalars().all())
+        username = user.username
 
         # DB 삭제 — relationship cascade가 세션/메시지/프로필 처리
         await self.db.delete(user)
         await self.db.commit()
 
-        files_removed = self._remove_report_files(reports)
+        md_count = self._remove_report_md_files(reports)
+        upload_count = self._remove_user_upload_files(username)
+        files_removed = md_count + upload_count
 
         log_user_action(
             user_id=current_admin_id,
             action="admin_user_delete",
             details={
                 "target_user_id": target_user_id,
-                "files_removed": files_removed,
+                "md_files_removed": md_count,
+                "upload_files_removed": upload_count,
             },
             success=True,
         )
@@ -113,7 +117,7 @@ class AdminDeletionService:
         await self.db.delete(report)
         await self.db.commit()
 
-        files_removed = self._remove_report_files(reports_snapshot)
+        files_removed = self._remove_report_md_files(reports_snapshot)
 
         log_user_action(
             user_id=current_admin_id,
@@ -207,7 +211,7 @@ class AdminDeletionService:
             await self.db.delete(report)
         await self.db.commit()
 
-        files_removed = self._remove_report_files(reports_snapshot)
+        files_removed = self._remove_report_md_files(reports_snapshot)
 
         log_user_action(
             user_id=current_admin_id,
@@ -226,42 +230,56 @@ class AdminDeletionService:
         }
 
     # ----- 파일 정리 헬퍼 -----
-    def _resolve_lessonplan_path(
-        self, raw: str | None
-    ) -> Path | None:
-        """lessonplan_filename을 실제 파일 경로로 해석한다.
-
-        프로덕션에서는 bare filename으로 저장되므로 base dir과 결합한다.
-        절대 경로로 저장된 레거시 행은 그대로 사용한다.
-        """
-        if not raw:
-            return None
-        path = Path(raw)
-        if path.is_absolute():
-            return path
-        return Path(LESSONPLAN_BASE_DIR) / raw
-
-    def _remove_report_files(
+    def _remove_report_md_files(
         self, reports: list[AnalysisReport]
     ) -> int:
-        """report_path(.md) + lessonplan_filename(.pdf) 삭제.
+        """report_path(.md) 파일만 삭제한다.
 
         실제로 존재할 때만 삭제하여 오삭제를 방지한다.
         """
         removed = 0
         for report in reports:
-            candidates: list[Path | None] = [
-                Path(report.report_path) if report.report_path else None,
-                self._resolve_lessonplan_path(report.lessonplan_filename),
-            ]
-            for path in candidates:
-                if path is None or not path.exists():
-                    continue
-                try:
-                    path.unlink()
-                    removed += 1
-                except OSError as exc:
-                    logger.warning(
-                        "파일 삭제 실패: path=%s, err=%s", path, exc
-                    )
+            if not report.report_path:
+                continue
+            path = Path(report.report_path)
+            if not path.exists():
+                continue
+            try:
+                path.unlink()
+                removed += 1
+            except OSError as exc:
+                logger.warning(
+                    "파일 삭제 실패: path=%s, err=%s", path, exc
+                )
+        return removed
+
+    def _remove_user_upload_files(self, username: str) -> int:
+        """사용자 prefix로 저장된 업로드 파일을 삭제한다."""
+        removed = 0
+        base_dir = Path(LESSONPLAN_BASE_DIR)
+        try:
+            files = list(base_dir.iterdir())
+        except OSError as exc:
+            logger.warning(
+                "업로드 파일 목록 조회 실패: path=%s, err=%s",
+                base_dir,
+                exc,
+            )
+            return removed
+
+        prefix = f"{username}_"
+        for path in files:
+            if (
+                not path.name.startswith(prefix)
+                or path.is_symlink()
+                or not path.is_file()
+            ):
+                continue
+            try:
+                path.unlink()
+                removed += 1
+            except OSError as exc:
+                logger.warning(
+                    "파일 삭제 실패: path=%s, err=%s", path, exc
+                )
         return removed

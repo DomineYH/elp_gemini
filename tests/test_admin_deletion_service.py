@@ -117,6 +117,38 @@ async def test_delete_user_cascades_and_removes_files(seeded):
 
 
 @pytest.mark.asyncio
+async def test_delete_user_removes_orphaned_upload(seeded):
+    orphan_file = (
+        seeded["lessonplan_file"].parent
+        / "orphan1_20260101000000_orphan.pdf"
+    )
+    orphan_file.write_bytes(b"%PDF-1.4\n")
+
+    async with TestingSessionLocal() as db:
+        user = User(
+            username="orphan1",
+            nickname="Orphan",
+            email="orphan1@test.com",
+            hashed_password="h",
+            is_admin=False,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+        service = AdminDeletionService(db)
+        result = await service.delete_user(
+            target_user_id=user.id,
+            current_admin_id=seeded["admin_id"],
+        )
+
+    assert result["ok"] is True
+    assert result["deleted"] == 1
+    assert result["files_removed"] == 1
+    assert not orphan_file.exists()
+
+
+@pytest.mark.asyncio
 async def test_delete_user_blocks_admin_target(seeded):
     """다른 관리자(서로 다른 id)를 삭제 시도하면 PermissionError."""
     async with TestingSessionLocal() as db:
@@ -194,7 +226,7 @@ async def test_delete_chat_session_not_found(seeded):
 
 
 @pytest.mark.asyncio
-async def test_delete_analysis_report_removes_files(seeded):
+async def test_delete_analysis_report_does_not_touch_lessonplan(seeded):
     async with TestingSessionLocal() as db:
         service = AdminDeletionService(db)
         result = await service.delete_analysis_report(
@@ -204,9 +236,9 @@ async def test_delete_analysis_report_removes_files(seeded):
 
     assert result["ok"] is True
     assert result["deleted"] == 1
-    assert result["files_removed"] == 2
+    assert result["files_removed"] == 1
     assert not seeded["report_file"].exists()
-    assert not seeded["lessonplan_file"].exists()
+    assert seeded["lessonplan_file"].exists()
 
 
 @pytest.mark.asyncio
@@ -292,8 +324,8 @@ async def test_bulk_delete_reports_happy(seeded, tmp_path):
 
     assert result["ok"] is True
     assert result["deleted"] == 2
-    # seeded.report.md + seeded.lessonplan.pdf + r2.md = 3
-    # (r2.lessonplan_filename은 빈 문자열이라 미삭제)
-    assert result["files_removed"] == 3
+    # seeded.report.md + r2.md = 2; lessonplan PDF는 보존한다.
+    assert result["files_removed"] == 2
     assert not seeded["report_file"].exists()
     assert not f2.exists()
+    assert seeded["lessonplan_file"].exists()
