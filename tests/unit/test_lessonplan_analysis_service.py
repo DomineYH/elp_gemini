@@ -30,51 +30,6 @@ class TestLessonPlanAnalysisService:
             return LessonPlanAnalysisService(mock_db)
 
     @pytest.mark.asyncio
-    async def test_get_criteria_context_success(
-        self,
-        service
-    ):
-        """
-        Vector Search 성공 - 평가기준 컨텍스트 추출
-        """
-        # Mock CriteriaContextService
-        service.criteria_service.get_context = AsyncMock(
-            return_value={
-                "context_text": "평가기준 컨텍스트 내용",
-                "criteria_ids": [1, 2, 3]
-            }
-        )
-
-        # When
-        result = await service._get_criteria_context()
-
-        # Then
-        assert result == "평가기준 컨텍스트 내용"
-        service.criteria_service.get_context \
-            .assert_called_once_with(
-                "수업 지도안 평가 기준"
-            )
-
-    @pytest.mark.asyncio
-    async def test_get_criteria_context_failure(
-        self,
-        service
-    ):
-        """
-        Vector Search 실패 시 기본값 반환
-        """
-        # Mock CriteriaContextService - 예외 발생
-        service.criteria_service.get_context = AsyncMock(
-            side_effect=Exception("DB 오류")
-        )
-
-        # When
-        result = await service._get_criteria_context()
-
-        # Then
-        assert result == "평가기준 컨텍스트 없음"
-
-    @pytest.mark.asyncio
     async def test_get_store_ids_success(
         self,
         service
@@ -128,17 +83,18 @@ class TestLessonPlanAnalysisService:
         """
         # Given
         system_prompt = "수업 지도안 평가 시스템 프롬프트"
-        criteria_context = "평가기준 컨텍스트"
 
         # When
         result = service._build_analysis_prompt(
             system_prompt,
-            criteria_context
+            rubric_store_id="rubric-store",
+            lesson_store_id="lesson-store",
         )
 
         # Then
         assert system_prompt in result
-        assert criteria_context in result
+        assert "rubric-store" in result
+        assert "lesson-store" in result
         assert "5개 항목" in result
         assert "교육과정 목표" in result
         assert "내용 체계" in result
@@ -205,11 +161,6 @@ class TestLessonPlanAnalysisService:
         """
         전체 프로세스 성공
         """
-        # Mock _get_criteria_context
-        service._get_criteria_context = AsyncMock(
-            return_value="평가기준 컨텍스트"
-        )
-
         # Mock _get_store_ids
         service._get_store_ids = AsyncMock(
             return_value=[
@@ -252,11 +203,6 @@ class TestLessonPlanAnalysisService:
         """
         Store 없을 시 에러 반환
         """
-        # Mock _get_criteria_context
-        service._get_criteria_context = AsyncMock(
-            return_value="평가기준 컨텍스트"
-        )
-
         # Mock _get_store_ids - 빈 리스트 반환
         service._get_store_ids = AsyncMock(
             return_value=[]
@@ -281,12 +227,12 @@ class TestLessonPlanAnalysisService:
         """
         타임아웃 발생 시 에러 반환
         """
-        # Mock _get_criteria_context - 긴 시간 소요
-        async def slow_context():
+        # Mock _get_store_ids - 긴 시간 소요
+        async def slow_store_ids(*args, **kwargs):
             await asyncio.sleep(200)  # 180초 초과
-            return "평가기준 컨텍스트"
+            return []
 
-        service._get_criteria_context = slow_context
+        service._get_store_ids = slow_store_ids
 
         # When
         result = await service.analyze_lesson_plan(
