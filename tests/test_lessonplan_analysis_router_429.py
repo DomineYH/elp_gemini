@@ -35,13 +35,7 @@ async def client(tmp_path):
 
 @pytest.mark.asyncio
 async def test_analyze_returns_429_on_resource_exhausted(client):
-    """RESOURCE_EXHAUSTED 에러 코드 시 HTTP 429 반환
-
-    NOTE: 라우터는 HTTPException(headers={"Retry-After": "30"})을 발생시키지만,
-    app/main.py의 커스텀 예외 핸들러가 JSONResponse를 새로 만들 때
-    exc.headers를 전달하지 않아 Retry-After 헤더가 소실됨.
-    헤더 전파는 별도 수정 필요.
-    """
+    """RESOURCE_EXHAUSTED 에러 코드 시 HTTP 429 + Retry-After 헤더 반환"""
     mock_result = {
         "success": False,
         "error": "할당량 초과",
@@ -60,6 +54,7 @@ async def test_analyze_returns_429_on_resource_exhausted(client):
         )
 
     assert res.status_code == 429
+    assert res.headers.get("retry-after") == "30"
     assert res.json()["detail"] == "할당량 초과"
 
 
