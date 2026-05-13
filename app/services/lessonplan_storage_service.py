@@ -3,6 +3,7 @@
 data/lessonplan/ 디렉토리에 사용자별 지도안 파일 관리
 """
 import os
+import hashlib
 import logging
 from pathlib import Path
 from typing import List, Optional, Dict
@@ -42,32 +43,32 @@ class LessonPlanStorageService:
         """
         지도안 파일 저장
 
-        Args:
-            username: 사용자 이름
-            original_filename: 원본 파일명
-            file_content: 파일 내용 (바이트)
-
         Returns:
-            저장된 파일 정보 딕셔너리
-            - file_path: 저장된 파일 경로
-            - filename: 저장된 파일명
-            - timestamp: 저장 시간
+            {
+              "file_path": str,
+              "filename": str,
+              "timestamp": str (ISO),
+              "file_hash": str (SHA-256 hex, 64 chars),
+            }
         """
         try:
-            # 파일명 생성: {username}_{원본파일명}
             filename = f"{username}_{original_filename}"
             file_path = self.base_dir / filename
 
-            # 파일 저장
             with open(file_path, "wb") as f:
                 f.write(file_content)
 
-            logger.info(f"지도안 저장 완료: {filename}")
+            file_hash = hashlib.sha256(file_content).hexdigest()
+
+            logger.info(
+                f"지도안 저장 완료: {filename} (hash={file_hash[:8]}…)"
+            )
 
             return {
                 "file_path": str(file_path),
                 "filename": filename,
                 "timestamp": datetime.now().isoformat(),
+                "file_hash": file_hash,
             }
         except Exception as e:
             logger.error(f"지도안 저장 실패: {str(e)}")
