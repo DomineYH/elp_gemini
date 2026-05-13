@@ -1143,6 +1143,24 @@
                 body: JSON.stringify({ session_id: 1 }) // Dummy session_id
             });
 
+            if (response.status === 409) {
+                const data = await response.json();
+                const reportId = data.report_id
+                    ?? response.headers.get('X-Report-Id');
+                alert(data.detail || '이미 분석된 문서입니다.');
+                if (reportId) {
+                    const r = await fetch(
+                        `/api/lessonplan/reports/${reportId}`,
+                        { credentials: 'same-origin' }
+                    );
+                    if (r.ok) {
+                        const report = await r.json();
+                        showAnalysisResult(report.content);
+                    }
+                }
+                return;
+            }
+
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || '분석 요청 실패');
