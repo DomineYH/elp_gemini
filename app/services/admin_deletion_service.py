@@ -79,7 +79,7 @@ class AdminDeletionService:
         await self.db.delete(user)
         await self.db.commit()
 
-        md_count = self._remove_report_md_files(reports_snapshot)
+        md_count = await self._remove_report_md_files(reports_snapshot)
         upload_count = self._remove_user_upload_files(
             username, report_filenames, other_usernames
         )
@@ -144,7 +144,7 @@ class AdminDeletionService:
         await self.db.delete(report)
         await self.db.commit()
 
-        files_removed = self._remove_report_md_files(reports_snapshot)
+        files_removed = await self._remove_report_md_files(reports_snapshot)
         files_removed += await self._remove_unreferenced_lessonplans(
             reports_snapshot
         )
@@ -241,7 +241,7 @@ class AdminDeletionService:
             await self.db.delete(report)
         await self.db.commit()
 
-        files_removed = self._remove_report_md_files(reports_snapshot)
+        files_removed = await self._remove_report_md_files(reports_snapshot)
         files_removed += await self._remove_unreferenced_lessonplans(
             reports_snapshot
         )
@@ -281,19 +281,32 @@ class AdminDeletionService:
                 exc,
             )
 
-    def _remove_report_md_files(
+    async def _remove_report_md_files(
         self, reports: list[AnalysisReport]
     ) -> int:
-        """report_path(.md) 파일만 삭제한다.
+        """DB에서 더 이상 참조하지 않는 report_path(.md) 파일을 삭제한다."""
+        report_paths = {
+            report.report_path
+            for report in reports
+            if report.report_path
+        }
+        if not report_paths:
+            return 0
 
-        실제로 존재할 때만 삭제하여 오삭제를 방지한다.
-        """
         removed = 0
-        for report in reports:
-            if not report.report_path:
+        for report_path in sorted(report_paths):
+            result = await self.db.execute(
+                text(
+                    "SELECT count(1) FROM analysis_reports "
+                    "WHERE report_path = :path"
+                ),
+                {"path": report_path},
+            )
+            if result.scalar_one() != 0:
                 continue
-            path = Path(report.report_path)
-            if not path.exists():
+
+            path = Path(report_path)
+            if not path.is_file() or path.is_symlink():
                 continue
             try:
                 path.unlink()

@@ -590,6 +590,32 @@ async def test_delete_analysis_report_keeps_shared_lessonplan(seeded):
 
 
 @pytest.mark.asyncio
+async def test_delete_analysis_report_keeps_shared_report_path(seeded):
+    async with TestingSessionLocal() as db:
+        shared_report = AnalysisReport(
+            user_id=seeded["user_id"],
+            lessonplan_filename=seeded["lessonplan_file"].name,
+            lessonplan_original_name="plan.pdf",
+            report_filename=seeded["report_file"].name,
+            report_path=str(seeded["report_file"]),
+            latency_ms=100,
+        )
+        db.add(shared_report)
+        await db.commit()
+
+        service = AdminDeletionService(db)
+        result = await service.delete_analysis_report(
+            report_id=seeded["report_id"],
+            current_admin_id=seeded["admin_id"],
+        )
+
+    assert result["ok"] is True
+    assert result["deleted"] == 1
+    assert result["files_removed"] == 0
+    assert seeded["report_file"].exists()
+
+
+@pytest.mark.asyncio
 async def test_delete_analysis_report_removes_unreferenced_lessonplan(seeded):
     async with TestingSessionLocal() as db:
         service = AdminDeletionService(db)
