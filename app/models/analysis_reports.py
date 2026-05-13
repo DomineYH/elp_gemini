@@ -61,6 +61,12 @@ class AnalysisReport(Base):
         nullable=True,
         comment="분석 소요 시간 (ms)"
     )
+    upload_id = Column(
+        Integer,
+        ForeignKey("lessonplan_uploads.id"),
+        nullable=True,
+        comment="원본 업로드 이벤트 (1:1) — 중복 분석 방지 키",
+    )
     created_at = Column(
         DateTime,
         nullable=False,
@@ -70,6 +76,9 @@ class AnalysisReport(Base):
 
     # 관계
     user = relationship("User", back_populates="analysis_reports")
+    upload = relationship(
+        "LessonPlanUpload", back_populates="analysis_report"
+    )
 
     def __repr__(self):
         return (

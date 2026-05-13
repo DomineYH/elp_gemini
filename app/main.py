@@ -26,6 +26,7 @@ from app.migrations import (
     ensure_criteria_display_alias_column,
     ensure_user_profiles_table,
     ensure_users_lockout_columns,
+    ensure_lessonplan_uploads_table,
     rename_chat_session_in_service_teacher_label,
 )
 from app.rate_limit import limiter
@@ -210,6 +211,12 @@ async def startup_event():
     if profiles_patched:
         logger.info(
             "user_profiles 테이블이 자동 생성되었습니다."
+        )
+
+    uploads_patched = await ensure_lessonplan_uploads_table(engine)
+    if uploads_patched:
+        logger.info(
+            "lessonplan_uploads / analysis_reports.upload_id 자동 적용"
         )
 
     renamed = await rename_chat_session_in_service_teacher_label(engine)
