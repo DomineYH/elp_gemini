@@ -255,12 +255,14 @@ class AdminDeletionService:
     async def _delete_file_search_store(self, username: str) -> None:
         """사용자별 File Search store를 best-effort로 삭제한다."""
         try:
-            from app.services.file_search_service import FileSearchService
+            from app.services.file_search_service import (
+                FileSearchService,
+                _sanitize_display_name,
+            )
 
             service = FileSearchService()
-            await service.delete_store_by_display_name(
-                f"user-{username}-store"
-            )
+            store_name = _sanitize_display_name(f"user-{username}-store")
+            await service.delete_store_by_display_name(store_name)
         except Exception as exc:
             logger.warning(
                 "File Search store 삭제 실패: username=%s, err=%s",

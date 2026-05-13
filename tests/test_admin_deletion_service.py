@@ -168,7 +168,68 @@ async def test_delete_user_calls_file_search_cleanup(seeded, monkeypatch):
             current_admin_id=seeded["admin_id"],
         )
 
-    assert called_with == ["user-stu1-store"]
+    assert called_with == [_sanitize_display_name("user-stu1-store")]
+
+
+@pytest.mark.asyncio
+async def test_delete_user_sanitizes_file_search_store_name(
+    db_tables, tmp_path, monkeypatch
+):
+    lessonplan_base = tmp_path / "data" / "lessonplan"
+    lessonplan_base.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.LESSONPLAN_BASE_DIR",
+        str(lessonplan_base),
+    )
+    static_uploads_dir = tmp_path / "app" / "static" / "uploads"
+    static_uploads_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.STATIC_UPLOADS_DIR",
+        str(static_uploads_dir),
+        raising=False,
+    )
+
+    import app.services.file_search_service as fss_module
+
+    called_with = []
+
+    class FakeFSS:
+        async def delete_store_by_display_name(self, display_name):
+            called_with.append(display_name)
+
+    monkeypatch.setattr(
+        fss_module, "FileSearchService", lambda *a, **k: FakeFSS()
+    )
+
+    async with TestingSessionLocal() as db:
+        admin = User(
+            username="admin1",
+            nickname="Admin",
+            email="admin@test.com",
+            hashed_password="h",
+            is_admin=True,
+        )
+        user = User(
+            username="한글유저",
+            nickname="Student",
+            email="hangul@test.com",
+            hashed_password="h",
+            is_admin=False,
+        )
+        db.add_all([admin, user])
+        await db.commit()
+        await db.refresh(admin)
+        await db.refresh(user)
+
+        service = AdminDeletionService(db)
+        await service.delete_user(
+            target_user_id=user.id,
+            current_admin_id=admin.id,
+        )
+
+    assert called_with
+    assert called_with[0] == _sanitize_display_name("user-한글유저-store")
+    assert called_with[0] != "user-한글유저-store"
 
 
 @pytest.mark.asyncio
