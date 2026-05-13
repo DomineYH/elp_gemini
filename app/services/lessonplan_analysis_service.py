@@ -8,6 +8,8 @@ from typing import Dict, Any, Optional
 from google import genai
 from google.genai import types
 from google.api_core import exceptions
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -16,6 +18,8 @@ from app.services.file_search_service import FileSearchService
 from app.services.lessonplan_storage_service import LessonPlanStorageService
 from app.services.report_storage_service import ReportStorageService
 from app.models.analysis_reports import AnalysisReport
+from app.models.lessonplan_uploads import LessonPlanUpload
+from app.models.users import User
 from app.utils.gemini_retry import (
     retry_on_resource_exhausted,
     GeminiQuotaExhausted,
@@ -92,6 +96,25 @@ class LessonPlanAnalysisService:
         try:
             # 타임아웃 설정 (180초)
             async with asyncio.timeout(180):
+                # 0. 중복 분석 차단 — 최신 업로드에 이미 보고서가 있으면
+                # 즉시 ALREADY_ANALYZED 반환 (Gemini 호출 안 함)
+                latest_upload, existing_report = (
+                    await self._find_existing_report_for_latest_upload(
+                        username
+                    )
+                )
+                if existing_report is not None:
+                    logger.info(
+                        f"중복 분석 차단: upload_id={latest_upload.id}, "
+                        f"existing report_id={existing_report.id}"
+                    )
+                    return {
+                        "success": False,
+                        "error_code": "ALREADY_ANALYZED",
+                        "error": "이미 분석된 문서입니다.",
+                        "report_id": existing_report.id,
+                    }
+
                 # 1. File Search Store ID 조회 (Phase 1 활용)
                 store_ids = await self._get_store_ids(username)
                 if not store_ids:
@@ -176,11 +199,42 @@ class LessonPlanAnalysisService:
                             report_filename=saved_report["filename"],
                             report_path=saved_report["file_path"],
                             latency_ms=latency_ms,
+                            upload_id=(
+                                latest_upload.id
+                                if latest_upload is not None
+                                else None
+                            ),
                         )
                         self.db.add(analysis_record)
-                        await self.db.flush()
+                        try:
+                            await self.db.flush()
+                        except IntegrityError:
+                            # Race: another request inserted a report for
+                            # this upload_id between our pre-flight check
+                            # and this INSERT. Roll back and return
+                            # ALREADY_ANALYZED with the winning row's id.
+                            await self.db.rollback()
+                            _, winner = (
+                                await self._find_existing_report_for_latest_upload(
+                                    username
+                                )
+                            )
+                            if winner is not None:
+                                logger.warning(
+                                    f"분석 결과 race 감지 → ALREADY_ANALYZED "
+                                    f"폴백 (winner report_id={winner.id})"
+                                )
+                                return {
+                                    "success": False,
+                                    "error_code": "ALREADY_ANALYZED",
+                                    "error": "이미 분석된 문서입니다.",
+                                    "report_id": winner.id,
+                                }
+                            raise
                         logger.info(
-                            f"분석 기록 DB 저장 완료: id={analysis_record.id}"
+                            f"분석 기록 DB 저장 완료: "
+                            f"id={analysis_record.id}, "
+                            f"upload_id={analysis_record.upload_id}"
                         )
 
                     except Exception as save_error:
@@ -241,6 +295,45 @@ class LessonPlanAnalysisService:
         except Exception as e:
             logger.error(f"❌ 예상치 못한 오류: {e}")
             return []
+
+    async def _find_existing_report_for_latest_upload(
+        self, username: str
+    ):
+        """
+        사용자의 최신 업로드 이벤트와 그에 연결된 기존 보고서를 함께 조회.
+
+        Returns:
+            (LessonPlanUpload | None, AnalysisReport | None)
+            - (None, None): 업로드 이력 자체가 없는 사용자
+            - (upload, None): 최신 업로드는 있으나 분석 보고서는 아직 없음
+            - (upload, report): 이미 분석 완료 → 차단해야 함
+        """
+        result = await self.db.execute(
+            select(User)
+            .where(User.username == username)
+            .limit(1)
+        )
+        user = result.scalar_one_or_none()
+        if user is None:
+            return (None, None)
+
+        upload_result = await self.db.execute(
+            select(LessonPlanUpload)
+            .where(LessonPlanUpload.user_id == user.id)
+            .order_by(LessonPlanUpload.created_at.desc())
+            .limit(1)
+        )
+        latest_upload = upload_result.scalar_one_or_none()
+        if latest_upload is None:
+            return (None, None)
+
+        report_result = await self.db.execute(
+            select(AnalysisReport)
+            .where(AnalysisReport.upload_id == latest_upload.id)
+            .limit(1)
+        )
+        existing_report = report_result.scalar_one_or_none()
+        return (latest_upload, existing_report)
 
     def _build_analysis_prompt(
         self,
