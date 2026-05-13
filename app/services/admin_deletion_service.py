@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,16 @@ from app.utils.logging import log_user_action
 
 logger = logging.getLogger(__name__)
 STATIC_UPLOADS_DIR = "app/static/uploads"
+
+
+def _username_has_ascii_signature(username: str) -> bool:
+    normalized = unicodedata.normalize("NFD", username)
+    ascii_safe = "".join(
+        c
+        for c in normalized
+        if unicodedata.category(c) != "Mn" and ord(c) < 128
+    )
+    return bool(ascii_safe.strip())
 
 
 class AdminDeletionService:
@@ -388,6 +399,14 @@ class AdminDeletionService:
                     logger.warning(
                         "파일 삭제 실패: path=%s, err=%s", path, exc
                     )
+
+        if not _username_has_ascii_signature(username):
+            logger.warning(
+                "사용자명 ASCII 변환이 비결정적이어서 static uploads "
+                "파일 스캔을 건너뜁니다: username=%s",
+                username,
+            )
+            return removed
 
         uploads_dir = Path(STATIC_UPLOADS_DIR)
         try:

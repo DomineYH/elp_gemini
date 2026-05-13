@@ -233,6 +233,70 @@ async def test_delete_user_sanitizes_file_search_store_name(
 
 
 @pytest.mark.asyncio
+async def test_delete_user_skips_static_uploads_for_nondeterministic_username(
+    db_tables, tmp_path, monkeypatch, caplog
+):
+    lessonplan_base = tmp_path / "data" / "lessonplan"
+    lessonplan_base.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.LESSONPLAN_BASE_DIR",
+        str(lessonplan_base),
+    )
+    static_uploads_dir = tmp_path / "app" / "static" / "uploads"
+    static_uploads_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.STATIC_UPLOADS_DIR",
+        str(static_uploads_dir),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service._sanitize_display_name",
+        lambda _name: "doc_20260101_000000",
+    )
+    _stub_file_search_service(monkeypatch)
+
+    decoy_upload_file = (
+        static_uploads_dir
+        / "doc_20260101_000000_20260101000000_dashboard.pdf"
+    )
+    decoy_upload_file.write_bytes(b"%PDF-1.4\n")
+
+    async with TestingSessionLocal() as db:
+        admin = User(
+            username="admin1",
+            nickname="Admin",
+            email="admin@test.com",
+            hashed_password="h",
+            is_admin=True,
+        )
+        user = User(
+            username="한글유저",
+            nickname="Student",
+            email="hangul2@test.com",
+            hashed_password="h",
+            is_admin=False,
+        )
+        db.add_all([admin, user])
+        await db.commit()
+        await db.refresh(admin)
+        await db.refresh(user)
+
+        service = AdminDeletionService(db)
+        with caplog.at_level(
+            "WARNING", logger="app.services.admin_deletion_service"
+        ):
+            result = await service.delete_user(
+                target_user_id=user.id,
+                current_admin_id=admin.id,
+            )
+
+    assert result["ok"] is True
+    assert result["deleted"] == 1
+    assert decoy_upload_file.exists()
+    assert any("비결정적" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
 async def test_delete_user_removes_orphaned_upload(seeded):
     orphan_file = seeded["static_uploads_dir"] / (
         "orphan1_20260101000000_orphan.pdf"
