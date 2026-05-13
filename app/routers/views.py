@@ -10,10 +10,12 @@ import logging
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models.users import User
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.services.lessonplan_storage_service import LessonPlanStorageService
 from app.services.file_search_service import FileSearchService, _sanitize_display_name
 from app.repositories.criteria_repository import CriteriaRepository
 from datetime import datetime
+import hashlib
 import shutil
 import os
 from pathlib import Path
@@ -113,8 +115,10 @@ async def upload_document(
     file_url = f"/static/uploads/{saved_filename}"
 
     try:
+        file_bytes = await file.read()
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            buffer.write(file_bytes)
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
 
         # PDF 텍스트 추출
         reader = PdfReader(str(file_path))
@@ -142,6 +146,19 @@ async def upload_document(
             file_path=str(file_path),
             display_name=file.filename,
             metadata=metadata
+        )
+
+        upload_row = LessonPlanUpload(
+            user_id=current_user.id,
+            filename=saved_filename,
+            original_filename=file.filename,
+            file_hash=file_hash,
+        )
+        db.add(upload_row)
+        await db.flush()
+        logger.info(
+            f"LessonPlanUpload 행 생성: id={upload_row.id}, "
+            f"hash={file_hash[:8]}…"
         )
 
         logger.info(f"File Search 업로드 완료: {result}")
