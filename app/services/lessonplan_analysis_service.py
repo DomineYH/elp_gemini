@@ -16,8 +16,30 @@ from app.services.file_search_service import FileSearchService
 from app.services.lessonplan_storage_service import LessonPlanStorageService
 from app.services.report_storage_service import ReportStorageService
 from app.models.analysis_reports import AnalysisReport
+from app.utils.gemini_retry import (
+    retry_on_resource_exhausted,
+    GeminiQuotaExhausted,
+)
 
 logger = logging.getLogger(__name__)
+
+
+@retry_on_resource_exhausted(max_attempts=3, initial_wait=2.0, max_wait=16.0)
+def _call_gemini_with_file_search(
+    client, model, contents, rubric_store_id, user_store_id
+):
+    return client.models.generate_content(
+        model=model,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            tools=[types.Tool(
+                file_search=types.FileSearch(
+                    file_search_store_names=[rubric_store_id, user_store_id]
+                )
+            )],
+            temperature=0.7,
+        ),
+    )
 
 
 class LessonPlanAnalysisService:
@@ -98,19 +120,10 @@ class LessonPlanAnalysisService:
                 logger.info("프롬프트 구성 완료 (Store 역할 명시 포함)")
 
                 # 3. Gemini API 호출 (File Search - 평가기준 우선 순서)
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=full_prompt,
-                    config=types.GenerateContentConfig(
-                        tools=[
-                            types.Tool(
-                                file_search=types.FileSearch(
-                                    file_search_store_names=[rubric_store_id, user_store_id]
-                                )
-                            )
-                        ],
-                        temperature=0.7
-                    )
+                response = await asyncio.to_thread(
+                    _call_gemini_with_file_search,
+                    self.client, self.model_name, full_prompt,
+                    rubric_store_id, user_store_id,
                 )
 
                 # 4. Markdown 보고서 추출 및 후처리
@@ -187,6 +200,14 @@ class LessonPlanAnalysisService:
         except asyncio.TimeoutError:
             logger.error("분석 타임아웃 (180초 초과)")
             return {"success": False, "error": "분석 시간 초과 (180초)"}
+
+        except GeminiQuotaExhausted as e:
+            logger.error(f"Gemini 쿼터 소진 (재시도 후 실패): {e}")
+            return {
+                "success": False,
+                "error": "현재 분석 요청량이 많습니다. 잠시 후 다시 시도해주세요.",
+                "error_code": "RESOURCE_EXHAUSTED",
+            }
 
         except exceptions.GoogleAPIError as e:
             logger.error(f"Google API 오류: {e}")
