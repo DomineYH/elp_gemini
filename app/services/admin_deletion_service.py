@@ -59,6 +59,10 @@ class AdminDeletionService:
             for report in reports_snapshot
             if report.lessonplan_filename
         }
+        other_usernames_result = await self.db.execute(
+            select(User.username).where(User.id != target_user_id)
+        )
+        other_usernames = [row[0] for row in other_usernames_result.all()]
 
         # DB 삭제 — relationship cascade가 세션/메시지/프로필 처리
         await self.db.delete(user)
@@ -66,7 +70,7 @@ class AdminDeletionService:
 
         md_count = self._remove_report_md_files(reports_snapshot)
         upload_count = self._remove_user_upload_files(
-            username, report_filenames
+            username, report_filenames, other_usernames
         )
         files_removed = md_count + upload_count
 
@@ -309,7 +313,10 @@ class AdminDeletionService:
         return Path(LESSONPLAN_BASE_DIR) / Path(filename).name
 
     def _remove_user_upload_files(
-        self, username: str, report_lessonplan_filenames: set[str]
+        self,
+        username: str,
+        report_lessonplan_filenames: set[str],
+        other_usernames: list[str],
     ) -> int:
         """DB에 기록된 lessonplan 파일과 대시보드 업로드 파일을 삭제한다."""
         removed = 0
@@ -324,6 +331,43 @@ class AdminDeletionService:
                 logger.warning(
                     "파일 삭제 실패: path=%s, err=%s", path, exc
                 )
+
+        lessonplan_dir = Path(LESSONPLAN_BASE_DIR)
+        try:
+            lessonplan_files = list(lessonplan_dir.iterdir())
+        except OSError as exc:
+            logger.warning(
+                "수업지도안 파일 목록 조회 실패: path=%s, err=%s",
+                lessonplan_dir,
+                exc,
+            )
+        else:
+            prefix = f"{username}_"
+            for path in lessonplan_files:
+                if (
+                    not path.name.startswith(prefix)
+                    or path.name in report_lessonplan_filenames
+                    or path.is_symlink()
+                    or not path.is_file()
+                ):
+                    continue
+                claimable_by_other = False
+                for other in other_usernames:
+                    if (
+                        len(other) > len(username)
+                        and path.name.startswith(f"{other}_")
+                    ):
+                        claimable_by_other = True
+                        break
+                if claimable_by_other:
+                    continue
+                try:
+                    path.unlink()
+                    removed += 1
+                except OSError as exc:
+                    logger.warning(
+                        "파일 삭제 실패: path=%s, err=%s", path, exc
+                    )
 
         uploads_dir = Path(STATIC_UPLOADS_DIR)
         try:

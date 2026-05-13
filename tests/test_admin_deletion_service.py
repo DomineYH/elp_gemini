@@ -166,6 +166,58 @@ async def test_delete_user_removes_orphaned_upload(seeded):
 
 
 @pytest.mark.asyncio
+async def test_delete_user_removes_lessonplan_orphan_without_report(
+    db_tables, tmp_path, monkeypatch
+):
+    lessonplan_base = tmp_path / "data" / "lessonplan"
+    lessonplan_base.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.LESSONPLAN_BASE_DIR",
+        str(lessonplan_base),
+    )
+    static_uploads_dir = tmp_path / "app" / "static" / "uploads"
+    static_uploads_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.STATIC_UPLOADS_DIR",
+        str(static_uploads_dir),
+        raising=False,
+    )
+    orphan_file = lessonplan_base / "lonely1_plan.pdf"
+    orphan_file.write_bytes(b"%PDF-1.4\n")
+
+    async with TestingSessionLocal() as db:
+        admin = User(
+            username="admin1",
+            nickname="Admin",
+            email="admin@test.com",
+            hashed_password="h",
+            is_admin=True,
+        )
+        user = User(
+            username="lonely1",
+            nickname="Lonely",
+            email="lonely1@test.com",
+            hashed_password="h",
+            is_admin=False,
+        )
+        db.add_all([admin, user])
+        await db.commit()
+        await db.refresh(admin)
+        await db.refresh(user)
+
+        service = AdminDeletionService(db)
+        result = await service.delete_user(
+            target_user_id=user.id,
+            current_admin_id=admin.id,
+        )
+
+    assert result["ok"] is True
+    assert result["deleted"] == 1
+    assert result["files_removed"] >= 1
+    assert not orphan_file.exists()
+
+
+@pytest.mark.asyncio
 async def test_delete_user_skips_other_user_files(
     db_tables, tmp_path, monkeypatch
 ):

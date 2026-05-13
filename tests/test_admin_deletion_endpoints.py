@@ -341,3 +341,22 @@ async def test_bulk_delete_sessions_invalid_payload(seeded):
             json={"session_ids": "not-a-list"},
         )
         assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_rejects_non_object_payload(seeded):
+    with TestClient(app) as client:
+        token = _get_token(client)
+        resp = client.post(
+            f"/admin/api/users/{seeded['user_id']}/sessions/bulk-delete",
+            headers={ADMIN_CSRF_HEADER: token},
+            json=[],
+        )
+        assert resp.status_code == 400
+
+        resp = client.post(
+            f"/admin/api/users/{seeded['user_id']}/sessions/bulk-delete",
+            headers={ADMIN_CSRF_HEADER: token},
+            json=None,
+        )
+        assert resp.status_code == 400

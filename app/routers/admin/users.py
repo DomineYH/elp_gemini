@@ -1107,6 +1107,11 @@ async def _read_id_list(request: Request, key: str) -> list[int]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="요청 본문이 올바른 JSON 형식이 아닙니다.",
         ) from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="요청 본문은 JSON 객체여야 합니다.",
+        )
     raw = payload.get(key)
     if not isinstance(raw, list) or not all(
         isinstance(item, int) for item in raw
