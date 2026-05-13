@@ -15,7 +15,6 @@ from tenacity import (
     retry_if_exception,
     stop_after_attempt,
     wait_exponential,
-    RetryError,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,8 +28,7 @@ class GeminiQuotaExhausted(Exception):
 
 def _is_resource_exhausted(exc: BaseException) -> bool:
     if isinstance(exc, genai_errors.ClientError):
-        code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-        return code == 429
+        return getattr(exc, "code", None) == 429
     return False
 
 
@@ -64,7 +62,5 @@ def retry_on_resource_exhausted(
                     )
                     raise GeminiQuotaExhausted(str(e)) from e
                 raise
-            except RetryError as e:  # safety: should not happen with reraise=True
-                raise GeminiQuotaExhausted(str(e)) from e
         return wrapper
     return decorator
