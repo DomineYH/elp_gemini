@@ -68,3 +68,4 @@ htmlcov/
 # Locally generated user analysis artifacts — do NOT commit user data into the publicly served /static tree
 app/static/reports/teacher_*
 app/static/uploads/teacher_*
+app/static/uploads/preservice_teacher_*
