@@ -9,6 +9,7 @@ from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage, MessageRole
 from app.models.chat_sessions import ChatSession
 from app.models.users import User
+from app.routers.views import _sanitize_display_name
 from app.services.admin_deletion_service import AdminDeletionService
 from tests.conftest import TestingSessionLocal, engine
 
@@ -35,6 +36,13 @@ async def seeded(db_tables, tmp_path, monkeypatch):
     monkeypatch.setattr(
         "app.services.admin_deletion_service.LESSONPLAN_BASE_DIR",
         str(lessonplan_base),
+    )
+    static_uploads_dir = tmp_path / "app" / "static" / "uploads"
+    static_uploads_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.STATIC_UPLOADS_DIR",
+        str(static_uploads_dir),
+        raising=False,
     )
 
     async with TestingSessionLocal() as db:
@@ -78,6 +86,13 @@ async def seeded(db_tables, tmp_path, monkeypatch):
         lessonplan_file = lessonplan_base / lessonplan_filename
         lessonplan_file.write_bytes(b"%PDF-1.4\n")
 
+        safe_username = _sanitize_display_name(user.username)
+        dashboard_upload_file = (
+            static_uploads_dir
+            / f"{safe_username}_20260101000000_dashboard.pdf"
+        )
+        dashboard_upload_file.write_bytes(b"%PDF-1.4\n")
+
         report = AnalysisReport(
             user_id=user.id,
             # 프로덕션 컨벤션: bare filename
@@ -97,6 +112,8 @@ async def seeded(db_tables, tmp_path, monkeypatch):
             "report_id": report.id,
             "report_file": report_file,
             "lessonplan_file": lessonplan_file,
+            "dashboard_upload_file": dashboard_upload_file,
+            "static_uploads_dir": static_uploads_dir,
         }
 
 
@@ -111,16 +128,16 @@ async def test_delete_user_cascades_and_removes_files(seeded):
 
     assert result["ok"] is True
     assert result["deleted"] == 1
-    assert result["files_removed"] == 2  # report.md + lessonplan.pdf
+    assert result["files_removed"] == 3
     assert not seeded["report_file"].exists()
     assert not seeded["lessonplan_file"].exists()
+    assert not seeded["dashboard_upload_file"].exists()
 
 
 @pytest.mark.asyncio
 async def test_delete_user_removes_orphaned_upload(seeded):
-    orphan_file = (
-        seeded["lessonplan_file"].parent
-        / "orphan1_20260101000000_orphan.pdf"
+    orphan_file = seeded["static_uploads_dir"] / (
+        "orphan1_20260101000000_orphan.pdf"
     )
     orphan_file.write_bytes(b"%PDF-1.4\n")
 
@@ -146,6 +163,107 @@ async def test_delete_user_removes_orphaned_upload(seeded):
     assert result["deleted"] == 1
     assert result["files_removed"] == 1
     assert not orphan_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_user_skips_other_user_files(
+    db_tables, tmp_path, monkeypatch
+):
+    lessonplan_base = tmp_path / "data" / "lessonplan"
+    lessonplan_base.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.LESSONPLAN_BASE_DIR",
+        str(lessonplan_base),
+    )
+    static_uploads_dir = tmp_path / "app" / "static" / "uploads"
+    static_uploads_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.STATIC_UPLOADS_DIR",
+        str(static_uploads_dir),
+        raising=False,
+    )
+
+    async with TestingSessionLocal() as db:
+        admin = User(
+            username="admin1",
+            nickname="Admin",
+            email="admin@test.com",
+            hashed_password="h",
+            is_admin=True,
+        )
+        kim = User(
+            username="kim",
+            nickname="Kim",
+            email="kim@test.com",
+            hashed_password="h",
+            is_admin=False,
+        )
+        kim_teacher = User(
+            username="kim_teacher",
+            nickname="Kim Teacher",
+            email="kim_teacher@test.com",
+            hashed_password="h",
+            is_admin=False,
+        )
+        db.add_all([admin, kim, kim_teacher])
+        await db.flush()
+
+        kim_report_file = tmp_path / "kim.md"
+        kim_report_file.write_text("# kim", encoding="utf-8")
+        kim_lessonplan_file = lessonplan_base / "kim_plan.pdf"
+        kim_lessonplan_file.write_bytes(b"%PDF-1.4\n")
+        kim_dashboard_file = (
+            static_uploads_dir / "kim_20260101000000_dashboard.pdf"
+        )
+        kim_dashboard_file.write_bytes(b"%PDF-1.4\n")
+
+        other_report_file = tmp_path / "kim_teacher.md"
+        other_report_file.write_text("# kim_teacher", encoding="utf-8")
+        other_lessonplan_file = lessonplan_base / "kim_teacher_plan.pdf"
+        other_lessonplan_file.write_bytes(b"%PDF-1.4\n")
+        other_dashboard_file = (
+            static_uploads_dir
+            / "kim_teacher_20260101000000_dashboard.pdf"
+        )
+        other_dashboard_file.write_bytes(b"%PDF-1.4\n")
+
+        db.add_all(
+            [
+                AnalysisReport(
+                    user_id=kim.id,
+                    lessonplan_filename=kim_lessonplan_file.name,
+                    lessonplan_original_name="plan.pdf",
+                    report_filename=kim_report_file.name,
+                    report_path=str(kim_report_file),
+                    latency_ms=100,
+                ),
+                AnalysisReport(
+                    user_id=kim_teacher.id,
+                    lessonplan_filename=other_lessonplan_file.name,
+                    lessonplan_original_name="plan.pdf",
+                    report_filename=other_report_file.name,
+                    report_path=str(other_report_file),
+                    latency_ms=100,
+                ),
+            ]
+        )
+        await db.commit()
+
+        service = AdminDeletionService(db)
+        result = await service.delete_user(
+            target_user_id=kim.id,
+            current_admin_id=admin.id,
+        )
+
+    assert result["ok"] is True
+    assert result["deleted"] == 1
+    assert result["files_removed"] == 3
+    assert not kim_report_file.exists()
+    assert not kim_lessonplan_file.exists()
+    assert not kim_dashboard_file.exists()
+    assert other_report_file.exists()
+    assert other_lessonplan_file.exists()
+    assert other_dashboard_file.exists()
 
 
 @pytest.mark.asyncio

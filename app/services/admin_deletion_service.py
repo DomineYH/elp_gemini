@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -15,10 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.analysis_reports import AnalysisReport
 from app.models.chat_sessions import ChatSession
 from app.models.users import User
+from app.routers.views import _sanitize_display_name
 from app.services.admin_export_service import LESSONPLAN_BASE_DIR
 from app.utils.logging import log_user_action
 
 logger = logging.getLogger(__name__)
+STATIC_UPLOADS_DIR = "app/static/uploads"
 
 
 class AdminDeletionService:
@@ -49,15 +52,22 @@ class AdminDeletionService:
                 AnalysisReport.user_id == target_user_id
             )
         )
-        reports = list(reports_result.scalars().all())
+        reports_snapshot = list(reports_result.scalars().all())
         username = user.username
+        report_filenames = {
+            report.lessonplan_filename
+            for report in reports_snapshot
+            if report.lessonplan_filename
+        }
 
         # DB 삭제 — relationship cascade가 세션/메시지/프로필 처리
         await self.db.delete(user)
         await self.db.commit()
 
-        md_count = self._remove_report_md_files(reports)
-        upload_count = self._remove_user_upload_files(username)
+        md_count = self._remove_report_md_files(reports_snapshot)
+        upload_count = self._remove_user_upload_files(
+            username, report_filenames
+        )
         files_removed = md_count + upload_count
 
         log_user_action(
@@ -298,24 +308,41 @@ class AdminDeletionService:
     def _resolve_lessonplan_path(self, filename: str) -> Path:
         return Path(LESSONPLAN_BASE_DIR) / Path(filename).name
 
-    def _remove_user_upload_files(self, username: str) -> int:
-        """사용자 prefix로 저장된 업로드 파일을 삭제한다."""
+    def _remove_user_upload_files(
+        self, username: str, report_lessonplan_filenames: set[str]
+    ) -> int:
+        """DB에 기록된 lessonplan 파일과 대시보드 업로드 파일을 삭제한다."""
         removed = 0
-        base_dir = Path(LESSONPLAN_BASE_DIR)
+        for filename in sorted(report_lessonplan_filenames):
+            path = self._resolve_lessonplan_path(filename)
+            if not path.is_file() or path.is_symlink():
+                continue
+            try:
+                path.unlink()
+                removed += 1
+            except OSError as exc:
+                logger.warning(
+                    "파일 삭제 실패: path=%s, err=%s", path, exc
+                )
+
+        uploads_dir = Path(STATIC_UPLOADS_DIR)
         try:
-            files = list(base_dir.iterdir())
+            files = list(uploads_dir.iterdir())
         except OSError as exc:
             logger.warning(
                 "업로드 파일 목록 조회 실패: path=%s, err=%s",
-                base_dir,
+                uploads_dir,
                 exc,
             )
             return removed
 
-        prefix = f"{username}_"
+        safe_username = _sanitize_display_name(username)
+        upload_pattern = re.compile(
+            rf"^{re.escape(safe_username)}_\d{{14}}_"
+        )
         for path in files:
             if (
-                not path.name.startswith(prefix)
+                not upload_pattern.match(path.name)
                 or path.is_symlink()
                 or not path.is_file()
             ):
