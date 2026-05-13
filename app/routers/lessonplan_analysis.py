@@ -2,7 +2,7 @@
 수업 지도안 분석 라우터
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pathlib import Path
@@ -53,6 +53,18 @@ async def analyze_lesson_plan(
         )
 
         if not result.get("success"):
+            if result.get("error_code") == "ALREADY_ANALYZED":
+                report_id = result.get("report_id")
+                return JSONResponse(
+                    status_code=status.HTTP_409_CONFLICT,
+                    content={
+                        "detail": result.get(
+                            "error", "이미 분석된 문서입니다."
+                        ),
+                        "report_id": report_id,
+                    },
+                    headers={"X-Report-Id": str(report_id)},
+                )
             if result.get("error_code") == "RESOURCE_EXHAUSTED":
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,

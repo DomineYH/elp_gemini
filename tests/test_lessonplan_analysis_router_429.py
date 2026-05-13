@@ -76,3 +76,31 @@ async def test_analyze_returns_500_on_generic_error(client):
 
     assert res.status_code == 500
     assert res.json()["detail"] == "boom"
+
+
+@pytest.mark.asyncio
+async def test_analyze_returns_409_on_already_analyzed(client):
+    """ALREADY_ANALYZED 에러 코드 시 HTTP 409 + report_id 반환"""
+    mock_result = {
+        "success": False,
+        "error": "이미 분석된 문서입니다.",
+        "error_code": "ALREADY_ANALYZED",
+        "report_id": 17,
+    }
+
+    with patch(
+        "app.routers.lessonplan_analysis.LessonPlanAnalysisService"
+    ) as MockService:
+        instance = MockService.return_value
+        instance.analyze_lesson_plan = AsyncMock(return_value=mock_result)
+
+        res = await client.post(
+            "/api/lessonplan/analyze",
+            json={"session_id": 1},
+        )
+
+    assert res.status_code == 409
+    body = res.json()
+    assert body["detail"] == "이미 분석된 문서입니다."
+    assert body["report_id"] == 17
+    assert res.headers.get("x-report-id") == "17"
