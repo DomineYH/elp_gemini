@@ -13,12 +13,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.services.prompt_loader_service import PromptLoaderService
 from app.services.file_search_service import FileSearchService
-from app.services.criteria_context_service import CriteriaContextService
 from app.services.lessonplan_storage_service import LessonPlanStorageService
 from app.services.report_storage_service import ReportStorageService
 from app.models.analysis_reports import AnalysisReport
+from app.utils.gemini_retry import (
+    retry_on_resource_exhausted,
+    GeminiQuotaExhausted,
+)
 
 logger = logging.getLogger(__name__)
+
+
+@retry_on_resource_exhausted(max_attempts=3, initial_wait=2.0, max_wait=16.0)
+def _call_gemini_with_file_search(
+    client, model, contents, rubric_store_id, user_store_id
+):
+    return client.models.generate_content(
+        model=model,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            tools=[types.Tool(
+                file_search=types.FileSearch(
+                    file_search_store_names=[rubric_store_id, user_store_id]
+                )
+            )],
+            temperature=0.7,
+        ),
+    )
 
 
 class LessonPlanAnalysisService:
@@ -39,7 +60,6 @@ class LessonPlanAnalysisService:
         )
         self.prompt_loader = PromptLoaderService()
         self.file_search_service = FileSearchService()
-        self.criteria_service = CriteriaContextService(db=db)
         self.lessonplan_storage = LessonPlanStorageService()
         self.report_storage = ReportStorageService()
 
@@ -72,11 +92,7 @@ class LessonPlanAnalysisService:
         try:
             # 타임아웃 설정 (180초)
             async with asyncio.timeout(180):
-                # 1. Vector Search (평가기준 컨텍스트)
-                criteria_context = await self._get_criteria_context()
-                logger.info("평가기준 컨텍스트 추출 완료")
-
-                # 2. File Search Store ID 조회 (Phase 1 활용)
+                # 1. File Search Store ID 조회 (Phase 1 활용)
                 store_ids = await self._get_store_ids(username)
                 if not store_ids:
                     return {
@@ -94,37 +110,27 @@ class LessonPlanAnalysisService:
                     f"  - Lesson Store: {user_store_id}"
                 )
 
-                # 3. 프롬프트 구성 (Store 역할 명시)
+                # 2. 프롬프트 구성 (Store 역할 명시)
                 system_prompt = self.prompt_loader.get_prompt("lesson_analysis")
                 full_prompt = self._build_analysis_prompt(
                     system_prompt,
-                    criteria_context,
                     rubric_store_id=rubric_store_id,
                     lesson_store_id=user_store_id
                 )
                 logger.info("프롬프트 구성 완료 (Store 역할 명시 포함)")
 
-                # 4. Gemini API 호출 (File Search - 평가기준 우선 순서)
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=full_prompt,
-                    config=types.GenerateContentConfig(
-                        tools=[
-                            types.Tool(
-                                file_search=types.FileSearch(
-                                    file_search_store_names=[rubric_store_id, user_store_id]
-                                )
-                            )
-                        ],
-                        temperature=0.7
-                    )
+                # 3. Gemini API 호출 (File Search - 평가기준 우선 순서)
+                response = await asyncio.to_thread(
+                    _call_gemini_with_file_search,
+                    self.client, self.model_name, full_prompt,
+                    rubric_store_id, user_store_id,
                 )
 
-                # 5. Markdown 보고서 추출 및 후처리
+                # 4. Markdown 보고서 추출 및 후처리
                 raw_report = response.text if response.text else ""
                 report = self._post_process_report(raw_report)  # 후처리 적용
 
-                # 6. Citation 추출
+                # 5. Citation 추출
                 citations = self._extract_citations(response)
 
                 # 응답 시간 계산
@@ -195,6 +201,14 @@ class LessonPlanAnalysisService:
             logger.error("분석 타임아웃 (180초 초과)")
             return {"success": False, "error": "분석 시간 초과 (180초)"}
 
+        except GeminiQuotaExhausted as e:
+            logger.error(f"Gemini 쿼터 소진 (재시도 후 실패): {e}")
+            return {
+                "success": False,
+                "error": "현재 분석 요청량이 많습니다. 잠시 후 다시 시도해주세요.",
+                "error_code": "RESOURCE_EXHAUSTED",
+            }
+
         except exceptions.GoogleAPIError as e:
             logger.error(f"Google API 오류: {e}")
             return {"success": False, "error": f"API 오류: {str(e)}"}
@@ -202,26 +216,6 @@ class LessonPlanAnalysisService:
         except Exception as e:
             logger.error(f"분석 실패: {e}", exc_info=True)
             return {"success": False, "error": "분석 중 오류 발생"}
-
-    async def _get_criteria_context(self) -> str:
-        """
-        평가기준 Vector Search
-
-        Returns:
-            평가기준 컨텍스트 문자열
-        """
-        try:
-            context_data = await self.criteria_service.get_context(
-                "수업 지도안 평가 기준"
-            )
-            # dictionary에서 context_text 추출
-            if isinstance(context_data, dict):
-                return context_data.get("context_text", "평가기준 컨텍스트 없음")
-            return context_data if context_data else "평가기준 컨텍스트 없음"
-
-        except Exception as e:
-            logger.warning(f"평가기준 컨텍스트 추출 실패: {e}")
-            return "평가기준 컨텍스트 없음"
 
     async def _get_store_ids(self, username: str) -> list[str]:
         """
@@ -251,7 +245,6 @@ class LessonPlanAnalysisService:
     def _build_analysis_prompt(
         self,
         system_prompt: str,
-        criteria_context: str,
         rubric_store_id: str,
         lesson_store_id: str
     ) -> str:
@@ -260,7 +253,6 @@ class LessonPlanAnalysisService:
 
         Args:
             system_prompt: 시스템 프롬프트 (lesson_analysis)
-            criteria_context: Vector Search 컨텍스트
             rubric_store_id: 평가기준 문서 Store ID
             lesson_store_id: 수업 지도안 문서 Store ID
 
@@ -279,9 +271,6 @@ class LessonPlanAnalysisService:
 **중요 지시사항:**
 - **{rubric_store_id}**: 평가 기준 문서입니다. 참고 자료로만 사용하며 답변 근거로 표시하지 않습니다.
 - **{lesson_store_id}**: 사용자가 업로드한 수업 지도안입니다. 모든 평가 근거를 반드시 이 문서에서 찾고 인용하세요.
-
-### [참고 자료: Vector Search로 검색된 평가기준 컨텍스트]
-{criteria_context}
 
 위 평가 기준을 바탕으로 사용자가 업로드한 수업 지도안을 다음 5개 항목으로 체계적으로 평가해주세요:
 

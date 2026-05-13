@@ -22,36 +22,6 @@ class TestLessonPlanAnalysisService:
     """LessonPlanAnalysisService 단위 테스트"""
 
     @pytest.mark.asyncio
-    async def test_get_criteria_context_success(self, service):
-        """Vector Search 컨텍스트 추출 성공"""
-        # Given
-        expected_context = "평가기준 컨텍스트 내용"
-        service.criteria_service.get_context = AsyncMock(
-            return_value=expected_context
-        )
-
-        # When
-        result = await service._get_criteria_context()
-
-        # Then
-        assert result == expected_context
-        service.criteria_service.get_context.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_get_criteria_context_failure(self, service):
-        """Vector Search 실패 시 기본값 반환"""
-        # Given
-        service.criteria_service.get_context = AsyncMock(
-            side_effect=Exception("DB 오류")
-        )
-
-        # When
-        result = await service._get_criteria_context()
-
-        # Then
-        assert result == "평가기준 컨텍스트 없음"
-
-    @pytest.mark.asyncio
     async def test_get_store_ids_success(self, service):
         """Store ID 조회 성공"""
         # Given
@@ -94,15 +64,18 @@ class TestLessonPlanAnalysisService:
         """프롬프트 구성 테스트"""
         # Given
         system_prompt = "당신은 평가 전문가입니다."
-        criteria_context = "평가기준 1\n평가기준 2"
 
         # When
-        result = service._build_analysis_prompt(system_prompt, criteria_context)
+        result = service._build_analysis_prompt(
+            system_prompt,
+            rubric_store_id="rubric-store",
+            lesson_store_id="lesson-store",
+        )
 
         # Then
         assert system_prompt in result
-        assert criteria_context in result
-        assert "참고 자료" in result
+        assert "rubric-store" in result
+        assert "lesson-store" in result
         assert "5개 항목" in result
 
     def test_extract_citations_success(self, service):
@@ -149,9 +122,6 @@ class TestLessonPlanAnalysisService:
         session_id = 1
         user_id = 999
 
-        service.criteria_service.get_context = AsyncMock(
-            return_value="평가기준 컨텍스트"
-        )
         service._get_store_ids = AsyncMock(return_value=[])
 
         # When
@@ -169,9 +139,11 @@ class TestLessonPlanAnalysisService:
         user_id = 123
 
         import asyncio
-        service.criteria_service.get_context = AsyncMock(
-            side_effect=asyncio.TimeoutError()
-        )
+        async def slow_store_ids(*args, **kwargs):
+            await asyncio.sleep(200)  # 180초 초과
+            return []
+
+        service._get_store_ids = slow_store_ids
 
         # When
         result = await service.analyze_lesson_plan(session_id, user_id)
