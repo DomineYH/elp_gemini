@@ -238,6 +238,11 @@ class LessonPlanAnalysisService:
                         )
 
                         # DB에 분석 기록 저장
+                        analysis_upload_id = (
+                            latest_upload.id
+                            if latest_upload is not None
+                            else None
+                        )
                         analysis_record = AnalysisReport(
                             user_id=user_id,
                             lessonplan_filename=lessonplan_filename,
@@ -245,11 +250,7 @@ class LessonPlanAnalysisService:
                             report_filename=saved_report["filename"],
                             report_path=saved_report["file_path"],
                             latency_ms=latency_ms,
-                            upload_id=(
-                                latest_upload.id
-                                if latest_upload is not None
-                                else None
-                            ),
+                            upload_id=analysis_upload_id,
                         )
                         self.db.add(analysis_record)
                         try:
@@ -259,12 +260,23 @@ class LessonPlanAnalysisService:
                             # this upload_id between our pre-flight check
                             # and this INSERT. Roll back and return
                             # ALREADY_ANALYZED with the winning row's id.
+                            # Resolve the winner by the upload_id used for
+                            # this INSERT, not by the latest-upload lookup
+                            # (which may now return a newer upload).
+                            captured_upload_id = analysis_upload_id
                             await self.db.rollback()
-                            _, winner = (
-                                await self._find_existing_report_for_latest_upload(
-                                    username
-                                )
-                            )
+                            winner = None
+                            if captured_upload_id is not None:
+                                async with self.db.begin():
+                                    winner_result = await self.db.execute(
+                                        select(AnalysisReport)
+                                        .where(
+                                            AnalysisReport.upload_id
+                                            == captured_upload_id
+                                        )
+                                        .limit(1)
+                                    )
+                                    winner = winner_result.scalar_one_or_none()
                             if winner is not None:
                                 loser_path = saved_report["file_path"]
                                 if loser_path != winner.report_path:

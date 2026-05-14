@@ -640,3 +640,86 @@ async def test_analyze_creates_synthetic_upload_for_legacy_user(
     assert second["report_id"] == saved.id
     # Gemini was only called once (first call)
     assert mock_stores.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_analyze_race_fallback_uses_captured_upload_id_not_latest(
+    session,
+):
+    """When a newer upload appears between pre-flight and the IntegrityError
+    fallback, the handler must resolve the winner by the upload_id WE
+    attempted (upload_a), not by the latest upload (upload_b)."""
+    u = User(
+        username="alice", nickname="alice",
+        email="a@a.com", hashed_password="x",
+    )
+    session.add(u)
+    await session.flush()
+    upload_a = LessonPlanUpload(
+        user_id=u.id,
+        filename="alice_plan_a.pdf",
+        original_filename="plan_a.pdf",
+        file_hash="a" * 64,
+    )
+    session.add(upload_a)
+    await session.flush()
+    upload_b = LessonPlanUpload(
+        user_id=u.id,
+        filename="alice_plan_b.pdf",
+        original_filename="plan_b.pdf",
+        file_hash="b" * 64,
+    )
+    session.add(upload_b)
+    await session.flush()
+
+    winner = AnalysisReport(
+        user_id=u.id,
+        lessonplan_filename=upload_a.filename,
+        lessonplan_original_name=upload_a.original_filename,
+        report_filename="winner.md",
+        report_path="/tmp/winner.md",
+        upload_id=upload_a.id,
+    )
+    session.add(winner)
+    await session.commit()
+
+    svc = LessonPlanAnalysisService(db=session)
+
+    fake_response = MagicMock()
+    fake_response.text = "# Report\n\nbody"
+    fake_response.candidates = []
+
+    call_count = {"n": 0}
+
+    async def racing_find(username):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # Pre-flight: latest upload is upload_a, no report
+            return (upload_a, None)
+        # If the handler re-calls _find_existing... it would see upload_b
+        return (upload_b, None)
+
+    with patch.object(
+        svc,
+        "_find_existing_report_for_latest_upload",
+        side_effect=racing_find,
+    ), patch.object(
+        svc, "_get_store_ids", return_value=["u", "r"]
+    ), patch.object(
+        svc.prompt_loader, "get_prompt", return_value="SYS"
+    ), patch(
+        "app.services.lessonplan_analysis_service."
+        "_call_gemini_with_file_search",
+        return_value=fake_response,
+    ), patch.object(
+        svc.report_storage,
+        "save_report",
+        return_value={"filename": "loser.md", "file_path": "/tmp/loser.md"},
+    ):
+        result = await svc.analyze_lesson_plan(
+            session_id=1, user_id=u.id, username=u.username,
+        )
+
+    assert result["success"] is False
+    assert result["error_code"] == "ALREADY_ANALYZED"
+    assert result["report_id"] == winner.id
