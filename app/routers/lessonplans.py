@@ -14,11 +14,7 @@ from fastapi.responses import FileResponse
 import logging
 from pathlib import Path
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.db import get_db
 from app.dependencies import get_current_user
-from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
 from app.schemas.lessonplans import (
     LessonPlanUploadResponse,
@@ -43,10 +39,9 @@ logger = logging.getLogger(__name__)
 async def upload_lessonplan(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
 ):
     """
-    지도안 파일 업로드 + lessonplan_uploads 행 생성
+    지도안 파일 업로드
     """
     try:
         validator = FileValidator()
@@ -66,18 +61,9 @@ async def upload_lessonplan(
             file_content=file_content,
         )
 
-        upload = LessonPlanUpload(
-            user_id=current_user.id,
-            filename=saved["filename"],
-            original_filename=file.filename,
-            file_hash=saved["file_hash"],
-        )
-        db.add(upload)
-        await db.flush()
-
         logger.info(
             f"지도안 업로드 성공: user={current_user.username}, "
-            f"file={saved['filename']}, upload_id={upload.id}"
+            f"file={saved['filename']}"
         )
 
         return LessonPlanUploadResponse(
@@ -85,8 +71,6 @@ async def upload_lessonplan(
             original_filename=file.filename,
             file_size=len(file_content),
             saved_path=saved["file_path"],
-            upload_id=upload.id,
-            file_hash=saved["file_hash"],
         )
 
     except HTTPException:

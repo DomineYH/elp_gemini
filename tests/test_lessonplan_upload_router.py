@@ -1,4 +1,4 @@
-"""Upload 라우터가 lessonplan_uploads 행을 만들고 upload_id 를 반환하는지 검증."""
+"""Regression coverage for local-only lessonplan API uploads."""
 import pytest
 import pytest_asyncio
 from io import BytesIO
@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from app.main import app
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user
 from app.db import Base
 from app.models.users import User
 from app.models.lessonplan_uploads import LessonPlanUpload
@@ -60,24 +60,17 @@ async def client(session_factory, tmp_path, monkeypatch):
                 )
             ).scalar_one()
 
-    async def override_get_db():
-        async with session_factory() as s:
-            yield s
-            await s.commit()
-
     app.dependency_overrides[get_current_user] = override_get_user
-    app.dependency_overrides[get_db] = override_get_db
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c, session_factory
 
     app.dependency_overrides.pop(get_current_user, None)
-    app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.mark.asyncio
-async def test_upload_creates_lessonplan_upload_row(client):
+async def test_upload_does_not_create_lessonplan_upload_row(client):
     c, session_factory = client
     pdf_bytes = (
         b"%PDF-1.4\n%fake pdf for test\n"
@@ -89,37 +82,15 @@ async def test_upload_creates_lessonplan_upload_row(client):
 
     assert res.status_code == 201
     body = res.json()
-    assert "upload_id" in body
-    assert isinstance(body["upload_id"], int)
-    assert body["upload_id"] > 0
+    assert body["filename"]
+    assert body["original_filename"] == "plan.pdf"
+    assert body["file_size"] == len(pdf_bytes)
+    assert body["saved_path"]
+    assert "upload_id" not in body
+    assert "file_hash" not in body
 
     async with session_factory() as s:
         rows = (
             await s.execute(select(LessonPlanUpload))
         ).scalars().all()
-        assert len(rows) == 1
-        assert rows[0].id == body["upload_id"]
-        assert rows[0].original_filename == "plan.pdf"
-        assert rows[0].file_hash is not None
-        assert len(rows[0].file_hash) == 64
-
-
-@pytest.mark.asyncio
-async def test_two_uploads_same_filename_produce_two_rows(client):
-    c, session_factory = client
-    pdf_bytes = b"%PDF-1.4\nfake\n%%EOF\n"
-    files1 = {"file": ("plan.pdf", BytesIO(pdf_bytes), "application/pdf")}
-    files2 = {"file": ("plan.pdf", BytesIO(pdf_bytes), "application/pdf")}
-
-    r1 = await c.post("/api/lessonplans/upload", files=files1)
-    r2 = await c.post("/api/lessonplans/upload", files=files2)
-
-    assert r1.status_code == 201
-    assert r2.status_code == 201
-    assert r1.json()["upload_id"] != r2.json()["upload_id"]
-
-    async with session_factory() as s:
-        rows = (
-            await s.execute(select(LessonPlanUpload))
-        ).scalars().all()
-        assert len(rows) == 2
+        assert rows == []
