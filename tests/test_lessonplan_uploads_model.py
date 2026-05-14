@@ -1,7 +1,7 @@
 """LessonPlanUpload 모델 및 마이그레이션 idempotency 테스트."""
 import pytest
 import pytest_asyncio
-from sqlalchemy import inspect, select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from app.db import Base
@@ -113,4 +113,82 @@ async def test_ensure_lessonplan_uploads_table_is_idempotent(tmp_path):
     async with eng.begin() as conn:
         cols = await conn.run_sync(_columns)
     assert "upload_id" in cols
+    await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_ensure_lessonplan_uploads_table_backfills_legacy_reports(
+    tmp_path
+):
+    db_path = tmp_path / "legacy.db"
+    eng = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+
+    async with eng.begin() as conn:
+        await conn.execute(text("""
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username VARCHAR(255) NOT NULL UNIQUE,
+                nickname VARCHAR(255) NOT NULL,
+                email VARCHAR(255) UNIQUE,
+                hashed_password VARCHAR(255),
+                is_admin BOOLEAN NOT NULL DEFAULT 0,
+                failed_login_count INTEGER NOT NULL DEFAULT 0,
+                locked_until DATETIME,
+                last_failed_login_at DATETIME,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE analysis_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                lessonplan_filename VARCHAR(500) NOT NULL,
+                lessonplan_original_name VARCHAR(500),
+                report_filename VARCHAR(500) NOT NULL,
+                report_path VARCHAR(1000) NOT NULL,
+                latency_ms INTEGER,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        await conn.execute(text("""
+            INSERT INTO users (
+                username, nickname, email, hashed_password
+            )
+            VALUES ('alice', 'alice', 'a@a.com', 'x')
+        """))
+        await conn.execute(text("""
+            INSERT INTO analysis_reports (
+                user_id, lessonplan_filename, lessonplan_original_name,
+                report_filename, report_path, latency_ms, created_at
+            )
+            VALUES (
+                1, 'alice_plan.pdf', 'plan.pdf', 'report.md',
+                '/tmp/report.md', 123, '2026-05-13 12:34:56'
+            )
+        """))
+
+    added = await ensure_lessonplan_uploads_table(eng)
+
+    assert added is True
+
+    async with eng.begin() as conn:
+        upload = (
+            await conn.execute(text(
+                "SELECT id, user_id, filename, original_filename, "
+                "file_hash, created_at FROM lessonplan_uploads"
+            ))
+        ).mappings().one()
+        report = (
+            await conn.execute(text(
+                "SELECT id, upload_id FROM analysis_reports"
+            ))
+        ).mappings().one()
+
+    assert upload["user_id"] == 1
+    assert upload["filename"] == "alice_plan.pdf"
+    assert upload["original_filename"] == "plan.pdf"
+    assert upload["file_hash"] is None
+    assert str(upload["created_at"]) == "2026-05-13 12:34:56"
+    assert report["upload_id"] == upload["id"]
     await eng.dispose()
