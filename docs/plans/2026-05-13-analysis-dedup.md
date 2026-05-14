@@ -4,7 +4,7 @@
 
 **Goal:** Make `/api/lessonplan/analyze` reject re-analysis of an already-analyzed upload event with HTTP 409 + existing `report_id`, so the frontend can show "이미 분석된 문서입니다." and auto-open the existing report instead of re-calling Gemini.
 
-**Architecture:** Define an upload **event** via a new `lessonplan_uploads` row created on every `/api/lessonplans/upload` call. Bind each `analysis_reports` row to its source upload via a new `upload_id` FK with a UNIQUE index. The analyze service does a pre-flight check (latest upload already has a report? → 409) and catches the unique-index `IntegrityError` as a race-condition fallback. Existing 429 retry logic from PR #52 is left untouched.
+**Architecture:** Define an upload **event** via a new `lessonplan_uploads` row created on every `/dashboard/upload` call. Bind each `analysis_reports` row to its source upload via a new `upload_id` FK with a UNIQUE index. The analyze service does a pre-flight check (latest upload already has a report? → 409) and catches the unique-index `IntegrityError` as a race-condition fallback. Existing 429 retry logic from PR #52 is left untouched.
 
 **Tech Stack:** FastAPI · SQLAlchemy async · SQLite (UNIQUE INDEX in lieu of UNIQUE constraint) · pytest · pytest-asyncio · in-house `ensure_*(engine)` startup migration pattern (no Alembic).
 
@@ -654,7 +654,7 @@ async def test_upload_creates_lessonplan_upload_row(client):
     )
     files = {"file": ("plan.pdf", BytesIO(pdf_bytes), "application/pdf")}
 
-    res = await c.post("/api/lessonplans/upload", files=files)
+    res = await c.post("/dashboard/upload", files=files)
 
     assert res.status_code == 201
     body = res.json()
@@ -680,8 +680,8 @@ async def test_two_uploads_same_filename_produce_two_rows(client):
     files1 = {"file": ("plan.pdf", BytesIO(pdf_bytes), "application/pdf")}
     files2 = {"file": ("plan.pdf", BytesIO(pdf_bytes), "application/pdf")}
 
-    r1 = await c.post("/api/lessonplans/upload", files=files1)
-    r2 = await c.post("/api/lessonplans/upload", files=files2)
+    r1 = await c.post("/dashboard/upload", files=files1)
+    r2 = await c.post("/dashboard/upload", files=files2)
 
     assert r1.status_code == 201
     assert r2.status_code == 201
@@ -816,7 +816,7 @@ git add app/schemas/lessonplans.py app/routers/lessonplans.py \
         tests/test_lessonplan_upload_router.py
 git commit -m "feat(upload): persist lessonplan_uploads row on every upload
 
-Each /api/lessonplans/upload now creates a new lessonplan_uploads
+Each /dashboard/upload now creates a new lessonplan_uploads
 row (even for same filename overwrites) and returns upload_id +
 file_hash in the response. This is the anchor the analyze service
 uses to detect duplicate analysis."

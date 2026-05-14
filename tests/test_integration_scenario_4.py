@@ -101,18 +101,18 @@ async def upload_lessonplan(
     }
 
     response = await client.post(
-        f"{BASE_URL}/api/lessonplans/upload",
+        f"{BASE_URL}/dashboard/upload",
         files=files,
         headers={"Authorization": f"Bearer {token}"}
     )
 
-    if response.status_code != 201:
+    if response.status_code != 200:
         raise Exception(f"지도안 업로드 실패: {response.text}")
 
-    data = response.json()
-    filename = data["filename"]
-    print(f"✅ 지도안 업로드 완료: {filename}")
-    return filename
+    raise RuntimeError(
+        "This legacy scenario is broken: /dashboard/upload returns HTML, "
+        "not the old JSON filename contract."
+    )
 
 
 async def create_qna_session(

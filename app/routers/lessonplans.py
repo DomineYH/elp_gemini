@@ -1,13 +1,11 @@
 """
 지도안 관리 라우터
-파일 업로드, 조회, 삭제 엔드포인트
+파일 조회, 삭제 엔드포인트
 """
 from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
-    UploadFile,
-    File,
     status,
 )
 from fastapi.responses import FileResponse
@@ -17,72 +15,14 @@ from pathlib import Path
 from app.dependencies import get_current_user
 from app.models.users import User
 from app.schemas.lessonplans import (
-    LessonPlanUploadResponse,
     LessonPlanListResponse,
 )
 from app.services.lessonplan_storage_service import (
     LessonPlanStorageService
 )
-from app.services.file_validator import FileValidator
 
 router = APIRouter(prefix="/api/lessonplans", tags=["지도안"])
 logger = logging.getLogger(__name__)
-
-
-@router.post(
-    "/upload",
-    response_model=LessonPlanUploadResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="지도안 업로드",
-    description="사용자의 지도안 파일을 업로드합니다.",
-)
-async def upload_lessonplan(
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    지도안 파일 업로드
-    """
-    try:
-        validator = FileValidator()
-        validation_result = await validator.validate_file(file)
-        if not validation_result["valid"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=validation_result["error"],
-            )
-
-        file_content = await file.read()
-
-        storage_service = LessonPlanStorageService()
-        saved = storage_service.save_lessonplan(
-            username=current_user.username,
-            original_filename=file.filename,
-            file_content=file_content,
-        )
-
-        logger.info(
-            f"지도안 업로드 성공: user={current_user.username}, "
-            f"file={saved['filename']}"
-        )
-
-        return LessonPlanUploadResponse(
-            filename=saved["filename"],
-            original_filename=file.filename,
-            file_size=len(file_content),
-            saved_path=saved["file_path"],
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(
-            f"지도안 업로드 실패: {str(e)}", exc_info=True,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="파일 업로드 중 오류가 발생했습니다.",
-        )
 
 
 @router.get(

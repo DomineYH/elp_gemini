@@ -103,8 +103,8 @@ In the existing `fetch('/api/lessonplan/analyze', …)` handler:
 ### Scenario A: New upload → analyze (happy path)
 
 ```
-POST /api/lessonplans/upload
-  → save_lessonplan() writes file + INSERT lessonplan_uploads (id=42)
+POST /dashboard/upload
+  → extracts PDF text + uploads to File Search + INSERT lessonplan_uploads (id=42)
 POST /api/lessonplan/analyze
   → latest_upload.id = 42
   → analysis_reports WHERE upload_id=42 → None
@@ -127,7 +127,7 @@ Frontend → toast + auto-open viewer for report 17
 ### Scenario C: New upload (same or different file) → re-analyze (re-enabled)
 
 ```
-POST /api/lessonplans/upload   (any file)
+POST /dashboard/upload   (any file)
   → INSERT lessonplan_uploads (id=43)
 POST /api/lessonplan/analyze
   → latest_upload.id = 43

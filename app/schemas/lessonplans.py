@@ -6,15 +6,6 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-class LessonPlanUploadResponse(BaseModel):
-    """지도안 업로드 응답"""
-
-    filename: str = Field(..., description="저장된 파일명")
-    original_filename: str = Field(..., description="원본 파일명")
-    file_size: int = Field(..., description="파일 크기 (bytes)")
-    saved_path: str = Field(..., description="저장 경로")
-
-
 class LessonPlanInfo(BaseModel):
     """지도안 정보"""
 

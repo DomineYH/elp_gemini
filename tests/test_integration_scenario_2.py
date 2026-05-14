@@ -126,16 +126,20 @@ async def verify_criteria_deleted(
     }
 
     upload_response = await client.post(
-        f"{BASE_URL}/api/lessonplans/upload",
+        f"{BASE_URL}/dashboard/upload",
         files=files,
         headers={"Authorization": f"Bearer {token}"}
     )
 
-    if upload_response.status_code != 201:
+    if upload_response.status_code != 200:
         print(f"⚠️  테스트 지도안 업로드 실패")
         return False
 
-    lessonplan_filename = upload_response.json()["filename"]
+    lessonplan_filename = ""
+    raise RuntimeError(
+        "This legacy scenario is broken: /dashboard/upload returns HTML, "
+        "not the old JSON filename contract."
+    )
 
     # 평가 시도 (평가기준이 없으면 실패해야 함)
     eval_response = await client.post(
