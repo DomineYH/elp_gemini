@@ -137,6 +137,20 @@ class LessonPlanAnalysisService:
                         LessonPlanUpload, latest_upload_id
                     )
 
+                legacy_lessonplans = []
+                if latest_upload is None:
+                    legacy_lessonplans = (
+                        self.lessonplan_storage.list_lessonplans(username)
+                    )
+                    if not legacy_lessonplans:
+                        return {
+                            "success": False,
+                            "error": (
+                                "분석할 문서가 없습니다. "
+                                "수업 지도안을 먼저 업로드해주세요."
+                            )
+                        }
+
                 # 1. File Search Store ID 조회 (Phase 1 활용)
                 store_ids = await self._get_store_ids(username)
                 if not store_ids:
@@ -199,9 +213,7 @@ class LessonPlanAnalysisService:
                             # create a synthetic upload row so the dedup
                             # invariant (1:1 upload<->report) holds for
                             # subsequent clicks.
-                            lessonplans = self.lessonplan_storage.list_lessonplans(
-                                username
-                            )
+                            lessonplans = legacy_lessonplans
                             if lessonplans:
                                 latest = max(
                                     lessonplans,

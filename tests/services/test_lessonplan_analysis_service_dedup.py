@@ -138,6 +138,46 @@ async def test_analyze_proceeds_when_no_existing_report(session):
 
 
 @pytest.mark.asyncio
+async def test_analyze_returns_upload_required_when_no_upload_or_legacy_file(
+    tmp_path
+):
+    lessonplan_dir = tmp_path / "lessonplans"
+    lessonplan_dir.mkdir()
+
+    db = MagicMock()
+    svc = LessonPlanAnalysisService(db=db)
+    svc.lessonplan_storage.base_dir = lessonplan_dir
+
+    with patch.object(
+        svc,
+        "_find_existing_report_for_latest_upload",
+        return_value=(None, None),
+    ) as mock_existing, patch.object(
+        svc.lessonplan_storage,
+        "list_lessonplans",
+        return_value=[],
+    ) as mock_lessonplans, patch.object(
+        svc, "_get_store_ids"
+    ) as mock_stores, patch(
+        "app.services.lessonplan_analysis_service."
+        "_call_gemini_with_file_search"
+    ) as mock_gemini:
+        result = await svc.analyze_lesson_plan(
+            session_id=1, user_id=1, username="fresh",
+        )
+
+    assert result == {
+        "success": False,
+        "error": "분석할 문서가 없습니다. 수업 지도안을 먼저 업로드해주세요.",
+    }
+    mock_existing.assert_called_once_with("fresh")
+    mock_lessonplans.assert_called_once_with("fresh")
+    assert mock_stores.call_count == 0
+    assert mock_gemini.call_count == 0
+    db.add.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_analyze_falls_through_when_existing_report_file_missing(
     session, tmp_path
 ):
