@@ -166,21 +166,30 @@ class LessonPlanAnalysisService:
                 saved_report = None
                 if report:
                     try:
-                        # 가장 최근 업로드 파일명 조회
-                        lessonplans = self.lessonplan_storage.list_lessonplans(
-                            username
-                        )
-                        if lessonplans:
-                            # created_at 기준 정렬하여 최신 파일 선택
-                            latest = max(
-                                lessonplans,
-                                key=lambda x: x["created_at"]
+                        if latest_upload is not None:
+                            original_filename = (
+                                latest_upload.original_filename
+                                or "unknown"
                             )
-                            original_filename = latest["original_filename"]
-                            lessonplan_filename = latest["filename"]
+                            lessonplan_filename = latest_upload.filename
                         else:
-                            original_filename = "unknown"
-                            lessonplan_filename = "unknown"
+                            # Defensive fallback for the no-upload-row code path
+                            # (should not happen on the success branch since the
+                            # pre-flight already enforced presence of a latest
+                            # upload, but keep the legacy lookup for safety).
+                            lessonplans = self.lessonplan_storage.list_lessonplans(
+                                username
+                            )
+                            if lessonplans:
+                                latest = max(
+                                    lessonplans,
+                                    key=lambda x: x["created_at"]
+                                )
+                                original_filename = latest["original_filename"]
+                                lessonplan_filename = latest["filename"]
+                            else:
+                                original_filename = "unknown"
+                                lessonplan_filename = "unknown"
 
                         # 보고서 파일 저장
                         saved_report = self.report_storage.save_report(

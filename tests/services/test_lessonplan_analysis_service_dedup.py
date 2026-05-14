@@ -127,6 +127,60 @@ async def test_analyze_proceeds_when_no_existing_report(session):
 
 
 @pytest.mark.asyncio
+async def test_analyze_uses_upload_row_for_report_metadata(session, tmp_path):
+    u = User(
+        username="alice", nickname="alice",
+        email="a@a.com", hashed_password="x",
+    )
+    session.add(u)
+    await session.flush()
+    up = LessonPlanUpload(
+        user_id=u.id,
+        filename="alice_20260514_plan.pdf",
+        original_filename="plan.pdf",
+        file_hash="b" * 64,
+    )
+    session.add(up)
+    await session.flush()
+    await session.commit()
+
+    svc = LessonPlanAnalysisService(db=session)
+    empty_lessonplan_dir = tmp_path / "lessonplan"
+    empty_lessonplan_dir.mkdir()
+    svc.lessonplan_storage.base_dir = empty_lessonplan_dir
+
+    fake_response = MagicMock()
+    fake_response.text = "# Report\n\nbody"
+    fake_response.candidates = []
+
+    with patch.object(
+        svc, "_get_store_ids", return_value=["user-store", "rubric-store"]
+    ), patch.object(
+        svc.prompt_loader, "get_prompt", return_value="SYS"
+    ), patch(
+        "app.services.lessonplan_analysis_service."
+        "_call_gemini_with_file_search",
+        return_value=fake_response,
+    ), patch.object(
+        svc.report_storage, "save_report",
+        return_value={"filename": "r.md", "file_path": "/tmp/r.md"},
+    ):
+        result = await svc.analyze_lesson_plan(
+            session_id=1, user_id=u.id, username=u.username,
+        )
+
+    assert result["success"] is True
+
+    saved = (
+        await session.execute(
+            select(AnalysisReport).where(AnalysisReport.upload_id == up.id)
+        )
+    ).scalar_one()
+    assert saved.lessonplan_filename == "alice_20260514_plan.pdf"
+    assert saved.lessonplan_original_name == "plan.pdf"
+
+
+@pytest.mark.asyncio
 async def test_analyze_race_fallback_on_integrity_error(session):
     u, up = await _seed_user_and_upload(session)
 
