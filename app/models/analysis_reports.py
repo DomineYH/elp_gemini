@@ -4,11 +4,13 @@
 """
 from sqlalchemy import (
     Column,
+    Index,
     Integer,
     String,
+    Text,
+    text,
     DateTime,
     ForeignKey,
-    Text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -72,6 +74,15 @@ class AnalysisReport(Base):
         nullable=False,
         server_default=func.now(),
         index=True
+    )
+
+    __table_args__ = (
+        Index(
+            'uq_analysis_reports_upload_id',
+            'upload_id',
+            unique=True,
+            sqlite_where=text('upload_id IS NOT NULL'),
+        ),
     )
 
     # 관계

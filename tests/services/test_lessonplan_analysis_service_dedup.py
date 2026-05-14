@@ -22,13 +22,6 @@ async def session(tmp_path):
     )
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Create the partial unique index that production migration adds
-        from sqlalchemy import text
-        await conn.execute(text(
-            "CREATE UNIQUE INDEX uq_analysis_reports_upload_id "
-            "ON analysis_reports(upload_id) "
-            "WHERE upload_id IS NOT NULL"
-        ))
     factory = async_sessionmaker(eng, expire_on_commit=False)
     async with factory() as s:
         yield s
