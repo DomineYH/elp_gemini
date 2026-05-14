@@ -54,7 +54,8 @@ async def ensure_lessonplan_uploads_table(engine: AsyncEngine) -> bool:
             await conn.execute(text("""
                 CREATE TABLE lessonplan_uploads (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    user_id INTEGER NOT NULL REFERENCES users(id)
+                        ON DELETE CASCADE,
                     filename VARCHAR(500) NOT NULL,
                     original_filename VARCHAR(500),
                     file_hash VARCHAR(64),

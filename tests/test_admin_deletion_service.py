@@ -3,11 +3,13 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 
 from app.db import Base
 from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage, MessageRole
 from app.models.chat_sessions import ChatSession
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
 from app.routers.views import _sanitize_display_name
 from app.services.admin_deletion_service import AdminDeletionService
@@ -145,6 +147,37 @@ async def test_delete_user_cascades_and_removes_files(seeded):
     assert not seeded["report_file"].exists()
     assert not seeded["lessonplan_file"].exists()
     assert not seeded["dashboard_upload_file"].exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_user_cascades_lessonplan_upload_rows(seeded):
+    async with TestingSessionLocal() as db:
+        upload = LessonPlanUpload(
+            user_id=seeded["user_id"],
+            filename="stu1_20260101000000_uploaded.pdf",
+            original_filename="uploaded.pdf",
+            file_hash="b" * 64,
+        )
+        db.add(upload)
+        await db.commit()
+        upload_id = upload.id
+
+    async with TestingSessionLocal() as db:
+        service = AdminDeletionService(db)
+        result = await service.delete_user(
+            target_user_id=seeded["user_id"],
+            current_admin_id=seeded["admin_id"],
+        )
+
+    assert result["ok"] is True
+
+    async with TestingSessionLocal() as db:
+        remaining = await db.execute(
+            select(LessonPlanUpload).where(
+                LessonPlanUpload.id == upload_id
+            )
+        )
+        assert remaining.scalar_one_or_none() is None
 
 
 @pytest.mark.asyncio

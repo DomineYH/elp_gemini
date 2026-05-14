@@ -25,7 +25,7 @@ class LessonPlanUpload(Base):
     )
     user_id = Column(
         Integer,
-        ForeignKey("users.id"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -50,6 +50,8 @@ class LessonPlanUpload(Base):
         server_default=func.now(),
         index=True,
     )
+
+    user = relationship("User", back_populates="lessonplan_uploads")
 
     # 역방향 관계 (선택적)
     analysis_report = relationship(
