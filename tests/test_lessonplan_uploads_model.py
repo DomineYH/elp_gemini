@@ -66,6 +66,29 @@ async def test_upload_row_can_be_inserted_and_linked_to_report(engine):
 
 
 @pytest.mark.asyncio
+async def test_ensure_lessonplan_uploads_table_tolerates_fresh_db(
+    tmp_path
+):
+    """Migration should tolerate running before ORM tables exist."""
+    db_path = tmp_path / "fresh.db"
+    eng = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+
+    added = await ensure_lessonplan_uploads_table(eng)
+
+    assert added is True
+
+    def _tables(sync_conn):
+        return set(inspect(sync_conn).get_table_names())
+
+    async with eng.begin() as conn:
+        tables = await conn.run_sync(_tables)
+    assert "lessonplan_uploads" in tables
+    assert "users" not in tables
+    assert "analysis_reports" not in tables
+    await eng.dispose()
+
+
+@pytest.mark.asyncio
 async def test_ensure_lessonplan_uploads_table_is_idempotent(tmp_path):
     """Migration should be safe to run twice and leave the schema valid."""
     db_path = tmp_path / "idempotent.db"

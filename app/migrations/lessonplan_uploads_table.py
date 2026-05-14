@@ -76,30 +76,31 @@ async def ensure_lessonplan_uploads_table(engine: AsyncEngine) -> bool:
         ar_columns = await conn.run_sync(
             lambda c: _collect_columns(c, "analysis_reports")
         )
-        if ar_columns is not None and "upload_id" not in ar_columns:
-            await conn.execute(text(
-                "ALTER TABLE analysis_reports "
-                "ADD COLUMN upload_id INTEGER REFERENCES "
-                "lessonplan_uploads(id)"
-            ))
-            logger.info("analysis_reports.upload_id 컬럼 추가")
-            changed = True
+        if ar_columns is not None:
+            if "upload_id" not in ar_columns:
+                await conn.execute(text(
+                    "ALTER TABLE analysis_reports "
+                    "ADD COLUMN upload_id INTEGER REFERENCES "
+                    "lessonplan_uploads(id)"
+                ))
+                logger.info("analysis_reports.upload_id 컬럼 추가")
+                changed = True
 
-        ar_indexes = await conn.run_sync(
-            lambda c: _collect_index_names(c, "analysis_reports")
-        )
-        if (
-            ar_indexes is not None
-            and "uq_analysis_reports_upload_id" not in ar_indexes
-        ):
-            await conn.execute(text(
-                "CREATE UNIQUE INDEX uq_analysis_reports_upload_id "
-                "ON analysis_reports(upload_id) "
-                "WHERE upload_id IS NOT NULL"
-            ))
-            logger.info(
-                "analysis_reports.upload_id UNIQUE INDEX 생성"
+            ar_indexes = await conn.run_sync(
+                lambda c: _collect_index_names(c, "analysis_reports")
             )
-            changed = True
+            if (
+                ar_indexes is not None
+                and "uq_analysis_reports_upload_id" not in ar_indexes
+            ):
+                await conn.execute(text(
+                    "CREATE UNIQUE INDEX uq_analysis_reports_upload_id "
+                    "ON analysis_reports(upload_id) "
+                    "WHERE upload_id IS NOT NULL"
+                ))
+                logger.info(
+                    "analysis_reports.upload_id UNIQUE INDEX 생성"
+                )
+                changed = True
 
         return changed
