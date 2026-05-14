@@ -115,10 +115,15 @@ async def upload_document(
     file_url = f"/static/uploads/{saved_filename}"
 
     try:
-        file_bytes = await file.read()
+        hasher = hashlib.sha256()
         with open(file_path, "wb") as buffer:
-            buffer.write(file_bytes)
-        file_hash = hashlib.sha256(file_bytes).hexdigest()
+            while True:
+                chunk = await file.read(1024 * 1024)  # 1 MiB
+                if not chunk:
+                    break
+                buffer.write(chunk)
+                hasher.update(chunk)
+        file_hash = hasher.hexdigest()
 
         # PDF 텍스트 추출
         reader = PdfReader(str(file_path))
