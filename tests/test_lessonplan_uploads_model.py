@@ -110,9 +110,18 @@ async def test_ensure_lessonplan_uploads_table_is_idempotent(tmp_path):
             "analysis_reports"
         )}
 
+    def _upload_indexes(sync_conn):
+        return {ix["name"] for ix in inspect(sync_conn).get_indexes(
+            "lessonplan_uploads"
+        )}
+
     async with eng.begin() as conn:
         cols = await conn.run_sync(_columns)
+        upload_indexes = await conn.run_sync(_upload_indexes)
     assert "upload_id" in cols
+    assert (
+        "uq_lessonplan_uploads_synthetic_per_user" in upload_indexes
+    )
     await eng.dispose()
 
 

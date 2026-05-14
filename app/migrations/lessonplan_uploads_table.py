@@ -40,8 +40,9 @@ async def ensure_lessonplan_uploads_table(engine: AsyncEngine) -> bool:
     """
     Idempotent 적용:
       1) lessonplan_uploads 테이블이 없으면 생성
-      2) analysis_reports.upload_id 컬럼이 없으면 추가
-      3) uq_analysis_reports_upload_id UNIQUE INDEX 가 없으면 생성
+      2) synthetic legacy upload 중복 방지 UNIQUE INDEX 가 없으면 생성
+      3) analysis_reports.upload_id 컬럼이 없으면 추가
+      4) uq_analysis_reports_upload_id UNIQUE INDEX 가 없으면 생성
 
     Returns:
         하나라도 변경했으면 True, 모두 이미 있으면 False
@@ -71,6 +72,25 @@ async def ensure_lessonplan_uploads_table(engine: AsyncEngine) -> bool:
                 "ON lessonplan_uploads(created_at)"
             ))
             logger.info("lessonplan_uploads 테이블 생성")
+            changed = True
+
+        lp_indexes = await conn.run_sync(
+            lambda c: _collect_index_names(c, "lessonplan_uploads")
+        )
+        if (
+            lp_indexes is not None
+            and "uq_lessonplan_uploads_synthetic_per_user"
+            not in lp_indexes
+        ):
+            await conn.execute(text(
+                "CREATE UNIQUE INDEX "
+                "uq_lessonplan_uploads_synthetic_per_user "
+                "ON lessonplan_uploads(user_id, filename) "
+                "WHERE file_hash IS NULL"
+            ))
+            logger.info(
+                "lessonplan_uploads synthetic UNIQUE INDEX 생성"
+            )
             changed = True
 
         ar_columns = await conn.run_sync(

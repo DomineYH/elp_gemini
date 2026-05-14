@@ -643,6 +643,102 @@ async def test_analyze_creates_synthetic_upload_for_legacy_user(
 
 
 @pytest.mark.asyncio
+async def test_legacy_concurrent_analyze_does_not_create_duplicate_reports(
+    session, tmp_path
+):
+    u = User(
+        username="alice", nickname="alice",
+        email="a@a.com", hashed_password="x",
+    )
+    session.add(u)
+    await session.flush()
+    await session.commit()
+
+    lessonplan_dir = tmp_path / "lessonplans"
+    lessonplan_dir.mkdir()
+    lessonplan_path = lessonplan_dir / "alice_legacy_plan.pdf"
+    lessonplan_path.write_bytes(b"legacy lesson plan")
+
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir()
+    save_count = {"n": 0}
+
+    def save_report(**kwargs):
+        save_count["n"] += 1
+        report_path = reports_dir / f"r{save_count['n']}.md"
+        report_path.write_text(
+            kwargs["report_content"], encoding="utf-8"
+        )
+        return {
+            "filename": report_path.name,
+            "file_path": str(report_path),
+        }
+
+    svc = LessonPlanAnalysisService(db=session)
+    svc.lessonplan_storage.base_dir = lessonplan_dir
+
+    fake_response = MagicMock()
+    fake_response.text = "# Report\n\nbody"
+    fake_response.candidates = []
+
+    with patch.object(
+        svc, "_get_store_ids", return_value=["user-store", "rubric-store"]
+    ), patch.object(
+        svc.prompt_loader, "get_prompt", return_value="SYS"
+    ), patch(
+        "app.services.lessonplan_analysis_service."
+        "_call_gemini_with_file_search",
+        return_value=fake_response,
+    ), patch.object(
+        svc.report_storage, "save_report", side_effect=save_report,
+    ):
+        first = await svc.analyze_lesson_plan(
+            session_id=1, user_id=u.id, username=u.username,
+        )
+        await session.commit()
+
+        real_find = svc._find_existing_report_for_latest_upload
+        call_count = {"n": 0}
+
+        async def stale_preflight(username):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return (None, None)
+            return await real_find(username)
+
+        with patch.object(
+            svc,
+            "_find_existing_report_for_latest_upload",
+            side_effect=stale_preflight,
+        ):
+            second = await svc.analyze_lesson_plan(
+                session_id=1, user_id=u.id, username=u.username,
+            )
+
+    assert first["success"] is True
+    assert second["success"] is False
+    assert second["error_code"] == "ALREADY_ANALYZED"
+
+    uploads = (
+        await session.execute(
+            select(LessonPlanUpload).where(
+                LessonPlanUpload.user_id == u.id
+            )
+        )
+    ).scalars().all()
+    reports = (
+        await session.execute(
+            select(AnalysisReport).where(AnalysisReport.user_id == u.id)
+        )
+    ).scalars().all()
+
+    assert len(uploads) == 1
+    assert uploads[0].file_hash is None
+    assert len(reports) == 1
+    assert second["report_id"] == reports[0].id
+
+
+@pytest.mark.asyncio
 async def test_analyze_race_fallback_uses_captured_upload_id_not_latest(
     session,
 ):

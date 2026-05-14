@@ -219,13 +219,48 @@ class LessonPlanAnalysisService:
                                 original_filename=original_filename,
                                 file_hash=None,
                             )
-                            self.db.add(latest_upload)
-                            await self.db.flush()
-                            logger.info(
-                                f"legacy 사용자에 대해 synthetic LessonPlanUpload "
-                                f"생성: id={latest_upload.id}, "
-                                f"filename={lessonplan_filename}"
-                            )
+                            try:
+                                self.db.add(latest_upload)
+                                await self.db.flush()
+                            except IntegrityError:
+                                await self.db.rollback()
+                                latest_upload, existing_report = await (
+                                    self._find_existing_report_for_latest_upload(
+                                        username
+                                    )
+                                )
+                                if existing_report is not None:
+                                    logger.warning(
+                                        "legacy synthetic upload race 감지 "
+                                        f"→ ALREADY_ANALYZED 폴백 "
+                                        f"(winner report_id="
+                                        f"{existing_report.id})"
+                                    )
+                                    return {
+                                        "success": False,
+                                        "error_code": "ALREADY_ANALYZED",
+                                        "error": "이미 분석된 문서입니다.",
+                                        "report_id": existing_report.id,
+                                    }
+                                if latest_upload is None:
+                                    raise
+                                original_filename = (
+                                    latest_upload.original_filename
+                                    or original_filename
+                                )
+                                lessonplan_filename = latest_upload.filename
+                                logger.warning(
+                                    "legacy synthetic upload race 감지 "
+                                    f"→ 기존 upload_id={latest_upload.id} "
+                                    "재사용"
+                                )
+                            else:
+                                logger.info(
+                                    f"legacy 사용자에 대해 synthetic "
+                                    f"LessonPlanUpload 생성: "
+                                    f"id={latest_upload.id}, "
+                                    f"filename={lessonplan_filename}"
+                                )
 
                         # 보고서 파일 저장
                         saved_report = self.report_storage.save_report(

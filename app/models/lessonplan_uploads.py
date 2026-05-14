@@ -4,10 +4,12 @@
 """
 from sqlalchemy import (
     Column,
+    Index,
     Integer,
     String,
     DateTime,
     ForeignKey,
+    text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -19,6 +21,16 @@ class LessonPlanUpload(Base):
     """수업 지도안 업로드 이벤트"""
 
     __tablename__ = "lessonplan_uploads"
+
+    __table_args__ = (
+        Index(
+            "uq_lessonplan_uploads_synthetic_per_user",
+            "user_id",
+            "filename",
+            unique=True,
+            sqlite_where=text("file_hash IS NULL"),
+        ),
+    )
 
     id = Column(
         Integer, primary_key=True, autoincrement=True, index=True
