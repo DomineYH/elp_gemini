@@ -891,6 +891,34 @@ async def test_delete_analysis_report_removes_unreferenced_lessonplan(seeded):
     assert not seeded["lessonplan_file"].exists()
 
 
+def test_resolve_lessonplan_path_prefers_dashboard_upload(
+    tmp_path, monkeypatch
+):
+    lessonplan_base = tmp_path / "data" / "lessonplan"
+    lessonplan_base.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.LESSONPLAN_BASE_DIR",
+        str(lessonplan_base),
+    )
+    static_uploads_dir = tmp_path / "app" / "static" / "uploads"
+    static_uploads_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.STATIC_UPLOADS_DIR",
+        str(static_uploads_dir),
+        raising=False,
+    )
+    filename = "stu1_20260101000000_plan.pdf"
+    upload_file = static_uploads_dir / filename
+    upload_file.write_bytes(b"%PDF-1.4\n")
+
+    service = AdminDeletionService(db=None)
+
+    assert service._resolve_lessonplan_path(
+        filename,
+        upload_id=1,
+    ) == upload_file
+
+
 @pytest.mark.asyncio
 async def test_bulk_delete_sessions_requires_ownership(seeded):
     """타 사용자 세션이 섞이면 0건 삭제 + ValueError."""

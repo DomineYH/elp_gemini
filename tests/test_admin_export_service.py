@@ -3,6 +3,7 @@ import csv
 import inspect
 import io
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 from sqlalchemy.ext.asyncio import (
@@ -16,6 +17,7 @@ from app.db import Base
 from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage, MessageRole
 from app.models.chat_sessions import ChatSession
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.user_profiles import UserProfile
 from app.models.users import User
 from app.schemas.admin_export import ExportFilters
@@ -515,6 +517,52 @@ async def test_collect_lessonplans_marks_deleted_report_source_missing(
         and r["original_name"] == "deleted.pdf"
     )
     assert lessonplan_row["source_status"] == "MISSING"
+
+
+@pytest.mark.asyncio
+async def test_collect_lessonplans_resolves_dashboard_upload_source(
+    db_session, tmp_path, monkeypatch
+):
+    await _seed_user(
+        db_session, user_id=1, email="a@x.com",
+        role="teacher", region="서울", tenure=5,
+    )
+    upload_dir = tmp_path / "app" / "static" / "uploads"
+    upload_dir.mkdir(parents=True)
+    filename = "u1_20260101000000_plan.pdf"
+    upload_file = upload_dir / filename
+    upload_file.write_bytes(b"%PDF-1.4\n")
+    monkeypatch.chdir(tmp_path)
+
+    upload = LessonPlanUpload(
+        user_id=1,
+        filename=filename,
+        original_filename="plan.pdf",
+        file_hash="a" * 64,
+    )
+    db_session.add(upload)
+    await db_session.flush()
+    db_session.add(AnalysisReport(
+        user_id=1,
+        lessonplan_filename=filename,
+        lessonplan_original_name="plan.pdf",
+        report_filename="r.md",
+        report_path=str(tmp_path / "r.md"),
+        upload_id=upload.id,
+        created_at=datetime(2026, 3, 1),
+    ))
+    await db_session.commit()
+
+    svc = AdminExportService(db_session)
+    plan = await svc.collect(ExportFilters())
+
+    matches = [
+        l for l in plan.lessonplans if l.original_name == "plan.pdf"
+    ]
+    assert len(matches) == 1
+    lessonplan = matches[0]
+    assert Path(lessonplan.source_path).resolve() == upload_file
+    assert lessonplan.source_status == "OK"
 
 
 @pytest.mark.asyncio

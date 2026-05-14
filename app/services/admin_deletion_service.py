@@ -334,16 +334,22 @@ class AdminDeletionService:
         self, reports: list[AnalysisReport]
     ) -> int:
         """DB에서 더 이상 참조하지 않는 lessonplan 파일을 삭제한다."""
-        filenames = {
-            report.lessonplan_filename
-            for report in reports
-            if report.lessonplan_filename
-        }
-        if not filenames:
+        upload_ids_by_filename: dict[str, int | None] = {}
+        for report in reports:
+            if not report.lessonplan_filename:
+                continue
+            if (
+                report.lessonplan_filename not in upload_ids_by_filename
+                or report.upload_id is None
+            ):
+                upload_ids_by_filename[
+                    report.lessonplan_filename
+                ] = report.upload_id
+        if not upload_ids_by_filename:
             return 0
 
         removed = 0
-        for name in sorted(filenames):
+        for name, upload_id in sorted(upload_ids_by_filename.items()):
             result = await self.db.execute(
                 text(
                     "SELECT count(1) FROM analysis_reports "
@@ -354,7 +360,10 @@ class AdminDeletionService:
             if result.scalar_one() != 0:
                 continue
 
-            path = self._resolve_lessonplan_path(name)
+            path = self._resolve_lessonplan_path(
+                name,
+                upload_id=upload_id,
+            )
             if not path.is_file() or path.is_symlink():
                 continue
             try:
@@ -366,8 +375,18 @@ class AdminDeletionService:
                 )
         return removed
 
-    def _resolve_lessonplan_path(self, filename: str) -> Path:
-        return Path(LESSONPLAN_BASE_DIR) / Path(filename).name
+    def _resolve_lessonplan_path(
+        self,
+        filename: str,
+        upload_id: int | None = None,
+    ) -> Path:
+        safe_name = Path(filename).name
+        upload_path = Path(STATIC_UPLOADS_DIR) / safe_name
+        if upload_path.is_file():
+            return upload_path
+        if upload_id is None:
+            return Path(LESSONPLAN_BASE_DIR) / safe_name
+        return upload_path
 
     async def _remove_user_upload_files(
         self,

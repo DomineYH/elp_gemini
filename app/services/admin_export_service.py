@@ -9,6 +9,7 @@ import os
 import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Iterable, Iterator
 
 from sqlalchemy import select
@@ -30,6 +31,7 @@ from app.utils.admin_export_naming import (
 
 
 LESSONPLAN_BASE_DIR = "data/lessonplan"
+STATIC_UPLOADS_DIR = "app/static/uploads"
 
 
 @dataclass(frozen=True)
@@ -78,7 +80,7 @@ class LessonplanEntry:
     created_at: datetime
     original_name: str
     archive_path: str
-    source_path: str  # data/lessonplan/<filename>
+    source_path: str  # on-disk lessonplan path
     source_status: str = "OK"
 
 
@@ -100,9 +102,11 @@ class AdminExportService:
         self,
         db: AsyncSession,
         lessonplan_base_dir: str = LESSONPLAN_BASE_DIR,
+        static_uploads_dir: str = STATIC_UPLOADS_DIR,
     ):
         self.db = db
         self._lessonplan_base_dir = lessonplan_base_dir
+        self._static_uploads_dir = static_uploads_dir
 
     async def collect(self, filters: ExportFilters) -> ExportPlan:
         users = await self._collect_users(filters)
@@ -276,11 +280,12 @@ class AdminExportService:
     ) -> list[LessonplanEntry]:
         """원본 지도안 파일을 파일시스템에서 열거하고 보고서 참조도 보강.
 
-        스토리지 컨벤션: data/lessonplan/{username}_{원본명}
+        스토리지 컨벤션:
+        - dashboard: app/static/uploads/{username}_{timestamp}_{원본명}
+        - legacy: data/lessonplan/{username}_{원본명}
         """
         if "lessonplans" not in filters.include:
             return []
-        from pathlib import Path
 
         base = Path(self._lessonplan_base_dir)
         entries: list[LessonplanEntry] = []
@@ -368,7 +373,10 @@ class AdminExportService:
                 continue
             ctx = ctx_by_id[r.user_id]
             original = r.lessonplan_original_name or r.lessonplan_filename
-            source_path = base / r.lessonplan_filename
+            source_path = self._resolve_lessonplan_source_path(
+                r.lessonplan_filename,
+                upload_id=r.upload_id,
+            )
             archive_name = (
                 f"{ctx.filename_prefix}__lessonplan_{r.id}__"
                 f"{slugify_original_name(original)}"
@@ -390,6 +398,19 @@ class AdminExportService:
             )
             seen.add(key)
         return entries
+
+    def _resolve_lessonplan_source_path(
+        self,
+        filename: str,
+        upload_id: int | None,
+    ) -> Path:
+        safe_name = Path(filename).name
+        upload_path = Path(self._static_uploads_dir) / safe_name
+        if upload_path.is_file():
+            return upload_path
+        if upload_id is None:
+            return Path(self._lessonplan_base_dir) / safe_name
+        return upload_path
 
     async def _collect_sessions(
         self, user_ids, ctx_by_id, filters
