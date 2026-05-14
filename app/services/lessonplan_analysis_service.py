@@ -221,16 +221,19 @@ class LessonPlanAnalysisService:
                                 )
                             )
                             if winner is not None:
-                                try:
-                                    Path(
-                                        saved_report["file_path"]
-                                    ).unlink(missing_ok=True)
-                                except Exception as cleanup_error:
-                                    logger.warning(
-                                        "race fallback orphan report cleanup "
-                                        f"failed: {cleanup_error}",
-                                        exc_info=True,
-                                    )
+                                loser_path = saved_report["file_path"]
+                                if loser_path != winner.report_path:
+                                    try:
+                                        Path(loser_path).unlink(
+                                            missing_ok=True
+                                        )
+                                    except Exception as cleanup_error:
+                                        logger.warning(
+                                            "race fallback orphan report "
+                                            "cleanup failed: "
+                                            f"{cleanup_error}",
+                                            exc_info=True,
+                                        )
                                 logger.warning(
                                     f"분석 결과 race 감지 → ALREADY_ANALYZED "
                                     f"폴백 (winner report_id={winner.id})"

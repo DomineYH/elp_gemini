@@ -193,6 +193,78 @@ async def test_analyze_race_fallback_on_integrity_error(session):
 
 
 @pytest.mark.asyncio
+async def test_analyze_race_fallback_does_not_delete_winner_when_paths_collide(
+    session, tmp_path
+):
+    u, up = await _seed_user_and_upload(session)
+
+    winner_path = tmp_path / "winner.md"
+    winner_path.write_text("# Existing report\n", encoding="utf-8")
+
+    winner = AnalysisReport(
+        user_id=u.id,
+        lessonplan_filename=up.filename,
+        lessonplan_original_name=up.original_filename,
+        report_filename=winner_path.name,
+        report_path=str(winner_path),
+        upload_id=up.id,
+    )
+    session.add(winner)
+    await session.commit()
+
+    svc = LessonPlanAnalysisService(db=session)
+
+    fake_response = MagicMock()
+    fake_response.text = "# Report\n\nbody"
+    fake_response.candidates = []
+
+    real_find = svc._find_existing_report_for_latest_upload
+    call_count = {"n": 0}
+
+    async def racing_find(username):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return (up, None)
+        return await real_find(username)
+
+    with patch.object(
+        svc,
+        "_find_existing_report_for_latest_upload",
+        side_effect=racing_find,
+    ), patch.object(
+        svc, "_get_store_ids", return_value=["u", "r"]
+    ), patch.object(
+        svc.prompt_loader, "get_prompt", return_value="SYS"
+    ), patch(
+        "app.services.lessonplan_analysis_service."
+        "_call_gemini_with_file_search",
+        return_value=fake_response,
+    ), patch.object(
+        svc.lessonplan_storage, "list_lessonplans",
+        return_value=[{
+            "filename": up.filename,
+            "original_filename": up.original_filename,
+            "created_at": "2026-05-13T00:00:00",
+        }],
+    ), patch.object(
+        svc.report_storage,
+        "save_report",
+        return_value={
+            "filename": winner_path.name,
+            "file_path": str(winner_path),
+        },
+    ):
+        result = await svc.analyze_lesson_plan(
+            session_id=1, user_id=u.id, username=u.username,
+        )
+
+    assert result["success"] is False
+    assert result["error_code"] == "ALREADY_ANALYZED"
+    assert result["report_id"] == winner.id
+    assert winner_path.exists()
+
+
+@pytest.mark.asyncio
 async def test_analyze_race_fallback_cleans_up_orphan_report(
     session, tmp_path
 ):
