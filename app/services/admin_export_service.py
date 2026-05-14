@@ -461,9 +461,7 @@ class AdminExportService:
         upload_path = Path(self._static_uploads_dir) / safe_name
         if upload_path.is_file():
             return upload_path
-        if upload_id is None:
-            return Path(self._lessonplan_base_dir) / safe_name
-        return upload_path
+        return Path(self._lessonplan_base_dir) / safe_name
 
     async def _collect_sessions(
         self, user_ids, ctx_by_id, filters

@@ -384,9 +384,7 @@ class AdminDeletionService:
         upload_path = Path(STATIC_UPLOADS_DIR) / safe_name
         if upload_path.is_file():
             return upload_path
-        if upload_id is None:
-            return Path(LESSONPLAN_BASE_DIR) / safe_name
-        return upload_path
+        return Path(LESSONPLAN_BASE_DIR) / safe_name
 
     async def _remove_user_upload_files(
         self,

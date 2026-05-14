@@ -2,7 +2,7 @@
 import csv
 import inspect
 import io
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -568,6 +568,63 @@ async def test_collect_lessonplans_resolves_dashboard_upload_source(
     assert len(matches) == 1
     lessonplan = matches[0]
     assert Path(lessonplan.source_path).resolve() == upload_file
+    assert lessonplan.source_status == "OK"
+
+
+@pytest.mark.asyncio
+async def test_collect_lessonplans_resolves_synthetic_upload_legacy_source(
+    db_session, tmp_path
+):
+    await _seed_user(
+        db_session, user_id=1, email="a@x.com",
+        role="teacher", region="서울", tenure=5,
+    )
+    legacy_dir = tmp_path / "data" / "lessonplan"
+    legacy_dir.mkdir(parents=True)
+    static_uploads_dir = tmp_path / "app" / "static" / "uploads"
+    static_uploads_dir.mkdir(parents=True)
+    filename = "u1_20260101000000_legacy.pdf"
+    legacy_file = legacy_dir / filename
+    legacy_file.write_bytes(b"%PDF-1.4\n")
+    assert not (static_uploads_dir / filename).exists()
+
+    upload = LessonPlanUpload(
+        user_id=1,
+        filename=filename,
+        original_filename="legacy.pdf",
+        file_hash=None,
+    )
+    db_session.add(upload)
+    await db_session.flush()
+    db_session.add(AnalysisReport(
+        user_id=1,
+        lessonplan_filename=filename,
+        lessonplan_original_name="legacy.pdf",
+        report_filename="r.md",
+        report_path=str(tmp_path / "r.md"),
+        upload_id=upload.id,
+        created_at=datetime(2026, 3, 1),
+    ))
+    await db_session.commit()
+
+    svc = AdminExportService(
+        db_session,
+        lessonplan_base_dir=str(legacy_dir),
+        static_uploads_dir=str(static_uploads_dir),
+    )
+    plan = await svc.collect(
+        ExportFilters(
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 1),
+        )
+    )
+
+    matches = [
+        l for l in plan.lessonplans if l.original_name == "legacy.pdf"
+    ]
+    assert len(matches) == 1
+    lessonplan = matches[0]
+    assert Path(lessonplan.source_path).resolve() == legacy_file
     assert lessonplan.source_status == "OK"
 
 

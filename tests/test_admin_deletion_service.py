@@ -891,6 +891,63 @@ async def test_delete_analysis_report_removes_unreferenced_lessonplan(seeded):
     assert not seeded["lessonplan_file"].exists()
 
 
+@pytest.mark.asyncio
+async def test_delete_analysis_report_removes_synthetic_upload_legacy_file(
+    seeded,
+    tmp_path,
+):
+    legacy_file = (
+        seeded["lessonplan_file"].parent
+        / "stu1_20260102000000_legacy.pdf"
+    )
+    legacy_file.write_bytes(b"%PDF-1.4\n")
+    assert not (seeded["static_uploads_dir"] / legacy_file.name).exists()
+    report_file = tmp_path / "synthetic_report.md"
+    report_file.write_text("# synthetic", encoding="utf-8")
+
+    async with TestingSessionLocal() as db:
+        upload = LessonPlanUpload(
+            user_id=seeded["user_id"],
+            filename=legacy_file.name,
+            original_filename="legacy.pdf",
+            file_hash=None,
+        )
+        db.add(upload)
+        await db.flush()
+        report = AnalysisReport(
+            user_id=seeded["user_id"],
+            lessonplan_filename=legacy_file.name,
+            lessonplan_original_name="legacy.pdf",
+            report_filename=report_file.name,
+            report_path=str(report_file),
+            upload_id=upload.id,
+            latency_ms=100,
+        )
+        db.add(report)
+        await db.commit()
+        await db.refresh(report)
+        upload_id = upload.id
+        report_id = report.id
+
+    async with TestingSessionLocal() as db:
+        service = AdminDeletionService(db)
+        result = await service.delete_analysis_report(
+            report_id=report_id,
+            current_admin_id=seeded["admin_id"],
+        )
+        resolved = service._resolve_lessonplan_path(
+            legacy_file.name,
+            upload_id=upload_id,
+        )
+
+    assert resolved == legacy_file
+    assert result["ok"] is True
+    assert result["deleted"] == 1
+    assert result["files_removed"] == 2
+    assert not report_file.exists()
+    assert not legacy_file.exists()
+
+
 def test_resolve_lessonplan_path_prefers_dashboard_upload(
     tmp_path, monkeypatch
 ):
