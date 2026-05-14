@@ -105,16 +105,37 @@ class LessonPlanAnalysisService:
                     )
                 )
                 if existing_report is not None:
-                    logger.info(
-                        f"중복 분석 차단: upload_id={latest_upload.id}, "
-                        f"existing report_id={existing_report.id}"
+                    report_file = Path(existing_report.report_path)
+                    if report_file.exists():
+                        logger.info(
+                            f"중복 분석 차단: upload_id={latest_upload.id}, "
+                            f"existing report_id={existing_report.id}"
+                        )
+                        return {
+                            "success": False,
+                            "error_code": "ALREADY_ANALYZED",
+                            "error": "이미 분석된 문서입니다.",
+                            "report_id": existing_report.id,
+                        }
+
+                    stale_report_id = existing_report.id
+                    stale_report_path = existing_report.report_path
+                    latest_upload_id = latest_upload.id
+                    logger.warning(
+                        f"기존 보고서 파일 누락 ({stale_report_path}) — "
+                        f"AnalysisReport row id={stale_report_id} "
+                        f"삭제 후 재분석"
                     )
-                    return {
-                        "success": False,
-                        "error_code": "ALREADY_ANALYZED",
-                        "error": "이미 분석된 문서입니다.",
-                        "report_id": existing_report.id,
-                    }
+                    await self.db.rollback()
+                    stale_report = await self.db.get(
+                        AnalysisReport, stale_report_id
+                    )
+                    if stale_report is not None:
+                        await self.db.delete(stale_report)
+                        await self.db.commit()
+                    latest_upload = await self.db.get(
+                        LessonPlanUpload, latest_upload_id
+                    )
 
                 # 1. File Search Store ID 조회 (Phase 1 활용)
                 store_ids = await self._get_store_ids(username)

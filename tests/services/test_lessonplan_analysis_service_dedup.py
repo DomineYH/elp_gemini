@@ -18,6 +18,15 @@ from app.services.lessonplan_analysis_service import (
 from app.services.report_storage_service import ReportStorageService
 
 
+@pytest.fixture(autouse=True)
+def gemini_client():
+    with patch(
+        "app.services.lessonplan_analysis_service.genai.Client",
+        return_value=MagicMock(),
+    ):
+        yield
+
+
 @pytest_asyncio.fixture
 async def session(tmp_path):
     eng = create_async_engine(
@@ -51,14 +60,16 @@ async def _seed_user_and_upload(s):
 
 
 @pytest.mark.asyncio
-async def test_analyze_blocks_when_upload_already_analyzed(session):
+async def test_analyze_blocks_when_upload_already_analyzed(session, tmp_path):
     u, up = await _seed_user_and_upload(session)
+    report_path = tmp_path / "r.md"
+    report_path.write_text("# Existing report\n", encoding="utf-8")
     existing = AnalysisReport(
         user_id=u.id,
         lessonplan_filename=up.filename,
         lessonplan_original_name=up.original_filename,
         report_filename="r.md",
-        report_path="/tmp/r.md",
+        report_path=str(report_path),
         upload_id=up.id,
     )
     session.add(existing)
@@ -124,6 +135,78 @@ async def test_analyze_proceeds_when_no_existing_report(session):
         )
     ).scalar_one()
     assert saved.upload_id == up.id
+
+
+@pytest.mark.asyncio
+async def test_analyze_falls_through_when_existing_report_file_missing(
+    session, tmp_path
+):
+    u, up = await _seed_user_and_upload(session)
+    missing_report_path = tmp_path / "missing_report.md"
+    stale = AnalysisReport(
+        user_id=u.id,
+        lessonplan_filename=up.filename,
+        lessonplan_original_name=up.original_filename,
+        report_filename=missing_report_path.name,
+        report_path=str(missing_report_path),
+        upload_id=up.id,
+    )
+    session.add(stale)
+    await session.commit()
+    upload_id = up.id
+
+    svc = LessonPlanAnalysisService(db=session)
+
+    fake_response = MagicMock()
+    fake_response.text = "# Report\n\nbody"
+    fake_response.candidates = []
+
+    saved_report_path = tmp_path / "saved_report.md"
+
+    def save_report(**kwargs):
+        saved_report_path.write_text(
+            kwargs["report_content"], encoding="utf-8"
+        )
+        return {
+            "filename": saved_report_path.name,
+            "file_path": str(saved_report_path),
+        }
+
+    with patch.object(
+        svc, "_get_store_ids", return_value=["user-store", "rubric-store"]
+    ), patch.object(
+        svc.prompt_loader, "get_prompt", return_value="SYS"
+    ), patch(
+        "app.services.lessonplan_analysis_service."
+        "_call_gemini_with_file_search",
+        return_value=fake_response,
+    ) as mock_gemini, patch.object(
+        svc.report_storage, "save_report", side_effect=save_report,
+    ):
+        result = await svc.analyze_lesson_plan(
+            session_id=1, user_id=u.id, username=u.username,
+        )
+
+    assert result["success"] is True
+    assert mock_gemini.call_count == 1
+
+    stale_row = (
+        await session.execute(
+            select(AnalysisReport).where(
+                AnalysisReport.report_path == str(missing_report_path)
+            )
+        )
+    ).scalar_one_or_none()
+    assert stale_row is None
+
+    saved = (
+        await session.execute(
+            select(AnalysisReport).where(
+                AnalysisReport.report_path == str(saved_report_path)
+            )
+        )
+    ).scalar_one()
+    assert saved.upload_id == upload_id
 
 
 @pytest.mark.asyncio
