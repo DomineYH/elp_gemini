@@ -4,6 +4,7 @@
 """
 import asyncio
 import logging
+from pathlib import Path
 from typing import Dict, Any, Optional
 from google import genai
 from google.genai import types
@@ -220,6 +221,16 @@ class LessonPlanAnalysisService:
                                 )
                             )
                             if winner is not None:
+                                try:
+                                    Path(
+                                        saved_report["file_path"]
+                                    ).unlink(missing_ok=True)
+                                except Exception as cleanup_error:
+                                    logger.warning(
+                                        "race fallback orphan report cleanup "
+                                        f"failed: {cleanup_error}",
+                                        exc_info=True,
+                                    )
                                 logger.warning(
                                     f"분석 결과 race 감지 → ALREADY_ANALYZED "
                                     f"폴백 (winner report_id={winner.id})"
