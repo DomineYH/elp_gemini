@@ -553,3 +553,90 @@ async def test_analyze_race_fallback_cleans_up_orphan_report(
     assert result["error_code"] == "ALREADY_ANALYZED"
     assert result["report_id"] == winner.id
     assert not orphan_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_analyze_creates_synthetic_upload_for_legacy_user(
+    session, tmp_path
+):
+    """Legacy user has no LessonPlanUpload row. First analysis must create
+    a synthetic one so that subsequent clicks are correctly blocked by the
+    dedup invariant."""
+    u = User(
+        username="alice", nickname="alice",
+        email="a@a.com", hashed_password="x",
+    )
+    session.add(u)
+    await session.flush()
+    await session.commit()
+
+    lessonplan_dir = tmp_path / "lessonplans"
+    lessonplan_dir.mkdir()
+    lessonplan_path = lessonplan_dir / "alice_legacy_plan.pdf"
+    lessonplan_path.write_bytes(b"legacy lesson plan")
+
+    report_path = tmp_path / "reports" / "r.md"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def save_report(**kwargs):
+        report_path.write_text(kwargs["report_content"], encoding="utf-8")
+        return {
+            "filename": report_path.name,
+            "file_path": str(report_path),
+        }
+
+    svc = LessonPlanAnalysisService(db=session)
+    svc.lessonplan_storage.base_dir = lessonplan_dir
+
+    fake_response = MagicMock()
+    fake_response.text = "# Report\n\nbody"
+    fake_response.candidates = []
+
+    with patch.object(
+        svc, "_get_store_ids", return_value=["user-store", "rubric-store"]
+    ) as mock_stores, patch.object(
+        svc.prompt_loader, "get_prompt", return_value="SYS"
+    ), patch(
+        "app.services.lessonplan_analysis_service."
+        "_call_gemini_with_file_search",
+        return_value=fake_response,
+    ), patch.object(
+        svc.report_storage, "save_report", side_effect=save_report,
+    ):
+        result = await svc.analyze_lesson_plan(
+            session_id=1, user_id=u.id, username=u.username,
+        )
+
+    assert result["success"] is True
+
+    # Synthetic upload row was created
+    upload = (
+        await session.execute(
+            select(LessonPlanUpload).where(
+                LessonPlanUpload.user_id == u.id
+            )
+        )
+    ).scalar_one()
+    assert upload.filename == lessonplan_path.name
+    assert upload.original_filename == "legacy_plan.pdf"
+    assert upload.file_hash is None
+
+    # Report is linked to the synthetic upload
+    saved = (
+        await session.execute(
+            select(AnalysisReport).where(
+                AnalysisReport.upload_id == upload.id
+            )
+        )
+    ).scalar_one()
+    assert saved.upload_id == upload.id
+
+    # Second call is blocked by dedup
+    second = await svc.analyze_lesson_plan(
+        session_id=1, user_id=u.id, username=u.username,
+    )
+    assert second["success"] is False
+    assert second["error_code"] == "ALREADY_ANALYZED"
+    assert second["report_id"] == saved.id
+    # Gemini was only called once (first call)
+    assert mock_stores.call_count == 1

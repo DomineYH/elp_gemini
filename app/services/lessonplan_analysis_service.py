@@ -194,10 +194,11 @@ class LessonPlanAnalysisService:
                             )
                             lessonplan_filename = latest_upload.filename
                         else:
-                            # Defensive fallback for the no-upload-row code path
-                            # (should not happen on the success branch since the
-                            # pre-flight already enforced presence of a latest
-                            # upload, but keep the legacy lookup for safety).
+                            # Legacy path: no LessonPlanUpload row yet. Derive
+                            # filename + original from on-disk metadata, then
+                            # create a synthetic upload row so the dedup
+                            # invariant (1:1 upload<->report) holds for
+                            # subsequent clicks.
                             lessonplans = self.lessonplan_storage.list_lessonplans(
                                 username
                             )
@@ -211,6 +212,20 @@ class LessonPlanAnalysisService:
                             else:
                                 original_filename = "unknown"
                                 lessonplan_filename = "unknown"
+
+                            latest_upload = LessonPlanUpload(
+                                user_id=user_id,
+                                filename=lessonplan_filename,
+                                original_filename=original_filename,
+                                file_hash=None,
+                            )
+                            self.db.add(latest_upload)
+                            await self.db.flush()
+                            logger.info(
+                                f"legacy 사용자에 대해 synthetic LessonPlanUpload "
+                                f"생성: id={latest_upload.id}, "
+                                f"filename={lessonplan_filename}"
+                            )
 
                         # 보고서 파일 저장
                         saved_report = self.report_storage.save_report(
