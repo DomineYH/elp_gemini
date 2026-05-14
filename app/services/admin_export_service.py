@@ -19,6 +19,7 @@ from sqlalchemy.orm import contains_eager, joinedload, selectinload
 from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage
 from app.models.chat_sessions import ChatSession
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.user_profiles import UserProfile
 from app.models.users import User
 from app.schemas.admin_export import ExportFilters
@@ -388,6 +389,58 @@ class AdminExportService:
                     resource_id=r.id,
                     session_id=None,
                     created_at=r.created_at,
+                    original_name=original,
+                    archive_path=f"lessonplans/{archive_name}",
+                    source_path=str(source_path),
+                    source_status=(
+                        "OK" if source_path.is_file() else "MISSING"
+                    ),
+                )
+            )
+            seen.add(key)
+
+        upload_stmt = (
+            select(LessonPlanUpload)
+            .where(LessonPlanUpload.user_id.in_(user_ids))
+            .order_by(LessonPlanUpload.created_at.asc())
+        )
+        if filters.date_from:
+            upload_stmt = upload_stmt.where(
+                LessonPlanUpload.created_at
+                >= datetime.combine(
+                    filters.date_from, datetime.min.time()
+                )
+            )
+        if filters.date_to:
+            upload_stmt = upload_stmt.where(
+                LessonPlanUpload.created_at
+                < datetime.combine(
+                    filters.date_to, datetime.min.time()
+                ) + timedelta(days=1)
+            )
+        uploads = (await self.db.execute(upload_stmt)).scalars().all()
+
+        for upload in uploads:
+            key = (upload.user_id, upload.filename)
+            if key in seen:
+                continue
+            ctx = ctx_by_id[upload.user_id]
+            original = upload.original_filename or upload.filename
+            source_path = self._resolve_lessonplan_source_path(
+                upload.filename,
+                upload_id=upload.id,
+            )
+            archive_name = (
+                f"{ctx.filename_prefix}__lessonplan_{upload.id}__"
+                f"{slugify_original_name(original)}"
+            )
+            entries.append(
+                LessonplanEntry(
+                    kind="lessonplan",
+                    user_id=upload.user_id,
+                    resource_id=upload.id,
+                    session_id=None,
+                    created_at=upload.created_at,
                     original_name=original,
                     archive_path=f"lessonplans/{archive_name}",
                     source_path=str(source_path),

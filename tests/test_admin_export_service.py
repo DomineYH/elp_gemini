@@ -468,15 +468,21 @@ async def test_collect_lessonplans_marks_deleted_report_source_missing(
     tmp_path
 ):
     class Result:
+        def __init__(self, rows):
+            self._rows = rows
+
         def scalars(self):
             return self
 
         def all(self):
-            return [report]
+            return self._rows
 
     class Db:
+        def __init__(self):
+            self._results = [[report], []]
+
         async def execute(self, stmt):
-            return Result()
+            return Result(self._results.pop(0))
 
     user = UserContext(
         user_id=1,
@@ -558,6 +564,71 @@ async def test_collect_lessonplans_resolves_dashboard_upload_source(
 
     matches = [
         l for l in plan.lessonplans if l.original_name == "plan.pdf"
+    ]
+    assert len(matches) == 1
+    lessonplan = matches[0]
+    assert Path(lessonplan.source_path).resolve() == upload_file
+    assert lessonplan.source_status == "OK"
+
+
+@pytest.mark.asyncio
+async def test_collect_lessonplans_includes_upload_without_report(
+    tmp_path
+):
+    class Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return self._rows
+
+    class Db:
+        def __init__(self, uploads):
+            self._results = [[], uploads]
+
+        async def execute(self, stmt):
+            return Result(self._results.pop(0))
+
+    user = UserContext(
+        user_id=1,
+        user_email="a@x.com",
+        role="teacher",
+        profile=NormalizedProfile(
+            role_code="T",
+            region_slug="서울",
+            tenure="5",
+            tenure_kind="years",
+            email_slug="a_at_x_com",
+        ),
+        filename_prefix="T-서울-5y__u00001__a_at_x_com",
+        username="u1",
+    )
+    upload_dir = tmp_path / "static-uploads"
+    upload_dir.mkdir(parents=True)
+    filename = "u1_20260101000000_unanalyzed.pdf"
+    upload_file = upload_dir / filename
+    upload_file.write_bytes(b"%PDF-1.4\n")
+
+    upload = LessonPlanUpload(
+        id=11,
+        user_id=1,
+        filename=filename,
+        original_filename="unanalyzed.pdf",
+        file_hash="b" * 64,
+        created_at=datetime(2026, 3, 2),
+    )
+
+    svc = AdminExportService(
+        Db([upload]), static_uploads_dir=str(upload_dir)
+    )
+    lessonplans = await svc._collect_lessonplans([user], ExportFilters())
+
+    matches = [
+        l for l in lessonplans
+        if l.original_name == "unanalyzed.pdf"
     ]
     assert len(matches) == 1
     lessonplan = matches[0]
