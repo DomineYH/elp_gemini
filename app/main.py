@@ -258,7 +258,6 @@ from app.routers import (  # noqa: E402
     auth,
     evaluations,
     lessonplan_analysis,
-    lessonplans,
     qna,
     views,
 )
@@ -297,7 +296,6 @@ async def root(request: Request):
 
 # 라우터 등록
 app.include_router(auth.router, tags=["인증"])
-app.include_router(lessonplans.router)
 app.include_router(qna.router)
 app.include_router(evaluations.router)
 app.include_router(lessonplan_analysis.router)
