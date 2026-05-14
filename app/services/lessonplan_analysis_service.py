@@ -320,7 +320,10 @@ class LessonPlanAnalysisService:
         upload_result = await self.db.execute(
             select(LessonPlanUpload)
             .where(LessonPlanUpload.user_id == user.id)
-            .order_by(LessonPlanUpload.created_at.desc())
+            .order_by(
+                LessonPlanUpload.created_at.desc(),
+                LessonPlanUpload.id.desc(),
+            )
             .limit(1)
         )
         latest_upload = upload_result.scalar_one_or_none()
