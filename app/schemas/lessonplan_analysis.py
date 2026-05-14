@@ -40,9 +40,17 @@ class LessonPlanAnalysisResponse(BaseModel):
                 },
                 "latency_ms": 12350,
                 "saved_report": {
-                    "filename": "111_20251128182530_수업지도안_reports.md",
-                    "file_path": "app/static/reports/111_20251128182530_수업지도안_reports.md",
+                    "filename": (
+                        "111_20251128182530_수업지도안_"
+                        "a1b2c3d4_reports.md"
+                    ),
+                    "file_path": (
+                        "app/static/reports/111_20251128182530_"
+                        "수업지도안_a1b2c3d4_reports.md"
+                    ),
                     "timestamp": "20251128182530"
-                }  # 파일명 형식: {username}_{년월일시간}_{업로드파일명}_reports.md
+                },
+                # 파일명 형식:
+                # {username}_{년월일시간}_{업로드파일명}_{unique8}_reports.md
             }
         }

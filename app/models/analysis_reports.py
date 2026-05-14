@@ -50,7 +50,10 @@ class AnalysisReport(Base):
     report_filename = Column(
         String(500),
         nullable=False,
-        comment="보고서 파일명 (예: 111_20251128182530_수업지도안_reports.md)"
+        comment=(
+            "보고서 파일명 "
+            "(예: 111_20251128182530_수업지도안_a1b2c3d4_reports.md)"
+        )
     )
     report_path = Column(
         String(1000),

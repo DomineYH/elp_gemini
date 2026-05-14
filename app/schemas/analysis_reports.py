@@ -39,8 +39,14 @@ class AnalysisReportListResponse(BaseModel):
                         "id": 1,
                         "lessonplan_filename": "111_수업지도안.pdf",
                         "lessonplan_original_name": "수업지도안.pdf",
-                        "report_filename": "111_20251128182530_수업지도안_reports.md",
-                        "report_path": "app/static/reports/111_20251128182530_수업지도안_reports.md",
+                        "report_filename": (
+                            "111_20251128182530_수업지도안_"
+                            "a1b2c3d4_reports.md"
+                        ),
+                        "report_path": (
+                            "app/static/reports/111_20251128182530_"
+                            "수업지도안_a1b2c3d4_reports.md"
+                        ),
                         "latency_ms": 45000,
                         "created_at": "2025-11-28T18:25:30"
                     }

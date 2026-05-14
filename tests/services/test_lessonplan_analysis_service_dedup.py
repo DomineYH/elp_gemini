@@ -1,4 +1,6 @@
 """LessonPlanAnalysisService 중복 분석 차단 동작 테스트."""
+from datetime import datetime
+
 import pytest
 import pytest_asyncio
 from unittest.mock import patch, MagicMock
@@ -13,6 +15,7 @@ from app.models.analysis_reports import AnalysisReport
 from app.services.lessonplan_analysis_service import (
     LessonPlanAnalysisService,
 )
+from app.services.report_storage_service import ReportStorageService
 
 
 @pytest_asyncio.fixture
@@ -262,6 +265,84 @@ async def test_analyze_race_fallback_does_not_delete_winner_when_paths_collide(
     assert result["error_code"] == "ALREADY_ANALYZED"
     assert result["report_id"] == winner.id
     assert winner_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_analyze_race_loser_does_not_overwrite_winner_file(
+    session, tmp_path
+):
+    u, up = await _seed_user_and_upload(session)
+
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir()
+    winner_path = (
+        reports_dir / "alice_20260514010203_plan_reports.md"
+    )
+    winner_path.write_text("WINNER_CONTENT", encoding="utf-8")
+
+    winner = AnalysisReport(
+        user_id=u.id,
+        lessonplan_filename=up.filename,
+        lessonplan_original_name=up.original_filename,
+        report_filename=winner_path.name,
+        report_path=str(winner_path),
+        upload_id=up.id,
+    )
+    session.add(winner)
+    await session.commit()
+
+    svc = LessonPlanAnalysisService(db=session)
+    svc.report_storage = ReportStorageService(base_dir=str(reports_dir))
+
+    fake_response = MagicMock()
+    fake_response.text = "LOSER_CONTENT"
+    fake_response.candidates = []
+
+    real_find = svc._find_existing_report_for_latest_upload
+    call_count = {"n": 0}
+
+    async def racing_find(username):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return (up, None)
+        return await real_find(username)
+
+    class FixedDatetime:
+        @classmethod
+        def now(cls):
+            return datetime(2026, 5, 14, 1, 2, 3)
+
+    with patch.object(
+        svc,
+        "_find_existing_report_for_latest_upload",
+        side_effect=racing_find,
+    ), patch.object(
+        svc, "_get_store_ids", return_value=["u", "r"]
+    ), patch.object(
+        svc.prompt_loader, "get_prompt", return_value="SYS"
+    ), patch(
+        "app.services.lessonplan_analysis_service."
+        "_call_gemini_with_file_search",
+        return_value=fake_response,
+    ), patch.object(
+        svc.lessonplan_storage, "list_lessonplans",
+        return_value=[{
+            "filename": up.filename,
+            "original_filename": up.original_filename,
+            "created_at": "2026-05-13T00:00:00",
+        }],
+    ), patch(
+        "app.services.report_storage_service.datetime",
+        FixedDatetime,
+    ):
+        result = await svc.analyze_lesson_plan(
+            session_id=1, user_id=u.id, username=u.username,
+        )
+
+    assert result["success"] is False
+    assert result["error_code"] == "ALREADY_ANALYZED"
+    assert result["report_id"] == winner.id
+    assert winner_path.read_text(encoding="utf-8") == "WINNER_CONTENT"
 
 
 @pytest.mark.asyncio

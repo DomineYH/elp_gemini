@@ -3,6 +3,7 @@
 app/static/reports/ 디렉토리에 분석 보고서 파일 관리
 """
 import logging
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -41,7 +42,8 @@ class ReportStorageService:
         """
         보고서 파일 저장
 
-        파일명 형식: {username}_{년월일시간}_{업로드파일명}_reports.md
+        파일명 형식:
+        {username}_{년월일시간}_{업로드파일명}_{unique8}_reports.md
 
         Args:
             username: 사용자 이름 (로그인 ID)
@@ -61,8 +63,14 @@ class ReportStorageService:
             # 원본 파일명에서 확장자 제거
             base_filename = Path(original_filename).stem
 
-            # 파일명 생성: {username}_{년월일시간}_{업로드파일명}_reports.md
-            filename = f"{username}_{timestamp}_{base_filename}_reports.md"
+            unique8 = uuid.uuid4().hex[:8]
+
+            # 파일명 생성:
+            # {username}_{년월일시간}_{업로드파일명}_{unique8}_reports.md
+            filename = (
+                f"{username}_{timestamp}_{base_filename}_"
+                f"{unique8}_reports.md"
+            )
             file_path = self.base_dir / filename
 
             # 파일 저장
