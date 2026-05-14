@@ -103,43 +103,4 @@ async def ensure_lessonplan_uploads_table(engine: AsyncEngine) -> bool:
                 )
                 changed = True
 
-            # Backfill upload_id for legacy analysis_reports rows so the new
-            # dedup pre-flight covers users who already had an analysis on
-            # disk before lessonplan_uploads existed.
-            legacy_rows = (await conn.execute(text(
-                "SELECT id, user_id, lessonplan_filename, "
-                "lessonplan_original_name, created_at "
-                "FROM analysis_reports "
-                "WHERE upload_id IS NULL "
-                "AND lessonplan_filename IS NOT NULL"
-            ))).fetchall()
-            if legacy_rows:
-                for row in legacy_rows:
-                    inserted = await conn.execute(text(
-                        "INSERT INTO lessonplan_uploads "
-                        "(user_id, filename, original_filename, file_hash, "
-                        "created_at) "
-                        "VALUES (:user_id, :filename, :original, NULL, "
-                        ":created_at)"
-                    ), {
-                        "user_id": row.user_id,
-                        "filename": row.lessonplan_filename,
-                        "original": row.lessonplan_original_name,
-                        "created_at": row.created_at,
-                    })
-                    new_upload_id = inserted.lastrowid
-                    if new_upload_id is None:
-                        new_upload_id = (await conn.execute(text(
-                            "SELECT last_insert_rowid()"
-                        ))).scalar_one()
-                    await conn.execute(text(
-                        "UPDATE analysis_reports SET upload_id = :uid "
-                        "WHERE id = :rid"
-                    ), {"uid": new_upload_id, "rid": row.id})
-                logger.info(
-                    f"legacy analysis_reports backfill: "
-                    f"{len(legacy_rows)} rows linked to synthetic uploads"
-                )
-                changed = True
-
         return changed

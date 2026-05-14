@@ -117,7 +117,7 @@ async def test_ensure_lessonplan_uploads_table_is_idempotent(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_ensure_lessonplan_uploads_table_backfills_legacy_reports(
+async def test_ensure_lessonplan_uploads_table_does_not_backfill_legacy_reports(
     tmp_path
 ):
     db_path = tmp_path / "legacy.db"
@@ -169,26 +169,23 @@ async def test_ensure_lessonplan_uploads_table_backfills_legacy_reports(
         """))
 
     added = await ensure_lessonplan_uploads_table(eng)
+    added_again = await ensure_lessonplan_uploads_table(eng)
 
     assert added is True
+    assert added_again is False
 
     async with eng.begin() as conn:
-        upload = (
+        upload_count = (
             await conn.execute(text(
-                "SELECT id, user_id, filename, original_filename, "
-                "file_hash, created_at FROM lessonplan_uploads"
+                "SELECT COUNT(*) FROM lessonplan_uploads"
             ))
-        ).mappings().one()
+        ).scalar_one()
         report = (
             await conn.execute(text(
                 "SELECT id, upload_id FROM analysis_reports"
             ))
         ).mappings().one()
 
-    assert upload["user_id"] == 1
-    assert upload["filename"] == "alice_plan.pdf"
-    assert upload["original_filename"] == "plan.pdf"
-    assert upload["file_hash"] is None
-    assert str(upload["created_at"]) == "2026-05-13 12:34:56"
-    assert report["upload_id"] == upload["id"]
+    assert upload_count == 0
+    assert report["upload_id"] is None
     await eng.dispose()
