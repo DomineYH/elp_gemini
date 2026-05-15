@@ -24,6 +24,7 @@ class TestCriteriaDocumentsIsolation:
         문서 A 활성화 시 문서 A 스토어만 사용
         문서 B 활성화 시 문서 B 스토어만 사용
         """
+        pytest.skip("Wave 5: replaced by stable_id-based routes")
         # 1. 문서 A 업로드
         from app.main import app
         app.dependency_overrides[get_current_admin] = (

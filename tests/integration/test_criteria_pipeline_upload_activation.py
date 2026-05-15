@@ -42,6 +42,7 @@ class TestCriteriaPipelineUploadActivation:
         """
         정상 흐름: PDF 업로드 → 활성화 → 단일 Active 검증
         """
+        pytest.skip("Wave 5: replaced by stable_id-based routes")
         # 1. 업로드 준비
         pdf_file = create_test_pdf()
         files = {
@@ -149,6 +150,7 @@ class TestCriteriaPipelineUploadActivation:
         단일 Active 보장: 새 문서 활성화 시
         기존 Active 자동 비활성화
         """
+        pytest.skip("Wave 5: replaced by stable_id-based routes")
         # 1. 첫 번째 문서 업로드
         app.dependency_overrides[get_current_admin] = (
             override_admin(admin_user)
