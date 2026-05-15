@@ -9,14 +9,18 @@ alias-map.txt 문서 관리 서비스
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, Tuple
 
 from app.schemas.alias_map import AliasMap, empty_alias_map
 from app.services.alias_map_codec import (
     ALIAS_MAP_PAYLOAD_KEY,
     decode_alias_map_payload,
+    encode_alias_map_payload,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,6 +77,58 @@ class CriteriaAliasMapService:
                 logger.error(f"alias_map 파싱 실패 — 비어있는 맵으로 fallback: {e}")
                 return doc.name, empty_alias_map(_now_iso())
         return None
+
+    async def replace(self, alias_map: AliasMap, old_doc_name: Optional[str]) -> str:
+        """
+        새 alias-map.txt 문서를 업로드한 뒤(만 성공 시) 이전 문서를 삭제한다.
+        upload-then-delete 순서로 부분 손실을 방지.
+        """
+        store = self._find_store()
+        if not store:
+            raise RuntimeError(f"rubric-store '{self._store_display_name}' 미존재")
+
+        payload_chunks = encode_alias_map_payload(alias_map.model_dump(mode="json"))
+
+        # alias-map.txt는 내용물이 중요하지 않음(메타데이터에 데이터가 들어있음).
+        # File Search는 파일을 요구하므로 placeholder 텍스트를 임시 파일로.
+        with tempfile.NamedTemporaryFile(suffix=".txt", mode="w", delete=False) as tmp:
+            tmp.write("alias-map placeholder; data lives in custom_metadata")
+            tmp_path = tmp.name
+
+        try:
+            op = self._client.file_search_stores.upload_to_file_search_store(
+                file_search_store_name=store.name,
+                file=tmp_path,
+                config={
+                    "display_name": "alias-map",
+                    "custom_metadata": [
+                        {"key": "type", "string_value": "alias_map"},
+                        {"key": ALIAS_MAP_PAYLOAD_KEY, "string_list_value": {"values": payload_chunks}},
+                    ],
+                },
+            )
+            elapsed = 0
+            while not getattr(op, "done", False) and elapsed < 60:
+                await asyncio.sleep(2)
+                elapsed += 2
+                try:
+                    op = self._client.operations.get(op)
+                except Exception:
+                    break
+            if not getattr(op, "done", False):
+                raise TimeoutError("alias-map upload timeout")
+
+            new_doc_name = op.response.document_name
+        finally:
+            try:
+                Path(tmp_path).unlink()
+            except Exception:
+                pass
+
+        if old_doc_name:
+            self._client.file_search_stores.documents.delete(name=old_doc_name)
+
+        return new_doc_name
 
 
 def _now_iso() -> str:
