@@ -452,6 +452,7 @@ class CriteriaRepository:
         status: str,
         created_at: Optional[str],
         activated_at: Optional[str],
+        uploaded_by: str = "cloud-sync",
     ) -> None:
         """reconcile에서 사용. 호출자가 트랜잭션을 관리."""
         row = Criteria(
@@ -462,7 +463,7 @@ class CriteriaRepository:
             status=status,
             file_size=0,
             file_path="",
-            uploaded_by="cloud-sync",
+            uploaded_by=uploaded_by,
         )
         if created_at:
             try:

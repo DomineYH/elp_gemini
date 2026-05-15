@@ -219,6 +219,7 @@ async def upload_criteria(
             status="uploaded",
             created_at=None,
             activated_at=None,
+            uploaded_by=current_admin.username,
         )
         await db.commit()
         logger.debug("5단계: DB 행 삽입 완료")
