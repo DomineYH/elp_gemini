@@ -58,99 +58,15 @@ class CriteriaVectorService:
         logger.info(f"평가기준 업로드 완료: stable_id={stable_id} document_id={result['document_id']}")
         return result
 
-    async def delete_criteria(
-        self,
-        document_id: str
-    ) -> bool:
-        """
-        특정 평가기준 삭제 (Store 재생성 방식)
-
-        Note:
-            Gemini File Search API는 개별 document 삭제 불가
-            → Store 재생성으로 모든 문서 삭제
-
-        Args:
-            document_id: 삭제할 문서 ID (사용 안 함)
-
-        Returns:
-            삭제 성공 여부
-        """
-        try:
-            await self._recreate_criteria_store()
-            logger.info(
-                f"평가기준 삭제 완료 (Store 재생성): {document_id}"
-            )
-            return True
-        except Exception as e:
-            logger.error(f"평가기준 삭제 실패: {str(e)}")
-            raise
-
-    async def delete_all_criteria(self) -> bool:
-        """
-        모든 평가기준 삭제 (Store 재생성)
-
-        Returns:
-            삭제 성공 여부
-        """
-        try:
-            await self._recreate_criteria_store()
-            logger.info("모든 평가기준 삭제 완료 (Store 재생성)")
-            return True
-        except Exception as e:
-            logger.error(f"모든 평가기준 삭제 실패: {str(e)}")
-            raise
-
-    async def _recreate_criteria_store(self) -> None:
-        """
-        평가기준 Store 재생성
-        (기존 Store 삭제 후 새로 생성)
-        """
-        try:
-            client = self.file_search_service.client
-
-            logger.info("평가기준 Store 재생성 시작")
-
-            # 1. 기존 Store 찾기 및 삭제
-            logger.debug("기존 Store 검색 중...")
-            stores_found = 0
-            for store in client.file_search_stores.list():
-                stores_found += 1
-                if store.display_name == self.store_name:
-                    logger.info(
-                        f"기존 Store 발견 - 삭제 진행: {self.store_name} "
-                        f"(ID: {store.name})"
-                    )
-                    
-                    # force=True로 비어있지 않은 Store도 삭제 가능
-                    client.file_search_stores.delete(
-                        name=store.name,
-                        config={'force': True}
-                    )
-                    logger.info("기존 Store 삭제 완료 (force=True)")
-                    break
-            else:
-                logger.info(
-                    f"기존 Store 없음 (전체 {stores_found}개 Store 확인)"
-                )
-
-            # 2. 새 Store 생성
-            logger.debug(f"새 Store 생성 중: {self.store_name}")
-            new_store = client.file_search_stores.create(
-                config={'display_name': self.store_name}
-            )
-            logger.info(
-                f"새 Store 생성 완료: {self.store_name} "
-                f"(ID: {new_store.name})"
-            )
-        except Exception as e:
-            error_type = type(e).__name__
-            logger.error(
-                f"Store 재생성 실패 - "
-                f"유형: {error_type}, "
-                f"메시지: {str(e)}",
-                exc_info=True
-            )
-            raise
+    async def delete_criteria(self, document_id: str) -> bool:
+        """document_id로 식별되는 평가기준 1개를 삭제. store 재생성 없음."""
+        if not document_id:
+            raise ValueError("document_id가 비어있습니다")
+        self.file_search_service.client.file_search_stores.documents.delete(
+            name=document_id
+        )
+        logger.info(f"평가기준 삭제 완료: {document_id}")
+        return True
 
     async def search_criteria(
         self,
