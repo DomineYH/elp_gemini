@@ -25,72 +25,38 @@ class CriteriaVectorService:
     async def upload_criteria(
         self,
         file_path: str,
-        display_name: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        recreate_store: bool = True,
+        title: str,
+        stable_id: str,
     ) -> Dict[str, str]:
         """
-        평가기준 파일을 Vector DB에 업로드
-        (기본: 기존 평가기준 자동 삭제 후 업로드, 옵션: 재생성 생략)
+        평가기준 1개를 rubric-store에 업로드 (store 재생성 없이).
 
-        Args:
-            file_path: 평가기준 파일 경로
-            display_name: 표시 이름
-            metadata: 추가 메타데이터 (선택)
-            recreate_store: 업로드 전에 Store를 재생성할지 여부
-                - True: 기존 평가기준을 모두 지우고 업로드 (기본)
-                - False: 이미 준비된 Store를 그대로 사용 (다중 업로드 시 사용)
-
-        Returns:
-            document_id와 store_id 딕셔너리
+        custom_metadata:
+          type = "criteria"
+          stable_id = <ULID>
+          original_title_b64 = base64(UTF-8 title)
+          created_at = ISO-8601 UTC
         """
-        try:
-            logger.info(
-                f"평가기준 업로드 프로세스 시작: {display_name}"
-            )
+        import base64
+        from datetime import datetime, timezone
 
-            # 1. 기존 평가기준 Store 재생성 (필요 시)
-            if recreate_store:
-                logger.debug("단계 1/3: Store 재생성")
-                await self._recreate_criteria_store()
-                logger.debug("단계 1/3: Store 재생성 완료")
-            else:
-                logger.debug("단계 1/3: 기존 Store 유지 (재생성 생략)")
+        original_title_b64 = base64.b64encode(title.encode("utf-8")).decode("ascii")
+        created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-            # 2. 메타데이터 설정
-            logger.debug("단계 2/3: 메타데이터 설정")
-            upload_metadata = metadata or {}
-            upload_metadata["type"] = "criteria"
-            logger.debug(
-                f"메타데이터: {upload_metadata}"
-            )
-
-            # 3. 새 평가기준 업로드
-            logger.debug("단계 3/3: 문서 업로드 시작")
-            result = await self.file_search_service.upload_document(
-                file_path=file_path,
-                display_name=display_name,
-                metadata=upload_metadata,
-                store_type="rubric",
-            )
-            logger.debug("단계 3/3: 문서 업로드 완료")
-
-            logger.info(
-                f"평가기준 업로드 완료: {display_name}\n"
-                f"  - Document ID: {result['document_id']}\n"
-                f"  - Store ID: {result['store_id']}"
-            )
-
-            return result
-        except Exception as e:
-            error_type = type(e).__name__
-            logger.error(
-                f"평가기준 업로드 실패 - "
-                f"유형: {error_type}, "
-                f"메시지: {str(e)}",
-                exc_info=True
-            )
-            raise
+        metadata = {
+            "type": "criteria",
+            "stable_id": stable_id,
+            "original_title_b64": original_title_b64,
+            "created_at": created_at,
+        }
+        result = await self.file_search_service.upload_document(
+            file_path=file_path,
+            display_name=title,
+            metadata=metadata,
+            store_type="rubric",
+        )
+        logger.info(f"평가기준 업로드 완료: stable_id={stable_id} document_id={result['document_id']}")
+        return result
 
     async def delete_criteria(
         self,
