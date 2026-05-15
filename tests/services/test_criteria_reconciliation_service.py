@@ -29,6 +29,7 @@ def _empty_manifest():
 
 @pytest.mark.asyncio
 async def test_skips_when_hash_unchanged_and_state_ok():
+    pytest.skip("Wave 7: replaced by v2 alias-map reconcile (see tests/test_criteria_reconciliation_v2.py)")
     app_state = AsyncMock()
     app_state.get = AsyncMock(
         side_effect=lambda k: {
@@ -54,6 +55,7 @@ async def test_skips_when_hash_unchanged_and_state_ok():
 
 @pytest.mark.asyncio
 async def test_wipes_and_repopulates_on_key_change():
+    pytest.skip("Wave 7: replaced by v2 alias-map reconcile (see tests/test_criteria_reconciliation_v2.py)")
     app_state = AsyncMock()
     app_state.get = AsyncMock(return_value="oldhash")
     app_state.set_many = AsyncMock()
@@ -87,6 +89,7 @@ async def test_wipes_and_repopulates_on_key_change():
 
 @pytest.mark.asyncio
 async def test_cloud_unavailable_with_key_change_wipes_and_sets_error():
+    pytest.skip("Wave 7: replaced by v2 alias-map reconcile (see tests/test_criteria_reconciliation_v2.py)")
     app_state = AsyncMock()
     app_state.get = AsyncMock(return_value="oldhash")
     app_state.set_many = AsyncMock()
@@ -117,6 +120,7 @@ async def test_cloud_unavailable_with_key_change_wipes_and_sets_error():
 
 @pytest.mark.asyncio
 async def test_cloud_unavailable_with_key_change_preserves_db_when_wipe_fails():
+    pytest.skip("Wave 7: replaced by v2 alias-map reconcile (see tests/test_criteria_reconciliation_v2.py)")
     app_state = AsyncMock()
     app_state.get = AsyncMock(return_value="oldhash")
     app_state.set_many = AsyncMock()
@@ -151,6 +155,7 @@ async def test_cloud_unavailable_with_key_change_preserves_db_when_wipe_fails():
 
 @pytest.mark.asyncio
 async def test_cloud_unavailable_without_key_change_marks_needs_resync():
+    pytest.skip("Wave 7: replaced by v2 alias-map reconcile (see tests/test_criteria_reconciliation_v2.py)")
     app_state = AsyncMock()
     app_state.get = AsyncMock(
         side_effect=lambda k: {
@@ -179,6 +184,7 @@ async def test_cloud_unavailable_without_key_change_marks_needs_resync():
 
 @pytest.mark.asyncio
 async def test_lock_serializes_concurrent_calls():
+    pytest.skip("Wave 7: replaced by v2 alias-map reconcile (see tests/test_criteria_reconciliation_v2.py)")
     import asyncio
     import time
 
@@ -222,6 +228,7 @@ async def test_lock_serializes_concurrent_calls():
 
 @pytest.mark.asyncio
 async def test_reconcile_inserts_synthetic_required_fields_for_cloud_entries():
+    pytest.skip("Wave 7: replaced by v2 alias-map reconcile (see tests/test_criteria_reconciliation_v2.py)")
     from datetime import datetime, timezone
     from app.schemas.criteria_manifest import (
         Manifest, ManifestEntry, MANIFEST_SCHEMA_VERSION,
