@@ -89,6 +89,12 @@ class Criteria(Base):
             "(NULL이면 title을 fallback)"
         ),
     )
+    stable_id = Column(
+        String(64),
+        nullable=True,
+        index=True,
+        comment="클라우드 진실의 원천에서의 평가기준 고유 ID (ULID). API key 교체에도 살아남음."
+    )
 
     def __repr__(self):
         return (
