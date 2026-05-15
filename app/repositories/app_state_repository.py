@@ -34,10 +34,16 @@ class AppStateRepository:
         stmt = select(AppState).where(AppState.key == key)
         result = await self.db.execute(stmt)
         row = result.scalar_one_or_none()
+        if value is None:
+            if row is not None:
+                await self.db.delete(row)
+            await self.db.flush()
+            return
+
         if row is None:
-            self.db.add(AppState(key=key, value=value or ""))
+            self.db.add(AppState(key=key, value=value))
         else:
-            row.value = value or ""
+            row.value = value
         await self.db.flush()
 
     async def set_many(self, items: dict[str, Optional[str]]) -> None:

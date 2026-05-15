@@ -1,12 +1,14 @@
 # tests/unit/test_app_state_repository.py
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.app_state_repository import (
-    AppStateRepository,
     KEY_API_KEY_HASH,
+    KEY_SYNC_ERROR,
     KEY_SYNC_STATE,
+    AppStateRepository,
 )
 
 
@@ -14,6 +16,7 @@ from app.repositories.app_state_repository import (
 def mock_db():
     db = AsyncMock(spec=AsyncSession)
     db.add = MagicMock()
+    db.delete = AsyncMock()
     db.flush = AsyncMock()
     db.execute = AsyncMock()
     return db
@@ -49,3 +52,18 @@ async def test_set_many_persists_all_keys(repo, mock_db):
     mock_db.execute.return_value = result
     await repo.set_many({KEY_API_KEY_HASH: "abc", KEY_SYNC_STATE: "ok"})
     assert mock_db.add.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_set_none_deletes_existing_key(repo, mock_db):
+    row = MagicMock()
+    row.value = "previous error"
+    result = AsyncMock()
+    result.scalar_one_or_none = MagicMock(return_value=row)
+    mock_db.execute.return_value = result
+
+    await repo.set(KEY_SYNC_ERROR, None)
+
+    mock_db.delete.assert_awaited_once_with(row)
+    mock_db.add.assert_not_called()
+    mock_db.flush.assert_awaited()

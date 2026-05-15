@@ -1,5 +1,3 @@
-# app/services/criteria_manifest_service.py
-import json
 import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -52,10 +50,20 @@ class CriteriaManifestService:
                 criteria=[],
             )
 
-        raw_bytes = await self.file_search_service.download_document_bytes(
-            store_id, manifest_doc.id
+        document_name = getattr(manifest_doc, "name", None) or getattr(
+            manifest_doc, "id", None
         )
-        return Manifest.model_validate_json(raw_bytes)
+        if not document_name:
+            raise CloudUnavailable("매니페스트 문서 이름을 확인할 수 없습니다")
+
+        try:
+            raw_bytes = await self.file_search_service.download_document_bytes(
+                store_id, document_name
+            )
+            return Manifest.model_validate_json(raw_bytes)
+        except Exception as exc:
+            logger.warning("매니페스트 다운로드 실패: %s", exc)
+            raise CloudUnavailable(str(exc)) from exc
 
     async def upload(self, manifest: Manifest) -> None:
         payload = manifest.model_dump_json(by_alias=True).encode("utf-8")

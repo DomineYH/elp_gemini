@@ -5,6 +5,7 @@ import pytest
 
 from app.repositories.app_state_repository import (
     KEY_API_KEY_HASH,
+    KEY_SYNC_ERROR,
     KEY_SYNC_STATE,
     SYNC_STATE_OK,
 )
@@ -112,6 +113,40 @@ async def test_cloud_unavailable_with_key_change_wipes_and_sets_error():
     criteria_repo.truncate.assert_awaited()
     args, _ = app_state.set_many.call_args
     assert args[0][KEY_SYNC_STATE] == "error"
+
+
+@pytest.mark.asyncio
+async def test_cloud_unavailable_with_key_change_preserves_db_when_wipe_fails():
+    app_state = AsyncMock()
+    app_state.get = AsyncMock(return_value="oldhash")
+    app_state.set_many = AsyncMock()
+
+    manifest_svc = AsyncMock()
+    manifest_svc.fetch = AsyncMock(side_effect=CloudUnavailable("net"))
+
+    criteria_repo = AsyncMock()
+    criteria_repo.truncate = AsyncMock()
+    vector_svc = AsyncMock()
+
+    svc = CriteriaReconciliationService(
+        app_state_repo=app_state,
+        manifest_service=manifest_svc,
+        criteria_repo=criteria_repo,
+        vector_service=vector_svc,
+        current_api_key="newkey",
+    )
+
+    with patch.object(
+        svc, "_wipe_upload_dir", side_effect=RuntimeError("permission denied")
+    ):
+        result = await svc.reconcile()
+
+    assert result.ok is False
+    assert "wipe also failed" in result.error
+    criteria_repo.truncate.assert_not_awaited()
+    args, _ = app_state.set_many.call_args
+    assert args[0][KEY_SYNC_STATE] == "error"
+    assert "permission denied" in args[0][KEY_SYNC_ERROR]
 
 
 @pytest.mark.asyncio

@@ -100,7 +100,17 @@ class CriteriaReconciliationService:
                         self._wipe_upload_dir()
                     except Exception as wipe_err:
                         logger.error("wipe failed: %s", wipe_err)
-                        error_msg = f"{error_msg} (wipe also failed: {wipe_err})"
+                        error_msg = (
+                            f"{error_msg} (wipe also failed: {wipe_err})"
+                        )
+                        await self.app_state.set_many(
+                            {
+                                KEY_API_KEY_HASH: current_hash,
+                                KEY_SYNC_STATE: SYNC_STATE_ERROR,
+                                KEY_SYNC_ERROR: error_msg,
+                            }
+                        )
+                        return ReconcileResult(ok=False, error=error_msg)
                     await self.criteria_repo.truncate()
                     await self.app_state.set_many(
                         {
@@ -112,7 +122,7 @@ class CriteriaReconciliationService:
                 else:
                     await self.app_state.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
                     await self.app_state.set(KEY_SYNC_ERROR, str(e))
-                return ReconcileResult(ok=False, error=str(e))
+                return ReconcileResult(ok=False, error=error_msg)
 
             manifest_ids = {e.document_id for e in manifest.criteria}
             cloud_ids = set(cloud_doc_ids)

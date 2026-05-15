@@ -3,7 +3,7 @@ Google File Search 서비스
 문서 업로드, 인덱싱, RAG 쿼리
 """
 import asyncio
-import io
+import base64
 import logging
 import os
 import re
@@ -17,6 +17,9 @@ from google.genai import types
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+_MANIFEST_PAYLOAD_METADATA_KEY = "manifest_payload_base64"
+_MANIFEST_PAYLOAD_CHUNK_SIZE = 3000
 
 
 def _sanitize_display_name(name: str) -> str:
@@ -51,6 +54,55 @@ def _sanitize_display_name(name: str) -> str:
 
     logger.debug(f"display_name 변환: {name} -> {sanitized}")
     return sanitized
+
+
+def _metadata_value(entry, field_name: str):
+    if isinstance(entry, dict):
+        return entry.get(field_name)
+    return getattr(entry, field_name, None)
+
+
+def _manifest_payload_metadata(content: bytes) -> list[dict]:
+    encoded = base64.b64encode(content).decode("ascii")
+    chunks = [
+        encoded[i:i + _MANIFEST_PAYLOAD_CHUNK_SIZE]
+        for i in range(0, len(encoded), _MANIFEST_PAYLOAD_CHUNK_SIZE)
+    ] or [""]
+    return [
+        {
+            "key": _MANIFEST_PAYLOAD_METADATA_KEY,
+            "string_list_value": {"values": chunks},
+        }
+    ]
+
+
+def _payload_from_metadata(custom_metadata) -> bytes | None:
+    for entry in custom_metadata or []:
+        if _metadata_value(entry, "key") != _MANIFEST_PAYLOAD_METADATA_KEY:
+            continue
+
+        string_list = _metadata_value(entry, "string_list_value")
+        if string_list is None:
+            string_list = _metadata_value(entry, "stringListValue")
+
+        if isinstance(string_list, dict):
+            values = string_list.get("values") or []
+        else:
+            values = getattr(string_list, "values", None) or []
+
+        if not values:
+            single_value = _metadata_value(entry, "string_value")
+            if single_value is None:
+                single_value = _metadata_value(entry, "stringValue")
+            values = [single_value] if single_value else []
+
+        if not values:
+            return None
+
+        encoded = "".join(values)
+        return base64.b64decode(encoded.encode("ascii"))
+
+    return None
 
 
 class FileSearchService:
@@ -552,13 +604,19 @@ class FileSearchService:
         doc = self.client.file_search_stores.documents.get(
             name=document_name
         )
-        # google-genai SDK: document has content or we download via files API
         if hasattr(doc, "content") and doc.content:
             return doc.content
-        # Fallback: download via the raw API
-        buffer = io.BytesIO()
-        self.client.files.download(file=document_name, buffer=buffer)
-        return buffer.getvalue()
+
+        payload = _payload_from_metadata(
+            getattr(doc, "custom_metadata", None)
+        )
+        if payload is not None:
+            return payload
+
+        raise RuntimeError(
+            "File Search document raw bytes are not downloadable; "
+            "manifest payload metadata is missing"
+        )
 
     async def replace_single_document(
         self,
@@ -579,21 +637,29 @@ class FileSearchService:
                 )
                 break
         # 새 문서 업로드 (임시 파일 경유)
-        tmp_path = tempfile.mktemp(suffix=".json")
+        tmp_path = None
         try:
-            with open(tmp_path, "wb") as f:
-                f.write(content)
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=".json"
+            ) as tmp_file:
+                tmp_file.write(content)
+                tmp_path = tmp_file.name
+
             operation = (
                 self.client.file_search_stores.upload_to_file_search_store(
                     file_search_store_name=store_id,
                     file=tmp_path,
                     config={
                         "display_name": safe_name,
+                        "mime_type": mime_type,
                         "chunking_config": {
                             "white_space_config": {
                                 "max_tokens_per_chunk": 512,
                             }
                         },
+                        "custom_metadata": _manifest_payload_metadata(
+                            content
+                        ),
                     },
                 )
             )
@@ -612,10 +678,11 @@ class FileSearchService:
                 )
             return doc_id
         finally:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
     def _extract_citations(
         self, response

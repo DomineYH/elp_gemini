@@ -193,8 +193,6 @@ async def upload_criteria(
             f"criteria_id={criteria.id}"
         )
 
-        await _publish_or_mark_resync(criteria_repo, db)
-
         return UploadCriteriaResponse(
             file_id=str(criteria.id),  # criteria ID 사용
             display_name=file.filename,
