@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     FS_RUBRIC_STORE_NAME: str = Field(
         default="rubric-store", description="루브릭 파일 검색 스토어"
     )
+    FS_RUBRIC_METADATA_STORE_NAME: str = Field(
+        default="rubric-metadata-store",
+        description="평가기준 매니페스트 저장용 File Search 스토어 이름",
+    )
 
     # File Search 설정 (청킹)
     FS_CHUNKING_MAX_TOKENS: int = Field(

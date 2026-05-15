@@ -522,6 +522,97 @@ class FileSearchService:
             logger.error(f"검색 실패: {str(e)}")
             raise
 
+    async def get_or_create_store(
+        self, store_name: str
+    ) -> tuple[str, bool]:
+        """스토어를 찾거나 생성하여 (store_id, created) 반환."""
+        safe_name = _sanitize_display_name(store_name)
+        for store in self.client.file_search_stores.list():
+            if store.display_name == safe_name:
+                return store.name, False
+        store = self.client.file_search_stores.create(
+            config={"display_name": safe_name}
+        )
+        return store.name, True
+
+    async def list_documents(self, store_id: str) -> list:
+        """스토어 내 문서 목록 반환."""
+        return list(
+            self.client.file_search_stores.documents.list(parent=store_id)
+        )
+
+    async def download_document_bytes(
+        self, store_id: str, document_name: str
+    ) -> bytes:
+        """문서의 원본 바이트 다운로드."""
+        doc = self.client.file_search_stores.documents.get(
+            name=document_name
+        )
+        # google-genai SDK: document has content or we download via files API
+        if hasattr(doc, "content") and doc.content:
+            return doc.content
+        # Fallback: download via the raw API
+        import io
+        buffer = io.BytesIO()
+        self.client.files.download(file=document_name, buffer=buffer)
+        return buffer.getvalue()
+
+    async def replace_single_document(
+        self,
+        store_id: str,
+        display_name: str,
+        content: bytes,
+        mime_type: str = "application/json",
+    ) -> str:
+        """스토어에서 동일 display_name의 문서를 삭제 후 새로 업로드."""
+        safe_name = _sanitize_display_name(display_name)
+        # 기존 문서 삭제
+        for doc in self.client.file_search_stores.documents.list(
+            parent=store_id
+        ):
+            if getattr(doc, "display_name", "") == safe_name:
+                self.client.file_search_stores.documents.delete(
+                    name=doc.name
+                )
+                break
+        # 새 문서 업로드 (임시 파일 경유)
+        import tempfile, os
+        with tempfile.NamedTemporaryFile(
+            suffix=".json", delete=False
+        ) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        try:
+            operation = (
+                self.client.file_search_stores.upload_to_file_search_store(
+                    file_search_store_name=store_id,
+                    file=tmp_path,
+                    config={
+                        "display_name": safe_name,
+                        "chunking_config": {
+                            "white_space_config": {
+                                "max_tokens_per_chunk": 512,
+                            }
+                        },
+                    },
+                )
+            )
+            # 동기 폴링 (짧은 파일이므로)
+            import time
+            deadline = time.time() + 30
+            while not operation.done and time.time() < deadline:
+                await asyncio.sleep(1)
+                try:
+                    operation = self.client.operations.get(operation)
+                except Exception:
+                    break
+            doc_id = getattr(
+                operation.response, "document_name", None
+            ) or getattr(operation, "response", "")
+            return doc_id
+        finally:
+            os.unlink(tmp_path)
+
     def _extract_citations(
         self, response
     ) -> list[Dict[str, Any]]:
