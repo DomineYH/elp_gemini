@@ -29,7 +29,6 @@ from app.repositories.app_state_repository import (
     SYNC_STATE_NEEDS_RESYNC,
 )
 from app.schemas.criteria import (
-    UploadCriteriaResponse,
     DeleteCriteriaResponse,
     DeleteSingleCriteriaResponse,
     UpdateDisplayAliasRequest,
@@ -49,12 +48,36 @@ from app.services.file_validator import FileValidator
 from app.repositories.criteria_repository import (
     CriteriaRepository
 )
+from app.schemas.alias_map import (
+    AliasMap,
+    AliasMapEntry,
+    empty_alias_map,
+)
+from app.services.criteria_alias_map_service import (
+    CriteriaAliasMapService,
+)
+from app.config import settings
 
 router = APIRouter(
     prefix="/api/admin/criteria",
     tags=["관리자-평가기준"]
 )
 logger = logging.getLogger(__name__)
+
+
+def _new_stable_id() -> str:
+    """26-char base32 ULID-ish (timestamp + random). Opaque to the system."""
+    import base64
+    import secrets
+    import time
+    ts = int(time.time() * 1000).to_bytes(6, "big")
+    rand = secrets.token_bytes(10)
+    return base64.b32encode(ts + rand).decode("ascii").rstrip("=")
+
+
+def _now_iso_utc() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 async def _publish_or_mark_resync(
@@ -81,7 +104,6 @@ async def _publish_or_mark_resync(
 
 @router.post(
     "/upload",
-    response_model=UploadCriteriaResponse,
     status_code=status.HTTP_201_CREATED,
     summary="평가기준 업로드",
     description="평가기준 파일을 Vector DB에 업로드합니다. "
@@ -147,58 +169,72 @@ async def upload_criteria(
             f"path={temp_file_path}, size={len(file_content)}"
         )
 
-        # 3단계: DB에 메타데이터 먼저 저장 (ID 생성용)
-        logger.debug("3단계: DB에 메타데이터 저장 시작")
-        criteria_repo = CriteriaRepository(db)
-        
-        # 임시 file_path로 저장 (나중에 업데이트)
-        criteria = await criteria_repo.save_criteria(
+        # 3단계: 클라우드 업로드 (stable_id 발급)
+        logger.debug("3단계: 클라우드 업로드 시작")
+        stable_id = _new_stable_id()
+        criteria_service = CriteriaVectorService()
+        upload_result = await criteria_service.upload_criteria(
+            file_path=temp_file_path,
             title=file.filename,
-            file_size=len(file_content),
-            uploaded_by=current_admin.username,
-            file_path="temp",  # 임시 값
-            document_id=None,  # 활성화 확정 전에는 None
-            status="uploaded",
+            stable_id=stable_id,
         )
-        await db.commit()
+        document_id = upload_result["document_id"]
         logger.debug(
-            f"3단계: DB 메타데이터 저장 완료 - "
-            f"criteria_id={criteria.id}"
+            f"3단계: 클라우드 업로드 완료 - "
+            f"stable_id={stable_id}, document_id={document_id}"
         )
 
-        # 4단계: 로컬 파일 저장
-        logger.debug("4단계: 로컬 파일 저장 시작")
-        from app.services.file_storage_service import (
-            FileStorageService
+        # 4단계: alias_map 업데이트 + 재게시
+        logger.debug("4단계: alias_map 업데이트 시작")
+        alias_svc = CriteriaAliasMapService(
+            client=criteria_service.file_search_service.client,
+            store_display_name=settings.FS_RUBRIC_STORE_NAME,
         )
-        storage = FileStorageService()
-        file_path = storage.save_file(
-            file_content,
-            criteria.id,
-            file.filename
+        fetched = await alias_svc.fetch()
+        old_doc_name, alias_map = (
+            fetched if fetched else (None, empty_alias_map(_now_iso_utc()))
         )
-        
-        # DB에 실제 file_path 업데이트
-        criteria.file_path = file_path
+        new_entries = dict(alias_map.entries)
+        new_entries[stable_id] = AliasMapEntry(
+            alias=None, status="uploaded", activated_at=None
+        )
+        updated_alias_map = AliasMap(
+            schema_version=1,
+            updated_at=_now_iso_utc(),
+            entries=new_entries,
+        )
+        await alias_svc.replace(
+            updated_alias_map, old_doc_name=old_doc_name
+        )
+        logger.debug("4단계: alias_map 재게시 완료")
+
+        # 5단계: DB 행 삽입 (cloud is source of truth; 로컬 파일 미사용)
+        logger.debug("5단계: DB 행 삽입 시작")
+        criteria_repo = CriteriaRepository(db)
+        await criteria_repo.insert(
+            stable_id=stable_id,
+            document_id=document_id,
+            title=file.filename,
+            display_alias=None,
+            status="uploaded",
+            created_at=None,
+            activated_at=None,
+        )
         await db.commit()
-        logger.debug(
-            f"4단계: 로컬 파일 저장 완료 - "
-            f"path={file_path}"
-        )
+        logger.debug("5단계: DB 행 삽입 완료")
 
         logger.info(
             f"평가기준 업로드 성공: "
             f"admin={current_admin.username}, "
             f"file={file.filename}, "
-            f"criteria_id={criteria.id}"
+            f"stable_id={stable_id}, "
+            f"document_id={document_id}"
         )
 
-        return UploadCriteriaResponse(
-            file_id=str(criteria.id),  # criteria ID 사용
-            display_name=file.filename,
-            file_size=len(file_content),
-            upload_status="completed",
-        )
+        return {
+            "stable_id": stable_id,
+            "document_id": document_id,
+        }
 
     except HTTPException:
         raise
