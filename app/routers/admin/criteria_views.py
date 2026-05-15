@@ -11,6 +11,12 @@ import logging
 from app.db import get_db
 from app.dependencies import get_current_admin
 from app.models.users import User
+from app.repositories.app_state_repository import (
+    AppStateRepository,
+    KEY_LAST_SYNCED_AT,
+    KEY_SYNC_ERROR,
+    KEY_SYNC_STATE,
+)
 from app.repositories.criteria_repository import (
     CriteriaRepository
 )
@@ -23,6 +29,16 @@ router = APIRouter(
 )
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
+
+
+async def _fetch_sync_metadata(db: AsyncSession) -> dict:
+    """app_state에서 클라우드 동기화 상태를 읽어온다."""
+    repo = AppStateRepository(db=db)
+    return {
+        "state": await repo.get(KEY_SYNC_STATE),
+        "last_synced_at": await repo.get(KEY_LAST_SYNCED_AT),
+        "error": await repo.get(KEY_SYNC_ERROR),
+    }
 
 
 @router.get(
@@ -141,6 +157,8 @@ async def criteria_list(
         except Exception as e:
             logger.warning(f"클라우드 동기화 검증 실패: {e}")
 
+        sync = await _fetch_sync_metadata(db)
+
         return templates.TemplateResponse(
             "admin/criteria_list.html",
             {
@@ -153,6 +171,7 @@ async def criteria_list(
                 "cloud_sync_warning": cloud_sync_warning,
                 "cloud_documents": cloud_documents,
                 "cloud_error": cloud_error,
+                "sync": sync,
             }
         )
     except Exception as e:
@@ -167,6 +186,7 @@ async def criteria_list(
                 "active_criteria": None,
                 "needs_sync": False,
                 "pending_count": 0,
+                "sync": {"state": None, "last_synced_at": None, "error": None},
             }
         )
 
