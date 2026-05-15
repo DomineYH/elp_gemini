@@ -31,8 +31,6 @@ from app.repositories.app_state_repository import (
     SYNC_STATE_NEEDS_RESYNC,
 )
 from app.schemas.criteria import (
-    DeleteCriteriaResponse,
-    DeleteSingleCriteriaResponse,
     UpdateDisplayAliasRequest,
     UpdateDisplayAliasResponse,
 )
@@ -267,281 +265,50 @@ async def upload_criteria(
 
 
 @router.delete(
-    "",
-    response_model=DeleteCriteriaResponse,
-    summary="평가기준 삭제",
-    description="모든 평가기준을 삭제합니다. (관리자 전용)",
+    "/{stable_id}",
+    summary="평가기준 삭제 (stable_id 기반)",
+    description="클라우드 문서 + alias_map entry + DB 행을 삭제합니다.",
 )
-async def delete_all_criteria(
+async def delete_criteria_by_stable_id(
+    stable_id: str,
     current_admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
     _sync_ready=Depends(require_criteria_sync_ready),
-):
-    """
-    모든 평가기준 삭제 (관리자 전용)
-
-    Note:
-        Gemini File Search API 제약으로
-        개별 문서 삭제 불가 → Store 재생성으로 전체 삭제
-
-    Args:
-        current_admin: 현재 로그인한 관리자
-
-    Returns:
-        삭제 결과 정보
-
-    Raises:
-        HTTPException: 삭제 오류
-    """
-    try:
-        # Vector Store 삭제
-        criteria_service = CriteriaVectorService()
-        success = await criteria_service.delete_all_criteria()
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="평가기준 삭제 실패"
-            )
-
-        # DB에서도 삭제
-        criteria_repo = CriteriaRepository(db)
-        deleted_count = await criteria_repo.delete_all_criteria()
-        await db.commit()
-
-        logger.info(
-            f"평가기준 전체 삭제 성공: "
-            f"admin={current_admin.username}, "
-            f"deleted_count={deleted_count}"
-        )
-
-        await _publish_or_mark_resync(criteria_repo, db)
-
-        return DeleteCriteriaResponse(
-            success=True,
-            message="모든 평가기준이 삭제되었습니다.",
-            deleted_count=deleted_count,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        await db.rollback()
-        logger.error(
-            f"평가기준 삭제 실패: {str(e)}",
-            exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="삭제 중 오류가 발생했습니다."
-        )
-
-
-@router.delete(
-    "/{criteria_id}",
-    response_model=DeleteSingleCriteriaResponse,
-    summary="평가기준 개별 삭제",
-    description="특정 평가기준을 삭제합니다. "
-    "활성 상태인 경우 Vector Store도 동기화됩니다.",
-)
-async def delete_single_criteria(
-    criteria_id: int,
-    current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
-    _sync_ready=Depends(require_criteria_sync_ready),
 ):
-    """
-    개별 평가기준 삭제 (관리자 전용)
-
-    Note:
-        Gemini File Search API 제약으로 개별 문서 삭제 불가.
-        활성 상태 평가기준 삭제 시 Vector Store를 재동기화합니다.
-
-    Args:
-        criteria_id: 삭제할 평가기준 ID
-        current_admin: 현재 로그인한 관리자
-        db: 데이터베이스 세션
-
-    Returns:
-        삭제 결과 정보
-
-    Raises:
-        HTTPException: 삭제 오류
-    """
-    try:
-        criteria_repo = CriteriaRepository(db)
-        
-        # 평가기준 존재 확인
-        criteria = await criteria_repo.get_criteria_by_id(
-            criteria_id
-        )
-        
-        if not criteria:
-            logger.warning(
-                f"평가기준 삭제 실패 (없음): id={criteria_id}"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="평가기준을 찾을 수 없습니다."
-            )
-        
-        # 활성 상태 여부 저장
-        was_active = criteria.status == "active"
-        criteria_title = criteria.title
-
-        # 로컬 파일 삭제
-        from app.services.file_storage_service import (
-            FileStorageService
-        )
-        storage = FileStorageService()
-        storage.delete_file(criteria.file_path)
-
-        # DB에서 삭제
-        success = await criteria_repo.delete_criteria(criteria_id)
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="평가기준 삭제 실패"
-            )
-
-        # flush()로 DELETE를 즉시 적용 (commit 전)
-        # 이후 _sync_criteria_store의 get_active_criteria가 정확한 결과 반환
-        await db.flush()
-
-        # 활성 상태였다면 Vector Store 재동기화
-        sync_message = ""
-        if was_active:
-            try:
-                sync_count = await _sync_criteria_store(
-                    db, current_admin.username
-                )
-                sync_message = f" (Vector Store 동기화: {sync_count}개 문서)"
-            except Exception as e:
-                logger.warning(f"Vector Store 동기화 실패: {e}")
-                sync_message = " (Vector Store 동기화 실패 - 수동 동기화 필요)"
-
-        await db.commit()
-
-        logger.info(
-            f"평가기준 삭제 성공: "
-            f"admin={current_admin.username}, "
-            f"id={criteria_id}, "
-            f"title={criteria_title}"
-        )
-
-        await _publish_or_mark_resync(criteria_repo, db)
-
-        return DeleteSingleCriteriaResponse(
-            success=True,
-            message=f"{criteria_title} 기준이 삭제되었습니다.{sync_message}",
-            criteria_id=criteria_id,
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        await db.rollback()
-        logger.error(
-            f"평가기준 삭제 실패: {str(e)}",
-            exc_info=True
-        )
+    repo = CriteriaRepository(db)
+    row = await repo.get_criteria_by_stable_id(stable_id)
+    if not row:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="삭제 중 오류가 발생했습니다."
+            status_code=404,
+            detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
         )
 
+    vec = CriteriaVectorService()
+    await vec.delete_criteria(document_id=row.document_id)
 
-async def _sync_criteria_store(
-    db: AsyncSession,
-    admin_username: str
-) -> int:
-    """
-    평가기준 Vector Store 동기화 (내부 헬퍼)
-    
-    활성화된 모든 평가기준을 Vector Store에 재업로드합니다.
-    
-    Args:
-        db: DB 세션
-        admin_username: 관리자 사용자명 (로깅용)
-        
-    Returns:
-        동기화된 문서 수
-    """
-    criteria_repo = CriteriaRepository(db)
-    
-    # 활성 평가기준 조회
-    active_criteria_list = await criteria_repo.get_active_criteria()
-    
-    logger.info(
-        f"평가기준 동기화 시작: "
-        f"{len(active_criteria_list)}개 문서 (by {admin_username})"
+    alias_svc = CriteriaAliasMapService(
+        client=vec.file_search_service.client,
+        store_display_name=settings.FS_RUBRIC_STORE_NAME,
     )
-    
-    # Vector Store 재생성
-    criteria_service = CriteriaVectorService()
-    await criteria_service.delete_all_criteria()
-    
-    if not active_criteria_list:
-        logger.info("활성화된 평가기준이 없어 빈 Store로 초기화됨")
-        return 0
-    
-    # 각 active 문서를 Vector Store에 업로드
-    for criteria in active_criteria_list:
-        try:
-            # 파일 읽기
-            if not os.path.exists(criteria.file_path):
-                logger.error(f"파일 없음: {criteria.file_path}")
-                continue
-                
-            with open(criteria.file_path, "rb") as f:
-                file_content = f.read()
-            
-            # 임시 파일 생성
-            suffix = os.path.splitext(criteria.title)[1]
-            with tempfile.NamedTemporaryFile(
-                delete=False, suffix=suffix
-            ) as temp_file:
-                temp_file.write(file_content)
-                temp_path = temp_file.name
-            
-            try:
-                # Vector Store 업로드
-                result = await criteria_service.upload_criteria(
-                    file_path=temp_path,
-                    display_name=criteria.title,
-                    metadata={
-                        "uploaded_by": criteria.uploaded_by,
-                        "criteria_id": criteria.id,
-                    },
-                    # Store는 처음에 한 번만 재생성했으므로 여기선 유지
-                    recreate_store=False,
-                )
-                
-                # DB에 document_id 저장
-                await criteria_repo.update_document_id(
-                    criteria.id,
-                    result["document_id"]
-                )
-
-                # 동기화 시각 업데이트
-                await criteria_repo.update_synced_at(criteria.id)
-
-                logger.info(f"Vector Store 업로드 완료: {criteria.title}")
-                
-            finally:
-                # 임시 파일 삭제
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-                    
-        except Exception as e:
-            logger.error(
-                f"문서 업로드 실패: {criteria.title}, 오류: {str(e)}",
-                exc_info=True
+    fetched = await alias_svc.fetch()
+    if fetched:
+        old_doc_name, alias_map = fetched
+        if stable_id in alias_map.entries:
+            new_entries = dict(alias_map.entries)
+            new_entries.pop(stable_id, None)
+            new_alias_map = AliasMap(
+                schema_version=1,
+                updated_at=_now_iso_utc(),
+                entries=new_entries,
             )
-            continue
-    
-    return len(active_criteria_list)
+            await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
+
+    await db.delete(row)
+    await db.commit()
+    logger.info(
+        f"평가기준 삭제: stable_id={stable_id} document_id={row.document_id}"
+    )
+    return {"stable_id": stable_id, "deleted": True}
 
 
 @router.get(
