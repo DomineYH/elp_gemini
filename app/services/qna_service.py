@@ -5,7 +5,7 @@ Gemini API를 사용한 질문답변 처리 (FileSearch RAG)
 """
 import logging
 import time
-from typing import Optional, Any, List, Dict
+from typing import Any, List, Optional
 from google import genai
 from google.genai import types
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,50 +78,71 @@ class QnAService:
 
             # 평가 기준 컨텍스트 검색
             from app.services.criteria_context_service import (
-                CriteriaContextService
+                CriteriaContextService,
+                build_criteria_context_or_notice,
             )
+            from app.repositories.app_state_repository import AppStateRepository
+
             criteria_service = CriteriaContextService(db=self.db)
+            app_state_repo = AppStateRepository(db=self.db)
 
             criteria_context = ""
             criteria_ids = []
             criteria_metadata = []
+            criteria_notice = None
             try:
-                criteria_result = (
-                    await criteria_service.get_context(question)
+                criteria_result, criteria_notice = (
+                    await build_criteria_context_or_notice(
+                        app_state_repo=app_state_repo,
+                        criteria_context_service=criteria_service,
+                        question=question,
+                    )
                 )
 
-                context_text = criteria_result.get("context_text", "")
-                criteria_ids = criteria_result.get("criteria_ids", [])
-                criteria_metadata = criteria_result.get("criteria_metadata", [])
+                if criteria_result:
+                    context_text = criteria_result.get("context_text", "")
+                    criteria_ids = criteria_result.get("criteria_ids", [])
+                    criteria_metadata = criteria_result.get("criteria_metadata", [])
 
-                if context_text:
-                    # Vector Search 참고 자료만 포함 (시스템 규칙은 prompt.md에 있음)
-                    criteria_context = (
-                        "\n\n### [참고 자료: Vector Search로 검색된 평가기준 컨텍스트]\n\n"
-                        "아래는 질문과 관련하여 미리 검색된 평가기준 내용입니다. "
-                        "평가/분석 요청 시에만 참고하세요.\n\n"
-                        + context_text
-                    )
-                    logger.info(
-                        f"평가 기준 컨텍스트 추가: "
-                        f"{len(criteria_ids)}개 평가기준"
-                    )
+                    if context_text:
+                        # Vector Search 참고 자료만 포함 (시스템 규칙은 prompt.md에 있음)
+                        criteria_context = (
+                            "\n\n### [참고 자료: Vector Search로 검색된 평가기준 컨텍스트]\n\n"
+                            "아래는 질문과 관련하여 미리 검색된 평가기준 내용입니다. "
+                            "평가/분석 요청 시에만 참고하세요.\n\n"
+                            + context_text
+                        )
+                        logger.info(
+                            f"평가 기준 컨텍스트 추가: "
+                            f"{len(criteria_ids)}개 평가기준"
+                        )
             except Exception as e:
                 logger.warning(
                     f"평가 기준 검색 중 오류 (무시): {e}"
                 )
 
-            # Store ID 결정 - 사용자 스토어와 평가기준 스토어 모두 검색
+            # Store ID 결정
             try:
-                # 사용자 스토어와 평가기준 스토어 모두 가져오기
-                store_ids = self.file_search_service.get_dual_store_ids(
-                    user_key=username
-                )
-                logger.info(f"🎯 Store 조회 완료: {store_ids}")
+                if criteria_notice:
+                    user_store_id = self.file_search_service.get_user_store_id(
+                        user_key=username
+                    )
+                    rubric_store_id = None
+                    store_ids = [user_store_id]
+                    logger.info(
+                        "평가기준 동기화 미완료: 사용자 Store만 조회: %s",
+                        store_ids,
+                    )
+                else:
+                    # 사용자 스토어와 평가기준 스토어 모두 가져오기
+                    store_ids = self.file_search_service.get_dual_store_ids(
+                        user_key=username
+                    )
+                    logger.info(f"🎯 Store 조회 완료: {store_ids}")
 
-                # Store ID 분리 (첫 번째: user store, 두 번째: rubric store)
-                user_store_id = store_ids[0]
-                rubric_store_id = store_ids[1]
+                    # Store ID 분리 (첫 번째: user store, 두 번째: rubric store)
+                    user_store_id = store_ids[0]
+                    rubric_store_id = store_ids[1]
 
             except ValueError as e:
                 logger.error(f"❌ Store 조회 실패: {e}")
@@ -148,7 +169,7 @@ class QnAService:
             )
 
             # Store 역할 명시 프롬프트 구성
-            if is_evaluation:
+            if is_evaluation and not criteria_notice:
                 # 평가 요청: rubricstore는 참고 자료, user store는 평가 대상
                 store_role_prompt = (
                     f"\n\n**{rubric_store_id}를 참고하여 {user_store_id}의 문서에 대해서 답해주세요.**\n\n"
@@ -176,9 +197,13 @@ class QnAService:
                     )
 
             # Contents 구성: Store 역할 명시 + 평가기준 컨텍스트 + 히스토리 + 질문
+            notice_text = (
+                f"\n\n[{criteria_notice}]" if criteria_notice else ""
+            )
             contents = (
                 f"{store_role_prompt}"
                 f"{criteria_context}"
+                f"{notice_text}"
                 f"{history_context}"
                 f"\n\n**질문:** {question}"
             )

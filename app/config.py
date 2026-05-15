@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     FS_RUBRIC_STORE_NAME: str = Field(
         default="rubric-store", description="루브릭 파일 검색 스토어"
     )
+    FS_RUBRIC_METADATA_STORE_NAME: str = Field(
+        default="rubric-metadata-store",
+        description="평가기준 매니페스트 저장용 File Search 스토어 이름",
+    )
 
     # File Search 설정 (청킹)
     FS_CHUNKING_MAX_TOKENS: int = Field(
@@ -130,6 +134,12 @@ class Settings(BaseSettings):
     CRITERIA_UPLOAD_DIR: str = Field(
         default="./data/uploads/criteria/",
         description="평가 기준 파일 업로드 디렉토리",
+    )
+
+    # Criteria Cloud Reconcile
+    CRITERIA_CLOUD_RECONCILE_ENABLED: bool = Field(
+        default=True,
+        description="평가기준 클라우드 reconcile 활성화 (긴급 차단 시 False)",
     )
 
     # 관리자 로그인 brute-force 방어 (Issue #5)

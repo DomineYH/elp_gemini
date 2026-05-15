@@ -16,14 +16,31 @@ import tempfile
 import os
 
 from app.db import get_db
-from app.dependencies import get_current_admin
+from app.dependencies import (
+    get_current_admin,
+    require_criteria_sync_ready,
+)
 from app.models.users import User
+from app.repositories.app_state_repository import (
+    AppStateRepository,
+    KEY_LAST_SYNCED_AT,
+    KEY_SYNC_ERROR,
+    KEY_SYNC_STATE,
+    SYNC_STATE_NEEDS_RESYNC,
+)
 from app.schemas.criteria import (
     UploadCriteriaResponse,
     DeleteCriteriaResponse,
     DeleteSingleCriteriaResponse,
     UpdateDisplayAliasRequest,
     UpdateDisplayAliasResponse,
+)
+from app.services.criteria_manifest_service import (
+    CloudUnavailable,
+    CriteriaManifestService,
+)
+from app.services.criteria_reconciliation_service import (
+    CriteriaReconciliationService,
 )
 from app.services.criteria_vector_service import (
     CriteriaVectorService
@@ -40,6 +57,28 @@ router = APIRouter(
 logger = logging.getLogger(__name__)
 
 
+async def _publish_or_mark_resync(
+    criteria_repo: CriteriaRepository,
+    db: AsyncSession,
+) -> None:
+    """매니페스트 publish 시도; 실패하면 sync_state=needs_resync 저장 후 502."""
+    try:
+        manifest_svc = CriteriaManifestService()
+        await manifest_svc.publish_from_db(criteria_repo)
+    except CloudUnavailable as e:
+        state_repo = AppStateRepository(db=db)
+        await state_repo.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
+        await state_repo.set(KEY_SYNC_ERROR, str(e))
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                "변경은 저장되었으나 클라우드 동기화에 실패했습니다. "
+                "관리자 페이지에서 재동기화하세요."
+            ),
+        )
+
+
 @router.post(
     "/upload",
     response_model=UploadCriteriaResponse,
@@ -52,6 +91,7 @@ async def upload_criteria(
     file: UploadFile = File(...),
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
+    _sync_ready=Depends(require_criteria_sync_ready),
 ):
     """
     평가기준 업로드 (관리자 전용)
@@ -196,6 +236,7 @@ async def upload_criteria(
 async def delete_all_criteria(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
+    _sync_ready=Depends(require_criteria_sync_ready),
 ):
     """
     모든 평가기준 삭제 (관리자 전용)
@@ -235,6 +276,8 @@ async def delete_all_criteria(
             f"deleted_count={deleted_count}"
         )
 
+        await _publish_or_mark_resync(criteria_repo, db)
+
         return DeleteCriteriaResponse(
             success=True,
             message="모든 평가기준이 삭제되었습니다.",
@@ -266,6 +309,7 @@ async def delete_single_criteria(
     criteria_id: int,
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
+    _sync_ready=Depends(require_criteria_sync_ready),
 ):
     """
     개별 평가기준 삭제 (관리자 전용)
@@ -346,6 +390,8 @@ async def delete_single_criteria(
             f"id={criteria_id}, "
             f"title={criteria_title}"
         )
+
+        await _publish_or_mark_resync(criteria_repo, db)
 
         return DeleteSingleCriteriaResponse(
             success=True,
@@ -468,6 +514,7 @@ async def activate_criteria(
     criteria_id: int,
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
+    _sync_ready=Depends(require_criteria_sync_ready),
 ):
     """
     평가기준 활성화 (관리자 전용)
@@ -498,13 +545,15 @@ async def activate_criteria(
             f"admin={current_admin.username}, id={criteria_id}"
         )
 
+        await _publish_or_mark_resync(criteria_repo, db)
+
         return {
             "success": True,
             "message": f"{criteria.title}이(가) 활성화되었습니다. '활성화 확정'을 눌러 반영하세요.",
             "criteria_id": criteria_id,
             "needs_sync": True
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -525,6 +574,7 @@ async def deactivate_criteria(
     criteria_id: int,
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
+    _sync_ready=Depends(require_criteria_sync_ready),
 ):
     """
     평가기준 비활성화 (관리자 전용)
@@ -555,6 +605,8 @@ async def deactivate_criteria(
             f"admin={current_admin.username}, id={criteria_id}"
         )
 
+        await _publish_or_mark_resync(criteria_repo, db)
+
         return {
             "success": True,
             "message": f"{criteria.title}이(가) 비활성화되었습니다. '활성화 확정'을 눌러 반영하세요.",
@@ -581,6 +633,7 @@ async def deactivate_criteria(
 async def confirm_activation(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
+    _sync_ready=Depends(require_criteria_sync_ready),
 ):
     """
     활성화 확정 (관리자 전용)
@@ -598,7 +651,10 @@ async def confirm_activation(
     try:
         count = await _sync_criteria_store(db, current_admin.username)
         await db.commit()
-        
+
+        criteria_repo = CriteriaRepository(db)
+        await _publish_or_mark_resync(criteria_repo, db)
+
         return {
             "success": True,
             "message": f"{count}개의 평가기준이 동기화되었습니다.",
@@ -656,6 +712,7 @@ async def update_display_alias(
     payload: UpdateDisplayAliasRequest,
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
+    _sync_ready=Depends(require_criteria_sync_ready),
 ):
     """관리자 전용. DB만 업데이트."""
     try:
@@ -674,6 +731,9 @@ async def update_display_alias(
             f"admin={current_admin.username}, "
             f"id={criteria_id}, alias={payload.display_alias!r}"
         )
+
+        await _publish_or_mark_resync(repo, db)
+
         return UpdateDisplayAliasResponse(
             success=True,
             criteria_id=criteria_id,
@@ -691,3 +751,71 @@ async def update_display_alias(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="표시명 업데이트 중 오류가 발생했습니다.",
         )
+
+
+@router.get(
+    "",
+    summary="평가기준 목록 (JSON)",
+    description="평가기준 목록과 클라우드 동기화 상태를 반환합니다.",
+)
+async def list_criteria_json(
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """평가기준 목록 + sync 메타데이터 (JSON)."""
+    criteria_repo = CriteriaRepository(db)
+    all_criteria = await criteria_repo.get_all_criteria()
+
+    state_repo = AppStateRepository(db=db)
+    sync = {
+        "state": await state_repo.get(KEY_SYNC_STATE),
+        "last_synced_at": await state_repo.get(KEY_LAST_SYNCED_AT),
+        "error": await state_repo.get(KEY_SYNC_ERROR),
+    }
+
+    return {
+        "criteria": [
+            {
+                "id": c.id,
+                "title": c.title,
+                "display_alias": c.display_alias,
+                "status": c.status,
+                "file_size": c.file_size,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+                "document_id": c.document_id,
+            }
+            for c in all_criteria
+        ],
+        "sync": sync,
+    }
+
+
+@router.post(
+    "/reconcile",
+    summary="평가기준 클라우드 재동기화",
+    description="API key 변경/오류 후 클라우드에서 평가기준을 다시 가져옵니다.",
+)
+async def reconcile_criteria(
+    db: AsyncSession = Depends(get_db),
+    _admin=Depends(get_current_admin),
+):
+    """클라우드 reconcile 실행."""
+    state_repo = AppStateRepository(db=db)
+    criteria_repo = CriteriaRepository(db=db)
+    manifest_svc = CriteriaManifestService()
+    vector_svc = CriteriaVectorService()
+    svc = CriteriaReconciliationService(
+        app_state_repo=state_repo,
+        manifest_service=manifest_svc,
+        criteria_repo=criteria_repo,
+        vector_service=vector_svc,
+    )
+    result = await svc.reconcile()
+    return {
+        "ok": result.ok,
+        "skipped": result.skipped,
+        "count": result.count,
+        "error": result.error,
+        "sync_state": await state_repo.get(KEY_SYNC_STATE),
+        "last_synced_at": await state_repo.get(KEY_LAST_SYNCED_AT),
+    }

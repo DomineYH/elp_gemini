@@ -410,3 +410,16 @@ class CriteriaRepository:
         )
         result = await self.db.execute(stmt)
         return {c.document_id: c for c in result.scalars().all()}
+
+    async def truncate(self) -> None:
+        """모든 criteria 행 삭제."""
+        await self.db.execute(delete(Criteria))
+        await self.db.flush()
+        logger.info("criteria 테이블 truncate 완료")
+
+    async def bulk_insert(self, rows: list[dict]) -> None:
+        """dict 리스트를 Criteria 객체로 일괄 삽입."""
+        for row in rows:
+            self.db.add(Criteria(**row))
+        await self.db.flush()
+        logger.info("criteria bulk insert 완료: %d건", len(rows))

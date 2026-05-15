@@ -294,3 +294,8 @@ class CriteriaVectorService:
         except Exception as e:
             logger.error(f"문서 목록 조회 실패: {str(e)}")
             raise
+
+    async def list_document_ids(self) -> List[str]:
+        """클라우드에 있는 문서 ID 목록만 반환."""
+        docs = await self.list_criteria_documents()
+        return [d["document_id"] for d in docs]

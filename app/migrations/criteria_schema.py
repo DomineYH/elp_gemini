@@ -110,3 +110,32 @@ async def ensure_criteria_display_alias_column(
         logger.info("criteria.display_alias 컬럼을 추가함")
         return True
 
+
+async def ensure_app_state_table(engine: AsyncEngine) -> bool:
+    """app_state 테이블이 없을 경우 생성.
+
+    Returns True 테이블이 새로 생성됨, False 이미 존재.
+    """
+    async with engine.begin() as conn:
+
+        def _has_table(sync_conn) -> bool:
+            from sqlalchemy import inspect
+
+            return inspect(sync_conn).has_table("app_state")
+
+        if await conn.run_sync(_has_table):
+            logger.debug("app_state 테이블이 이미 존재하여 생성을 건너뜀")
+            return False
+
+        await conn.execute(
+            text(
+                "CREATE TABLE app_state ("
+                "key VARCHAR(64) PRIMARY KEY, "
+                "value TEXT NOT NULL, "
+                "updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"
+                ")"
+            )
+        )
+        logger.info("app_state 테이블 생성 완료")
+        return True
+

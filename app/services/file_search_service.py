@@ -3,8 +3,12 @@ Google File Search 서비스
 문서 업로드, 인덱싱, RAG 쿼리
 """
 import asyncio
+import base64
 import logging
+import os
 import re
+import tempfile
+import time
 import unicodedata
 from datetime import datetime
 from typing import Optional, Dict, Any
@@ -13,6 +17,9 @@ from google.genai import types
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+_MANIFEST_PAYLOAD_METADATA_KEY = "manifest_payload_base64"
+_MANIFEST_PAYLOAD_CHUNK_SIZE = 3000
 
 
 def _sanitize_display_name(name: str) -> str:
@@ -47,6 +54,55 @@ def _sanitize_display_name(name: str) -> str:
 
     logger.debug(f"display_name 변환: {name} -> {sanitized}")
     return sanitized
+
+
+def _metadata_value(entry, field_name: str):
+    if isinstance(entry, dict):
+        return entry.get(field_name)
+    return getattr(entry, field_name, None)
+
+
+def _manifest_payload_metadata(content: bytes) -> list[dict]:
+    encoded = base64.b64encode(content).decode("ascii")
+    chunks = [
+        encoded[i:i + _MANIFEST_PAYLOAD_CHUNK_SIZE]
+        for i in range(0, len(encoded), _MANIFEST_PAYLOAD_CHUNK_SIZE)
+    ] or [""]
+    return [
+        {
+            "key": _MANIFEST_PAYLOAD_METADATA_KEY,
+            "string_list_value": {"values": chunks},
+        }
+    ]
+
+
+def _payload_from_metadata(custom_metadata) -> bytes | None:
+    for entry in custom_metadata or []:
+        if _metadata_value(entry, "key") != _MANIFEST_PAYLOAD_METADATA_KEY:
+            continue
+
+        string_list = _metadata_value(entry, "string_list_value")
+        if string_list is None:
+            string_list = _metadata_value(entry, "stringListValue")
+
+        if isinstance(string_list, dict):
+            values = string_list.get("values") or []
+        else:
+            values = getattr(string_list, "values", None) or []
+
+        if not values:
+            single_value = _metadata_value(entry, "string_value")
+            if single_value is None:
+                single_value = _metadata_value(entry, "stringValue")
+            values = [single_value] if single_value else []
+
+        if not values:
+            return None
+
+        encoded = "".join(values)
+        return base64.b64decode(encoded.encode("ascii"))
+
+    return None
 
 
 class FileSearchService:
@@ -521,6 +577,112 @@ class FileSearchService:
         except Exception as e:
             logger.error(f"검색 실패: {str(e)}")
             raise
+
+    async def get_or_create_store(
+        self, store_name: str
+    ) -> tuple[str, bool]:
+        """스토어를 찾거나 생성하여 (store_id, created) 반환."""
+        safe_name = _sanitize_display_name(store_name)
+        for store in self.client.file_search_stores.list():
+            if store.display_name == safe_name:
+                return store.name, False
+        store = self.client.file_search_stores.create(
+            config={"display_name": safe_name}
+        )
+        return store.name, True
+
+    async def list_documents(self, store_id: str) -> list:
+        """스토어 내 문서 목록 반환."""
+        return list(
+            self.client.file_search_stores.documents.list(parent=store_id)
+        )
+
+    async def download_document_bytes(
+        self, store_id: str, document_name: str
+    ) -> bytes:
+        """문서의 원본 바이트 다운로드."""
+        doc = self.client.file_search_stores.documents.get(
+            name=document_name
+        )
+        if hasattr(doc, "content") and doc.content:
+            return doc.content
+
+        payload = _payload_from_metadata(
+            getattr(doc, "custom_metadata", None)
+        )
+        if payload is not None:
+            return payload
+
+        raise RuntimeError(
+            "File Search document raw bytes are not downloadable; "
+            "manifest payload metadata is missing"
+        )
+
+    async def replace_single_document(
+        self,
+        store_id: str,
+        display_name: str,
+        content: bytes,
+        mime_type: str = "application/json",
+    ) -> str:
+        """스토어에서 동일 display_name의 문서를 삭제 후 새로 업로드."""
+        safe_name = _sanitize_display_name(display_name)
+        # 기존 문서 삭제
+        for doc in self.client.file_search_stores.documents.list(
+            parent=store_id
+        ):
+            if getattr(doc, "display_name", "") == safe_name:
+                self.client.file_search_stores.documents.delete(
+                    name=doc.name
+                )
+                break
+        # 새 문서 업로드 (임시 파일 경유)
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=".json"
+            ) as tmp_file:
+                tmp_file.write(content)
+                tmp_path = tmp_file.name
+
+            operation = (
+                self.client.file_search_stores.upload_to_file_search_store(
+                    file_search_store_name=store_id,
+                    file=tmp_path,
+                    config={
+                        "display_name": safe_name,
+                        "mime_type": mime_type,
+                        "chunking_config": {
+                            "white_space_config": {
+                                "max_tokens_per_chunk": 512,
+                            }
+                        },
+                        "custom_metadata": _manifest_payload_metadata(
+                            content
+                        ),
+                    },
+                )
+            )
+            deadline = time.monotonic() + 30
+            while not operation.done:
+                if time.monotonic() > deadline:
+                    raise TimeoutError(
+                        "manifest indexing did not finish in 30s"
+                    )
+                await asyncio.sleep(1)
+                operation = self.client.operations.get(operation)
+            doc_id = getattr(operation.response, "document_name", None)
+            if not doc_id:
+                raise RuntimeError(
+                    "manifest upload returned no document_name"
+                )
+            return doc_id
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
     def _extract_citations(
         self, response

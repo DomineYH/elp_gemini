@@ -391,4 +391,34 @@ function activateAliasEdit(span) {
 
 document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.alias-cell').forEach(bindAliasCell);
+
+    // --- 클라우드 동기화 배지 로직 ---
+    const syncStatus = document.getElementById('criteria-sync-status');
+    if (syncStatus) {
+        const state = syncStatus.dataset.state;
+        if (state !== 'ok') {
+            document.querySelectorAll('[data-disabled-when="not-ok"]')
+                .forEach(el => {
+                    el.disabled = true;
+                    el.classList.add('opacity-50', 'cursor-not-allowed');
+                    el.title = '동기화 필요';
+                });
+        }
+        document.querySelectorAll('[data-action="reconcile"]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                btn.disabled = true;
+                btn.textContent = '동기화 중...';
+                try {
+                    const r = await fetch('/api/admin/criteria/reconcile', { method: 'POST' });
+                    const body = await r.json();
+                    alert(body.ok ? '동기화 완료' : `실패: ${body.error || ''}`);
+                    location.reload();
+                } catch (e) {
+                    alert(`재동기화 호출 실패: ${e}`);
+                    btn.disabled = false;
+                    btn.textContent = '재동기화';
+                }
+            });
+        });
+    }
 });

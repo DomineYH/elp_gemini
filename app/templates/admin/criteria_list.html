@@ -24,6 +24,33 @@
 
 {% block content %}
 <div class="max-w-6xl mx-auto">
+
+    {# 클라우드 동기화 상태 배지 #}
+    <div id="criteria-sync-status"
+         class="mb-4 p-3 rounded border"
+         data-state="{{ sync.state or 'unknown' }}">
+      {% if sync.state == 'ok' %}
+        <span class="text-green-700 font-medium">● 동기화 완료</span>
+        <span class="text-gray-500 text-sm ml-2">
+          마지막 동기화 {{ sync.last_synced_at or '-' }}
+        </span>
+      {% elif sync.state == 'needs_resync' %}
+        <span class="text-yellow-700 font-medium">⚠ 동기화 필요</span>
+        <button type="button"
+                class="ml-3 px-2 py-1 text-sm bg-yellow-600 text-white rounded"
+                data-action="reconcile">재동기화</button>
+      {% elif sync.state == 'error' %}
+        <span class="text-red-700 font-medium">✗ 동기화 실패 — 평가기준 기능 비활성</span>
+        {% if sync.error %}
+        <div class="text-sm text-gray-600 mt-1">{{ sync.error }}</div>
+        {% endif %}
+        <button type="button"
+                class="mt-2 px-2 py-1 text-sm bg-red-600 text-white rounded"
+                data-action="reconcile">재동기화</button>
+      {% else %}
+        <span class="text-gray-500 font-medium">● 동기화 상태 확인 중</span>
+      {% endif %}
+    </div>
     <div class="flex justify-between items-center mb-6">
         <div>
             <h1 class="text-3xl font-bold text-gray-800">
@@ -37,6 +64,7 @@
             <button
                 id="confirm-sync-btn"
                 onclick="confirmActivation()"
+                data-disabled-when="not-ok"
                 class="px-6 py-3 rounded-lg transition-colors font-medium
                     {% if needs_sync %}
                         bg-green-600 text-white hover:bg-green-700
@@ -51,7 +79,9 @@
                     ✓ 동기화 완료
                 {% endif %}
             </button>
-            <a href="/admin/criteria/upload" class="px-6 py-3 bg-blue-600 text-white
+            <a href="/admin/criteria/upload"
+               data-disabled-when="not-ok"
+               class="px-6 py-3 bg-blue-600 text-white
                 rounded-lg hover:bg-blue-700 transition-colors
                 font-medium">
                 + 새 기준 업로드
@@ -253,6 +283,7 @@
                                         '{{ item.title }}',
                                         '{{ item.status }}'
                                     )"
+                                    data-disabled-when="not-ok"
                                     class="relative inline-flex h-6 w-11 items-center rounded-full
                                         transition-colors focus:outline-none focus:ring-2
                                         focus:ring-blue-500 focus:ring-offset-2
@@ -277,7 +308,8 @@
                             <button onclick="deleteCriteria(
                                     {{ item.id }},
                                     '{{ item.title }}'
-                                )" class="text-red-600
+                                )" data-disabled-when="not-ok"
+                                class="text-red-600
                                 hover:underline font-medium">
                                 삭제
                             </button>
@@ -303,7 +335,9 @@
             <p class="text-gray-600 mb-4">
                 새 평가 기준 문서를 업로드하여 시작하세요.
             </p>
-            <a href="/admin/criteria/upload" class="inline-block px-6 py-3 bg-blue-600
+            <a href="/admin/criteria/upload"
+               data-disabled-when="not-ok"
+               class="inline-block px-6 py-3 bg-blue-600
                 text-white rounded-lg hover:bg-blue-700
                 transition-colors font-medium">
                 + 첫 기준 업로드

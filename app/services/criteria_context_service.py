@@ -3,11 +3,16 @@
 QnA 시 평가 기준을 검색하여 컨텍스트로 제공
 """
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.services.criteria_vector_service import CriteriaVectorService
 from app.models.criteria import Criteria
+from app.repositories.app_state_repository import (
+    AppStateRepository,
+    KEY_SYNC_STATE,
+    SYNC_STATE_OK,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -154,3 +159,16 @@ class CriteriaContextService:
                 "criteria_metadata": [],
                 "citations": []
             }
+
+
+async def build_criteria_context_or_notice(
+    app_state_repo: AppStateRepository,
+    criteria_context_service: "CriteriaContextService",
+    question: str,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """sync_state가 ok가 아니면 (None, notice) 반환, 아니면 기존 컨텍스트 검색."""
+    state = await app_state_repo.get(KEY_SYNC_STATE)
+    if state != SYNC_STATE_OK:
+        return None, "평가기준 동기화가 필요합니다."
+    ctx = await criteria_context_service.get_context(question)
+    return ctx, None
