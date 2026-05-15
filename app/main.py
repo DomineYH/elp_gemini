@@ -26,6 +26,7 @@ from app.migrations import (
     ensure_app_state_table,
     ensure_criteria_display_alias_column,
     ensure_criteria_file_path_column,
+    ensure_criteria_stable_id_column,
     ensure_lessonplan_uploads_table,
     ensure_user_profiles_table,
     ensure_users_lockout_columns,
@@ -238,6 +239,12 @@ async def startup_event():
     if alias_patched:
         logger.info(
             "criteria.display_alias 컬럼이 자동 추가되었습니다."
+        )
+
+    stable_id_patched = await ensure_criteria_stable_id_column(engine)
+    if stable_id_patched:
+        logger.info(
+            "criteria.stable_id 컬럼이 자동 추가되었습니다."
         )
 
     created = await ensure_app_state_table(engine)
