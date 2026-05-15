@@ -1,17 +1,16 @@
 """LessonPlanAnalysisService 중복 분석 차단 동작 테스트."""
 from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
 import pytest_asyncio
-from unittest.mock import patch, MagicMock
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.db import Base
-from app.models.users import User
-from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.analysis_reports import AnalysisReport
+from app.models.lessonplan_uploads import LessonPlanUpload
+from app.models.users import User
 from app.services.lessonplan_analysis_service import (
     LessonPlanAnalysisService,
 )
@@ -175,6 +174,61 @@ async def test_analyze_returns_upload_required_when_no_upload_or_legacy_file(
     assert mock_stores.call_count == 0
     assert mock_gemini.call_count == 0
     db.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_analyze_allows_premigration_file_search_upload_without_row(
+    tmp_path
+):
+    lessonplan_dir = tmp_path / "lessonplans"
+    lessonplan_dir.mkdir()
+
+    db = MagicMock()
+    svc = LessonPlanAnalysisService(db=db)
+    svc.lessonplan_storage.base_dir = lessonplan_dir
+
+    store = MagicMock()
+    store.display_name = "user-premigration-store"
+    store.name = "fileSearchStores/user-store"
+    doc = MagicMock()
+    doc.name = "fileSearchStores/user-store/documents/doc1"
+    doc.display_name = "premigration.pdf"
+
+    svc.file_search_service.client.file_search_stores.list = MagicMock(
+        return_value=[store]
+    )
+    svc.file_search_service.client.file_search_stores.list_documents = (
+        MagicMock(return_value=[doc])
+    )
+
+    fake_response = MagicMock()
+    fake_response.text = ""
+    fake_response.candidates = []
+
+    with patch.object(
+        svc,
+        "_find_existing_report_for_latest_upload",
+        return_value=(None, None),
+    ), patch.object(
+        svc.lessonplan_storage,
+        "list_lessonplans",
+        return_value=[],
+    ), patch.object(
+        svc, "_get_store_ids", return_value=["user-store", "rubric-store"]
+    ) as mock_stores, patch.object(
+        svc.prompt_loader, "get_prompt", return_value="SYS"
+    ), patch(
+        "app.services.lessonplan_analysis_service.asyncio.to_thread",
+        return_value=fake_response,
+    ) as mock_to_thread:
+        result = await svc.analyze_lesson_plan(
+            session_id=1, user_id=1, username="premigration",
+        )
+
+    assert result["success"] is True
+    assert "upload" not in result.get("error", "").lower()
+    mock_stores.assert_called_once_with("premigration")
+    assert mock_to_thread.call_count == 1
 
 
 @pytest.mark.asyncio

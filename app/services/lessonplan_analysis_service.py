@@ -5,25 +5,29 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from google import genai
-from google.genai import types
 from google.api_core import exceptions
+from google.genai import types
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.services.prompt_loader_service import PromptLoaderService
-from app.services.file_search_service import FileSearchService
-from app.services.lessonplan_storage_service import LessonPlanStorageService
-from app.services.report_storage_service import ReportStorageService
 from app.models.analysis_reports import AnalysisReport
 from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
+from app.services.file_search_service import (
+    FileSearchService,
+    _sanitize_display_name,
+)
+from app.services.lessonplan_storage_service import LessonPlanStorageService
+from app.services.prompt_loader_service import PromptLoaderService
+from app.services.report_storage_service import ReportStorageService
 from app.utils.gemini_retry import (
-    retry_on_resource_exhausted,
     GeminiQuotaExhausted,
+    retry_on_resource_exhausted,
 )
 
 logger = logging.getLogger(__name__)
@@ -142,7 +146,13 @@ class LessonPlanAnalysisService:
                     legacy_lessonplans = (
                         self.lessonplan_storage.list_lessonplans(username)
                     )
-                    if not legacy_lessonplans:
+                    has_file_search_documents = (
+                        self._user_file_search_store_has_documents(username)
+                    )
+                    if (
+                        not legacy_lessonplans
+                        and not has_file_search_documents
+                    ):
                         return {
                             "success": False,
                             "error": (
@@ -156,7 +166,10 @@ class LessonPlanAnalysisService:
                 if not store_ids:
                     return {
                         "success": False,
-                        "error": "분석할 문서가 없습니다. 수업 지도안을 먼저 업로드해주세요."
+                        "error": (
+                            "분석할 문서가 없습니다. "
+                            "수업 지도안을 먼저 업로드해주세요."
+                        )
                     }
 
                 # Store ID 분리 및 역할 명확화
@@ -377,7 +390,10 @@ class LessonPlanAnalysisService:
             logger.error(f"Gemini 쿼터 소진 (재시도 후 실패): {e}")
             return {
                 "success": False,
-                "error": "현재 분석 요청량이 많습니다. 잠시 후 다시 시도해주세요.",
+                "error": (
+                    "현재 분석 요청량이 많습니다. "
+                    "잠시 후 다시 시도해주세요."
+                ),
                 "error_code": "RESOURCE_EXHAUSTED",
             }
 
@@ -413,6 +429,26 @@ class LessonPlanAnalysisService:
         except Exception as e:
             logger.error(f"❌ 예상치 못한 오류: {e}")
             return []
+
+    def _user_file_search_store_has_documents(self, username: str) -> bool:
+        store_name = f"user-{username}-store"
+        safe_store_name = _sanitize_display_name(store_name)
+        try:
+            file_search_stores = (
+                self.file_search_service.client.file_search_stores
+            )
+            for store in file_search_stores.list():
+                if store.display_name not in {store_name, safe_store_name}:
+                    continue
+                documents = file_search_stores.list_documents(
+                    file_search_store_name=store.name
+                )
+                return any(True for _ in documents)
+        except Exception as exc:
+            logger.warning(
+                f"사용자 File Search Store 문서 확인 실패: {exc}"
+            )
+        return False
 
     async def _find_existing_report_for_latest_upload(
         self, username: str
@@ -477,16 +513,32 @@ class LessonPlanAnalysisService:
         system_prompt = system_prompt.replace(
             "{model_name}", self.model_name
         )
+        prompt_intro = (
+            f"**{rubric_store_id}의 평가기준 자료를 바탕으로 "
+            f"{lesson_store_id}에 저장된 사용자의 수업 지도안을 평가하세요.**"
+        )
+        rubric_note = (
+            f"- **{rubric_store_id}**: 평가 기준 문서입니다. "
+            "참고 자료로만 사용하며 답변 근거로 표시하지 않습니다."
+        )
+        lesson_note = (
+            f"- **{lesson_store_id}**: 사용자가 업로드한 수업 지도안입니다. "
+            "모든 평가 근거를 반드시 이 문서에서 찾고 인용하세요."
+        )
+        task_intro = (
+            "위 평가 기준을 바탕으로 사용자가 업로드한 수업 지도안을 "
+            "다음 5개 항목으로 체계적으로 평가해주세요:"
+        )
         return f"""
 {system_prompt}
 
-**{rubric_store_id}의 평가기준 자료를 바탕으로 {lesson_store_id}에 저장된 사용자의 수업 지도안을 평가하세요.**
+{prompt_intro}
 
 **중요 지시사항:**
-- **{rubric_store_id}**: 평가 기준 문서입니다. 참고 자료로만 사용하며 답변 근거로 표시하지 않습니다.
-- **{lesson_store_id}**: 사용자가 업로드한 수업 지도안입니다. 모든 평가 근거를 반드시 이 문서에서 찾고 인용하세요.
+{rubric_note}
+{lesson_note}
 
-위 평가 기준을 바탕으로 사용자가 업로드한 수업 지도안을 다음 5개 항목으로 체계적으로 평가해주세요:
+{task_intro}
 
 1. 교육과정 목표 및 성격과의 부합
 2. 내용 체계 및 성취기준 달성
@@ -500,8 +552,10 @@ class LessonPlanAnalysisService:
     def _post_process_report(self, report: str) -> str:
         """
         보고서 후처리:
-        1. 'Vector Search 참고 자료' 섹션이 비구조화된 긴 텍스트일 경우 목록으로 정리
-        2. 본문 전체에서 이모지/픽토그램 제거 (LLM이 출력했더라도 일관된 텍스트 형식 유지)
+        1. 'Vector Search 참고 자료' 섹션이 비구조화된 긴 텍스트일 경우
+           목록으로 정리
+        2. 본문 전체에서 이모지/픽토그램 제거
+           (LLM이 출력했더라도 일관된 텍스트 형식 유지)
 
         Args:
             report: 원본 Markdown 보고서
@@ -510,8 +564,6 @@ class LessonPlanAnalysisService:
             후처리된 보고서
         """
         import re
-
-        from app.utils.text_sanitizer import strip_emojis
 
         try:
             # 1) "Vector Search 참고 자료" 섹션 가독성 개선
@@ -546,7 +598,8 @@ class LessonPlanAnalysisService:
                         + report[match.end():]
                     )
 
-            # 2) 본문 이모지 제거 (블록 인용 라인은 보존 — 사용자 문서 인용 충실성 유지)
+            # 2) 본문 이모지 제거. 블록 인용 라인은 사용자 문서
+            # 인용 충실성을 위해 보존한다.
             report = self._sanitize_report_lines(report)
 
             return report
@@ -562,7 +615,8 @@ class LessonPlanAnalysisService:
     def _sanitize_report_lines(self, report: str) -> str:
         """
         보고서를 살균한다 — 비-인용 라인들은 멀티라인 블록 단위로 묶어 한 번에
-        strip_emojis 를 호출하여, 굵은 영역(`**...**`) 이 여러 줄에 걸친 경우에도
+        strip_emojis 를 호출하여, 굵은 영역(`**...**`) 이 여러 줄에
+        걸친 경우에도
         잔여 공백 정리가 작동하게 한다. 인용 블록(`> **수업 지도안**: ...` 진입,
         새 라벨 또는 비-`>` 라인 만날 때까지) 라인은 verbatim 보존한다.
         """
@@ -570,13 +624,13 @@ class LessonPlanAnalysisService:
 
         from app.utils.text_sanitizer import strip_emojis
 
-        # 모델이 라벨을 장식하거나 띄어쓰기를 사용해도(예: '> **📄 수업 지도안**:')
-        # 인용으로 인정.
+        # 모델이 라벨을 장식하거나 띄어쓰기를 사용해도
+        # (예: '> **📄 수업 지도안**:') 인용으로 인정.
         citation_start = re.compile(
             r"^\s*>\s*\*\*[^*]*수업\s*지도안[^*]*\*\*"
         )
-        # 새 라벨은 '> **<텍스트>**:' 콜론 형태로만 인식. 콜론 없는 굵은 블록인용은
-        # 인용 본문의 일부로 보존.
+        # 새 라벨은 '> **<텍스트>**:' 콜론 형태로만 인식.
+        # 콜론 없는 굵은 블록인용은 인용 본문의 일부로 보존.
         blockquote_label = re.compile(r"^\s*>\s*\*\*[^*\n]+\*\*\s*:")
         blockquote_any = re.compile(r"^\s*>")
 
@@ -604,13 +658,15 @@ class LessonPlanAnalysisService:
             else:
                 in_citation = False
                 if line.strip() == "":
-                    # 빈 줄 = 단락 경계: 누적 블록을 flush 하고 빈 줄은 그대로 유지.
+                    # 빈 줄 = 단락 경계: 누적 블록을 flush 하고
+                    # 빈 줄은 그대로 유지.
                     # 닫히지 않은 굵은 마커(`**강점` 같은) 가 다음 단락의 헤더를
                     # 침범해 멀티라인 _BOLD_SPAN 이 가로질러 매칭하는 것을 방지.
                     flush_buffer()
                     sanitized.append(line)
                 else:
-                    # 비인용 라인 누적 — 단락 단위로 멀티라인 굵은 영역 정리 가능.
+                    # 비인용 라인 누적: 단락 단위로 멀티라인
+                    # 굵은 영역 정리 가능.
                     buffer.append(line)
 
         flush_buffer()
@@ -666,7 +722,10 @@ class LessonPlanAnalysisService:
 
                         citations["grounding_chunks"].append(citation_info)
 
-                logger.debug(f"Citations 추출 완료: {len(citations['grounding_chunks'])}개")
+                logger.debug(
+                    "Citations 추출 완료: "
+                    f"{len(citations['grounding_chunks'])}개"
+                )
 
         except Exception as e:
             logger.warning(f"Citation 추출 실패: {e}")

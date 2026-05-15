@@ -4,13 +4,12 @@
 """
 from sqlalchemy import (
     Column,
+    DateTime,
+    ForeignKey,
     Index,
     Integer,
     String,
-    Text,
     text,
-    DateTime,
-    ForeignKey,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func

@@ -2,15 +2,15 @@
 import pytest
 import pytest_asyncio
 from sqlalchemy import inspect, select, text
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.db import Base
-from app.models.lessonplan_uploads import LessonPlanUpload
-from app.models.users import User
-from app.models.analysis_reports import AnalysisReport
 from app.migrations.lessonplan_uploads_table import (
     ensure_lessonplan_uploads_table,
 )
+from app.models.analysis_reports import AnalysisReport
+from app.models.lessonplan_uploads import LessonPlanUpload
+from app.models.users import User
 
 
 @pytest_asyncio.fixture
@@ -97,7 +97,7 @@ async def test_ensure_lessonplan_uploads_table_is_idempotent(tmp_path):
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    added1 = await ensure_lessonplan_uploads_table(eng)
+    await ensure_lessonplan_uploads_table(eng)
     added2 = await ensure_lessonplan_uploads_table(eng)
 
     # Either may report True the first time (depending on whether

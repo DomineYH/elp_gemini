@@ -22,11 +22,11 @@ from app.db import engine
 from app.middleware import AuthMiddleware
 from app.migrations import (
     drop_invite_codes_table,
-    ensure_criteria_file_path_column,
     ensure_criteria_display_alias_column,
+    ensure_criteria_file_path_column,
+    ensure_lessonplan_uploads_table,
     ensure_user_profiles_table,
     ensure_users_lockout_columns,
-    ensure_lessonplan_uploads_table,
     rename_chat_session_in_service_teacher_label,
 )
 from app.rate_limit import limiter
@@ -261,8 +261,8 @@ from app.routers import (  # noqa: E402
     qna,
     views,
 )
-from app.routers.admin import router as admin_router  # noqa: E402
 from app.routers.admin import exports as admin_exports  # noqa: E402
+from app.routers.admin import router as admin_router  # noqa: E402
 
 
 # 루트 엔드포인트 - 역할 기반 리다이렉트

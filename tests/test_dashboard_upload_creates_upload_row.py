@@ -1,17 +1,20 @@
-"""/dashboard/upload (views.upload_document) 이 LessonPlanUpload 행을 만드는지 검증."""
-import pytest
-import pytest_asyncio
+"""
+/dashboard/upload 이 LessonPlanUpload 행을 만드는지 검증.
+"""
 from io import BytesIO
 from unittest.mock import AsyncMock, patch
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
-from app.main import app
-from app.dependencies import get_current_user, get_db
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
 from app.db import Base
-from app.models.users import User
+from app.dependencies import get_current_user, get_db
+from app.main import app
 from app.models.lessonplan_uploads import LessonPlanUpload
+from app.models.users import User
 
 
 @pytest_asyncio.fixture
@@ -44,8 +47,8 @@ async def client(session_factory, tmp_path, monkeypatch):
     fake_result = {"document_id": "doc-1", "store_id": "store-1"}
     with patch(
         "app.routers.views.FileSearchService"
-    ) as MockFSS:
-        instance = MockFSS.return_value
+    ) as mock_fss:
+        instance = mock_fss.return_value
         instance.upload_document = AsyncMock(return_value=fake_result)
         instance.delete_store_by_display_name = AsyncMock(return_value=None)
 
@@ -75,7 +78,10 @@ async def client(session_factory, tmp_path, monkeypatch):
         app.dependency_overrides[get_db] = override_get_db
 
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as c:
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+        ) as c:
             yield c, session_factory
 
         app.dependency_overrides.pop(get_current_user, None)
@@ -93,8 +99,8 @@ async def test_dashboard_upload_inserts_lessonplan_upload_row(client):
 
     # Patching PdfReader because the fake bytes aren't a real PDF — we don't
     # care about text extraction for this test
-    with patch("app.routers.views.PdfReader") as MockReader:
-        instance = MockReader.return_value
+    with patch("app.routers.views.PdfReader") as mock_reader:
+        instance = mock_reader.return_value
         instance.pages = []  # extract_text loop becomes a no-op
         res = await c.post("/dashboard/upload", files=files)
 
@@ -113,3 +119,34 @@ async def test_dashboard_upload_inserts_lessonplan_upload_row(client):
         # filename should contain user + original (timestamped form)
         assert "plan.pdf" in row.filename
         assert "alice" in row.filename
+
+
+@pytest.mark.asyncio
+async def test_dashboard_upload_rejects_file_over_limit(
+    client, monkeypatch
+):
+    c, session_factory = client
+
+    from app.routers import views as views_mod
+
+    monkeypatch.setattr(views_mod, "DASHBOARD_MAX_UPLOAD_SIZE", 8)
+    files = {
+        "file": (
+            "plan.pdf",
+            BytesIO(b"%PDF-1.4\nlarger-than-limit"),
+            "application/pdf",
+        )
+    }
+
+    with patch("app.routers.views.PdfReader") as mock_reader:
+        res = await c.post("/dashboard/upload", files=files)
+
+    assert res.status_code == 400
+    assert "파일 크기는" in res.text
+    mock_reader.assert_not_called()
+
+    async with session_factory() as s:
+        rows = (
+            await s.execute(select(LessonPlanUpload))
+        ).scalars().all()
+        assert rows == []
