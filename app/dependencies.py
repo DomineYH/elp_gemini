@@ -94,3 +94,29 @@ async def get_current_admin(
         )
 
     return current_user
+
+
+async def get_app_state_repo(db=Depends(get_db)):
+    from app.repositories.app_state_repository import AppStateRepository
+
+    return AppStateRepository(db=db)
+
+
+async def require_criteria_sync_ready(
+    app_state_repo=Depends(get_app_state_repo),
+) -> None:
+    """평가기준 동기화 상태가 ok가 아니면 503."""
+    from app.repositories.app_state_repository import (
+        KEY_SYNC_STATE,
+        SYNC_STATE_OK,
+    )
+
+    state = await app_state_repo.get(KEY_SYNC_STATE)
+    if state != SYNC_STATE_OK:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "평가기준이 동기화 중이거나 사용할 수 없습니다. "
+                "관리자 페이지에서 동기화 상태를 확인하세요."
+            ),
+        )
