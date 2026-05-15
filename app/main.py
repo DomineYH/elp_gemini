@@ -22,6 +22,7 @@ from app.db import engine
 from app.middleware import AuthMiddleware
 from app.migrations import (
     drop_invite_codes_table,
+    ensure_app_state_table,
     ensure_criteria_display_alias_column,
     ensure_criteria_file_path_column,
     ensure_lessonplan_uploads_table,
@@ -200,6 +201,10 @@ async def startup_event():
         logger.info(
             "criteria.display_alias 컬럼이 자동 추가되었습니다."
         )
+
+    created = await ensure_app_state_table(engine)
+    if created:
+        logger.info("app_state 테이블이 자동 생성되었습니다.")
 
     lockout_patched = await ensure_users_lockout_columns(engine)
     if lockout_patched:
