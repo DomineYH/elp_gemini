@@ -800,15 +800,22 @@ async def reconcile_criteria(
     _admin=Depends(get_current_admin),
 ):
     """클라우드 reconcile 실행."""
+    from app.config import settings
+    from app.services.criteria_alias_map_service import CriteriaAliasMapService
+
     state_repo = AppStateRepository(db=db)
     criteria_repo = CriteriaRepository(db=db)
-    manifest_svc = CriteriaManifestService()
     vector_svc = CriteriaVectorService()
+    alias_svc = CriteriaAliasMapService(
+        client=vector_svc.file_search_service.client,
+        store_display_name=settings.FS_RUBRIC_STORE_NAME,
+    )
     svc = CriteriaReconciliationService(
-        app_state_repo=state_repo,
-        manifest_service=manifest_svc,
-        criteria_repo=criteria_repo,
+        db=db,
         vector_service=vector_svc,
+        alias_map_service=alias_svc,
+        criteria_repo=criteria_repo,
+        app_state_repo=state_repo,
     )
     result = await svc.reconcile()
     return {

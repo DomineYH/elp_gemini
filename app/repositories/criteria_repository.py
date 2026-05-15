@@ -441,3 +441,34 @@ class CriteriaRepository:
             self.db.add(Criteria(**row))
         await self.db.flush()
         logger.info("criteria bulk insert 완료: %d건", len(rows))
+
+    async def insert(
+        self,
+        *,
+        stable_id: str,
+        document_id: str,
+        title: str,
+        display_alias: Optional[str],
+        status: str,
+        created_at: Optional[str],
+        activated_at: Optional[str],
+    ) -> None:
+        """reconcile에서 사용. 호출자가 트랜잭션을 관리."""
+        row = Criteria(
+            stable_id=stable_id,
+            document_id=document_id,
+            title=title,
+            display_alias=display_alias,
+            status=status,
+            file_size=0,
+            file_path="",
+            uploaded_by="cloud-sync",
+        )
+        if created_at:
+            try:
+                row.created_at = datetime.fromisoformat(
+                    created_at.replace("Z", "+00:00")
+                )
+            except Exception:
+                pass
+        self.db.add(row)

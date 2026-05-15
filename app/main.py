@@ -194,10 +194,13 @@ _background_tasks: set[asyncio.Task] = set()
 
 async def _run_criteria_reconcile_in_background():
     """Schedule reconcile as a non-blocking task."""
+    from app.config import settings
     from app.db import async_session_maker
     from app.repositories.app_state_repository import AppStateRepository
     from app.repositories.criteria_repository import CriteriaRepository
-    from app.services.criteria_manifest_service import CriteriaManifestService
+    from app.services.criteria_alias_map_service import (
+        CriteriaAliasMapService,
+    )
     from app.services.criteria_reconciliation_service import (
         CriteriaReconciliationService,
     )
@@ -206,11 +209,17 @@ async def _run_criteria_reconcile_in_background():
     async def _task():
         try:
             async with async_session_maker() as db:
+                vector_svc = CriteriaVectorService()
+                alias_svc = CriteriaAliasMapService(
+                    client=vector_svc.file_search_service.client,
+                    store_display_name=settings.FS_RUBRIC_STORE_NAME,
+                )
                 svc = CriteriaReconciliationService(
-                    app_state_repo=AppStateRepository(db=db),
-                    manifest_service=CriteriaManifestService(),
+                    db=db,
+                    vector_service=vector_svc,
+                    alias_map_service=alias_svc,
                     criteria_repo=CriteriaRepository(db=db),
-                    vector_service=CriteriaVectorService(),
+                    app_state_repo=AppStateRepository(db=db),
                 )
                 result = await svc.reconcile()
                 await db.commit()

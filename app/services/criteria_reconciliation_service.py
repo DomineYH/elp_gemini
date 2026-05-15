@@ -1,15 +1,16 @@
-"""평가기준 클라우드 reconcile 서비스.
-
-API key 변경을 sha256 해시로 감지하고, 매니페스트 store의 내용을 기준으로
-로컬 SQLite + 업로드 캐시를 재구성한다. 동시 호출은 module-level lock으로 직렬화.
 """
+Criteria 클라우드 동기화 (v2 — alias_map 기반)
+
+설계: docs/superpowers/specs/2026-05-15-criteria-cloud-metadata-design.md §6
+"""
+from __future__ import annotations
+
 import asyncio
+import base64
 import hashlib
 import logging
-import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
 from app.config import settings
@@ -19,20 +20,10 @@ from app.repositories.app_state_repository import (
     KEY_LAST_SYNCED_AT,
     KEY_SYNC_ERROR,
     KEY_SYNC_STATE,
-    SYNC_STATE_ERROR,
-    SYNC_STATE_NEEDS_RESYNC,
-    SYNC_STATE_OK,
 )
 from app.repositories.criteria_repository import CriteriaRepository
-from app.schemas.criteria_manifest import (
-    MANIFEST_SCHEMA_VERSION,
-    Manifest,
-    ManifestEntry,
-)
-from app.services.criteria_manifest_service import (
-    CloudUnavailable,
-    CriteriaManifestService,
-)
+from app.schemas.alias_map import AliasMap, AliasMapEntry, empty_alias_map
+from app.services.criteria_alias_map_service import CriteriaAliasMapService
 from app.services.criteria_vector_service import CriteriaVectorService
 
 logger = logging.getLogger(__name__)
@@ -40,156 +31,152 @@ logger = logging.getLogger(__name__)
 _reconcile_lock = asyncio.Lock()
 
 
+def sha256_hex_of_api_key() -> str:
+    key = (settings.GOOGLE_API_KEY or "").encode("utf-8")
+    return hashlib.sha256(key).hexdigest()
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 @dataclass
 class ReconcileResult:
     ok: bool = False
     skipped: bool = False
-    count: int = 0
     error: Optional[str] = None
+    count: int = 0
 
 
 class CriteriaReconciliationService:
     def __init__(
         self,
-        app_state_repo: AppStateRepository,
-        manifest_service: CriteriaManifestService,
-        criteria_repo: CriteriaRepository,
+        db,
         vector_service: CriteriaVectorService,
-        current_api_key: Optional[str] = None,
+        alias_map_service: CriteriaAliasMapService,
+        criteria_repo: CriteriaRepository,
+        app_state_repo: AppStateRepository,
     ):
-        self.app_state = app_state_repo
-        self.manifest_svc = manifest_service
-        self.criteria_repo = criteria_repo
-        self.vector_svc = vector_service
-        self._api_key = current_api_key or settings.GOOGLE_API_KEY
-
-    @staticmethod
-    def _hash_key(api_key: Optional[str]) -> Optional[str]:
-        if not api_key:
-            return None
-        return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
-
-    def _wipe_upload_dir(self) -> None:
-        target = Path(settings.CRITERIA_UPLOAD_DIR).resolve(strict=False)
-        # symlink 거부 (디렉토리 자체가 symlink면 거부)
-        if Path(settings.CRITERIA_UPLOAD_DIR).is_symlink():
-            raise RuntimeError(
-                f"refusing to wipe symlinked upload dir: {target}"
-            )
-        if target.exists():
-            shutil.rmtree(target)
-        target.mkdir(parents=True, exist_ok=True)
+        self._db = db
+        self._vec = vector_service
+        self._alias = alias_map_service
+        self._repo = criteria_repo
+        self._state = app_state_repo
 
     async def reconcile(self) -> ReconcileResult:
         async with _reconcile_lock:
-            current_hash = self._hash_key(self._api_key)
-            stored_hash = await self.app_state.get(KEY_API_KEY_HASH)
-            stored_state = await self.app_state.get(KEY_SYNC_STATE)
+            current_hash = sha256_hex_of_api_key()
+            stored_hash = await self._state.get(KEY_API_KEY_HASH)
+            stored_state = await self._state.get(KEY_SYNC_STATE)
             key_changed = stored_hash != current_hash
 
-            if not key_changed and stored_state == SYNC_STATE_OK:
+            if not key_changed and stored_state == "ok":
                 return ReconcileResult(skipped=True)
 
             try:
-                manifest = await self.manifest_svc.fetch()
-                cloud_doc_ids = await self.vector_svc.list_document_ids()
-            except CloudUnavailable as e:
-                error_msg = str(e)
-                if key_changed:
-                    try:
-                        self._wipe_upload_dir()
-                    except Exception as wipe_err:
-                        logger.error("wipe failed: %s", wipe_err)
-                        error_msg = (
-                            f"{error_msg} (wipe also failed: {wipe_err})"
-                        )
-                        await self.app_state.set_many(
-                            {
-                                KEY_API_KEY_HASH: current_hash,
-                                KEY_SYNC_STATE: SYNC_STATE_ERROR,
-                                KEY_SYNC_ERROR: error_msg,
-                            }
-                        )
-                        return ReconcileResult(ok=False, error=error_msg)
-                    await self.criteria_repo.truncate()
-                    await self.app_state.set_many(
-                        {
-                            KEY_API_KEY_HASH: current_hash,
-                            KEY_SYNC_STATE: SYNC_STATE_ERROR,
-                            KEY_SYNC_ERROR: error_msg,
-                        }
-                    )
-                else:
-                    await self.app_state.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
-                    await self.app_state.set(KEY_SYNC_ERROR, str(e))
-                return ReconcileResult(ok=False, error=error_msg)
-
-            manifest_ids = {e.document_id for e in manifest.criteria}
-            cloud_ids = set(cloud_doc_ids)
-            orphans_in_manifest = manifest_ids - cloud_ids
-            orphans_in_cloud = cloud_ids - manifest_ids
-
-            entries: list[ManifestEntry] = [
-                e for e in manifest.criteria if e.document_id not in orphans_in_manifest
-            ]
-            for orphan_id in orphans_in_cloud:
-                entries.append(
-                    ManifestEntry(
-                        document_id=orphan_id,
-                        title=orphan_id,
-                        display_alias=None,
-                        status="uploaded",
-                    )
-                )
-
-            await self.criteria_repo.truncate()
-            await self.criteria_repo.bulk_insert(
-                [
-                    {
-                        "title": e.title,
-                        "document_id": e.document_id,
-                        "display_alias": e.display_alias,
-                        "status": e.status,
-                        "created_at": e.created_at,
-                        "activated_at": e.activated_at,
-                        "file_size": 0,
-                        "file_path": e.document_id,
-                        "uploaded_by": "<cloud-sync>",
-                    }
-                    for e in entries
-                ]
-            )
-            try:
-                self._wipe_upload_dir()
-            except Exception as e:
-                logger.error("upload dir wipe failed: %s", e)
-
-            if orphans_in_cloud:
-                repaired = Manifest(
-                    schema_version=MANIFEST_SCHEMA_VERSION,
-                    generated_at=datetime.now(tz=timezone.utc),
-                    criteria=entries,
-                )
+                # Legacy migration (Task 13 will add migrate_from_legacy_manifest).
+                # Lazy import so the absence of the module does not block reconcile.
                 try:
-                    await self.manifest_svc.upload(repaired)
-                except CloudUnavailable as e:
-                    logger.warning("self-heal manifest upload failed: %s", e)
-                    await self.app_state.set_many(
-                        {
-                            KEY_API_KEY_HASH: current_hash,
-                            KEY_LAST_SYNCED_AT: datetime.now(tz=timezone.utc).isoformat(),
-                            KEY_SYNC_STATE: SYNC_STATE_NEEDS_RESYNC,
-                            KEY_SYNC_ERROR: f"self-heal upload failed: {e}",
-                        }
+                    from app.services.criteria_legacy_migration import (  # noqa: F401
+                        migrate_from_legacy_manifest,
                     )
-                    return ReconcileResult(ok=False, count=len(entries), error=str(e))
+                    await migrate_from_legacy_manifest(
+                        client=self._vec.file_search_service.client,
+                        app_state=self._state,
+                    )
+                except ImportError:
+                    pass  # Task 13 will add this module
+                except Exception as e:
+                    logger.warning(f"legacy migration 실패 (계속 진행): {e}")
 
-            await self.app_state.set_many(
-                {
-                    KEY_API_KEY_HASH: current_hash,
-                    KEY_LAST_SYNCED_AT: datetime.now(tz=timezone.utc).isoformat(),
-                    KEY_SYNC_STATE: SYNC_STATE_OK,
-                    KEY_SYNC_ERROR: None,
+                docs = await self._vec.list_criteria_documents()
+                criteria_docs = [
+                    d for d in docs if _kv_string(d, "type") == "criteria"
+                ]
+
+                fetched = await self._alias.fetch()
+                old_doc_name, alias_map = (
+                    fetched if fetched else (None, empty_alias_map(_now_iso()))
+                )
+
+                valid_stable_ids = {
+                    _kv_string(d, "stable_id") for d in criteria_docs
                 }
-            )
-            return ReconcileResult(ok=True, count=len(entries))
+                valid_stable_ids.discard(None)
+
+                # 4a. Remove entries pointing to nonexistent docs
+                cleaned = {
+                    sid: e
+                    for sid, e in alias_map.entries.items()
+                    if sid in valid_stable_ids
+                }
+                # 4b. Synthesize entries for unmapped cloud docs
+                for d in criteria_docs:
+                    sid = _kv_string(d, "stable_id")
+                    if sid and sid not in cleaned:
+                        cleaned[sid] = AliasMapEntry(
+                            alias=None, status="uploaded", activated_at=None
+                        )
+
+                # Single re-upload if anything changed
+                if cleaned != alias_map.entries:
+                    alias_map = AliasMap(
+                        schema_version=1,
+                        updated_at=_now_iso(),
+                        entries=cleaned,
+                    )
+                    await self._alias.replace(
+                        alias_map, old_doc_name=old_doc_name
+                    )
+
+                # Rebuild local DB cache
+                async with self._db.begin():
+                    await self._repo.truncate()
+                    for d in criteria_docs:
+                        sid = _kv_string(d, "stable_id")
+                        if not sid:
+                            logger.warning(
+                                f"stable_id 없는 문서 {d['document_id']} — "
+                                f"캐시 누락"
+                            )
+                            continue
+                        entry = cleaned[sid]
+                        title_b64 = _kv_string(d, "original_title_b64") or ""
+                        try:
+                            title = (
+                                base64.b64decode(title_b64).decode("utf-8")
+                                if title_b64
+                                else d.get("display_name") or sid
+                            )
+                        except Exception:
+                            title = d.get("display_name") or sid
+                        await self._repo.insert(
+                            stable_id=sid,
+                            document_id=d["document_id"],
+                            title=title,
+                            display_alias=entry.alias,
+                            status=entry.status,
+                            created_at=_kv_string(d, "created_at"),
+                            activated_at=entry.activated_at,
+                        )
+
+                await self._state.set_many({
+                    KEY_API_KEY_HASH: current_hash,
+                    KEY_LAST_SYNCED_AT: _now_iso(),
+                    KEY_SYNC_STATE: "ok",
+                    KEY_SYNC_ERROR: None,
+                })
+                return ReconcileResult(ok=True, count=len(criteria_docs))
+
+            except Exception as e:
+                logger.error(f"reconcile 실패: {e}", exc_info=True)
+                await self._state.set_many({
+                    KEY_SYNC_STATE: "error" if key_changed else "needs_resync",
+                    KEY_SYNC_ERROR: str(e),
+                })
+                return ReconcileResult(error=str(e))
+
+
+def _kv_string(doc: dict, key: str) -> Optional[str]:
+    sv, _ = doc.get("custom_metadata_kv", {}).get(key, (None, []))
+    return sv
