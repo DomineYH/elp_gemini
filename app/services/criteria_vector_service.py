@@ -128,54 +128,32 @@ class CriteriaVectorService:
             logger.error(f"평가기준 검색 실패: {str(e)}")
             raise
 
-    async def list_criteria_documents(self) -> List[Dict[str, str]]:
+    async def list_criteria_documents(self) -> List[Dict[str, Any]]:
         """
-        현재 저장된 평가기준 문서 목록 조회
+        rubric-store 모든 문서를 메타데이터와 함께 반환.
 
-        Returns:
-            문서 정보 리스트
-            - document_id: 문서 ID
-            - display_name: 표시 이름
+        반환 형식:
+          [{document_id, display_name, custom_metadata_kv: {key: (string_value, [string_list_values])}}]
         """
-        try:
-            client = self.file_search_service.client
-            store = None
+        from app.services.criteria_alias_map_service import _read_metadata_kv
 
-            # Store 찾기
-            for s in client.file_search_stores.list():
-                if s.display_name == self.store_name:
-                    store = s
-                    break
+        client = self.file_search_service.client
+        store = next(
+            (s for s in client.file_search_stores.list() if s.display_name == self.store_name),
+            None,
+        )
+        if not store:
+            logger.warning(f"rubric-store 미존재: {self.store_name}")
+            return []
 
-            if not store:
-                logger.warning(
-                    f"평가기준 Store를 찾을 수 없습니다: "
-                    f"{self.store_name}"
-                )
-                return []
-
-            # Store 내 문서 목록 조회
-            # 수정: 올바른 API는 documents.list(parent=...)
-            documents = []
-            for doc in client.file_search_stores.documents.list(
-                parent=store.name
-            ):
-                documents.append(
-                    {
-                        "document_id": doc.name,
-                        "display_name": doc.display_name
-                        if hasattr(doc, "display_name")
-                        else "Unknown",
-                    }
-                )
-
-            logger.info(
-                f"평가기준 문서 목록 조회: {len(documents)}개"
-            )
-            return documents
-        except Exception as e:
-            logger.error(f"문서 목록 조회 실패: {str(e)}")
-            raise
+        documents = []
+        for doc in client.file_search_stores.documents.list(parent=store.name):
+            documents.append({
+                "document_id": doc.name,
+                "display_name": getattr(doc, "display_name", None),
+                "custom_metadata_kv": _read_metadata_kv(getattr(doc, "custom_metadata", None)),
+            })
+        return documents
 
     async def list_document_ids(self) -> List[str]:
         """클라우드에 있는 문서 ID 목록만 반환."""
