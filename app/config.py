@@ -136,6 +136,12 @@ class Settings(BaseSettings):
         description="평가 기준 파일 업로드 디렉토리",
     )
 
+    # Criteria Cloud Reconcile
+    CRITERIA_CLOUD_RECONCILE_ENABLED: bool = Field(
+        default=True,
+        description="평가기준 클라우드 reconcile 활성화 (긴급 차단 시 False)",
+    )
+
     # 관리자 로그인 brute-force 방어 (Issue #5)
     RATE_LIMIT_ENABLED: bool = Field(
         default=True,

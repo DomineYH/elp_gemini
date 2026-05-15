@@ -2,6 +2,7 @@
 FastAPI 애플리케이션 메인 엔트리포인트
 미들웨어, 라우터, 예외 핸들러 설정
 """
+import asyncio
 import logging
 
 from fastapi import FastAPI, HTTPException, Request
@@ -187,6 +188,38 @@ async def _drop_legacy_invite_codes_table_if_enabled(db_engine) -> bool:
     return invite_codes_dropped
 
 
+async def _run_criteria_reconcile_in_background():
+    """Schedule reconcile as a non-blocking task."""
+    from app.db import async_session_maker
+    from app.repositories.app_state_repository import AppStateRepository
+    from app.repositories.criteria_repository import CriteriaRepository
+    from app.services.criteria_manifest_service import CriteriaManifestService
+    from app.services.criteria_reconciliation_service import (
+        CriteriaReconciliationService,
+    )
+    from app.services.criteria_vector_service import CriteriaVectorService
+
+    async def _task():
+        try:
+            async with async_session_maker() as db:
+                svc = CriteriaReconciliationService(
+                    app_state_repo=AppStateRepository(db=db),
+                    manifest_service=CriteriaManifestService(),
+                    criteria_repo=CriteriaRepository(db=db),
+                    vector_service=CriteriaVectorService(),
+                )
+                result = await svc.reconcile()
+                await db.commit()
+                logger.info(
+                    "startup reconcile result: ok=%s skipped=%s count=%d err=%s",
+                    result.ok, result.skipped, result.count, result.error,
+                )
+        except Exception:
+            logger.exception("startup reconcile crashed")
+
+    asyncio.create_task(_task())
+
+
 @app.on_event("startup")
 async def startup_event():
     """애플리케이션 시작 시 실행"""
@@ -239,6 +272,9 @@ async def startup_event():
         logger.info("데이터베이스 초기화 완료")
 
     await _drop_legacy_invite_codes_table_if_enabled(engine)
+
+    if settings.CRITERIA_CLOUD_RECONCILE_ENABLED:
+        await _run_criteria_reconcile_in_background()
 
 
 @app.on_event("shutdown")
