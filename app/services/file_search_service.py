@@ -3,8 +3,12 @@ Google File Search 서비스
 문서 업로드, 인덱싱, RAG 쿼리
 """
 import asyncio
+import io
 import logging
+import os
 import re
+import tempfile
+import time
 import unicodedata
 from datetime import datetime
 from typing import Optional, Dict, Any
@@ -552,7 +556,6 @@ class FileSearchService:
         if hasattr(doc, "content") and doc.content:
             return doc.content
         # Fallback: download via the raw API
-        import io
         buffer = io.BytesIO()
         self.client.files.download(file=document_name, buffer=buffer)
         return buffer.getvalue()
@@ -576,13 +579,10 @@ class FileSearchService:
                 )
                 break
         # 새 문서 업로드 (임시 파일 경유)
-        import tempfile, os
-        with tempfile.NamedTemporaryFile(
-            suffix=".json", delete=False
-        ) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
+        tmp_path = tempfile.mktemp(suffix=".json")
         try:
+            with open(tmp_path, "wb") as f:
+                f.write(content)
             operation = (
                 self.client.file_search_stores.upload_to_file_search_store(
                     file_search_store_name=store_id,
@@ -597,21 +597,25 @@ class FileSearchService:
                     },
                 )
             )
-            # 동기 폴링 (짧은 파일이므로)
-            import time
-            deadline = time.time() + 30
-            while not operation.done and time.time() < deadline:
+            deadline = time.monotonic() + 30
+            while not operation.done:
+                if time.monotonic() > deadline:
+                    raise TimeoutError(
+                        "manifest indexing did not finish in 30s"
+                    )
                 await asyncio.sleep(1)
-                try:
-                    operation = self.client.operations.get(operation)
-                except Exception:
-                    break
-            doc_id = getattr(
-                operation.response, "document_name", None
-            ) or getattr(operation, "response", "")
+                operation = self.client.operations.get(operation)
+            doc_id = getattr(operation.response, "document_name", None)
+            if not doc_id:
+                raise RuntimeError(
+                    "manifest upload returned no document_name"
+                )
             return doc_id
         finally:
-            os.unlink(tmp_path)
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     def _extract_citations(
         self, response

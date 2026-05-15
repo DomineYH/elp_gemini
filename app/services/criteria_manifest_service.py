@@ -37,7 +37,7 @@ class CriteriaManifestService:
             )
             docs = await self.file_search_service.list_documents(store_id)
         except Exception as exc:
-            logger.warning("manifest fetch failed: %s", exc)
+            logger.warning("매니페스트 fetch 실패: %s", exc)
             raise CloudUnavailable(str(exc)) from exc
 
         manifest_doc = next(
@@ -58,23 +58,23 @@ class CriteriaManifestService:
         return Manifest.model_validate_json(raw_bytes)
 
     async def upload(self, manifest: Manifest) -> None:
+        payload = manifest.model_dump_json(by_alias=True).encode("utf-8")
         try:
             store_id, _ = await self.file_search_service.get_or_create_store(
                 self.store_name
             )
-            payload = manifest.model_dump_json(by_alias=True).encode("utf-8")
             await self.file_search_service.replace_single_document(
                 store_id=store_id,
                 display_name=MANIFEST_FILENAME,
                 content=payload,
                 mime_type="application/json",
             )
-            logger.info(
-                "매니페스트 업로드 완료 (criteria=%d)", len(manifest.criteria)
-            )
         except Exception as exc:
-            logger.error("manifest upload failed: %s", exc)
+            logger.error("매니페스트 upload 실패: %s", exc)
             raise CloudUnavailable(str(exc)) from exc
+        logger.info(
+            "매니페스트 업로드 완료 (criteria=%d)", len(manifest.criteria)
+        )
 
     async def publish_from_db(
         self, criteria_repo: "CriteriaRepository"
