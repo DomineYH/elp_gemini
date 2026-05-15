@@ -1,5 +1,5 @@
 # tests/test_startup_reconcile.py
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 

@@ -188,6 +188,9 @@ async def _drop_legacy_invite_codes_table_if_enabled(db_engine) -> bool:
     return invite_codes_dropped
 
 
+_background_tasks: set[asyncio.Task] = set()
+
+
 async def _run_criteria_reconcile_in_background():
     """Schedule reconcile as a non-blocking task."""
     from app.db import async_session_maker
@@ -211,13 +214,15 @@ async def _run_criteria_reconcile_in_background():
                 result = await svc.reconcile()
                 await db.commit()
                 logger.info(
-                    "startup reconcile result: ok=%s skipped=%s count=%d err=%s",
+                    "startup reconcile 결과: ok=%s skipped=%s count=%d err=%s",
                     result.ok, result.skipped, result.count, result.error,
                 )
         except Exception:
-            logger.exception("startup reconcile crashed")
+            logger.exception("startup reconcile 실패")
 
-    asyncio.create_task(_task())
+    task = asyncio.create_task(_task())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 @app.on_event("startup")
