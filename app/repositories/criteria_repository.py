@@ -129,6 +129,24 @@ class CriteriaRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_criteria_by_stable_id(
+        self, stable_id: str
+    ) -> Optional[Criteria]:
+        """
+        stable_id로 평가기준 1행을 조회
+
+        Args:
+            stable_id: 클라우드 진실의 원천 고유 ID (ULID)
+
+        Returns:
+            Criteria 객체 또는 None
+        """
+        result = await self.db.execute(
+            select(Criteria)
+            .where(Criteria.stable_id == stable_id)
+        )
+        return result.scalar_one_or_none()
+
     async def delete_criteria(
         self, criteria_id: int
     ) -> bool:
