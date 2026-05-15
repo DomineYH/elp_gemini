@@ -2,12 +2,11 @@
 import csv
 import inspect
 import io
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
 from sqlalchemy.ext.asyncio import (
-    AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
@@ -41,8 +40,8 @@ async def db_session():
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    Session = async_sessionmaker(engine, expire_on_commit=False)
-    async with Session() as session:
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
         yield session
     await engine.dispose()
 
@@ -110,7 +109,7 @@ async def test_collect_filters_by_region(db_session):
 
 @pytest.mark.asyncio
 async def test_collect_filters_by_date_range(db_session):
-    user = await _seed_user(
+    await _seed_user(
         db_session, user_id=1, email="a@x.com",
         role="teacher", region="서울", tenure=5,
     )
@@ -459,7 +458,7 @@ async def test_collect_lessonplans_includes_orphan_uploads(
         db_session, lessonplan_base_dir=str(tmp_path)
     )
     plan = await svc.collect(ExportFilters())
-    originals = {l.original_name for l in plan.lessonplans}
+    originals = {entry.original_name for entry in plan.lessonplans}
     assert originals == {"orphan_지도안.pdf", "another.pdf"}
 
 
@@ -563,7 +562,8 @@ async def test_collect_lessonplans_resolves_dashboard_upload_source(
     plan = await svc.collect(ExportFilters())
 
     matches = [
-        l for l in plan.lessonplans if l.original_name == "plan.pdf"
+        entry for entry in plan.lessonplans
+        if entry.original_name == "plan.pdf"
     ]
     assert len(matches) == 1
     lessonplan = matches[0]
@@ -620,7 +620,8 @@ async def test_collect_lessonplans_resolves_synthetic_upload_legacy_source(
     )
 
     matches = [
-        l for l in plan.lessonplans if l.original_name == "legacy.pdf"
+        entry for entry in plan.lessonplans
+        if entry.original_name == "legacy.pdf"
     ]
     assert len(matches) == 1
     lessonplan = matches[0]
@@ -684,8 +685,8 @@ async def test_collect_lessonplans_includes_upload_without_report(
     lessonplans = await svc._collect_lessonplans([user], ExportFilters())
 
     matches = [
-        l for l in lessonplans
-        if l.original_name == "unanalyzed.pdf"
+        entry for entry in lessonplans
+        if entry.original_name == "unanalyzed.pdf"
     ]
     assert len(matches) == 1
     lessonplan = matches[0]
@@ -713,7 +714,9 @@ async def test_collect_lessonplans_respects_username_prefix(
         db_session, lessonplan_base_dir=str(tmp_path)
     )
     plan = await svc.collect(ExportFilters(user_ids=[1]))
-    assert {l.original_name for l in plan.lessonplans} == {"mine.pdf"}
+    assert {
+        entry.original_name for entry in plan.lessonplans
+    } == {"mine.pdf"}
 
 
 @pytest.mark.asyncio

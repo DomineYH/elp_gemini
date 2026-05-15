@@ -4,9 +4,9 @@ app/static/reports/ 디렉토리에 분석 보고서 파일 관리
 """
 import logging
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +145,10 @@ class ReportStorageService:
             # 생성 시간 기준 내림차순 정렬 (최신 순)
             reports.sort(key=lambda x: x["created_at"], reverse=True)
 
-            logger.info(f"보고서 목록 조회: username={username}, {len(reports)}개")
+            logger.info(
+                f"보고서 목록 조회: username={username}, "
+                f"{len(reports)}개"
+            )
             return reports
         except Exception as e:
             logger.error(f"보고서 목록 조회 실패: {str(e)}")

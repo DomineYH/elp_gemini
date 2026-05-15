@@ -1,24 +1,25 @@
 """
 수업 지도안 분석 라우터
 """
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse, JSONResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from pathlib import Path
 
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse, JSONResponse
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.dependencies import get_current_user, get_db
-from app.services.lessonplan_analysis_service import LessonPlanAnalysisService
-from app.schemas.lessonplan_analysis import (
-    LessonPlanAnalysisRequest,
-    LessonPlanAnalysisResponse
-)
+from app.models.analysis_reports import AnalysisReport
+from app.models.users import User
 from app.schemas.analysis_reports import (
     AnalysisReportItem,
-    AnalysisReportListResponse
+    AnalysisReportListResponse,
 )
-from app.models.users import User
-from app.models.analysis_reports import AnalysisReport
+from app.schemas.lessonplan_analysis import (
+    LessonPlanAnalysisRequest,
+    LessonPlanAnalysisResponse,
+)
+from app.services.lessonplan_analysis_service import LessonPlanAnalysisService
 
 router = APIRouter(prefix="/api/lessonplan", tags=["lessonplan"])
 

@@ -1,5 +1,4 @@
 """AdminDeletionService 단위 테스트."""
-from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -803,6 +802,7 @@ async def test_delete_chat_session_cascades_messages(seeded):
 
     async with TestingSessionLocal() as db:
         from sqlalchemy import select
+
         from app.models.chat_messages import ChatMessage
         msg_rows = await db.execute(select(ChatMessage))
         assert msg_rows.scalars().all() == []
@@ -981,8 +981,8 @@ async def test_bulk_delete_sessions_requires_ownership(seeded):
     """타 사용자 세션이 섞이면 0건 삭제 + ValueError."""
     async with TestingSessionLocal() as db:
         # 두 번째 사용자 + 세션 생성
-        from app.models.users import User
         from app.models.chat_sessions import ChatSession
+        from app.models.users import User
         other = User(
             username="stu2",
             nickname="S2",

@@ -1,9 +1,10 @@
 """
 분석 보고서 스키마
 """
-from pydantic import BaseModel, Field
-from typing import List, Optional
 from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class AnalysisReportItem(BaseModel):

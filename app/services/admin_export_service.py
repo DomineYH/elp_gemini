@@ -30,7 +30,6 @@ from app.utils.admin_export_naming import (
     slugify_original_name,
 )
 
-
 LESSONPLAN_BASE_DIR = "data/lessonplan"
 STATIC_UPLOADS_DIR = "app/static/uploads"
 
@@ -558,9 +557,9 @@ class AdminExportService:
     def _emit_lessonplans(self, zf, buf, plan):
         if "lessonplans" not in plan.filters.include:
             return
-        for l in plan.lessonplans:
-            data, _ = _read_file_or_missing(l.source_path)
-            zf.writestr(l.archive_path, data)
+        for lessonplan in plan.lessonplans:
+            data, _ = _read_file_or_missing(lessonplan.source_path)
+            zf.writestr(lessonplan.archive_path, data)
             yield buf.take()
 
 
@@ -705,8 +704,8 @@ def build_users_csv(plan: ExportPlan) -> bytes:
         counts[r.user_id]["r"] += 1
     for s in plan.sessions:
         counts[s.user_id]["s"] += 1
-    for l in plan.lessonplans:
-        counts[l.user_id]["l"] += 1
+    for lessonplan in plan.lessonplans:
+        counts[lessonplan.user_id]["l"] += 1
 
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=_USERS_COLUMNS)
@@ -748,7 +747,7 @@ def build_readme(plan: ExportPlan) -> bytes:
         f"  career_max={plan.filters.career_max}",
         f"  include={sorted(plan.filters.include)}",
         "",
-        f"Counts:",
+        "Counts:",
         f"  users={len(plan.users)}",
         f"  reports={len(plan.reports)}",
         f"  conversations={len(plan.sessions)}",

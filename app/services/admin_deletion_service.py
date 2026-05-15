@@ -181,7 +181,8 @@ class AdminDeletionService:
         bad = [s.id for s in sessions if s.user_id != user_id]
         if len(sessions) != len(session_ids) or bad:
             raise ValueError(
-                "요청한 세션 중 일부가 해당 사용자 소유가 아니거나 존재하지 않습니다."
+                "요청한 세션 중 일부가 해당 사용자 소유가 아니거나 "
+                "존재하지 않습니다."
             )
 
         for session in sessions:
@@ -225,7 +226,8 @@ class AdminDeletionService:
         bad = [r.id for r in reports if r.user_id != user_id]
         if len(reports) != len(report_ids) or bad:
             raise ValueError(
-                "요청한 보고서 중 일부가 해당 사용자 소유가 아니거나 존재하지 않습니다."
+                "요청한 보고서 중 일부가 해당 사용자 소유가 아니거나 "
+                "존재하지 않습니다."
             )
 
         # delete_user와 동일 순서: DB commit 먼저, 그 다음 파일 제거.

@@ -1,11 +1,12 @@
 """lessonplan_analysis 라우터의 429 RESOURCE_EXHAUSTED 분기 테스트"""
+from unittest.mock import AsyncMock, patch
+
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock, patch
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
-from app.main import app
 from app.dependencies import get_current_user, get_db
+from app.main import app
 from app.models.users import User
 
 
@@ -44,8 +45,8 @@ async def test_analyze_returns_429_on_resource_exhausted(client):
 
     with patch(
         "app.routers.lessonplan_analysis.LessonPlanAnalysisService"
-    ) as MockService:
-        instance = MockService.return_value
+    ) as mock_service:
+        instance = mock_service.return_value
         instance.analyze_lesson_plan = AsyncMock(return_value=mock_result)
 
         res = await client.post(
@@ -65,8 +66,8 @@ async def test_analyze_returns_500_on_generic_error(client):
 
     with patch(
         "app.routers.lessonplan_analysis.LessonPlanAnalysisService"
-    ) as MockService:
-        instance = MockService.return_value
+    ) as mock_service:
+        instance = mock_service.return_value
         instance.analyze_lesson_plan = AsyncMock(return_value=mock_result)
 
         res = await client.post(
@@ -90,8 +91,8 @@ async def test_analyze_returns_409_on_already_analyzed(client):
 
     with patch(
         "app.routers.lessonplan_analysis.LessonPlanAnalysisService"
-    ) as MockService:
-        instance = MockService.return_value
+    ) as mock_service:
+        instance = mock_service.return_value
         instance.analyze_lesson_plan = AsyncMock(return_value=mock_result)
 
         res = await client.post(

@@ -1,8 +1,6 @@
 """LessonPlanStorageService 추가 동작 테스트."""
 import hashlib
 
-import pytest
-
 from app.services.lessonplan_storage_service import (
     LessonPlanStorageService,
 )
