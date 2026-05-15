@@ -9,6 +9,7 @@ import os
 import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Iterable, Iterator
 
 from sqlalchemy import select
@@ -18,6 +19,7 @@ from sqlalchemy.orm import contains_eager, joinedload, selectinload
 from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage
 from app.models.chat_sessions import ChatSession
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.user_profiles import UserProfile
 from app.models.users import User
 from app.schemas.admin_export import ExportFilters
@@ -28,8 +30,8 @@ from app.utils.admin_export_naming import (
     slugify_original_name,
 )
 
-
 LESSONPLAN_BASE_DIR = "data/lessonplan"
+STATIC_UPLOADS_DIR = "app/static/uploads"
 
 
 @dataclass(frozen=True)
@@ -78,7 +80,7 @@ class LessonplanEntry:
     created_at: datetime
     original_name: str
     archive_path: str
-    source_path: str  # data/lessonplan/<filename>
+    source_path: str  # on-disk lessonplan path
     source_status: str = "OK"
 
 
@@ -100,9 +102,11 @@ class AdminExportService:
         self,
         db: AsyncSession,
         lessonplan_base_dir: str = LESSONPLAN_BASE_DIR,
+        static_uploads_dir: str = STATIC_UPLOADS_DIR,
     ):
         self.db = db
         self._lessonplan_base_dir = lessonplan_base_dir
+        self._static_uploads_dir = static_uploads_dir
 
     async def collect(self, filters: ExportFilters) -> ExportPlan:
         users = await self._collect_users(filters)
@@ -276,11 +280,12 @@ class AdminExportService:
     ) -> list[LessonplanEntry]:
         """원본 지도안 파일을 파일시스템에서 열거하고 보고서 참조도 보강.
 
-        스토리지 컨벤션: data/lessonplan/{username}_{원본명}
+        스토리지 컨벤션:
+        - dashboard: app/static/uploads/{username}_{timestamp}_{원본명}
+        - legacy: data/lessonplan/{username}_{원본명}
         """
         if "lessonplans" not in filters.include:
             return []
-        from pathlib import Path
 
         base = Path(self._lessonplan_base_dir)
         entries: list[LessonplanEntry] = []
@@ -368,7 +373,10 @@ class AdminExportService:
                 continue
             ctx = ctx_by_id[r.user_id]
             original = r.lessonplan_original_name or r.lessonplan_filename
-            source_path = base / r.lessonplan_filename
+            source_path = self._resolve_lessonplan_source_path(
+                r.lessonplan_filename,
+                upload_id=r.upload_id,
+            )
             archive_name = (
                 f"{ctx.filename_prefix}__lessonplan_{r.id}__"
                 f"{slugify_original_name(original)}"
@@ -389,7 +397,70 @@ class AdminExportService:
                 )
             )
             seen.add(key)
+
+        upload_stmt = (
+            select(LessonPlanUpload)
+            .where(LessonPlanUpload.user_id.in_(user_ids))
+            .order_by(LessonPlanUpload.created_at.asc())
+        )
+        if filters.date_from:
+            upload_stmt = upload_stmt.where(
+                LessonPlanUpload.created_at
+                >= datetime.combine(
+                    filters.date_from, datetime.min.time()
+                )
+            )
+        if filters.date_to:
+            upload_stmt = upload_stmt.where(
+                LessonPlanUpload.created_at
+                < datetime.combine(
+                    filters.date_to, datetime.min.time()
+                ) + timedelta(days=1)
+            )
+        uploads = (await self.db.execute(upload_stmt)).scalars().all()
+
+        for upload in uploads:
+            key = (upload.user_id, upload.filename)
+            if key in seen:
+                continue
+            ctx = ctx_by_id[upload.user_id]
+            original = upload.original_filename or upload.filename
+            source_path = self._resolve_lessonplan_source_path(
+                upload.filename,
+                upload_id=upload.id,
+            )
+            archive_name = (
+                f"{ctx.filename_prefix}__lessonplan_{upload.id}__"
+                f"{slugify_original_name(original)}"
+            )
+            entries.append(
+                LessonplanEntry(
+                    kind="lessonplan",
+                    user_id=upload.user_id,
+                    resource_id=upload.id,
+                    session_id=None,
+                    created_at=upload.created_at,
+                    original_name=original,
+                    archive_path=f"lessonplans/{archive_name}",
+                    source_path=str(source_path),
+                    source_status=(
+                        "OK" if source_path.is_file() else "MISSING"
+                    ),
+                )
+            )
+            seen.add(key)
         return entries
+
+    def _resolve_lessonplan_source_path(
+        self,
+        filename: str,
+        upload_id: int | None,
+    ) -> Path:
+        safe_name = Path(filename).name
+        upload_path = Path(self._static_uploads_dir) / safe_name
+        if upload_path.is_file():
+            return upload_path
+        return Path(self._lessonplan_base_dir) / safe_name
 
     async def _collect_sessions(
         self, user_ids, ctx_by_id, filters
@@ -486,9 +557,9 @@ class AdminExportService:
     def _emit_lessonplans(self, zf, buf, plan):
         if "lessonplans" not in plan.filters.include:
             return
-        for l in plan.lessonplans:
-            data, _ = _read_file_or_missing(l.source_path)
-            zf.writestr(l.archive_path, data)
+        for lessonplan in plan.lessonplans:
+            data, _ = _read_file_or_missing(lessonplan.source_path)
+            zf.writestr(lessonplan.archive_path, data)
             yield buf.take()
 
 
@@ -633,8 +704,8 @@ def build_users_csv(plan: ExportPlan) -> bytes:
         counts[r.user_id]["r"] += 1
     for s in plan.sessions:
         counts[s.user_id]["s"] += 1
-    for l in plan.lessonplans:
-        counts[l.user_id]["l"] += 1
+    for lessonplan in plan.lessonplans:
+        counts[lessonplan.user_id]["l"] += 1
 
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=_USERS_COLUMNS)
@@ -676,7 +747,7 @@ def build_readme(plan: ExportPlan) -> bytes:
         f"  career_max={plan.filters.career_max}",
         f"  include={sorted(plan.filters.include)}",
         "",
-        f"Counts:",
+        "Counts:",
         f"  users={len(plan.users)}",
         f"  reports={len(plan.reports)}",
         f"  conversations={len(plan.sessions)}",

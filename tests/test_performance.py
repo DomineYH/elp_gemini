@@ -194,7 +194,7 @@ class PerformanceTest:
                         "file": (test_file.name, f, "application/pdf")
                     }
                     upload_resp = await client.post(
-                        f"{self.base_url}/api/lessonplans/upload",
+                        f"{self.base_url}/dashboard/upload",
                         files=files,
                     )
 

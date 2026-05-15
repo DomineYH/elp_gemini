@@ -22,8 +22,9 @@ from app.db import engine
 from app.middleware import AuthMiddleware
 from app.migrations import (
     drop_invite_codes_table,
-    ensure_criteria_file_path_column,
     ensure_criteria_display_alias_column,
+    ensure_criteria_file_path_column,
+    ensure_lessonplan_uploads_table,
     ensure_user_profiles_table,
     ensure_users_lockout_columns,
     rename_chat_session_in_service_teacher_label,
@@ -212,6 +213,12 @@ async def startup_event():
             "user_profiles 테이블이 자동 생성되었습니다."
         )
 
+    uploads_patched = await ensure_lessonplan_uploads_table(engine)
+    if uploads_patched:
+        logger.info(
+            "lessonplan_uploads / analysis_reports.upload_id 자동 적용"
+        )
+
     renamed = await rename_chat_session_in_service_teacher_label(engine)
     if renamed:
         logger.info(
@@ -251,12 +258,11 @@ from app.routers import (  # noqa: E402
     auth,
     evaluations,
     lessonplan_analysis,
-    lessonplans,
     qna,
     views,
 )
-from app.routers.admin import router as admin_router  # noqa: E402
 from app.routers.admin import exports as admin_exports  # noqa: E402
+from app.routers.admin import router as admin_router  # noqa: E402
 
 
 # 루트 엔드포인트 - 역할 기반 리다이렉트
@@ -290,7 +296,6 @@ async def root(request: Request):
 
 # 라우터 등록
 app.include_router(auth.router, tags=["인증"])
-app.include_router(lessonplans.router)
 app.include_router(qna.router)
 app.include_router(evaluations.router)
 app.include_router(lessonplan_analysis.router)

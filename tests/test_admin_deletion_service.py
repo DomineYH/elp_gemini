@@ -1,13 +1,14 @@
 """AdminDeletionService 단위 테스트."""
-from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 
 from app.db import Base
 from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage, MessageRole
 from app.models.chat_sessions import ChatSession
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
 from app.routers.views import _sanitize_display_name
 from app.services.admin_deletion_service import AdminDeletionService
@@ -145,6 +146,37 @@ async def test_delete_user_cascades_and_removes_files(seeded):
     assert not seeded["report_file"].exists()
     assert not seeded["lessonplan_file"].exists()
     assert not seeded["dashboard_upload_file"].exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_user_cascades_lessonplan_upload_rows(seeded):
+    async with TestingSessionLocal() as db:
+        upload = LessonPlanUpload(
+            user_id=seeded["user_id"],
+            filename="stu1_20260101000000_uploaded.pdf",
+            original_filename="uploaded.pdf",
+            file_hash="b" * 64,
+        )
+        db.add(upload)
+        await db.commit()
+        upload_id = upload.id
+
+    async with TestingSessionLocal() as db:
+        service = AdminDeletionService(db)
+        result = await service.delete_user(
+            target_user_id=seeded["user_id"],
+            current_admin_id=seeded["admin_id"],
+        )
+
+    assert result["ok"] is True
+
+    async with TestingSessionLocal() as db:
+        remaining = await db.execute(
+            select(LessonPlanUpload).where(
+                LessonPlanUpload.id == upload_id
+            )
+        )
+        assert remaining.scalar_one_or_none() is None
 
 
 @pytest.mark.asyncio
@@ -770,6 +802,7 @@ async def test_delete_chat_session_cascades_messages(seeded):
 
     async with TestingSessionLocal() as db:
         from sqlalchemy import select
+
         from app.models.chat_messages import ChatMessage
         msg_rows = await db.execute(select(ChatMessage))
         assert msg_rows.scalars().all() == []
@@ -859,12 +892,97 @@ async def test_delete_analysis_report_removes_unreferenced_lessonplan(seeded):
 
 
 @pytest.mark.asyncio
+async def test_delete_analysis_report_removes_synthetic_upload_legacy_file(
+    seeded,
+    tmp_path,
+):
+    legacy_file = (
+        seeded["lessonplan_file"].parent
+        / "stu1_20260102000000_legacy.pdf"
+    )
+    legacy_file.write_bytes(b"%PDF-1.4\n")
+    assert not (seeded["static_uploads_dir"] / legacy_file.name).exists()
+    report_file = tmp_path / "synthetic_report.md"
+    report_file.write_text("# synthetic", encoding="utf-8")
+
+    async with TestingSessionLocal() as db:
+        upload = LessonPlanUpload(
+            user_id=seeded["user_id"],
+            filename=legacy_file.name,
+            original_filename="legacy.pdf",
+            file_hash=None,
+        )
+        db.add(upload)
+        await db.flush()
+        report = AnalysisReport(
+            user_id=seeded["user_id"],
+            lessonplan_filename=legacy_file.name,
+            lessonplan_original_name="legacy.pdf",
+            report_filename=report_file.name,
+            report_path=str(report_file),
+            upload_id=upload.id,
+            latency_ms=100,
+        )
+        db.add(report)
+        await db.commit()
+        await db.refresh(report)
+        upload_id = upload.id
+        report_id = report.id
+
+    async with TestingSessionLocal() as db:
+        service = AdminDeletionService(db)
+        result = await service.delete_analysis_report(
+            report_id=report_id,
+            current_admin_id=seeded["admin_id"],
+        )
+        resolved = service._resolve_lessonplan_path(
+            legacy_file.name,
+            upload_id=upload_id,
+        )
+
+    assert resolved == legacy_file
+    assert result["ok"] is True
+    assert result["deleted"] == 1
+    assert result["files_removed"] == 2
+    assert not report_file.exists()
+    assert not legacy_file.exists()
+
+
+def test_resolve_lessonplan_path_prefers_dashboard_upload(
+    tmp_path, monkeypatch
+):
+    lessonplan_base = tmp_path / "data" / "lessonplan"
+    lessonplan_base.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.LESSONPLAN_BASE_DIR",
+        str(lessonplan_base),
+    )
+    static_uploads_dir = tmp_path / "app" / "static" / "uploads"
+    static_uploads_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.STATIC_UPLOADS_DIR",
+        str(static_uploads_dir),
+        raising=False,
+    )
+    filename = "stu1_20260101000000_plan.pdf"
+    upload_file = static_uploads_dir / filename
+    upload_file.write_bytes(b"%PDF-1.4\n")
+
+    service = AdminDeletionService(db=None)
+
+    assert service._resolve_lessonplan_path(
+        filename,
+        upload_id=1,
+    ) == upload_file
+
+
+@pytest.mark.asyncio
 async def test_bulk_delete_sessions_requires_ownership(seeded):
     """타 사용자 세션이 섞이면 0건 삭제 + ValueError."""
     async with TestingSessionLocal() as db:
         # 두 번째 사용자 + 세션 생성
-        from app.models.users import User
         from app.models.chat_sessions import ChatSession
+        from app.models.users import User
         other = User(
             username="stu2",
             nickname="S2",

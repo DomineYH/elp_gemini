@@ -2,11 +2,11 @@
 import csv
 import inspect
 import io
-from datetime import datetime, timedelta
+from datetime import date, datetime
+from pathlib import Path
 
 import pytest
 from sqlalchemy.ext.asyncio import (
-    AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
@@ -16,6 +16,7 @@ from app.db import Base
 from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage, MessageRole
 from app.models.chat_sessions import ChatSession
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.user_profiles import UserProfile
 from app.models.users import User
 from app.schemas.admin_export import ExportFilters
@@ -39,8 +40,8 @@ async def db_session():
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    Session = async_sessionmaker(engine, expire_on_commit=False)
-    async with Session() as session:
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
         yield session
     await engine.dispose()
 
@@ -108,7 +109,7 @@ async def test_collect_filters_by_region(db_session):
 
 @pytest.mark.asyncio
 async def test_collect_filters_by_date_range(db_session):
-    user = await _seed_user(
+    await _seed_user(
         db_session, user_id=1, email="a@x.com",
         role="teacher", region="서울", tenure=5,
     )
@@ -457,7 +458,7 @@ async def test_collect_lessonplans_includes_orphan_uploads(
         db_session, lessonplan_base_dir=str(tmp_path)
     )
     plan = await svc.collect(ExportFilters())
-    originals = {l.original_name for l in plan.lessonplans}
+    originals = {entry.original_name for entry in plan.lessonplans}
     assert originals == {"orphan_지도안.pdf", "another.pdf"}
 
 
@@ -466,15 +467,21 @@ async def test_collect_lessonplans_marks_deleted_report_source_missing(
     tmp_path
 ):
     class Result:
+        def __init__(self, rows):
+            self._rows = rows
+
         def scalars(self):
             return self
 
         def all(self):
-            return [report]
+            return self._rows
 
     class Db:
+        def __init__(self):
+            self._results = [[report], []]
+
         async def execute(self, stmt):
-            return Result()
+            return Result(self._results.pop(0))
 
     user = UserContext(
         user_id=1,
@@ -518,6 +525,176 @@ async def test_collect_lessonplans_marks_deleted_report_source_missing(
 
 
 @pytest.mark.asyncio
+async def test_collect_lessonplans_resolves_dashboard_upload_source(
+    db_session, tmp_path, monkeypatch
+):
+    await _seed_user(
+        db_session, user_id=1, email="a@x.com",
+        role="teacher", region="서울", tenure=5,
+    )
+    upload_dir = tmp_path / "app" / "static" / "uploads"
+    upload_dir.mkdir(parents=True)
+    filename = "u1_20260101000000_plan.pdf"
+    upload_file = upload_dir / filename
+    upload_file.write_bytes(b"%PDF-1.4\n")
+    monkeypatch.chdir(tmp_path)
+
+    upload = LessonPlanUpload(
+        user_id=1,
+        filename=filename,
+        original_filename="plan.pdf",
+        file_hash="a" * 64,
+    )
+    db_session.add(upload)
+    await db_session.flush()
+    db_session.add(AnalysisReport(
+        user_id=1,
+        lessonplan_filename=filename,
+        lessonplan_original_name="plan.pdf",
+        report_filename="r.md",
+        report_path=str(tmp_path / "r.md"),
+        upload_id=upload.id,
+        created_at=datetime(2026, 3, 1),
+    ))
+    await db_session.commit()
+
+    svc = AdminExportService(db_session)
+    plan = await svc.collect(ExportFilters())
+
+    matches = [
+        entry for entry in plan.lessonplans
+        if entry.original_name == "plan.pdf"
+    ]
+    assert len(matches) == 1
+    lessonplan = matches[0]
+    assert Path(lessonplan.source_path).resolve() == upload_file
+    assert lessonplan.source_status == "OK"
+
+
+@pytest.mark.asyncio
+async def test_collect_lessonplans_resolves_synthetic_upload_legacy_source(
+    db_session, tmp_path
+):
+    await _seed_user(
+        db_session, user_id=1, email="a@x.com",
+        role="teacher", region="서울", tenure=5,
+    )
+    legacy_dir = tmp_path / "data" / "lessonplan"
+    legacy_dir.mkdir(parents=True)
+    static_uploads_dir = tmp_path / "app" / "static" / "uploads"
+    static_uploads_dir.mkdir(parents=True)
+    filename = "u1_20260101000000_legacy.pdf"
+    legacy_file = legacy_dir / filename
+    legacy_file.write_bytes(b"%PDF-1.4\n")
+    assert not (static_uploads_dir / filename).exists()
+
+    upload = LessonPlanUpload(
+        user_id=1,
+        filename=filename,
+        original_filename="legacy.pdf",
+        file_hash=None,
+    )
+    db_session.add(upload)
+    await db_session.flush()
+    db_session.add(AnalysisReport(
+        user_id=1,
+        lessonplan_filename=filename,
+        lessonplan_original_name="legacy.pdf",
+        report_filename="r.md",
+        report_path=str(tmp_path / "r.md"),
+        upload_id=upload.id,
+        created_at=datetime(2026, 3, 1),
+    ))
+    await db_session.commit()
+
+    svc = AdminExportService(
+        db_session,
+        lessonplan_base_dir=str(legacy_dir),
+        static_uploads_dir=str(static_uploads_dir),
+    )
+    plan = await svc.collect(
+        ExportFilters(
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 1),
+        )
+    )
+
+    matches = [
+        entry for entry in plan.lessonplans
+        if entry.original_name == "legacy.pdf"
+    ]
+    assert len(matches) == 1
+    lessonplan = matches[0]
+    assert Path(lessonplan.source_path).resolve() == legacy_file
+    assert lessonplan.source_status == "OK"
+
+
+@pytest.mark.asyncio
+async def test_collect_lessonplans_includes_upload_without_report(
+    tmp_path
+):
+    class Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return self._rows
+
+    class Db:
+        def __init__(self, uploads):
+            self._results = [[], uploads]
+
+        async def execute(self, stmt):
+            return Result(self._results.pop(0))
+
+    user = UserContext(
+        user_id=1,
+        user_email="a@x.com",
+        role="teacher",
+        profile=NormalizedProfile(
+            role_code="T",
+            region_slug="서울",
+            tenure="5",
+            tenure_kind="years",
+            email_slug="a_at_x_com",
+        ),
+        filename_prefix="T-서울-5y__u00001__a_at_x_com",
+        username="u1",
+    )
+    upload_dir = tmp_path / "static-uploads"
+    upload_dir.mkdir(parents=True)
+    filename = "u1_20260101000000_unanalyzed.pdf"
+    upload_file = upload_dir / filename
+    upload_file.write_bytes(b"%PDF-1.4\n")
+
+    upload = LessonPlanUpload(
+        id=11,
+        user_id=1,
+        filename=filename,
+        original_filename="unanalyzed.pdf",
+        file_hash="b" * 64,
+        created_at=datetime(2026, 3, 2),
+    )
+
+    svc = AdminExportService(
+        Db([upload]), static_uploads_dir=str(upload_dir)
+    )
+    lessonplans = await svc._collect_lessonplans([user], ExportFilters())
+
+    matches = [
+        entry for entry in lessonplans
+        if entry.original_name == "unanalyzed.pdf"
+    ]
+    assert len(matches) == 1
+    lessonplan = matches[0]
+    assert Path(lessonplan.source_path).resolve() == upload_file
+    assert lessonplan.source_status == "OK"
+
+
+@pytest.mark.asyncio
 async def test_collect_lessonplans_respects_username_prefix(
     db_session, tmp_path
 ):
@@ -537,7 +714,9 @@ async def test_collect_lessonplans_respects_username_prefix(
         db_session, lessonplan_base_dir=str(tmp_path)
     )
     plan = await svc.collect(ExportFilters(user_ids=[1]))
-    assert {l.original_name for l in plan.lessonplans} == {"mine.pdf"}
+    assert {
+        entry.original_name for entry in plan.lessonplans
+    } == {"mine.pdf"}
 
 
 @pytest.mark.asyncio

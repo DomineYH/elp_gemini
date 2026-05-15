@@ -27,9 +27,9 @@ Authorization: Bearer {access_token}
 
 ### 1.1 지도안 업로드
 
-**Endpoint**: `POST /api/lessonplans/upload`
+**Endpoint**: `POST /dashboard/upload`
 
-**설명**: 사용자의 지도안 파일을 업로드합니다.
+**설명**: 대시보드의 정식 업로드 경로입니다. PDF 추출, File Search 업로드, `lessonplan_uploads` 행 생성을 함께 수행합니다.
 
 **인증**: 필수
 
@@ -42,92 +42,14 @@ Content-Type: multipart/form-data
 }
 ```
 
-**Response** (201 Created):
-```json
-{
-  "username": "test_user",
-  "filename": "test_user_lessonplan.pdf",
-  "file_size": 102400,
-  "file_path": "data/lessonplan/test_user_lessonplan.pdf",
-  "created_at": "2025-11-22T10:00:00"
-}
+**Response** (200 OK):
+```
+text/html
 ```
 
 **Error Responses**:
 - `400`: 파일 검증 실패
 - `500`: 업로드 오류
-
----
-
-### 1.2 지도안 목록 조회
-
-**Endpoint**: `GET /api/lessonplans`
-
-**설명**: 사용자의 지도안 목록을 조회합니다.
-
-**인증**: 필수
-
-**Response** (200 OK):
-```json
-{
-  "username": "test_user",
-  "lessonplans": [
-    {
-      "filename": "test_user_lessonplan1.pdf",
-      "file_size": 102400,
-      "created_at": "2025-11-22T10:00:00"
-    }
-  ],
-  "total_count": 1
-}
-```
-
----
-
-### 1.3 지도안 다운로드
-
-**Endpoint**: `GET /api/lessonplans/{filename}/download`
-
-**설명**: 지도안 파일을 다운로드합니다.
-
-**인증**: 필수
-
-**Path Parameters**:
-- `filename`: 파일명
-
-**Response** (200 OK):
-```
-Content-Type: application/octet-stream
-Content-Disposition: attachment; filename="{filename}"
-
-(binary file data)
-```
-
-**Error Responses**:
-- `404`: 파일을 찾을 수 없음
-- `500`: 다운로드 오류
-
----
-
-### 1.4 지도안 삭제
-
-**Endpoint**: `DELETE /api/lessonplans/{filename}`
-
-**설명**: 지도안 파일을 삭제합니다.
-
-**인증**: 필수
-
-**Path Parameters**:
-- `filename`: 파일명
-
-**Response** (204 No Content):
-```
-(empty body)
-```
-
-**Error Responses**:
-- `404`: 파일을 찾을 수 없음
-- `500`: 삭제 오류
 
 ---
 
@@ -460,11 +382,11 @@ token = response.json()["access_token"]
 # 지도안 업로드
 with open("lessonplan.pdf", "rb") as f:
     response = httpx.post(
-        "http://localhost:8000/api/lessonplans/upload",
+        "http://localhost:8000/dashboard/upload",
         files={"file": f},
         headers={"Authorization": f"Bearer {token}"}
     )
-    print(response.json())
+    print(response.status_code)
 ```
 
 ---

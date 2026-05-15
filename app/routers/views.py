@@ -1,28 +1,40 @@
 """
 HTML 뷰 라우터
 """
-from fastapi import APIRouter, Request, Depends, HTTPException
+import hashlib
+import logging
+import os
+from datetime import datetime
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from pypdf import PdfReader
 from sqlalchemy.ext.asyncio import AsyncSession
-import logging
 
 from app.db import get_db
 from app.dependencies import get_current_user
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
-from app.services.lessonplan_storage_service import LessonPlanStorageService
-from app.services.file_search_service import FileSearchService, _sanitize_display_name
 from app.repositories.criteria_repository import CriteriaRepository
-from datetime import datetime
-import shutil
-import os
-from pathlib import Path
-from fastapi import UploadFile, File, status
-from pypdf import PdfReader
+from app.services.file_search_service import (
+    FileSearchService,
+    _sanitize_display_name,
+)
+from app.services.file_validator import FileValidator
 
 router = APIRouter(tags=["뷰"])
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
+DASHBOARD_UPLOAD_CHUNK_SIZE = 1024 * 1024
+DASHBOARD_MAX_UPLOAD_SIZE = FileValidator.MAX_FILE_SIZE
+
+
+def _format_upload_size_limit(limit: int) -> str:
+    if limit >= 1024 * 1024:
+        return f"{limit / (1024 * 1024):.0f}MB"
+    return f"{limit} bytes"
 
 
 @router.get(
@@ -86,7 +98,10 @@ async def upload_document(
     4. 로컬 파일 삭제
     5. 결과 페이지 렌더링
     """
-    logger.info(f"문서 업로드 요청: user={current_user.username}, file={file.filename}")
+    logger.info(
+        f"문서 업로드 요청: user={current_user.username}, "
+        f"file={file.filename}"
+    )
 
     if not file.filename.endswith('.pdf'):
         return templates.TemplateResponse(
@@ -102,19 +117,47 @@ async def upload_document(
     # 파일 저장 경로 설정 (static/uploads)
     upload_dir = Path("app/static/uploads")
     upload_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # 파일명 안전하게 처리 (ASCII 변환으로 Google API 호환성 보장)
     safe_username = _sanitize_display_name(current_user.username)
     safe_original = _sanitize_display_name(file.filename)
-    saved_filename = f"{safe_username}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{safe_original}"
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    saved_filename = f"{safe_username}_{timestamp}_{safe_original}"
     file_path = upload_dir / saved_filename
-    
+
     # 웹 접근 URL
     file_url = f"/static/uploads/{saved_filename}"
 
     try:
+        hasher = hashlib.sha256()
+        total_size = 0
+        too_large = False
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            while True:
+                chunk = await file.read(DASHBOARD_UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > DASHBOARD_MAX_UPLOAD_SIZE:
+                    too_large = True
+                    break
+                buffer.write(chunk)
+                hasher.update(chunk)
+
+        if too_large:
+            file_path.unlink(missing_ok=True)
+            max_size = _format_upload_size_limit(DASHBOARD_MAX_UPLOAD_SIZE)
+            return templates.TemplateResponse(
+                "error.html",
+                {
+                    "request": request,
+                    "status_code": 400,
+                    "detail": f"파일 크기는 {max_size}를 초과할 수 없습니다.",
+                },
+                status_code=400,
+            )
+
+        file_hash = hasher.hexdigest()
 
         # PDF 텍스트 추출
         reader = PdfReader(str(file_path))
@@ -124,7 +167,7 @@ async def upload_document(
 
         # File Search Service 업로드
         file_search_service = FileSearchService()
-        
+
         # 기존 스토어 정리 (새 문서 업로드 시 이전 스토어 삭제)
         store_name = f"user-{current_user.username}-store"
         await file_search_service.delete_store_by_display_name(store_name)
@@ -142,6 +185,19 @@ async def upload_document(
             file_path=str(file_path),
             display_name=file.filename,
             metadata=metadata
+        )
+
+        upload_row = LessonPlanUpload(
+            user_id=current_user.id,
+            filename=saved_filename,
+            original_filename=file.filename,
+            file_hash=file_hash,
+        )
+        db.add(upload_row)
+        await db.flush()
+        logger.info(
+            f"LessonPlanUpload 행 생성: id={upload_row.id}, "
+            f"hash={file_hash[:8]}…"
         )
 
         logger.info(f"File Search 업로드 완료: {result}")
@@ -208,10 +264,10 @@ async def cleanup_dashboard(
     try:
         file_search_service = FileSearchService()
         store_name = f"user-{current_user.username}-store"
-        
+
         # 사용자 스토어 삭제
         await file_search_service.delete_store_by_display_name(store_name)
-        
+
         logger.info(f"대시보드 정리 완료: user={current_user.username}")
         return {"status": "success", "message": "Cleanup completed"}
     except Exception as e:
@@ -237,7 +293,10 @@ async def view_analysis_report(
     `/api/lessonplan/reports/{report_id}` JSON 엔드포인트가 수행한다.
     """
     if report_id <= 0:
-        raise HTTPException(status_code=404, detail="보고서를 찾을 수 없습니다.")
+        raise HTTPException(
+            status_code=404,
+            detail="보고서를 찾을 수 없습니다.",
+        )
 
     logger.info(
         f"보고서 뷰어 접근: user={current_user.username}, report_id={report_id}"
