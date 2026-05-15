@@ -20,8 +20,6 @@ from app.repositories.app_state_repository import (
 from app.repositories.criteria_repository import (
     CriteriaRepository
 )
-from app.services.cloud_sync_validator import CloudSyncValidator
-from app.services.criteria_vector_service import CriteriaVectorService
 
 router = APIRouter(
     prefix="/admin/criteria",
@@ -65,97 +63,22 @@ async def criteria_list(
     logger.info(f"평가기준 목록 접근: admin={current_admin.username}")
 
     try:
-        # DB에서 평가기준 목록 조회
         criteria_repo = CriteriaRepository(db)
         all_criteria = await criteria_repo.get_all_criteria()
 
-        # 클라우드 문서 목록 조회
-        cloud_documents = []
-        cloud_error = None
-        try:
-            criteria_service = CriteriaVectorService()
-            cloud_documents = await criteria_service.list_criteria_documents()
-        except Exception as e:
-            logger.warning(f"클라우드 문서 목록 조회 실패: {e}")
-            cloud_error = str(e)
-
-        # document_id 매핑 생성 (DB ↔ 클라우드 연동 확인용)
-        cloud_doc_ids_list = [
-            doc["document_id"] for doc in cloud_documents
-        ]
-        cloud_doc_ids = set(cloud_doc_ids_list)
-
-        # 클라우드 문서 → DB Criteria 매핑
-        doc_map = await criteria_repo.get_criteria_map_by_document_ids(
-            cloud_doc_ids_list
-        )
-
-        # 하단 클라우드 표용 enrichment
-        cloud_documents = [
+        # stable_id 가 있는 행만 노출 (pre-reconcile NULL 행은 스킵)
+        criteria_items = [
             {
-                "document_id": d["document_id"],
-                "display_name": d.get("display_name"),
-                "title": (
-                    doc_map[d["document_id"]].title
-                    if d["document_id"] in doc_map else None
-                ),
-                "alias": (
-                    doc_map[d["document_id"]].display_alias
-                    if d["document_id"] in doc_map else None
-                ),
-                "criteria_id": (
-                    doc_map[d["document_id"]].id
-                    if d["document_id"] in doc_map else None
-                ),
+                "stable_id": c.stable_id,
+                "title": c.title,
+                "display_alias": c.display_alias,
+                "status": c.status,
+                "created_at": c.created_at,
+                "document_id": c.document_id,
             }
-            for d in cloud_documents
+            for c in all_criteria
+            if c.stable_id is not None
         ]
-
-        # 템플릿에 맞게 데이터 변환
-        criteria_items = {
-            "documents": [
-                {
-                    "id": criteria.id,
-                    "title": criteria.title,
-                    "display_alias": criteria.display_alias,
-                    "status": criteria.status,
-                    "file_size": criteria.file_size,
-                    "created_at": criteria.created_at,
-                    "document_id": criteria.document_id,
-                    "cloud_synced": (
-                        criteria.document_id is not None
-                        and criteria.document_id in cloud_doc_ids
-                    ),
-                }
-                for criteria in all_criteria
-            ]
-        }
-
-        # 활성 기준 조회 (status='active'인 것)
-        active_criteria = next(
-            (
-                c for c in all_criteria
-                if c.status == "active"
-            ),
-            None
-        )
-
-        pending_sync_criteria = [
-            c for c in all_criteria
-            if c.status == "active" and (
-                c.synced_at is None or c.synced_at < c.updated_at
-            )
-        ]
-        needs_sync = len(pending_sync_criteria) > 0
-
-        cloud_sync_warning = None
-        try:
-            validator = CloudSyncValidator()
-            sync_result = await validator.validate_rubricstore_sync(db)
-            if sync_result.needs_resync:
-                cloud_sync_warning = sync_result.warning_message
-        except Exception as e:
-            logger.warning(f"클라우드 동기화 검증 실패: {e}")
 
         sync = await _fetch_sync_metadata(db)
 
@@ -164,13 +87,7 @@ async def criteria_list(
             {
                 "request": request,
                 "user": current_admin,
-                "criteria": criteria_items,
-                "active_criteria": active_criteria,
-                "needs_sync": needs_sync,
-                "pending_count": len(pending_sync_criteria),
-                "cloud_sync_warning": cloud_sync_warning,
-                "cloud_documents": cloud_documents,
-                "cloud_error": cloud_error,
+                "criteria_items": criteria_items,
                 "sync": sync,
             }
         )
@@ -182,10 +99,7 @@ async def criteria_list(
             {
                 "request": request,
                 "user": current_admin,
-                "criteria": {"documents": []},
-                "active_criteria": None,
-                "needs_sync": False,
-                "pending_count": 0,
+                "criteria_items": [],
                 "sync": {"state": None, "last_synced_at": None, "error": None},
             }
         )

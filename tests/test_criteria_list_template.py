@@ -1,7 +1,6 @@
-"""criteria_list 템플릿 렌더링 검증"""
+"""criteria_list 템플릿 렌더링 검증 (Wave 6: 단일 테이블)"""
 import pytest
 import pytest_asyncio
-from unittest.mock import patch, AsyncMock
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import (
     create_async_engine, AsyncSession, async_sessionmaker,
@@ -54,24 +53,18 @@ async def admin_client(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_bottom_table_3_columns(admin_client):
-    fake_list = AsyncMock(return_value=[
-        {"document_id": "doc-1", "display_name": "test_pdf"},
-    ])
-    with patch(
-        "app.routers.admin.criteria_views.CriteriaVectorService"
-        ".list_criteria_documents",
-        fake_list,
-    ):
-        res = await admin_client.get("/admin/criteria")
+async def test_template_renders_empty_state(admin_client):
+    """평가기준이 없으면 안내 문구가 출력된다."""
+    res = await admin_client.get("/admin/criteria")
     assert res.status_code == 200
-    assert "평가기준 제목" in res.text
-    assert "표시 이름" in res.text
-    assert "문서 ID" in res.text
+    assert "평가 기준이 없습니다" in res.text
 
 
 @pytest.mark.asyncio
-async def test_alias_cell_markup_for_matched_doc(admin_client):
+async def test_template_has_single_table_with_alias_cell_and_active_radio(
+    admin_client,
+):
+    """Wave 6 단일 테이블: alias-cell + active-radio 가 행마다 렌더된다."""
     async with admin_client._session_factory() as s:
         repo = CriteriaRepository(s)
         c = await repo.save_criteria(
@@ -79,61 +72,65 @@ async def test_alias_cell_markup_for_matched_doc(admin_client):
             file_path="/tmp/o.pdf", document_id="doc-1",
             status="active",
         )
+        # stable_id 부여 (Wave 6: stable_id 있는 행만 표시)
+        c.stable_id = "01HSTABLE001"
         await repo.update_display_alias(c.id, "my-alias")
         await s.commit()
 
-    fake_list = AsyncMock(return_value=[
-        {"document_id": "doc-1", "display_name": "orig_pdf"},
-    ])
-    with patch(
-        "app.routers.admin.criteria_views.CriteriaVectorService"
-        ".list_criteria_documents",
-        fake_list,
-    ):
-        res = await admin_client.get("/admin/criteria")
-
+    res = await admin_client.get("/admin/criteria")
     text = res.text
-    assert 'class="alias-cell' in text or "class='alias-cell" in text
-    assert (
-        f'data-criteria-id="{c.id}"' in text
-        or f"data-criteria-id='{c.id}'" in text
-    )
-    assert "my-alias" in text
-
-
-@pytest.mark.asyncio
-async def test_orphan_doc_shows_match_missing(admin_client):
-    fake_list = AsyncMock(return_value=[
-        {"document_id": "orphan-1", "display_name": "orphan"},
-    ])
-    with patch(
-        "app.routers.admin.criteria_views.CriteriaVectorService"
-        ".list_criteria_documents",
-        fake_list,
-    ):
-        res = await admin_client.get("/admin/criteria")
     assert res.status_code == 200
-    assert "(매칭 없음)" in res.text
+
+    # 단일 테이블 UI 마커
+    assert 'class="alias-cell' in text
+    assert 'class="active-radio' in text
+
+    # alias 값 + stable_id 데이터가 행에 들어가야 함
+    assert "my-alias" in text
+    assert "01HSTABLE001" in text
+    # 상태 라벨
+    assert "활성" in text
+
+    # 제거된 dual-table / 동기화 확정 잔재가 없어야 함
+    assert "클라우드 Store 문서" not in text
+    assert "동기화 확정" not in text
+    assert "(매칭 없음)" not in text
 
 
 @pytest.mark.asyncio
-async def test_top_table_shows_display_alias(admin_client):
+async def test_template_skips_rows_without_stable_id(admin_client):
+    """stable_id가 NULL인 pre-reconcile 행은 목록에 노출되지 않는다."""
+    async with admin_client._session_factory() as s:
+        repo = CriteriaRepository(s)
+        await repo.save_criteria(
+            title="legacy.pdf", file_size=1, uploaded_by="admin",
+            file_path="/tmp/legacy.pdf", document_id=None,
+            status="uploaded",
+        )
+        await s.commit()
+
+    res = await admin_client.get("/admin/criteria")
+    assert res.status_code == 200
+    # stable_id 없는 row 의 title은 목록 행으로 나오면 안 됨 → empty state 노출
+    assert "legacy.pdf" not in res.text
+    assert "평가 기준이 없습니다" in res.text
+
+
+@pytest.mark.asyncio
+async def test_template_alias_unset_placeholder(admin_client):
+    """display_alias 가 None 인 경우 '(미설정)' 플레이스홀더가 출력된다."""
     async with admin_client._session_factory() as s:
         repo = CriteriaRepository(s)
         c = await repo.save_criteria(
-            title="orig.pdf", file_size=1, uploaded_by="admin",
-            file_path="/tmp/o.pdf", document_id=None,
-            status="active",
+            title="no-alias.pdf", file_size=1, uploaded_by="admin",
+            file_path="/tmp/n.pdf", document_id="doc-x",
+            status="uploaded",
         )
-        await repo.update_display_alias(c.id, "top-alias")
+        c.stable_id = "01HSTABLE002"
         await s.commit()
 
-    fake_list = AsyncMock(return_value=[])
-    with patch(
-        "app.routers.admin.criteria_views.CriteriaVectorService"
-        ".list_criteria_documents",
-        fake_list,
-    ):
-        res = await admin_client.get("/admin/criteria")
+    res = await admin_client.get("/admin/criteria")
     assert res.status_code == 200
-    assert "표시명: top-alias" in res.text
+    assert "(미설정)" in res.text
+    # uploaded 상태 → "비활성" 라벨
+    assert "비활성" in res.text
