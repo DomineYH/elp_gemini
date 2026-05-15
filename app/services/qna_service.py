@@ -78,34 +78,44 @@ class QnAService:
 
             # 평가 기준 컨텍스트 검색
             from app.services.criteria_context_service import (
-                CriteriaContextService
+                CriteriaContextService,
+                build_criteria_context_or_notice,
             )
+            from app.repositories.app_state_repository import AppStateRepository
+
             criteria_service = CriteriaContextService(db=self.db)
+            app_state_repo = AppStateRepository(db=self.db)
 
             criteria_context = ""
             criteria_ids = []
             criteria_metadata = []
+            criteria_notice = None
             try:
-                criteria_result = (
-                    await criteria_service.get_context(question)
+                criteria_result, criteria_notice = (
+                    await build_criteria_context_or_notice(
+                        app_state_repo=app_state_repo,
+                        criteria_context_service=criteria_service,
+                        question=question,
+                    )
                 )
 
-                context_text = criteria_result.get("context_text", "")
-                criteria_ids = criteria_result.get("criteria_ids", [])
-                criteria_metadata = criteria_result.get("criteria_metadata", [])
+                if criteria_result:
+                    context_text = criteria_result.get("context_text", "")
+                    criteria_ids = criteria_result.get("criteria_ids", [])
+                    criteria_metadata = criteria_result.get("criteria_metadata", [])
 
-                if context_text:
-                    # Vector Search 참고 자료만 포함 (시스템 규칙은 prompt.md에 있음)
-                    criteria_context = (
-                        "\n\n### [참고 자료: Vector Search로 검색된 평가기준 컨텍스트]\n\n"
-                        "아래는 질문과 관련하여 미리 검색된 평가기준 내용입니다. "
-                        "평가/분석 요청 시에만 참고하세요.\n\n"
-                        + context_text
-                    )
-                    logger.info(
-                        f"평가 기준 컨텍스트 추가: "
-                        f"{len(criteria_ids)}개 평가기준"
-                    )
+                    if context_text:
+                        # Vector Search 참고 자료만 포함 (시스템 규칙은 prompt.md에 있음)
+                        criteria_context = (
+                            "\n\n### [참고 자료: Vector Search로 검색된 평가기준 컨텍스트]\n\n"
+                            "아래는 질문과 관련하여 미리 검색된 평가기준 내용입니다. "
+                            "평가/분석 요청 시에만 참고하세요.\n\n"
+                            + context_text
+                        )
+                        logger.info(
+                            f"평가 기준 컨텍스트 추가: "
+                            f"{len(criteria_ids)}개 평가기준"
+                        )
             except Exception as e:
                 logger.warning(
                     f"평가 기준 검색 중 오류 (무시): {e}"
@@ -176,9 +186,13 @@ class QnAService:
                     )
 
             # Contents 구성: Store 역할 명시 + 평가기준 컨텍스트 + 히스토리 + 질문
+            notice_text = (
+                f"\n\n[{criteria_notice}]" if criteria_notice else ""
+            )
             contents = (
                 f"{store_role_prompt}"
                 f"{criteria_context}"
+                f"{notice_text}"
                 f"{history_context}"
                 f"\n\n**질문:** {question}"
             )
