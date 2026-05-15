@@ -10,9 +10,15 @@ from app.main import app
 
 @pytest.fixture
 def admin_client():
+    from app.db import get_db
     from app.dependencies import get_current_admin
 
     app.dependency_overrides[get_current_admin] = lambda: object()
+
+    async def _fake_db():
+        yield AsyncMock()
+
+    app.dependency_overrides[get_db] = _fake_db
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -44,7 +50,9 @@ def test_reconcile_endpoint_returns_state(admin_client):
 def test_list_endpoint_includes_sync_metadata(admin_client):
     with patch(
         "app.routers.admin.criteria.AppStateRepository"
-    ) as repo_cls:
+    ) as repo_cls, patch(
+        "app.routers.admin.criteria.CriteriaRepository"
+    ) as crit_cls:
         mock_state = AsyncMock()
         mock_state.get = AsyncMock(
             side_effect=lambda k: {
@@ -54,6 +62,8 @@ def test_list_endpoint_includes_sync_metadata(admin_client):
             }.get(k)
         )
         repo_cls.return_value = mock_state
+        crit_instance = crit_cls.return_value
+        crit_instance.get_all_criteria = AsyncMock(return_value=[])
 
         resp = admin_client.get("/api/admin/criteria")
 

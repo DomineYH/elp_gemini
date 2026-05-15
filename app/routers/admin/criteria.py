@@ -26,6 +26,7 @@ from app.repositories.app_state_repository import (
     KEY_LAST_SYNCED_AT,
     KEY_SYNC_ERROR,
     KEY_SYNC_STATE,
+    SYNC_STATE_NEEDS_RESYNC,
 )
 from app.schemas.criteria import (
     UploadCriteriaResponse,
@@ -54,6 +55,28 @@ router = APIRouter(
     tags=["관리자-평가기준"]
 )
 logger = logging.getLogger(__name__)
+
+
+async def _publish_or_mark_resync(
+    criteria_repo: CriteriaRepository,
+    db: AsyncSession,
+) -> None:
+    """매니페스트 publish 시도; 실패하면 sync_state=needs_resync 저장 후 502."""
+    try:
+        manifest_svc = CriteriaManifestService()
+        await manifest_svc.publish_from_db(criteria_repo)
+    except CloudUnavailable as e:
+        state_repo = AppStateRepository(db=db)
+        await state_repo.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
+        await state_repo.set(KEY_SYNC_ERROR, str(e))
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                "변경은 저장되었으나 클라우드 동기화에 실패했습니다. "
+                "관리자 페이지에서 재동기화하세요."
+            ),
+        )
 
 
 @router.post(
@@ -170,20 +193,7 @@ async def upload_criteria(
             f"criteria_id={criteria.id}"
         )
 
-        manifest_svc = CriteriaManifestService()
-        try:
-            await manifest_svc.publish_from_db(criteria_repo)
-        except CloudUnavailable as e:
-            state_repo = AppStateRepository(db=db)
-            await state_repo.set(KEY_SYNC_STATE, "needs_resync")
-            await state_repo.set(KEY_SYNC_ERROR, str(e))
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=(
-                    "변경은 저장되었으나 클라우드 동기화에 실패했습니다. "
-                    "관리자 페이지에서 재동기화하세요."
-                ),
-            )
+        await _publish_or_mark_resync(criteria_repo, db)
 
         return UploadCriteriaResponse(
             file_id=str(criteria.id),  # criteria ID 사용
@@ -268,20 +278,7 @@ async def delete_all_criteria(
             f"deleted_count={deleted_count}"
         )
 
-        manifest_svc = CriteriaManifestService()
-        try:
-            await manifest_svc.publish_from_db(criteria_repo)
-        except CloudUnavailable as e:
-            state_repo = AppStateRepository(db=db)
-            await state_repo.set(KEY_SYNC_STATE, "needs_resync")
-            await state_repo.set(KEY_SYNC_ERROR, str(e))
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=(
-                    "변경은 저장되었으나 클라우드 동기화에 실패했습니다. "
-                    "관리자 페이지에서 재동기화하세요."
-                ),
-            )
+        await _publish_or_mark_resync(criteria_repo, db)
 
         return DeleteCriteriaResponse(
             success=True,
@@ -396,20 +393,7 @@ async def delete_single_criteria(
             f"title={criteria_title}"
         )
 
-        manifest_svc = CriteriaManifestService()
-        try:
-            await manifest_svc.publish_from_db(criteria_repo)
-        except CloudUnavailable as e:
-            state_repo = AppStateRepository(db=db)
-            await state_repo.set(KEY_SYNC_STATE, "needs_resync")
-            await state_repo.set(KEY_SYNC_ERROR, str(e))
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=(
-                    "변경은 저장되었으나 클라우드 동기화에 실패했습니다. "
-                    "관리자 페이지에서 재동기화하세요."
-                ),
-            )
+        await _publish_or_mark_resync(criteria_repo, db)
 
         return DeleteSingleCriteriaResponse(
             success=True,
@@ -563,20 +547,7 @@ async def activate_criteria(
             f"admin={current_admin.username}, id={criteria_id}"
         )
 
-        manifest_svc = CriteriaManifestService()
-        try:
-            await manifest_svc.publish_from_db(criteria_repo)
-        except CloudUnavailable as e:
-            state_repo = AppStateRepository(db=db)
-            await state_repo.set(KEY_SYNC_STATE, "needs_resync")
-            await state_repo.set(KEY_SYNC_ERROR, str(e))
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=(
-                    "변경은 저장되었으나 클라우드 동기화에 실패했습니다. "
-                    "관리자 페이지에서 재동기화하세요."
-                ),
-            )
+        await _publish_or_mark_resync(criteria_repo, db)
 
         return {
             "success": True,
@@ -605,6 +576,7 @@ async def deactivate_criteria(
     criteria_id: int,
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
+    _sync_ready=Depends(require_criteria_sync_ready),
 ):
     """
     평가기준 비활성화 (관리자 전용)
@@ -635,6 +607,8 @@ async def deactivate_criteria(
             f"admin={current_admin.username}, id={criteria_id}"
         )
 
+        await _publish_or_mark_resync(criteria_repo, db)
+
         return {
             "success": True,
             "message": f"{criteria.title}이(가) 비활성화되었습니다. '활성화 확정'을 눌러 반영하세요.",
@@ -661,6 +635,7 @@ async def deactivate_criteria(
 async def confirm_activation(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
+    _sync_ready=Depends(require_criteria_sync_ready),
 ):
     """
     활성화 확정 (관리자 전용)
@@ -678,7 +653,10 @@ async def confirm_activation(
     try:
         count = await _sync_criteria_store(db, current_admin.username)
         await db.commit()
-        
+
+        criteria_repo = CriteriaRepository(db)
+        await _publish_or_mark_resync(criteria_repo, db)
+
         return {
             "success": True,
             "message": f"{count}개의 평가기준이 동기화되었습니다.",
@@ -756,20 +734,7 @@ async def update_display_alias(
             f"id={criteria_id}, alias={payload.display_alias!r}"
         )
 
-        manifest_svc = CriteriaManifestService()
-        try:
-            await manifest_svc.publish_from_db(repo)
-        except CloudUnavailable as e:
-            state_repo = AppStateRepository(db=db)
-            await state_repo.set(KEY_SYNC_STATE, "needs_resync")
-            await state_repo.set(KEY_SYNC_ERROR, str(e))
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=(
-                    "변경은 저장되었으나 클라우드 동기화에 실패했습니다. "
-                    "관리자 페이지에서 재동기화하세요."
-                ),
-            )
+        await _publish_or_mark_resync(repo, db)
 
         return UpdateDisplayAliasResponse(
             success=True,
