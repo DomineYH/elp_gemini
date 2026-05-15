@@ -40,5 +40,9 @@ async def ensure_criteria_stable_id_column(engine: AsyncEngine) -> bool:
         await conn.execute(text(
             "ALTER TABLE criteria ADD COLUMN stable_id VARCHAR(64) NULL"
         ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_criteria_stable_id "
+            "ON criteria(stable_id)"
+        ))
         logger.info("criteria.stable_id 컬럼을 추가함")
         return True
