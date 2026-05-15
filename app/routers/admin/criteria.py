@@ -855,6 +855,105 @@ async def patch_criteria_alias(
     return {"stable_id": stable_id, "alias": body.alias}
 
 
+@router.post(
+    "/{stable_id}/activate",
+    summary="평가기준 활성화 (stable_id 기반)",
+    description="해당 stable_id를 active로 전환하고 기존 active는 uploaded로 강등합니다.",
+)
+async def activate_by_stable_id(
+    stable_id: str,
+    current_admin: User = Depends(get_current_admin),
+    _sync_ready=Depends(require_criteria_sync_ready),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _set_status_by_stable_id(db, stable_id, "active")
+
+
+@router.post(
+    "/{stable_id}/deactivate",
+    summary="평가기준 비활성화 (stable_id 기반)",
+    description="해당 stable_id를 uploaded 상태로 변경합니다.",
+)
+async def deactivate_by_stable_id(
+    stable_id: str,
+    current_admin: User = Depends(get_current_admin),
+    _sync_ready=Depends(require_criteria_sync_ready),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _set_status_by_stable_id(db, stable_id, "uploaded")
+
+
+async def _set_status_by_stable_id(
+    db: AsyncSession, stable_id: str, target_status: str
+) -> dict:
+    """
+    alias_map과 DB 캐시를 동시에 업데이트.
+    target_status == 'active'이면 기존 active는 'uploaded'로 강등 (단일 활성 불변).
+    """
+    vec = CriteriaVectorService()
+    alias_svc = CriteriaAliasMapService(
+        client=vec.file_search_service.client,
+        store_display_name=settings.FS_RUBRIC_STORE_NAME,
+    )
+    fetched = await alias_svc.fetch()
+    if not fetched:
+        raise HTTPException(
+            status_code=409,
+            detail="alias_map 미존재 — 재동기화가 필요합니다",
+        )
+    old_doc_name, alias_map = fetched
+    if stable_id not in alias_map.entries:
+        raise HTTPException(
+            status_code=404,
+            detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+        )
+
+    now = _now_iso_utc()
+    new_entries: dict = {}
+    for sid, entry in alias_map.entries.items():
+        if sid == stable_id:
+            new_entries[sid] = entry.model_copy(update={
+                "status": target_status,
+                "activated_at": now if target_status == "active" else None,
+            })
+        elif target_status == "active" and entry.status == "active":
+            new_entries[sid] = entry.model_copy(update={
+                "status": "uploaded",
+                "activated_at": None,
+            })
+        else:
+            new_entries[sid] = entry
+
+    new_alias_map = AliasMap(
+        schema_version=1, updated_at=now, entries=new_entries
+    )
+    await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
+
+    # Sync DB cache for both the target and any demoted entries
+    repo = CriteriaRepository(db)
+    parsed_now = _parse_iso(now)
+    for sid, entry in new_entries.items():
+        row = await repo.get_criteria_by_stable_id(sid)
+        if row:
+            row.status = entry.status
+            row.activated_at = parsed_now if entry.status == "active" else None
+    await db.commit()
+
+    logger.info(f"상태 변경: stable_id={stable_id} status={target_status}")
+    return {"stable_id": stable_id, "status": target_status}
+
+
+def _parse_iso(value):
+    """ISO-8601 string → datetime; None on failure."""
+    from datetime import datetime
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
 @router.get(
     "",
     summary="평가기준 목록 (JSON)",
