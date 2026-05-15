@@ -11,6 +11,8 @@ from fastapi import (
     status,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel, Field
+from typing import Optional
 import logging
 import tempfile
 import os
@@ -788,6 +790,69 @@ async def update_display_alias(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="표시명 업데이트 중 오류가 발생했습니다.",
         )
+
+
+class _AliasPatch(BaseModel):
+    alias: Optional[str] = Field(default=None, max_length=255)
+
+
+@router.patch(
+    "/{stable_id}/alias",
+    summary="평가기준 표시 이름 편집 (stable_id 기반)",
+    description="alias_map 문서를 업데이트하고 DB 캐시를 동기화합니다.",
+)
+async def patch_criteria_alias(
+    stable_id: str,
+    body: _AliasPatch,
+    current_admin: User = Depends(get_current_admin),
+    _sync_ready=Depends(require_criteria_sync_ready),
+    db: AsyncSession = Depends(get_db),
+):
+    vec = CriteriaVectorService()
+    alias_svc = CriteriaAliasMapService(
+        client=vec.file_search_service.client,
+        store_display_name=settings.FS_RUBRIC_STORE_NAME,
+    )
+
+    fetched = await alias_svc.fetch()
+    if not fetched:
+        raise HTTPException(
+            status_code=409,
+            detail="alias_map 미존재 — 재동기화가 필요합니다",
+        )
+    old_doc_name, alias_map = fetched
+
+    if stable_id not in alias_map.entries:
+        raise HTTPException(
+            status_code=404,
+            detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+        )
+
+    # Update the entry's alias only
+    updated_entry = alias_map.entries[stable_id].model_copy(
+        update={"alias": body.alias}
+    )
+    new_entries = dict(alias_map.entries)
+    new_entries[stable_id] = updated_entry
+
+    new_alias_map = AliasMap(
+        schema_version=1,
+        updated_at=_now_iso_utc(),
+        entries=new_entries,
+    )
+    await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
+
+    # Sync DB cache
+    repo = CriteriaRepository(db)
+    row = await repo.get_criteria_by_stable_id(stable_id)
+    if row:
+        row.display_alias = body.alias
+        await db.commit()
+
+    logger.info(
+        f"alias 변경: stable_id={stable_id} alias={body.alias}"
+    )
+    return {"stable_id": stable_id, "alias": body.alias}
 
 
 @router.get(
