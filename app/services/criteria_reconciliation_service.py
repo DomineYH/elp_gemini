@@ -1,4 +1,8 @@
-# app/services/criteria_reconciliation_service.py
+"""평가기준 클라우드 reconcile 서비스.
+
+API key 변경을 sha256 해시로 감지하고, 매니페스트 store의 내용을 기준으로
+로컬 SQLite + 업로드 캐시를 재구성한다. 동시 호출은 module-level lock으로 직렬화.
+"""
 import asyncio
 import hashlib
 import logging
@@ -66,16 +70,15 @@ class CriteriaReconciliationService:
         return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
 
     def _wipe_upload_dir(self) -> None:
-        target = Path(settings.CRITERIA_UPLOAD_DIR)
-        resolved = target.resolve(strict=False)
-        configured = Path(settings.CRITERIA_UPLOAD_DIR).resolve(strict=False)
-        if resolved != configured:
+        target = Path(settings.CRITERIA_UPLOAD_DIR).resolve(strict=False)
+        # symlink 거부 (디렉토리 자체가 symlink면 거부)
+        if Path(settings.CRITERIA_UPLOAD_DIR).is_symlink():
             raise RuntimeError(
-                f"refusing to wipe non-canonical upload dir: {resolved}"
+                f"refusing to wipe symlinked upload dir: {target}"
             )
-        if resolved.exists():
-            shutil.rmtree(resolved)
-        resolved.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            shutil.rmtree(target)
+        target.mkdir(parents=True, exist_ok=True)
 
     async def reconcile(self) -> ReconcileResult:
         async with _reconcile_lock:
@@ -91,17 +94,19 @@ class CriteriaReconciliationService:
                 manifest = await self.manifest_svc.fetch()
                 cloud_doc_ids = await self.vector_svc.list_document_ids()
             except CloudUnavailable as e:
+                error_msg = str(e)
                 if key_changed:
                     try:
                         self._wipe_upload_dir()
                     except Exception as wipe_err:
                         logger.error("wipe failed: %s", wipe_err)
+                        error_msg = f"{error_msg} (wipe also failed: {wipe_err})"
                     await self.criteria_repo.truncate()
                     await self.app_state.set_many(
                         {
                             KEY_API_KEY_HASH: current_hash,
                             KEY_SYNC_STATE: SYNC_STATE_ERROR,
-                            KEY_SYNC_ERROR: str(e),
+                            KEY_SYNC_ERROR: error_msg,
                         }
                     )
                 else:
@@ -137,6 +142,9 @@ class CriteriaReconciliationService:
                         "status": e.status,
                         "created_at": e.created_at,
                         "activated_at": e.activated_at,
+                        "file_size": 0,
+                        "file_path": e.document_id,
+                        "uploaded_by": "<cloud-sync>",
                     }
                     for e in entries
                 ]
@@ -156,6 +164,15 @@ class CriteriaReconciliationService:
                     await self.manifest_svc.upload(repaired)
                 except CloudUnavailable as e:
                     logger.warning("self-heal manifest upload failed: %s", e)
+                    await self.app_state.set_many(
+                        {
+                            KEY_API_KEY_HASH: current_hash,
+                            KEY_LAST_SYNCED_AT: datetime.now(tz=timezone.utc).isoformat(),
+                            KEY_SYNC_STATE: SYNC_STATE_NEEDS_RESYNC,
+                            KEY_SYNC_ERROR: f"self-heal upload failed: {e}",
+                        }
+                    )
+                    return ReconcileResult(ok=False, count=len(entries), error=str(e))
 
             await self.app_state.set_many(
                 {

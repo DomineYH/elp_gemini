@@ -145,6 +145,15 @@ async def test_cloud_unavailable_without_key_change_marks_needs_resync():
 @pytest.mark.asyncio
 async def test_lock_serializes_concurrent_calls():
     import asyncio
+    import time
+
+    timestamps: list[tuple[float, float]] = []
+
+    async def slow_truncate():
+        start = time.monotonic()
+        await asyncio.sleep(0.05)
+        end = time.monotonic()
+        timestamps.append((start, end))
 
     app_state = AsyncMock()
     app_state.get = AsyncMock(return_value=None)
@@ -153,7 +162,7 @@ async def test_lock_serializes_concurrent_calls():
     manifest_svc = AsyncMock()
     manifest_svc.fetch = AsyncMock(return_value=_empty_manifest())
     criteria_repo = AsyncMock()
-    criteria_repo.truncate = AsyncMock()
+    criteria_repo.truncate = AsyncMock(side_effect=slow_truncate)
     criteria_repo.bulk_insert = AsyncMock()
     vector_svc = AsyncMock()
     vector_svc.list_document_ids = AsyncMock(return_value=[])
@@ -169,5 +178,56 @@ async def test_lock_serializes_concurrent_calls():
     with patch.object(svc, "_wipe_upload_dir"):
         await asyncio.gather(svc.reconcile(), svc.reconcile())
 
-    # truncate called exactly twice (each reconcile got the lock once)
-    assert criteria_repo.truncate.await_count == 2
+    assert len(timestamps) == 2
+    # 두 truncate가 겹치지 않아야 함
+    timestamps.sort()
+    assert timestamps[0][1] <= timestamps[1][0] + 0.01, \
+        f"reconcile calls overlapped: {timestamps}"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_inserts_synthetic_required_fields_for_cloud_entries():
+    from datetime import datetime, timezone
+    from app.schemas.criteria_manifest import (
+        Manifest, ManifestEntry, MANIFEST_SCHEMA_VERSION,
+    )
+
+    app_state = AsyncMock()
+    app_state.get = AsyncMock(return_value="oldhash")
+    app_state.set_many = AsyncMock()
+
+    manifest_svc = AsyncMock()
+    manifest_svc.fetch = AsyncMock(return_value=Manifest(
+        schema_version=MANIFEST_SCHEMA_VERSION,
+        generated_at=datetime.now(tz=timezone.utc),
+        criteria=[ManifestEntry(
+            document_id="files/abc",
+            title="rubric.pdf",
+            display_alias=None,
+            status="active",
+        )],
+    ))
+
+    criteria_repo = AsyncMock()
+    criteria_repo.truncate = AsyncMock()
+    criteria_repo.bulk_insert = AsyncMock()
+
+    vector_svc = AsyncMock()
+    vector_svc.list_document_ids = AsyncMock(return_value=["files/abc"])
+
+    svc = CriteriaReconciliationService(
+        app_state_repo=app_state,
+        manifest_service=manifest_svc,
+        criteria_repo=criteria_repo,
+        vector_service=vector_svc,
+        current_api_key="newkey",
+    )
+    with patch.object(svc, "_wipe_upload_dir"):
+        result = await svc.reconcile()
+
+    assert result.ok is True
+    rows = criteria_repo.bulk_insert.call_args[0][0]
+    assert len(rows) == 1
+    assert rows[0]["file_size"] == 0
+    assert rows[0]["uploaded_by"] == "<cloud-sync>"
+    assert rows[0]["file_path"] == "files/abc"
