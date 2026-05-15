@@ -284,33 +284,6 @@ async def delete_criteria_by_stable_id(
     return {"stable_id": stable_id, "deleted": True}
 
 
-@router.get(
-    "/sync-status",
-    summary="동기화 상태 확인",
-    description="Vector Store 동기화 상태를 확인합니다.",
-)
-async def get_sync_status(
-    current_admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    동기화 상태 확인 (관리자 전용)
-
-    Returns:
-        동기화 상태 정보
-    """
-    criteria_repo = CriteriaRepository(db)
-    active_criteria = await criteria_repo.get_active_criteria()
-    pending_criteria = await criteria_repo.get_criteria_needing_sync()
-
-    return {
-        "needs_sync": len(pending_criteria) > 0,
-        "active_count": len(active_criteria),
-        "pending_count": len(pending_criteria),
-        "pending_titles": [c.title for c in pending_criteria]
-    }
-
-
 @router.patch(
     "/{criteria_id}/display-alias",
     response_model=UpdateDisplayAliasResponse,
