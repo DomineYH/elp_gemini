@@ -28,15 +28,10 @@ from app.repositories.app_state_repository import (
     KEY_LAST_SYNCED_AT,
     KEY_SYNC_ERROR,
     KEY_SYNC_STATE,
-    SYNC_STATE_NEEDS_RESYNC,
 )
 from app.schemas.criteria import (
     UpdateDisplayAliasRequest,
     UpdateDisplayAliasResponse,
-)
-from app.services.criteria_manifest_service import (
-    CloudUnavailable,
-    CriteriaManifestService,
 )
 from app.services.criteria_reconciliation_service import (
     CriteriaReconciliationService,
@@ -78,28 +73,6 @@ def _new_stable_id() -> str:
 def _now_iso_utc() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-async def _publish_or_mark_resync(
-    criteria_repo: CriteriaRepository,
-    db: AsyncSession,
-) -> None:
-    """매니페스트 publish 시도; 실패하면 sync_state=needs_resync 저장 후 502."""
-    try:
-        manifest_svc = CriteriaManifestService()
-        await manifest_svc.publish_from_db(criteria_repo)
-    except CloudUnavailable as e:
-        state_repo = AppStateRepository(db=db)
-        await state_repo.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
-        await state_repo.set(KEY_SYNC_ERROR, str(e))
-        await db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=(
-                "변경은 저장되었으나 클라우드 동기화에 실패했습니다. "
-                "관리자 페이지에서 재동기화하세요."
-            ),
-        )
 
 
 @router.post(
@@ -372,8 +345,6 @@ async def update_display_alias(
             f"admin={current_admin.username}, "
             f"id={criteria_id}, alias={payload.display_alias!r}"
         )
-
-        await _publish_or_mark_resync(repo, db)
 
         return UpdateDisplayAliasResponse(
             success=True,
