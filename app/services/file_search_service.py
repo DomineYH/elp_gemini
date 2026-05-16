@@ -19,7 +19,9 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 _MANIFEST_PAYLOAD_METADATA_KEY = "manifest_payload_base64"
-_MANIFEST_PAYLOAD_CHUNK_SIZE = 3000
+# Google File Search caps each string_list_value entry at 256 chars (issue #60).
+# Keep in sync with alias_map_codec._CHUNK_SIZE.
+_MANIFEST_PAYLOAD_CHUNK_SIZE = 240
 
 
 def _sanitize_display_name(name: str) -> str:

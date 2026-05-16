@@ -13,11 +13,13 @@ from typing import Iterable, List
 
 
 ALIAS_MAP_PAYLOAD_KEY = "payload_b64"
-_CHUNK_SIZE = 3000  # file_search_service._MANIFEST_PAYLOAD_CHUNK_SIZE 와 동일
+# Google File Search caps each string_list_value entry at 256 chars (issue #60).
+# Keep in sync with file_search_service._MANIFEST_PAYLOAD_CHUNK_SIZE.
+_CHUNK_SIZE = 240
 
 
 def encode_alias_map_payload(data: dict) -> List[str]:
-    """JSON 직렬화 → UTF-8 → base64 → 3000자 청크 리스트."""
+    """JSON 직렬화 → UTF-8 → base64 → 240자 청크 리스트."""
     encoded = base64.b64encode(json.dumps(data, ensure_ascii=False).encode("utf-8")).decode("ascii")
     if not encoded:
         return [""]

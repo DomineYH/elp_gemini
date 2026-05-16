@@ -2,6 +2,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+from google.genai import errors as genai_errors
 
 from app.schemas.alias_map import AliasMap, AliasMapEntry
 from app.services.criteria_alias_map_service import CriteriaAliasMapService
@@ -14,15 +15,44 @@ def _store():
     return s
 
 
+def _enforcing_upload(document_name):
+    """Mimic Google File Search's 256-char string_list_value limit (issue #60)."""
+    def fake_upload(**kwargs):
+        config = kwargs.get("config") or {}
+        for entry in config.get("custom_metadata") or []:
+            sl = entry.get("string_list_value") or {}
+            for value in sl.get("values") or []:
+                if len(value) > 256:
+                    raise genai_errors.ClientError(
+                        400,
+                        {"error": {
+                            "code": 400,
+                            "status": "INVALID_ARGUMENT",
+                            "message": (
+                                "* UploadToFileSearchStoreRequest."
+                                "custom_metadata[1].string_list_value."
+                                "values[0]: StringList value cannot be "
+                                "more than 256 characters long.\n"
+                            ),
+                        }},
+                        MagicMock(),
+                    )
+        op = MagicMock(done=True)
+        op.response.document_name = document_name
+        return op
+
+    return fake_upload
+
+
 @pytest.mark.asyncio
 async def test_replace_uploads_then_deletes_old():
     """기존 doc.name이 있을 때: upload 성공 후에야 delete 호출"""
     client = MagicMock()
     client.file_search_stores.list.return_value = iter([_store()])
 
-    upload_op = MagicMock(done=True)
-    upload_op.response.document_name = "docs/alias-map-new"
-    client.file_search_stores.upload_to_file_search_store.return_value = upload_op
+    client.file_search_stores.upload_to_file_search_store.side_effect = (
+        _enforcing_upload("docs/alias-map-new")
+    )
     client.file_search_stores.documents.delete = MagicMock()
 
     am = AliasMap(schema_version=1, updated_at="2026-05-15T00:00:00Z",
@@ -40,9 +70,9 @@ async def test_replace_uploads_then_deletes_old():
 async def test_replace_does_not_delete_when_no_old_doc():
     client = MagicMock()
     client.file_search_stores.list.return_value = iter([_store()])
-    upload_op = MagicMock(done=True)
-    upload_op.response.document_name = "docs/alias-map-1"
-    client.file_search_stores.upload_to_file_search_store.return_value = upload_op
+    client.file_search_stores.upload_to_file_search_store.side_effect = (
+        _enforcing_upload("docs/alias-map-1")
+    )
     client.file_search_stores.documents.delete = MagicMock()
 
     am = AliasMap(schema_version=1, updated_at="2026-05-15T00:00:00Z", entries={})
