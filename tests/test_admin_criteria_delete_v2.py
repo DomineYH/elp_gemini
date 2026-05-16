@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from app.repositories.app_state_repository import KEY_SYNC_STATE
 from app.routers.admin.criteria import delete_criteria_by_stable_id
 from app.schemas.alias_map import AliasMap, AliasMapEntry
+from app.services.criteria_alias_map_service import AliasMapParseError
 
 
 def test_delete_removes_cloud_alias_and_db():
@@ -27,6 +28,52 @@ def test_delete_route_is_registered():
     delete_routes = [(p, m) for p, m in routes_by_method if "DELETE" in m]
     # The new stable_id route should exist:
     assert any("/{stable_id}" in p for p, _ in delete_routes), f"DELETE /{{stable_id}} not registered. Routes: {delete_routes}"
+
+
+@pytest.mark.asyncio
+async def test_delete_corrupted_alias_map_marks_resync_without_cloud_delete():
+    stable_id = "01HDELETE"
+    row = SimpleNamespace(stable_id=stable_id, document_id="docs/rubric")
+    db = AsyncMock()
+
+    with patch(
+        "app.routers.admin.criteria.CriteriaRepository"
+    ) as repo_cls, patch(
+        "app.routers.admin.criteria.CriteriaVectorService"
+    ) as vector_cls, patch(
+        "app.routers.admin.criteria.CriteriaAliasMapService"
+    ) as alias_cls, patch(
+        "app.routers.admin.criteria.AppStateRepository"
+    ) as state_cls:
+        repo_cls.return_value.get_criteria_by_stable_id = AsyncMock(
+            return_value=row
+        )
+
+        vector = vector_cls.return_value
+        vector.delete_criteria = AsyncMock(return_value=True)
+        vector.file_search_service.client = MagicMock()
+
+        alias = alias_cls.return_value
+        alias.fetch = AsyncMock(
+            side_effect=AliasMapParseError(
+                "docs/alias-map", ValueError("bad payload")
+            )
+        )
+
+        state = state_cls.return_value
+        state.set = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await delete_criteria_by_stable_id(
+                stable_id=stable_id,
+                current_admin=object(),
+                _sync_ready=None,
+                db=db,
+            )
+
+    assert exc_info.value.status_code == 503
+    vector.delete_criteria.assert_not_awaited()
+    state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
 
 
 @pytest.mark.asyncio

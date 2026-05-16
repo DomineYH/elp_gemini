@@ -309,9 +309,6 @@ async def delete_criteria_by_stable_id(
     cloud_write_started = False
     try:
         vec = CriteriaVectorService()
-        cloud_write_started = True
-        await vec.delete_criteria(document_id=row.document_id)
-
         alias_svc = CriteriaAliasMapService(
             client=vec.file_search_service.client,
             store_display_name=settings.FS_RUBRIC_STORE_NAME,
@@ -320,6 +317,10 @@ async def delete_criteria_by_stable_id(
             fetched = await alias_svc.fetch()
         except AliasMapParseError as e:
             await _raise_alias_map_parse_unavailable(db, e)
+
+        cloud_write_started = True
+        await vec.delete_criteria(document_id=row.document_id)
+
         if fetched:
             old_doc_name, alias_map = fetched
             if stable_id in alias_map.entries:
