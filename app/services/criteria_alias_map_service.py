@@ -12,11 +12,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
-from app.schemas.alias_map import AliasMap, empty_alias_map
+from app.schemas.alias_map import AliasMap
 from app.services.alias_map_codec import (
     ALIAS_MAP_PAYLOAD_KEY,
     decode_alias_map_payload,
@@ -24,6 +23,17 @@ from app.services.alias_map_codec import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class AliasMapParseError(RuntimeError):
+    """Raised when an existing alias_map document cannot be parsed safely."""
+
+    def __init__(self, doc_name: str, original_error: Exception):
+        self.doc_name = doc_name
+        self.original_error = original_error
+        super().__init__(
+            f"alias_map parse failed for {doc_name}: {original_error}"
+        )
 
 
 def _meta_value(entry, field):
@@ -62,7 +72,7 @@ class CriteriaAliasMapService:
         return None
 
     async def fetch(self) -> Optional[Tuple[str, AliasMap]]:
-        """(doc_name, AliasMap) 또는 None을 반환. 파싱 실패 시 비어있는 맵으로 fallback."""
+        """(doc_name, AliasMap) 또는 None을 반환. 기존 문서 파싱 실패 시 예외."""
         store = self._find_store()
         if not store:
             return None
@@ -74,12 +84,10 @@ class CriteriaAliasMapService:
             chunks = (kv.get(ALIAS_MAP_PAYLOAD_KEY) or (None, []))[1]
             try:
                 payload = decode_alias_map_payload(chunks)
-                if not payload:
-                    return doc.name, empty_alias_map(_now_iso())
                 return doc.name, AliasMap.model_validate(payload)
             except Exception as e:
-                logger.error(f"alias_map 파싱 실패 — 비어있는 맵으로 fallback: {e}")
-                return doc.name, empty_alias_map(_now_iso())
+                logger.error(f"alias_map 파싱 실패: {e}")
+                raise AliasMapParseError(doc.name, e) from e
         return None
 
     async def replace(self, alias_map: AliasMap, old_doc_name: Optional[str]) -> str:
@@ -133,7 +141,3 @@ class CriteriaAliasMapService:
             self._client.file_search_stores.documents.delete(name=old_doc_name)
 
         return new_doc_name
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")

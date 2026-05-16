@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 from app.services.alias_map_codec import encode_alias_map_payload, ALIAS_MAP_PAYLOAD_KEY
 from app.services.criteria_alias_map_service import (
+    AliasMapParseError,
     CriteriaAliasMapService,
     _read_metadata_kv,
 )
@@ -76,3 +77,25 @@ async def test_fetch_parses_payload_chunks():
     doc_name, alias_map = fetched
     assert doc_name == "docs/alias-map"
     assert alias_map.entries["01HID"].alias == "한글"
+
+
+@pytest.mark.asyncio
+async def test_fetch_raises_parse_error_for_corrupted_payload():
+    client = MagicMock()
+    store = MagicMock()
+    store.name = "stores/x"
+    store.display_name = "rubric-store"
+    client.file_search_stores.list.return_value = iter([store])
+    client.file_search_stores.documents.list.return_value = iter([
+        _doc("docs/alias-map", [
+            _meta("type", string_value="alias_map"),
+            _meta(ALIAS_MAP_PAYLOAD_KEY, string_list_value=["e2ludmFsaWQ="]),
+        ]),
+    ])
+
+    svc = CriteriaAliasMapService(client=client, store_display_name="rubric-store")
+
+    with pytest.raises(AliasMapParseError) as exc_info:
+        await svc.fetch()
+
+    assert exc_info.value.doc_name == "docs/alias-map"

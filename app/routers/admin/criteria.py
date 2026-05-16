@@ -28,6 +28,7 @@ from app.repositories.app_state_repository import (
     KEY_LAST_SYNCED_AT,
     KEY_SYNC_ERROR,
     KEY_SYNC_STATE,
+    SYNC_STATE_NEEDS_RESYNC,
 )
 from app.services.criteria_reconciliation_service import (
     CriteriaReconciliationService,
@@ -46,6 +47,7 @@ from app.schemas.alias_map import (
     empty_alias_map,
 )
 from app.services.criteria_alias_map_service import (
+    AliasMapParseError,
     CriteriaAliasMapService,
 )
 from app.config import settings
@@ -70,6 +72,50 @@ def _new_stable_id() -> str:
 def _now_iso_utc() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+async def _mark_criteria_needs_resync(db: AsyncSession, exc: Exception) -> None:
+    try:
+        await db.rollback()
+    except Exception:
+        logger.warning("criteria sync_state 표시 전 rollback 실패", exc_info=True)
+
+    try:
+        state_repo = AppStateRepository(db=db)
+        await state_repo.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
+        await state_repo.set(KEY_SYNC_ERROR, str(exc))
+        await db.commit()
+    except Exception:
+        logger.error("criteria sync_state needs_resync 표시 실패", exc_info=True)
+
+
+async def _raise_alias_map_parse_unavailable(
+    db: AsyncSession, exc: AliasMapParseError
+) -> None:
+    logger.error("alias_map 파싱 실패로 평가기준 동기화 필요: %s", exc)
+    await _mark_criteria_needs_resync(db, exc)
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="alias_map 파싱 실패 — 재동기화가 필요합니다",
+    )
+
+
+async def _raise_criteria_mutation_failed(
+    db: AsyncSession,
+    exc: Exception,
+    *,
+    cloud_write_started: bool,
+) -> None:
+    if cloud_write_started:
+        await _mark_criteria_needs_resync(db, exc)
+    logger.error("평가기준 변경 실패: %s", exc, exc_info=True)
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=(
+            "평가기준 변경 중 오류가 발생했습니다: "
+            f"{type(exc).__name__} - {exc}"
+        ),
+    )
 
 
 @router.post(
@@ -99,6 +145,7 @@ async def upload_criteria(
         HTTPException: 파일 검증 실패 또는 업로드 오류
     """
     temp_file_path = None
+    cloud_write_started = False
 
     try:
         logger.info(
@@ -148,6 +195,7 @@ async def upload_criteria(
             title=file.filename,
             stable_id=stable_id,
         )
+        cloud_write_started = True
         document_id = upload_result["document_id"]
         logger.debug(
             f"3단계: 클라우드 업로드 완료 - "
@@ -207,10 +255,14 @@ async def upload_criteria(
             "document_id": document_id,
         }
 
+    except AliasMapParseError as e:
+        await _raise_alias_map_parse_unavailable(db, e)
     except HTTPException:
         raise
     except Exception as e:
         await db.rollback()
+        if cloud_write_started:
+            await _mark_criteria_needs_resync(db, e)
         error_type = type(e).__name__
         error_msg = str(e)
         logger.error(
@@ -253,32 +305,49 @@ async def delete_criteria_by_stable_id(
             detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
         )
 
-    vec = CriteriaVectorService()
-    await vec.delete_criteria(document_id=row.document_id)
+    cloud_write_started = False
+    try:
+        vec = CriteriaVectorService()
+        await vec.delete_criteria(document_id=row.document_id)
+        cloud_write_started = True
 
-    alias_svc = CriteriaAliasMapService(
-        client=vec.file_search_service.client,
-        store_display_name=settings.FS_RUBRIC_STORE_NAME,
-    )
-    fetched = await alias_svc.fetch()
-    if fetched:
-        old_doc_name, alias_map = fetched
-        if stable_id in alias_map.entries:
-            new_entries = dict(alias_map.entries)
-            new_entries.pop(stable_id, None)
-            new_alias_map = AliasMap(
-                schema_version=1,
-                updated_at=_now_iso_utc(),
-                entries=new_entries,
-            )
-            await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
+        alias_svc = CriteriaAliasMapService(
+            client=vec.file_search_service.client,
+            store_display_name=settings.FS_RUBRIC_STORE_NAME,
+        )
+        try:
+            fetched = await alias_svc.fetch()
+        except AliasMapParseError as e:
+            await _raise_alias_map_parse_unavailable(db, e)
+        if fetched:
+            old_doc_name, alias_map = fetched
+            if stable_id in alias_map.entries:
+                new_entries = dict(alias_map.entries)
+                new_entries.pop(stable_id, None)
+                new_alias_map = AliasMap(
+                    schema_version=1,
+                    updated_at=_now_iso_utc(),
+                    entries=new_entries,
+                )
+                await alias_svc.replace(
+                    new_alias_map, old_doc_name=old_doc_name
+                )
 
-    await db.delete(row)
-    await db.commit()
-    logger.info(
-        f"평가기준 삭제: stable_id={stable_id} document_id={row.document_id}"
-    )
-    return {"stable_id": stable_id, "deleted": True}
+        await db.delete(row)
+        await db.commit()
+        logger.info(
+            f"평가기준 삭제: stable_id={stable_id} "
+            f"document_id={row.document_id}"
+        )
+        return {"stable_id": stable_id, "deleted": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await _raise_criteria_mutation_failed(
+            db,
+            e,
+            cloud_write_started=cloud_write_started,
+        )
 
 
 class _AliasPatch(BaseModel):
@@ -297,51 +366,65 @@ async def patch_criteria_alias(
     _sync_ready=Depends(require_criteria_sync_ready),
     db: AsyncSession = Depends(get_db),
 ):
-    vec = CriteriaVectorService()
-    alias_svc = CriteriaAliasMapService(
-        client=vec.file_search_service.client,
-        store_display_name=settings.FS_RUBRIC_STORE_NAME,
-    )
-
-    fetched = await alias_svc.fetch()
-    if not fetched:
-        raise HTTPException(
-            status_code=409,
-            detail="alias_map 미존재 — 재동기화가 필요합니다",
-        )
-    old_doc_name, alias_map = fetched
-
-    if stable_id not in alias_map.entries:
-        raise HTTPException(
-            status_code=404,
-            detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+    cloud_write_started = False
+    try:
+        vec = CriteriaVectorService()
+        alias_svc = CriteriaAliasMapService(
+            client=vec.file_search_service.client,
+            store_display_name=settings.FS_RUBRIC_STORE_NAME,
         )
 
-    # Update the entry's alias only
-    updated_entry = alias_map.entries[stable_id].model_copy(
-        update={"alias": body.alias}
-    )
-    new_entries = dict(alias_map.entries)
-    new_entries[stable_id] = updated_entry
+        try:
+            fetched = await alias_svc.fetch()
+        except AliasMapParseError as e:
+            await _raise_alias_map_parse_unavailable(db, e)
+        if not fetched:
+            raise HTTPException(
+                status_code=409,
+                detail="alias_map 미존재 — 재동기화가 필요합니다",
+            )
+        old_doc_name, alias_map = fetched
 
-    new_alias_map = AliasMap(
-        schema_version=1,
-        updated_at=_now_iso_utc(),
-        entries=new_entries,
-    )
-    await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
+        if stable_id not in alias_map.entries:
+            raise HTTPException(
+                status_code=404,
+                detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+            )
 
-    # Sync DB cache
-    repo = CriteriaRepository(db)
-    row = await repo.get_criteria_by_stable_id(stable_id)
-    if row:
-        row.display_alias = body.alias
-        await db.commit()
+        # Update the entry's alias only
+        updated_entry = alias_map.entries[stable_id].model_copy(
+            update={"alias": body.alias}
+        )
+        new_entries = dict(alias_map.entries)
+        new_entries[stable_id] = updated_entry
 
-    logger.info(
-        f"alias 변경: stable_id={stable_id} alias={body.alias}"
-    )
-    return {"stable_id": stable_id, "alias": body.alias}
+        new_alias_map = AliasMap(
+            schema_version=1,
+            updated_at=_now_iso_utc(),
+            entries=new_entries,
+        )
+        cloud_write_started = True
+        await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
+
+        # Sync DB cache
+        repo = CriteriaRepository(db)
+        row = await repo.get_criteria_by_stable_id(stable_id)
+        if row:
+            row.display_alias = body.alias
+            await db.commit()
+
+        logger.info(
+            f"alias 변경: stable_id={stable_id} alias={body.alias}"
+        )
+        return {"stable_id": stable_id, "alias": body.alias}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await _raise_criteria_mutation_failed(
+            db,
+            e,
+            cloud_write_started=cloud_write_started,
+        )
 
 
 @router.post(
@@ -389,57 +472,74 @@ async def _set_status_by_stable_id(
             ),
         )
 
-    vec = CriteriaVectorService()
-    alias_svc = CriteriaAliasMapService(
-        client=vec.file_search_service.client,
-        store_display_name=settings.FS_RUBRIC_STORE_NAME,
-    )
-    fetched = await alias_svc.fetch()
-    if not fetched:
-        raise HTTPException(
-            status_code=409,
-            detail="alias_map 미존재 — 재동기화가 필요합니다",
-        )
-    old_doc_name, alias_map = fetched
-    if stable_id not in alias_map.entries:
-        raise HTTPException(
-            status_code=404,
-            detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+    cloud_write_started = False
+    try:
+        vec = CriteriaVectorService()
+        alias_svc = CriteriaAliasMapService(
+            client=vec.file_search_service.client,
+            store_display_name=settings.FS_RUBRIC_STORE_NAME,
         )
 
-    now = _now_iso_utc()
-    new_entries: dict = {}
-    for sid, entry in alias_map.entries.items():
-        if sid == stable_id:
-            new_entries[sid] = entry.model_copy(update={
-                "status": target_status,
-                "activated_at": now if target_status == "active" else None,
-            })
-        elif target_status == "active" and entry.status == "active":
-            new_entries[sid] = entry.model_copy(update={
-                "status": "uploaded",
-                "activated_at": None,
-            })
-        else:
-            new_entries[sid] = entry
+        try:
+            fetched = await alias_svc.fetch()
+        except AliasMapParseError as e:
+            await _raise_alias_map_parse_unavailable(db, e)
+        if not fetched:
+            raise HTTPException(
+                status_code=409,
+                detail="alias_map 미존재 — 재동기화가 필요합니다",
+            )
+        old_doc_name, alias_map = fetched
+        if stable_id not in alias_map.entries:
+            raise HTTPException(
+                status_code=404,
+                detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+            )
 
-    new_alias_map = AliasMap(
-        schema_version=1, updated_at=now, entries=new_entries
-    )
-    await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
+        now = _now_iso_utc()
+        new_entries: dict = {}
+        for sid, entry in alias_map.entries.items():
+            if sid == stable_id:
+                new_entries[sid] = entry.model_copy(update={
+                    "status": target_status,
+                    "activated_at": now if target_status == "active" else None,
+                })
+            elif target_status == "active" and entry.status == "active":
+                new_entries[sid] = entry.model_copy(update={
+                    "status": "uploaded",
+                    "activated_at": None,
+                })
+            else:
+                new_entries[sid] = entry
 
-    # Sync DB cache for both the target and any demoted entries
-    repo = CriteriaRepository(db)
-    parsed_now = _parse_iso(now)
-    for sid, entry in new_entries.items():
-        row = await repo.get_criteria_by_stable_id(sid)
-        if row:
-            row.status = entry.status
-            row.activated_at = parsed_now if entry.status == "active" else None
-    await db.commit()
+        new_alias_map = AliasMap(
+            schema_version=1, updated_at=now, entries=new_entries
+        )
+        cloud_write_started = True
+        await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
 
-    logger.info(f"상태 변경: stable_id={stable_id} status={target_status}")
-    return {"stable_id": stable_id, "status": target_status}
+        # Sync DB cache for both the target and any demoted entries
+        repo = CriteriaRepository(db)
+        parsed_now = _parse_iso(now)
+        for sid, entry in new_entries.items():
+            row = await repo.get_criteria_by_stable_id(sid)
+            if row:
+                row.status = entry.status
+                row.activated_at = (
+                    parsed_now if entry.status == "active" else None
+                )
+        await db.commit()
+
+        logger.info(f"상태 변경: stable_id={stable_id} status={target_status}")
+        return {"stable_id": stable_id, "status": target_status}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await _raise_criteria_mutation_failed(
+            db,
+            e,
+            cloud_write_started=cloud_write_started,
+        )
 
 
 def _parse_iso(value):
