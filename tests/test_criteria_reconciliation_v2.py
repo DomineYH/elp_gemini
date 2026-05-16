@@ -577,6 +577,47 @@ async def test_reconcile_fresh_install_stable_id_documents_do_not_use_surrogates
 
 
 @pytest.mark.asyncio
+async def test_reconcile_demotes_active_legacy_surrogates():
+    stable_id = "01HSTABLE"
+    legacy_document_id = "fileSearchStores/s/documents/legacy"
+    surrogate_id = (
+        "legacy_"
+        + hashlib.sha1(legacy_document_id.encode("utf-8")).hexdigest()[:16]
+    )
+
+    outcome = await _reconcile_with_cloud_docs(
+        [
+            _doc_kv("fileSearchStores/s/documents/modern", [
+                ("type", "criteria"),
+                ("stable_id", stable_id),
+            ]),
+            _doc_kv(legacy_document_id, [("type", "criteria")]),
+        ],
+        alias_entries={
+            stable_id: AliasMapEntry(
+                alias=None,
+                status="active",
+                activated_at="2026-05-15T00:00:00Z",
+            ),
+            surrogate_id: AliasMapEntry(
+                alias=None,
+                status="active",
+                activated_at="2026-05-16T00:00:00Z",
+            ),
+        },
+    )
+
+    assert outcome.result.ok is True
+    outcome.alias.replace.assert_called_once()
+    healed_map = outcome.alias.replace.call_args.args[0]
+    assert healed_map.entries[stable_id].status == "active"
+    assert healed_map.entries[surrogate_id].status == "uploaded"
+    inserted_by_stable_id = {row["stable_id"]: row for row in outcome.inserted}
+    assert inserted_by_stable_id[stable_id]["status"] == "active"
+    assert inserted_by_stable_id[surrogate_id]["status"] == "uploaded"
+
+
+@pytest.mark.asyncio
 async def test_reconcile_self_heals_orphan_entries():
     """alias_map에 있지만 클라우드에 없는 stable_id는 alias_map에서 제거"""
     from app.services.criteria_reconciliation_service import (

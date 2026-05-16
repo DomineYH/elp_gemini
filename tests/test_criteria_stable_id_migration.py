@@ -47,13 +47,17 @@ async def test_adds_stable_id_when_missing():
 
 
 @pytest.mark.asyncio
-async def test_idempotent_when_column_present():
+async def test_does_not_add_column_when_column_present_but_still_ensures_index():
     engine = _FakeEngine(columns={"id", "stable_id"})
 
     added = await ensure_criteria_stable_id_column(engine)
 
     assert added is False
-    assert engine.conn.statements == []
+    assert not any("ADD COLUMN stable_id" in s for s in engine.conn.statements)
+    assert any(
+        "CREATE INDEX IF NOT EXISTS idx_criteria_stable_id" in s
+        for s in engine.conn.statements
+    )
 
 
 @pytest.mark.asyncio

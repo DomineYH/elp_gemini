@@ -33,16 +33,17 @@ async def ensure_criteria_stable_id_column(engine: AsyncEngine) -> bool:
         if columns is None:
             logger.warning("criteria 테이블이 없어 stable_id 패치를 건너뜀")
             return False
+        column_added = False
         if "stable_id" in columns:
             logger.debug("criteria.stable_id 컬럼이 이미 존재함")
-            return False
-
-        await conn.execute(text(
-            "ALTER TABLE criteria ADD COLUMN stable_id VARCHAR(64) NULL"
-        ))
+        else:
+            await conn.execute(text(
+                "ALTER TABLE criteria ADD COLUMN stable_id VARCHAR(64) NULL"
+            ))
+            logger.info("criteria.stable_id 컬럼을 추가함")
+            column_added = True
         await conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_criteria_stable_id "
             "ON criteria(stable_id)"
         ))
-        logger.info("criteria.stable_id 컬럼을 추가함")
-        return True
+        return column_added

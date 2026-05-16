@@ -165,8 +165,8 @@ class CriteriaAliasMapService:
 
         for bad_doc in unparseable_docs:
             if (
-                bad_doc.updated_at is not None
-                and bad_doc.updated_at >= newest.updated_at
+                bad_doc.updated_at is None
+                or bad_doc.updated_at >= newest.updated_at
             ):
                 raise AliasMapParseError(bad_doc.name, bad_doc.error)
 

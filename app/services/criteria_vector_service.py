@@ -182,10 +182,17 @@ class CriteriaVectorService:
             return None
 
         _, alias_map = fetched
+        from app.services.criteria_reconciliation_service import (
+            is_legacy_surrogate_stable_id,
+        )
+
         active_entries = [
             (stable_id, entry)
             for stable_id, entry in alias_map.entries.items()
-            if entry.status == "active"
+            if (
+                entry.status == "active"
+                and not is_legacy_surrogate_stable_id(stable_id)
+            )
         ]
         if not active_entries:
             return None

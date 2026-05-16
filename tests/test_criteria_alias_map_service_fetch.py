@@ -181,6 +181,36 @@ async def test_fetch_raises_when_newest_alias_map_is_unparseable(caplog):
 
 
 @pytest.mark.asyncio
+async def test_fetch_raises_when_unparseable_duplicate_has_unknown_updated_at():
+    old_chunks = _alias_map_chunks("2026-05-15T00:00:00Z", "old")
+
+    client = MagicMock()
+    store = MagicMock()
+    store.name = "stores/x"
+    store.display_name = "rubric-store"
+    client.file_search_stores.list.return_value = iter([store])
+    client.file_search_stores.documents.delete = MagicMock()
+    client.file_search_stores.documents.list.return_value = iter([
+        _doc("docs/alias-map-old", [
+            _meta("type", string_value="alias_map"),
+            _meta(ALIAS_MAP_PAYLOAD_KEY, string_list_value=old_chunks),
+        ]),
+        _doc("docs/alias-map-corrupt", [
+            _meta("type", string_value="alias_map"),
+            _meta(ALIAS_MAP_PAYLOAD_KEY, string_list_value=["not-base64"]),
+        ]),
+    ])
+
+    svc = CriteriaAliasMapService(client=client, store_display_name="rubric-store")
+
+    with pytest.raises(AliasMapParseError) as exc_info:
+        await svc.fetch()
+
+    assert exc_info.value.doc_name == "docs/alias-map-corrupt"
+    client.file_search_stores.documents.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_fetch_raises_parse_error_for_corrupted_payload():
     client = MagicMock()
     store = MagicMock()

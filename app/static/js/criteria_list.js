@@ -1,11 +1,14 @@
 document.addEventListener('DOMContentLoaded', () => {
+  const checkedRadio = document.querySelector('.active-radio:checked');
+  const confirmedActiveStableId = checkedRadio ? checkedRadio.value : null;
+
   document.querySelectorAll('.alias-cell').forEach((cell) => {
     cell.addEventListener('click', () => startInlineEdit(cell));
   });
   document.querySelectorAll('.active-radio').forEach((r) => {
     r.addEventListener('change', (e) => {
       const sid = e.target.value;
-      activate(sid);
+      activate(sid, confirmedActiveStableId);
     });
   });
   document.querySelectorAll('[data-action="deactivate"]').forEach((b) => {
@@ -25,6 +28,12 @@ document.addEventListener('DOMContentLoaded', () => {
     reconcileBtn.addEventListener('click', reconcile);
   }
 });
+
+function restoreActiveSelection(previousStableId) {
+  document.querySelectorAll('.active-radio').forEach((radio) => {
+    radio.checked = previousStableId ? radio.value === previousStableId : false;
+  });
+}
 
 async function startInlineEdit(cell) {
   const row = cell.closest('tr');
@@ -79,12 +88,13 @@ async function startInlineEdit(cell) {
   input.addEventListener('blur', commit);
 }
 
-async function activate(sid) {
+async function activate(sid, previousStableId) {
   try {
     const r = await fetch(`/api/admin/criteria/${sid}/activate`, { method: 'POST' });
     if (!r.ok) throw new Error(await r.text());
     location.reload();
   } catch (e) {
+    restoreActiveSelection(previousStableId);
     alert(`활성화 실패: ${e.message}`);
   }
 }

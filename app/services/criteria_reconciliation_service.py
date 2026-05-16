@@ -53,6 +53,34 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _normalize_active_entries(
+    entries: dict[str, AliasMapEntry],
+) -> dict[str, AliasMapEntry]:
+    """Keep one non-legacy active entry; demote legacy or duplicate actives."""
+    active_real_entries = [
+        (sid, entry)
+        for sid, entry in entries.items()
+        if entry.status == "active" and not is_legacy_surrogate_stable_id(sid)
+    ]
+    keep_active_sid = None
+    if active_real_entries:
+        keep_active_sid = max(
+            active_real_entries,
+            key=lambda item: (item[1].activated_at or "", item[0]),
+        )[0]
+
+    normalized: dict[str, AliasMapEntry] = {}
+    for sid, entry in entries.items():
+        if entry.status == "active" and sid != keep_active_sid:
+            normalized[sid] = entry.model_copy(update={
+                "status": "uploaded",
+                "activated_at": None,
+            })
+        else:
+            normalized[sid] = entry
+    return normalized
+
+
 @asynccontextmanager
 async def _transaction_if_needed(db):
     in_transaction = getattr(db, "in_transaction", None)
@@ -164,6 +192,7 @@ class CriteriaReconciliationService:
                         cleaned[sid] = AliasMapEntry(
                             alias=None, status="uploaded", activated_at=None
                         )
+                cleaned = _normalize_active_entries(cleaned)
 
                 # Single re-upload if anything changed
                 if cleaned != alias_map.entries:

@@ -20,3 +20,11 @@ def test_escape_cancels_alias_edit_before_blur_commit():
     assert "input.dataset.cancelled = 'false'" in src
     assert "input.dataset.cancelled = 'true'" in src
     assert "input.dataset.cancelled === 'true'" in src
+
+
+def test_activate_failure_restores_last_confirmed_radio_selection():
+    src = JS_SOURCE.read_text()
+
+    assert "confirmedActiveStableId" in src
+    assert "activate(sid, confirmedActiveStableId)" in src
+    assert "restoreActiveSelection(previousStableId)" in src

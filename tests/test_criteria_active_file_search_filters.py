@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.repositories.app_state_repository import KEY_SYNC_STATE
+from app.schemas.alias_map import AliasMap, AliasMapEntry
 
 
 def _file_search_for_store(config, store_name: str):
@@ -13,6 +14,73 @@ def _file_search_for_store(config, store_name: str):
         if file_search.file_search_store_names == [store_name]:
             return file_search
     return None
+
+
+@pytest.mark.asyncio
+async def test_active_stable_id_filter_ignores_legacy_surrogate_active_entries():
+    from app.services.criteria_vector_service import CriteriaVectorService
+
+    alias_map = AliasMap(
+        schema_version=1,
+        updated_at="2026-05-15T00:00:00Z",
+        entries={
+            "01HREAL": AliasMapEntry(
+                alias=None,
+                status="active",
+                activated_at="2026-05-15T00:00:00Z",
+            ),
+            "legacy_0123456789abcdef": AliasMapEntry(
+                alias=None,
+                status="active",
+                activated_at="2026-05-16T00:00:00Z",
+            ),
+        },
+    )
+
+    with patch(
+        "app.services.criteria_alias_map_service.CriteriaAliasMapService"
+    ) as alias_cls:
+        alias_cls.return_value.fetch = AsyncMock(
+            return_value=("docs/alias-map", alias_map)
+        )
+
+        metadata_filter = await CriteriaVectorService.active_stable_id_filter(
+            client=MagicMock(),
+            store_display_name="rubric-store",
+        )
+
+    assert metadata_filter == 'stable_id="01HREAL"'
+
+
+@pytest.mark.asyncio
+async def test_active_stable_id_filter_returns_none_when_only_legacy_is_active():
+    from app.services.criteria_vector_service import CriteriaVectorService
+
+    alias_map = AliasMap(
+        schema_version=1,
+        updated_at="2026-05-15T00:00:00Z",
+        entries={
+            "legacy_0123456789abcdef": AliasMapEntry(
+                alias=None,
+                status="active",
+                activated_at="2026-05-16T00:00:00Z",
+            ),
+        },
+    )
+
+    with patch(
+        "app.services.criteria_alias_map_service.CriteriaAliasMapService"
+    ) as alias_cls:
+        alias_cls.return_value.fetch = AsyncMock(
+            return_value=("docs/alias-map", alias_map)
+        )
+
+        metadata_filter = await CriteriaVectorService.active_stable_id_filter(
+            client=MagicMock(),
+            store_display_name="rubric-store",
+        )
+
+    assert metadata_filter is None
 
 
 def test_lessonplan_file_search_filters_only_rubric_store():
