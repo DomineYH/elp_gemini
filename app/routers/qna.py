@@ -227,6 +227,7 @@ async def ask_question(
             answer=result["answer"],
             latency_ms=result.get("latency_ms"),
             citations=result.get("citations"),
+            criteria_notice=result.get("criteria_notice"),
         )
 
     except ValueError as e:
@@ -530,6 +531,7 @@ async def chat_with_document(
             answer=result["answer"],
             latency_ms=result.get("latency_ms"),
             citations=result.get("citations"),
+            criteria_notice=result.get("criteria_notice"),
         )
 
     except Exception as e:

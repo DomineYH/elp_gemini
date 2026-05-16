@@ -18,6 +18,12 @@ from app.config import settings
 from app.models.analysis_reports import AnalysisReport
 from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
+from app.repositories.app_state_repository import (
+    AppStateRepository,
+    KEY_SYNC_ERROR,
+    KEY_SYNC_STATE,
+    SYNC_STATE_NEEDS_RESYNC,
+)
 from app.services.file_search_service import (
     FileSearchService,
     _sanitize_display_name,
@@ -32,6 +38,17 @@ from app.utils.gemini_retry import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _mark_criteria_filter_needs_resync(
+    db: AsyncSession, exc: Exception
+) -> None:
+    try:
+        state_repo = AppStateRepository(db=db)
+        await state_repo.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
+        await state_repo.set(KEY_SYNC_ERROR, str(exc))
+    except Exception:
+        logger.warning("평가기준 동기화 필요 상태 표시 실패", exc_info=True)
 
 
 @retry_on_resource_exhausted(max_attempts=3, initial_wait=2.0, max_wait=16.0)
@@ -192,6 +209,7 @@ class LessonPlanAnalysisService:
                 # Store ID 분리 및 역할 명확화
                 user_store_id = store_ids[0]      # 사용자 업로드 수업 지도안
                 rubric_store_id = store_ids[1]    # 평가기준 문서
+                criteria_notice = None
 
                 logger.info(
                     f"File Search Store 조회 완료:\n"
@@ -199,13 +217,22 @@ class LessonPlanAnalysisService:
                     f"  - Lesson Store: {user_store_id}"
                 )
 
-                rubric_metadata_filter = await (
-                    CriteriaVectorService.active_stable_id_filter(
-                        client=self.client,
-                        store_display_name=settings.FS_RUBRIC_STORE_NAME,
+                try:
+                    rubric_metadata_filter = await (
+                        CriteriaVectorService.active_stable_id_filter(
+                            client=self.client,
+                            store_display_name=settings.FS_RUBRIC_STORE_NAME,
+                        )
                     )
-                )
-                if not rubric_metadata_filter:
+                except Exception as e:
+                    logger.warning(
+                        f"활성 평가기준 필터 조회 실패 (무시): {e}",
+                        exc_info=True,
+                    )
+                    rubric_metadata_filter = None
+                    criteria_notice = "평가기준 동기화가 필요합니다."
+                    await _mark_criteria_filter_needs_resync(self.db, e)
+                if not rubric_metadata_filter and not criteria_notice:
                     logger.info("활성 평가기준 없음 — 수업지도안 분석 생략")
                     return {
                         "success": False,
@@ -413,6 +440,7 @@ class LessonPlanAnalysisService:
                     "report": report,
                     "citations": citations,
                     "latency_ms": latency_ms,
+                    "criteria_notice": criteria_notice,
                     "saved_report": saved_report
                 }
 

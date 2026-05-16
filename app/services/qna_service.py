@@ -14,10 +14,25 @@ from sqlalchemy import select
 from app.config import settings
 from app.models.chat_sessions import ChatSession
 from app.models.chat_messages import ChatMessage, MessageRole
+from app.repositories.app_state_repository import (
+    KEY_SYNC_ERROR,
+    KEY_SYNC_STATE,
+    SYNC_STATE_NEEDS_RESYNC,
+)
 from app.services.prompt_loader_service import PromptLoaderService
 from app.services.file_search_service import FileSearchService
 
 logger = logging.getLogger(__name__)
+
+
+async def _mark_criteria_filter_needs_resync(
+    app_state_repo: Any, exc: Exception
+) -> None:
+    try:
+        await app_state_repo.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
+        await app_state_repo.set(KEY_SYNC_ERROR, str(exc))
+    except Exception:
+        logger.warning("평가기준 동기화 필요 상태 표시 실패", exc_info=True)
 
 
 class QnAService:
@@ -134,13 +149,23 @@ class QnAService:
                     CriteriaVectorService,
                 )
 
-                active_rubric_filter = await (
-                    CriteriaVectorService.active_stable_id_filter(
-                        client=self.client,
-                        store_display_name=settings.FS_RUBRIC_STORE_NAME,
+                try:
+                    active_rubric_filter = await (
+                        CriteriaVectorService.active_stable_id_filter(
+                            client=self.client,
+                            store_display_name=settings.FS_RUBRIC_STORE_NAME,
+                        )
                     )
-                )
-                if not active_rubric_filter:
+                except Exception as e:
+                    logger.warning(
+                        f"활성 평가기준 필터 조회 실패 (무시): {e}",
+                        exc_info=True,
+                    )
+                    criteria_notice = "평가기준 동기화가 필요합니다."
+                    await _mark_criteria_filter_needs_resync(
+                        app_state_repo, e
+                    )
+                if not criteria_notice and not active_rubric_filter:
                     criteria_notice = "활성 평가기준이 없습니다."
 
             logger.info(
@@ -331,6 +356,7 @@ class QnAService:
                 "answer": answer,
                 "latency_ms": latency_ms,
                 "citations": citations,
+                "criteria_notice": criteria_notice,
                 "grounding_metadata": {
                     "search_performed": bool(citations),
                     "sources_count": sources_count
@@ -482,6 +508,21 @@ class QnAService:
         self.db.add(assistant_message)
 
         await self.db.flush()
+
+    def _build_context(
+        self,
+        system_prompt: str,
+        conversation_history: Optional[List[dict]] = None,
+    ) -> str:
+        context = f"시스템 프롬프트: {system_prompt}"
+        if conversation_history:
+            context += "\n\n이전 대화:"
+            for conv in conversation_history:
+                context += (
+                    f"\nQ: {conv.get('question', '')}"
+                    f"\nA: {conv.get('answer', '')}"
+                )
+        return context
 
     async def get_conversation_history(
         self, session_id: int, limit: int = 10
