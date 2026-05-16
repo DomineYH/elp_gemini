@@ -41,6 +41,9 @@ async def _fetch_sync_metadata(db: AsyncSession) -> dict:
 
 def _criteria_items_from_rows(all_criteria) -> list[dict]:
     """Template context rows; pre-reconcile rows without stable_id are hidden."""
+    from app.services.criteria_reconciliation_service import (
+        is_legacy_surrogate_stable_id,
+    )
     return [
         {
             "stable_id": c.stable_id,
@@ -49,6 +52,7 @@ def _criteria_items_from_rows(all_criteria) -> list[dict]:
             "status": c.status,
             "created_at": c.created_at,
             "document_id": c.document_id,
+            "is_legacy": is_legacy_surrogate_stable_id(c.stable_id),
         }
         for c in all_criteria
         if c.stable_id is not None

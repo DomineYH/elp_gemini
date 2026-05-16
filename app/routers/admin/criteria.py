@@ -365,6 +365,142 @@ async def delete_criteria_by_stable_id(
         )
 
 
+@router.post(
+    "/{stable_id}/replace",
+    summary="평가기준 PDF 교체 (legacy → v2 마이그레이션 경로)",
+    description=(
+        "stable_id가 legacy surrogate인 평가기준 행을 동일/대체 PDF "
+        "재업로드로 새 v2 stable_id 문서로 교체합니다. alias는 승계됩니다."
+    ),
+)
+async def replace_legacy_criteria(
+    stable_id: str,
+    file: UploadFile = File(...),
+    current_admin: User = Depends(get_current_admin),
+    _sync_ready=Depends(require_criteria_sync_ready),
+    db: AsyncSession = Depends(get_db),
+):
+    if not is_legacy_surrogate_stable_id(stable_id):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "교체는 legacy(pre-v2) 평가기준에만 적용됩니다. "
+                "이미 v2 stable_id를 가진 행은 일반 삭제/업로드를 사용하세요."
+            ),
+        )
+
+    temp_file_path = None
+    cloud_write_started = False
+    try:
+        validator = FileValidator()
+        validation_result = await validator.validate_file(file)
+        if not validation_result["valid"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=validation_result["error"],
+            )
+
+        file_content = await file.read()
+        suffix = os.path.splitext(file.filename)[1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(file_content)
+            temp_file_path = tmp.name
+
+        vec = CriteriaVectorService()
+        alias_svc = CriteriaAliasMapService(
+            client=vec.file_search_service.client,
+            store_display_name=settings.FS_RUBRIC_STORE_NAME,
+        )
+        repo = CriteriaRepository(db)
+
+        try:
+            fetched = await alias_svc.fetch()
+        except AliasMapParseError as e:
+            await _raise_alias_map_parse_unavailable(db, e)
+        if fetched is None:
+            await _raise_alias_map_missing_conflict(db)
+        old_doc_name, alias_map = fetched
+        if stable_id not in alias_map.entries:
+            raise HTTPException(
+                status_code=404,
+                detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+            )
+        old_alias = alias_map.entries[stable_id].alias
+
+        old_row = await repo.get_criteria_by_stable_id(stable_id)
+        if not old_row:
+            raise HTTPException(
+                status_code=404,
+                detail=f"DB 캐시에 stable_id={stable_id} 행이 없습니다",
+            )
+        old_document_id = old_row.document_id
+
+        # 1) Cloud upload with new stable_id BEFORE any destructive op.
+        new_stable_id = _new_stable_id()
+        cloud_write_started = True
+        upload_result = await vec.upload_criteria(
+            file_path=temp_file_path,
+            title=file.filename,
+            stable_id=new_stable_id,
+        )
+        new_document_id = upload_result["document_id"]
+
+        # 2) alias_map: remove legacy entry + add new entry (preserve alias).
+        new_entries = dict(alias_map.entries)
+        new_entries.pop(stable_id, None)
+        new_entries[new_stable_id] = AliasMapEntry(
+            alias=old_alias,
+            status="uploaded",
+            activated_at=None,
+        )
+        new_alias_map = AliasMap(
+            schema_version=1,
+            updated_at=_now_iso_utc(),
+            entries=new_entries,
+        )
+        await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
+
+        # 3) Delete old cloud document AFTER alias_map publish succeeded.
+        await vec.delete_criteria(document_id=old_document_id)
+
+        # 4) DB: delete old row + insert new row.
+        await db.delete(old_row)
+        await repo.insert(
+            stable_id=new_stable_id,
+            document_id=new_document_id,
+            title=file.filename,
+            display_alias=old_alias,
+            status="uploaded",
+            created_at=None,
+            activated_at=None,
+            uploaded_by=current_admin.username,
+        )
+        await db.commit()
+
+        logger.info(
+            "평가기준 교체: legacy_stable_id=%s → new_stable_id=%s "
+            "old_document_id=%s new_document_id=%s",
+            stable_id, new_stable_id, old_document_id, new_document_id,
+        )
+        return {
+            "old_stable_id": stable_id,
+            "new_stable_id": new_stable_id,
+            "document_id": new_document_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        await _raise_criteria_mutation_failed(
+            db, e, cloud_write_started=cloud_write_started,
+        )
+    finally:
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.remove(temp_file_path)
+            except Exception:
+                logger.warning("임시 파일 삭제 실패", exc_info=True)
+
+
 class _AliasPatch(BaseModel):
     alias: Optional[str] = Field(default=None)
 
@@ -482,9 +618,9 @@ async def _set_status_by_stable_id(
         raise HTTPException(
             status_code=400,
             detail=(
-                "이 평가기준은 pre-v2 legacy 문서라 활성화할 수 없습니다. "
-                "삭제 후 다시 업로드하면 평가에 사용할 수 있는 v2 stable_id가 "
-                "생성됩니다."
+                "Legacy(pre-v2) 평가기준은 직접 활성화할 수 없습니다. "
+                "목록의 '교체' 버튼으로 동일하거나 대체할 PDF를 재업로드하면 "
+                "v2 stable_id가 발급되어 활성화할 수 있습니다."
             ),
         )
 

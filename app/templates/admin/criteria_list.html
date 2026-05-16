@@ -66,23 +66,32 @@
       </thead>
       <tbody class="divide-y divide-gray-200" id="criteria-rows">
         {% for item in criteria_items %}
-        <tr data-stable-id="{{ item.stable_id }}">
+        <tr data-stable-id="{{ item.stable_id }}" {% if item.is_legacy %}data-legacy="true"{% endif %}>
           <td class="px-6 py-4 text-sm">
             <span class="alias-cell cursor-pointer hover:bg-blue-50 px-2 py-1 rounded inline-block min-w-[160px]"
                   data-original="{{ item.display_alias or '' }}">
               {{ item.display_alias or '(미설정)' }}
             </span>
           </td>
-          <td class="px-6 py-4 text-sm text-gray-900">{{ item.title }}</td>
+          <td class="px-6 py-4 text-sm text-gray-900">
+            {{ item.title }}
+            {% if item.is_legacy %}
+            <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800"
+                  title="PR #59 이전에 업로드되어 v2 stable_id가 없는 평가기준. '교체' 버튼으로 PDF를 다시 업로드하면 활성화할 수 있습니다.">
+              Legacy v1
+            </span>
+            {% endif %}
+          </td>
           <td class="px-6 py-4 text-sm">
             <div class="inline-flex items-center gap-3">
               <label class="inline-flex items-center gap-2">
                 <input type="radio" name="active_criteria" value="{{ item.stable_id }}"
                        {% if item.status == 'active' %}checked{% endif %}
+                       {% if item.is_legacy %}disabled{% endif %}
                        class="active-radio">
                 <span>{{ '활성' if item.status == 'active' else '비활성' }}</span>
               </label>
-              {% if item.status == 'active' %}
+              {% if item.status == 'active' and not item.is_legacy %}
               <button type="button"
                       class="text-xs text-gray-600 hover:underline"
                       data-action="deactivate"
@@ -94,6 +103,13 @@
             {% if item.created_at %}{{ item.created_at.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}
           </td>
           <td class="px-6 py-4 text-sm">
+            {% if item.is_legacy %}
+            <button type="button"
+                    class="text-amber-700 hover:underline font-medium mr-3"
+                    data-action="replace"
+                    data-stable-id="{{ item.stable_id }}"
+                    data-title="{{ item.title }}">교체</button>
+            {% endif %}
             <button class="delete-btn text-red-600 hover:underline font-medium"
                     data-stable-id="{{ item.stable_id }}"
                     data-title="{{ item.title }}">삭제</button>

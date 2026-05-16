@@ -152,7 +152,10 @@ async def test_activate_rejects_legacy_surrogate_stable_id():
             )
 
     assert exc.value.status_code == 400
-    assert "삭제 후 다시 업로드" in exc.value.detail
+    assert "Legacy" in exc.value.detail
+    assert "교체" in exc.value.detail
+    # 옛 문구는 더 이상 안내되지 않음
+    assert "삭제 후 다시 업로드" not in exc.value.detail
 
 
 @pytest.mark.asyncio
