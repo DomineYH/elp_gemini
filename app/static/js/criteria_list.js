@@ -23,6 +23,26 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
+  document.querySelectorAll('[data-action="replace"]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const sid = b.dataset.stableId;
+      const title = b.dataset.title;
+      if (!confirm(
+        `${title} 평가기준을 교체합니다.\n` +
+        `동일하거나 대체할 PDF를 선택하세요. 새 stable_id가 발급되고 ` +
+        `기존 표시 이름(별칭)은 자동으로 승계됩니다.`
+      )) return;
+      const picker = document.createElement('input');
+      picker.type = 'file';
+      picker.accept = 'application/pdf,.pdf';
+      picker.addEventListener('change', async () => {
+        const f = picker.files && picker.files[0];
+        if (!f) return;
+        await replaceCriteria(sid, f);
+      });
+      picker.click();
+    });
+  });
   const reconcileBtn = document.querySelector('[data-action="reconcile"]');
   if (reconcileBtn) {
     reconcileBtn.addEventListener('click', reconcile);
@@ -116,6 +136,21 @@ async function deleteCriteria(sid) {
     location.reload();
   } catch (e) {
     alert(`삭제 실패: ${e.message}`);
+  }
+}
+
+async function replaceCriteria(sid, file) {
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const r = await fetch(`/api/admin/criteria/${sid}/replace`, {
+      method: 'POST',
+      body: form,
+    });
+    if (!r.ok) throw new Error(await r.text());
+    location.reload();
+  } catch (e) {
+    alert(`교체 실패: ${e.message}`);
   }
 }
 
