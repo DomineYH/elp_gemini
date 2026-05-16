@@ -2,14 +2,13 @@
 
 from pathlib import Path
 
-
 JS_SOURCE = Path("app/static/js/criteria_list.js")
 
 
 def test_deactivate_action_posts_to_stable_id_endpoint():
     src = JS_SOURCE.read_text()
 
-    assert "data-action=\"deactivate\"" in src
+    assert 'data-action="deactivate"' in src
     assert "/deactivate`" in src
     assert "method: 'POST'" in src
 

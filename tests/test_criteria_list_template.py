@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-
 TEMPLATE_DIR = Path("app/templates")
 
 
@@ -65,13 +64,15 @@ def test_template_has_single_table_with_alias_cell_and_active_radio():
 
 
 def test_template_alias_unset_placeholder():
-    text = _render([
-        _item(
-            stable_id="01HSTABLE002",
-            title="no-alias.pdf",
-            display_alias=None,
-        )
-    ])
+    text = _render(
+        [
+            _item(
+                stable_id="01HSTABLE002",
+                title="no-alias.pdf",
+                display_alias=None,
+            )
+        ]
+    )
 
     assert "(미설정)" in text
     assert "비활성" in text
@@ -98,7 +99,15 @@ def _row_for(html: str, stable_id: str) -> str:
 
 
 def test_legacy_row_renders_replace_button_and_disables_activate_radio():
-    text = _render([_item(stable_id="legacy_aabbccdd", status="uploaded", is_legacy=True)])
+    text = _render(
+        [
+            _item(
+                stable_id="legacy_aabbccdd",
+                status="uploaded",
+                is_legacy=True,
+            )
+        ]
+    )
     assert 'data-action="replace"' in text
     assert 'data-stable-id="legacy_aabbccdd"' in text
     assert "교체" in text
@@ -107,5 +116,13 @@ def test_legacy_row_renders_replace_button_and_disables_activate_radio():
 
 
 def test_non_legacy_row_has_no_replace_button():
-    text = _render([_item(stable_id="01HV2REAL", status="uploaded", is_legacy=False)])
+    text = _render(
+        [
+            _item(
+                stable_id="01HV2REAL",
+                status="uploaded",
+                is_legacy=False,
+            )
+        ]
+    )
     assert 'data-action="replace"' not in text

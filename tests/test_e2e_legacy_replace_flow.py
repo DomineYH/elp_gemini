@@ -3,6 +3,7 @@
 기존 운영 환경 시뮬레이션(pre-v2 cloud doc이 stable_id 메타데이터 없이 존재).
 이 테스트는 Tasks 1-4가 모두 정합한지 한 번에 확인한다.
 """
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -27,28 +28,30 @@ async def test_legacy_replace_then_activate_round_trip():
 
     # 1) 활성화 직접 시도 → 새 UI를 안내하는 400
     db_activate = AsyncMock()
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as repo_cls:
+    with (
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+    ):
         vector_cls.return_value.file_search_service.client = MagicMock()
-        alias_cls.return_value.fetch = AsyncMock(return_value=(
-            "docs/alias-map",
-            AliasMap(
-                schema_version=1,
-                updated_at="2026-05-15T00:00:00Z",
-                entries={
-                    legacy_sid: AliasMapEntry(
-                        alias="기준 v1",
-                        status="uploaded",
-                        activated_at=None,
-                    ),
-                },
-            ),
-        ))
+        alias_cls.return_value.fetch = AsyncMock(
+            return_value=(
+                "docs/alias-map",
+                AliasMap(
+                    schema_version=1,
+                    updated_at="2026-05-15T00:00:00Z",
+                    entries={
+                        legacy_sid: AliasMapEntry(
+                            alias="기준 v1",
+                            status="uploaded",
+                            activated_at=None,
+                        ),
+                    },
+                ),
+            )
+        )
         alias_cls.return_value.replace = AsyncMock()
         repo_cls.return_value.get_criteria_by_stable_id = AsyncMock(
             return_value=SimpleNamespace(
@@ -73,15 +76,14 @@ async def test_legacy_replace_then_activate_round_trip():
         read=AsyncMock(return_value=b"%PDF-1.4 rubric"),
     )
     db_replace = AsyncMock()
-    with patch(
-        "app.routers.admin.criteria.FileValidator"
-    ) as validator_cls, patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as repo_cls:
+    with (
+        patch("app.routers.admin.criteria.FileValidator") as validator_cls,
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+    ):
         validator_cls.return_value.validate_file = AsyncMock(
             return_value={"valid": True}
         )
@@ -91,20 +93,22 @@ async def test_legacy_replace_then_activate_round_trip():
         vec.delete_criteria = AsyncMock(return_value=True)
 
         alias = alias_cls.return_value
-        alias.fetch = AsyncMock(return_value=(
-            "docs/alias-map",
-            AliasMap(
-                schema_version=1,
-                updated_at="2026-05-15T00:00:00Z",
-                entries={
-                    legacy_sid: AliasMapEntry(
-                        alias="기준 v1",
-                        status="uploaded",
-                        activated_at=None,
-                    ),
-                },
-            ),
-        ))
+        alias.fetch = AsyncMock(
+            return_value=(
+                "docs/alias-map",
+                AliasMap(
+                    schema_version=1,
+                    updated_at="2026-05-15T00:00:00Z",
+                    entries={
+                        legacy_sid: AliasMapEntry(
+                            alias="기준 v1",
+                            status="uploaded",
+                            activated_at=None,
+                        ),
+                    },
+                ),
+            )
+        )
         alias.replace = AsyncMock()
 
         repo = repo_cls.return_value
@@ -135,28 +139,30 @@ async def test_legacy_replace_then_activate_round_trip():
 
     # 3) 새 stable_id로 activate 호출 — 정상 동작
     db_activate2 = AsyncMock()
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as repo_cls:
+    with (
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+    ):
         vector_cls.return_value.file_search_service.client = MagicMock()
-        alias_cls.return_value.fetch = AsyncMock(return_value=(
-            "docs/alias-map",
-            AliasMap(
-                schema_version=1,
-                updated_at="2026-05-15T00:01:00Z",
-                entries={
-                    new_sid: AliasMapEntry(
-                        alias="기준 v1",
-                        status="uploaded",
-                        activated_at=None,
-                    ),
-                },
-            ),
-        ))
+        alias_cls.return_value.fetch = AsyncMock(
+            return_value=(
+                "docs/alias-map",
+                AliasMap(
+                    schema_version=1,
+                    updated_at="2026-05-15T00:01:00Z",
+                    entries={
+                        new_sid: AliasMapEntry(
+                            alias="기준 v1",
+                            status="uploaded",
+                            activated_at=None,
+                        ),
+                    },
+                ),
+            )
+        )
         alias_cls.return_value.replace = AsyncMock()
         repo_cls.return_value.get_criteria_by_stable_id = AsyncMock(
             return_value=SimpleNamespace(

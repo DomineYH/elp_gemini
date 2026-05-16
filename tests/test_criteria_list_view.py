@@ -25,15 +25,17 @@ def _row(
 
 
 def test_context_uses_criteria_items_list():
-    items = _criteria_items_from_rows([
-        _row(
-            stable_id="01HSTABLE100",
-            title="orig.pdf",
-            display_alias="my-alias",
-            status="active",
-            document_id="cloud-doc-123",
-        )
-    ])
+    items = _criteria_items_from_rows(
+        [
+            _row(
+                stable_id="01HSTABLE100",
+                title="orig.pdf",
+                display_alias="my-alias",
+                status="active",
+                document_id="cloud-doc-123",
+            )
+        ]
+    )
 
     assert isinstance(items, list)
     assert len(items) == 1
@@ -57,10 +59,12 @@ def test_context_uses_criteria_items_list():
 
 
 def test_criteria_items_skip_null_stable_id():
-    items = _criteria_items_from_rows([
-        _row(stable_id=None, title="legacy.pdf"),
-        _row(stable_id="01HSTABLE200", title="modern.pdf"),
-    ])
+    items = _criteria_items_from_rows(
+        [
+            _row(stable_id=None, title="legacy.pdf"),
+            _row(stable_id="01HSTABLE200", title="modern.pdf"),
+        ]
+    )
 
     assert len(items) == 1
     assert items[0]["title"] == "modern.pdf"

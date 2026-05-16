@@ -1,4 +1,5 @@
 """replace 라우터: legacy surrogate를 v2 stable_id 문서로 교체"""
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -50,15 +51,14 @@ async def test_replace_uploads_new_doc_preserves_alias_and_deletes_old():
     )
     db = AsyncMock()
 
-    with patch(
-        "app.routers.admin.criteria.FileValidator"
-    ) as validator_cls, patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as repo_cls:
+    with (
+        patch("app.routers.admin.criteria.FileValidator") as validator_cls,
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+    ):
         validator_cls.return_value.validate_file = AsyncMock(
             return_value={"valid": True}
         )
@@ -69,28 +69,32 @@ async def test_replace_uploads_new_doc_preserves_alias_and_deletes_old():
         vec.delete_criteria = AsyncMock(return_value=True)
 
         alias = alias_cls.return_value
-        alias.fetch = AsyncMock(return_value=(
-            "docs/alias-map",
-            AliasMap(
-                schema_version=1,
-                updated_at="2026-05-15T00:00:00Z",
-                entries={
-                    legacy_sid: AliasMapEntry(
-                        alias="1학기 평가기준",
-                        status="uploaded",
-                        activated_at=None,
-                    ),
-                },
-            ),
-        ))
+        alias.fetch = AsyncMock(
+            return_value=(
+                "docs/alias-map",
+                AliasMap(
+                    schema_version=1,
+                    updated_at="2026-05-15T00:00:00Z",
+                    entries={
+                        legacy_sid: AliasMapEntry(
+                            alias="1학기 평가기준",
+                            status="uploaded",
+                            activated_at=None,
+                        ),
+                    },
+                ),
+            )
+        )
         alias.replace = AsyncMock()
 
         repo = repo_cls.return_value
-        repo.get_criteria_by_stable_id = AsyncMock(return_value=SimpleNamespace(
-            stable_id=legacy_sid,
-            document_id=old_doc,
-            display_alias="1학기 평가기준",
-        ))
+        repo.get_criteria_by_stable_id = AsyncMock(
+            return_value=SimpleNamespace(
+                stable_id=legacy_sid,
+                document_id=old_doc,
+                display_alias="1학기 평가기준",
+            )
+        )
         repo.insert = AsyncMock()
 
         result = await replace_legacy_criteria(
@@ -101,21 +105,25 @@ async def test_replace_uploads_new_doc_preserves_alias_and_deletes_old():
             db=db,
         )
 
+    new_sid = result["new_stable_id"]
     assert result["old_stable_id"] == legacy_sid
-    assert result["new_stable_id"].startswith("") and result["new_stable_id"] != legacy_sid
+    assert new_sid != legacy_sid
+    assert not new_sid.startswith("legacy_")
+    assert len(new_sid) == 26
+    assert all(ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567" for ch in new_sid)
     assert result["document_id"] == new_doc
 
     # upload happened before any destructive op
     vec.upload_criteria.assert_awaited_once()
     upload_kwargs = vec.upload_criteria.await_args.kwargs
     assert upload_kwargs["title"] == "rubric.pdf"
-    assert upload_kwargs["stable_id"] == result["new_stable_id"]
+    assert upload_kwargs["stable_id"] == new_sid
 
     # alias_map replace was called with new entry preserving alias
     alias.replace.assert_awaited_once()
     new_alias_map = alias.replace.await_args.args[0]
     assert legacy_sid not in new_alias_map.entries
-    new_entry = new_alias_map.entries[result["new_stable_id"]]
+    new_entry = new_alias_map.entries[new_sid]
     assert new_entry.alias == "1학기 평가기준"
     assert new_entry.status == "uploaded"
     assert new_entry.activated_at is None
