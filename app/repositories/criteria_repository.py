@@ -411,4 +411,11 @@ class CriteriaRepository:
                 )
             except Exception:
                 pass
+        if activated_at:
+            try:
+                row.activated_at = datetime.fromisoformat(
+                    activated_at.replace("Z", "+00:00")
+                )
+            except Exception:
+                pass
         self.db.add(row)
