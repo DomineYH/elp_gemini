@@ -39,6 +39,22 @@ async def _fetch_sync_metadata(db: AsyncSession) -> dict:
     }
 
 
+def _criteria_items_from_rows(all_criteria) -> list[dict]:
+    """Template context rows; pre-reconcile rows without stable_id are hidden."""
+    return [
+        {
+            "stable_id": c.stable_id,
+            "title": c.title,
+            "display_alias": c.display_alias,
+            "status": c.status,
+            "created_at": c.created_at,
+            "document_id": c.document_id,
+        }
+        for c in all_criteria
+        if c.stable_id is not None
+    ]
+
+
 @router.get(
     "",
     response_class=HTMLResponse,
@@ -66,19 +82,7 @@ async def criteria_list(
         criteria_repo = CriteriaRepository(db)
         all_criteria = await criteria_repo.get_all_criteria()
 
-        # stable_id 가 있는 행만 노출 (pre-reconcile NULL 행은 스킵)
-        criteria_items = [
-            {
-                "stable_id": c.stable_id,
-                "title": c.title,
-                "display_alias": c.display_alias,
-                "status": c.status,
-                "created_at": c.created_at,
-                "document_id": c.document_id,
-            }
-            for c in all_criteria
-            if c.stable_id is not None
-        ]
+        criteria_items = _criteria_items_from_rows(all_criteria)
 
         sync = await _fetch_sync_metadata(db)
 

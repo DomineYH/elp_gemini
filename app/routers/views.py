@@ -37,6 +37,13 @@ def _format_upload_size_limit(limit: int) -> str:
     return f"{limit} bytes"
 
 
+def _criteria_documents_from_active(active_list) -> list[dict]:
+    return [
+        {"id": c.id, "name": c.display_alias or c.title}
+        for c in active_list
+    ]
+
+
 @router.get(
     "/dashboard",
     response_class=HTMLResponse,
@@ -63,10 +70,7 @@ async def user_dashboard(
     # 평가 기준 목록 조회 (DB 기반)
     repo = CriteriaRepository(db)
     active_list = await repo.get_active_criteria()
-    criteria_documents = [
-        {"id": c.id, "name": c.display_alias or c.title}
-        for c in active_list
-    ]
+    criteria_documents = _criteria_documents_from_active(active_list)
 
     return templates.TemplateResponse(
         "user/dashboard.html",
@@ -217,10 +221,7 @@ async def upload_document(
         # 평가 기준 목록 조회 (DB 기반)
         repo = CriteriaRepository(db)
         active_list = await repo.get_active_criteria()
-        criteria_documents = [
-            {"id": c.id, "name": c.display_alias or c.title}
-            for c in active_list
-        ]
+        criteria_documents = _criteria_documents_from_active(active_list)
 
         return templates.TemplateResponse(
             "user/dashboard.html",
