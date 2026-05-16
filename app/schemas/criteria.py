@@ -61,6 +61,8 @@ def _is_allowed_alias_char(ch: str) -> bool:
     code = ord(ch)
     if code in {0x115F, 0x1160, 0x3164}:  # Hangul filler characters render blank
         return False
+    if code == 0x09:  # tab
+        return True
     if 0x20 <= code < 0x7F:  # ASCII printable
         return True
     if 0xAC00 <= code <= 0xD7A3:  # Hangul Syllables
@@ -72,32 +74,36 @@ def _is_allowed_alias_char(ch: str) -> bool:
     return False
 
 
+def validate_display_alias_text(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    v = v.strip()
+    if v == "":
+        return None
+    if not all(_is_allowed_alias_char(c) for c in v):
+        raise ValueError(
+            "표시명에 허용되지 않는 문자가 포함되어 있습니다. "
+            "ASCII 또는 한글만 입력하세요."
+        )
+    if len(v) > 255:
+        raise ValueError("표시명은 255자 이내로 입력하세요.")
+    return v
+
+
 class UpdateDisplayAliasRequest(BaseModel):
     """평가기준 표시명(alias) 업데이트 요청"""
 
     display_alias: Optional[str] = Field(
         default=None,
         description=(
-            "표시명. ASCII printable(U+0020–U+007E) 및 한글(Hangul) 문자만 "
-            "허용. None/빈 문자열이면 alias 제거."
+            "표시명. ASCII printable(U+0020–U+007E), tab 및 "
+            "한글(Hangul) 문자만 허용. None/빈 문자열이면 alias 제거."
         ),
     )
 
     @field_validator("display_alias")
     def validate_alias(cls, v):
-        if v is None:
-            return None
-        v = v.strip()
-        if v == "":
-            return None
-        if not all(_is_allowed_alias_char(c) for c in v):
-            raise ValueError(
-                "표시명에 허용되지 않는 문자가 포함되어 있습니다. "
-                "ASCII 또는 한글만 입력하세요."
-            )
-        if len(v) > 255:
-            raise ValueError("표시명은 255자 이내로 입력하세요.")
-        return v
+        return validate_display_alias_text(v)
 
 
 class UpdateDisplayAliasResponse(BaseModel):
