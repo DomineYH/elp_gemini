@@ -12,6 +12,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import tempfile
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -23,6 +25,20 @@ from app.services.alias_map_codec import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _ParsedAliasMapDoc:
+    name: str
+    alias_map: AliasMap
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class _UnparseableAliasMapDoc:
+    name: str
+    error: Exception
+    updated_at: Optional[datetime]
 
 
 class AliasMapParseError(RuntimeError):
@@ -60,6 +76,22 @@ def _read_metadata_kv(custom_metadata):
     return out
 
 
+def _parse_updated_at(value) -> datetime:
+    if not isinstance(value, str) or not value:
+        raise ValueError("alias_map updated_at is missing")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _try_parse_updated_at(value) -> Optional[datetime]:
+    try:
+        return _parse_updated_at(value)
+    except Exception:
+        return None
+
+
 class CriteriaAliasMapService:
     def __init__(self, client, store_display_name: str):
         self._client = client
@@ -72,23 +104,92 @@ class CriteriaAliasMapService:
         return None
 
     async def fetch(self) -> Optional[Tuple[str, AliasMap]]:
-        """(doc_name, AliasMap) 또는 None을 반환. 기존 문서 파싱 실패 시 예외."""
+        """(doc_name, AliasMap) 또는 None을 반환."""
         store = self._find_store()
         if not store:
             return None
+
+        parsed_docs: list[_ParsedAliasMapDoc] = []
+        unparseable_docs: list[_UnparseableAliasMapDoc] = []
+        alias_doc_names: list[str] = []
+
         for doc in self._client.file_search_stores.documents.list(parent=store.name):
             kv = _read_metadata_kv(getattr(doc, "custom_metadata", None))
             type_value = (kv.get("type") or (None, []))[0]
             if type_value != "alias_map":
                 continue
+            alias_doc_names.append(doc.name)
             chunks = (kv.get(ALIAS_MAP_PAYLOAD_KEY) or (None, []))[1]
+            payload = None
             try:
                 payload = decode_alias_map_payload(chunks)
-                return doc.name, AliasMap.model_validate(payload)
+                alias_map = AliasMap.model_validate(payload)
+                parsed_docs.append(_ParsedAliasMapDoc(
+                    name=doc.name,
+                    alias_map=alias_map,
+                    updated_at=_parse_updated_at(alias_map.updated_at),
+                ))
             except Exception as e:
-                logger.error(f"alias_map 파싱 실패: {e}")
-                raise AliasMapParseError(doc.name, e) from e
-        return None
+                logger.warning(
+                    "alias_map parse failed for %s: %s",
+                    doc.name,
+                    e,
+                    exc_info=True,
+                )
+                updated_at = (
+                    _try_parse_updated_at(payload.get("updated_at"))
+                    if isinstance(payload, dict)
+                    else None
+                )
+                unparseable_docs.append(_UnparseableAliasMapDoc(
+                    name=doc.name,
+                    error=e,
+                    updated_at=updated_at,
+                ))
+
+        if not alias_doc_names:
+            return None
+
+        if len(alias_doc_names) > 1:
+            logger.warning(
+                "multiple alias_map documents found; using newest valid doc: %s",
+                alias_doc_names,
+            )
+
+        if not parsed_docs:
+            first_bad = unparseable_docs[0]
+            raise AliasMapParseError(first_bad.name, first_bad.error)
+
+        parsed_docs.sort(key=lambda parsed: parsed.updated_at, reverse=True)
+        newest = parsed_docs[0]
+
+        for bad_doc in unparseable_docs:
+            if (
+                bad_doc.updated_at is not None
+                and bad_doc.updated_at >= newest.updated_at
+            ):
+                raise AliasMapParseError(bad_doc.name, bad_doc.error)
+
+        cleanup_names = [parsed.name for parsed in parsed_docs[1:]]
+        cleanup_names.extend(
+            bad_doc.name
+            for bad_doc in unparseable_docs
+            if (
+                bad_doc.updated_at is not None
+                and bad_doc.updated_at < newest.updated_at
+            )
+        )
+        for doc_name in cleanup_names:
+            try:
+                self._client.file_search_stores.documents.delete(name=doc_name)
+            except Exception:
+                logger.warning(
+                    "stale alias_map cleanup failed for %s",
+                    doc_name,
+                    exc_info=True,
+                )
+
+        return newest.name, newest.alias_map
 
     async def replace(self, alias_map: AliasMap, old_doc_name: Optional[str]) -> str:
         """

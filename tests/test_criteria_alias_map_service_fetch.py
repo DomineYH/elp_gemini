@@ -25,6 +25,20 @@ def _doc(name, metas):
     return d
 
 
+def _alias_map_chunks(updated_at, alias):
+    return encode_alias_map_payload({
+        "schema_version": 1,
+        "updated_at": updated_at,
+        "entries": {
+            "01HID": {
+                "alias": alias,
+                "status": "uploaded",
+                "activated_at": None,
+            },
+        },
+    })
+
+
 def test_read_metadata_kv_accepts_dict_string_list_value():
     kv = _read_metadata_kv([
         {
@@ -77,6 +91,93 @@ async def test_fetch_parses_payload_chunks():
     doc_name, alias_map = fetched
     assert doc_name == "docs/alias-map"
     assert alias_map.entries["01HID"].alias == "한글"
+
+
+@pytest.mark.asyncio
+async def test_fetch_returns_newest_alias_map_when_duplicates_exist(caplog):
+    client = MagicMock()
+    store = MagicMock()
+    store.name = "stores/x"
+    store.display_name = "rubric-store"
+    client.file_search_stores.list.return_value = iter([store])
+    client.file_search_stores.documents.delete = MagicMock()
+    client.file_search_stores.documents.list.return_value = iter([
+        _doc("docs/alias-map-old", [
+            _meta("type", string_value="alias_map"),
+            _meta(
+                ALIAS_MAP_PAYLOAD_KEY,
+                string_list_value=_alias_map_chunks(
+                    "2026-05-15T00:00:00Z", "old"
+                ),
+            ),
+        ]),
+        _doc("docs/alias-map-new", [
+            _meta("type", string_value="alias_map"),
+            _meta(
+                ALIAS_MAP_PAYLOAD_KEY,
+                string_list_value=_alias_map_chunks(
+                    "2026-05-15T00:01:00Z", "new"
+                ),
+            ),
+        ]),
+    ])
+
+    caplog.set_level("WARNING", logger="app.services.criteria_alias_map_service")
+    svc = CriteriaAliasMapService(client=client, store_display_name="rubric-store")
+
+    fetched = await svc.fetch()
+
+    assert fetched is not None
+    doc_name, alias_map = fetched
+    assert doc_name == "docs/alias-map-new"
+    assert alias_map.entries["01HID"].alias == "new"
+    assert "multiple alias_map documents" in caplog.text
+    client.file_search_stores.documents.delete.assert_called_once_with(
+        name="docs/alias-map-old"
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_raises_when_newest_alias_map_is_unparseable(caplog):
+    old_chunks = _alias_map_chunks("2026-05-15T00:00:00Z", "old")
+    newer_invalid_chunks = encode_alias_map_payload({
+        "schema_version": 1,
+        "updated_at": "2026-05-15T00:01:00Z",
+        "entries": {
+            "01HID": {
+                "alias": "new",
+                "status": "garbage",
+                "activated_at": None,
+            },
+        },
+    })
+
+    client = MagicMock()
+    store = MagicMock()
+    store.name = "stores/x"
+    store.display_name = "rubric-store"
+    client.file_search_stores.list.return_value = iter([store])
+    client.file_search_stores.documents.delete = MagicMock()
+    client.file_search_stores.documents.list.return_value = iter([
+        _doc("docs/alias-map-old", [
+            _meta("type", string_value="alias_map"),
+            _meta(ALIAS_MAP_PAYLOAD_KEY, string_list_value=old_chunks),
+        ]),
+        _doc("docs/alias-map-new", [
+            _meta("type", string_value="alias_map"),
+            _meta(ALIAS_MAP_PAYLOAD_KEY, string_list_value=newer_invalid_chunks),
+        ]),
+    ])
+
+    caplog.set_level("WARNING", logger="app.services.criteria_alias_map_service")
+    svc = CriteriaAliasMapService(client=client, store_display_name="rubric-store")
+
+    with pytest.raises(AliasMapParseError) as exc_info:
+        await svc.fetch()
+
+    assert exc_info.value.doc_name == "docs/alias-map-new"
+    assert "alias_map parse failed" in caplog.text
+    client.file_search_stores.documents.delete.assert_not_called()
 
 
 @pytest.mark.asyncio
