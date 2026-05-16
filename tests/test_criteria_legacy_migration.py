@@ -1,4 +1,5 @@
 """legacy migration: manifest → alias_map + metadata-store 삭제"""
+import hashlib
 import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -139,7 +140,7 @@ async def test_deletes_legacy_store_and_sets_marker():
 
 
 @pytest.mark.asyncio
-async def test_reconcile_uses_document_id_surrogates_for_legacy_docs_without_stable_id(
+async def test_reconcile_uses_legacy_surrogates_for_legacy_docs_without_stable_id(
     caplog,
 ):
     caplog.set_level(
@@ -149,6 +150,10 @@ async def test_reconcile_uses_document_id_surrogates_for_legacy_docs_without_sta
     doc_ids = [
         "fileSearchStores/s/documents/a",
         "fileSearchStores/s/documents/b",
+    ]
+    surrogate_ids = [
+        "legacy_" + hashlib.sha1(doc_id.encode("utf-8")).hexdigest()[:16]
+        for doc_id in doc_ids
     ]
     outcome = await _reconcile_with_cloud_docs([
         _doc_kv(doc_ids[0], [
@@ -164,8 +169,8 @@ async def test_reconcile_uses_document_id_surrogates_for_legacy_docs_without_sta
     assert outcome.result.ok is True
     outcome.alias.replace.assert_called_once()
     healed_map = outcome.alias.replace.call_args.args[0]
-    assert set(healed_map.entries) == set(doc_ids)
-    assert [row["stable_id"] for row in outcome.inserted] == doc_ids
+    assert set(healed_map.entries) == set(surrogate_ids)
+    assert [row["stable_id"] for row in outcome.inserted] == surrogate_ids
     assert [row["document_id"] for row in outcome.inserted] == doc_ids
     assert all(
         entry.alias is None and entry.status == "uploaded"
@@ -179,14 +184,18 @@ async def test_reconcile_uses_document_id_surrogates_for_legacy_docs_without_sta
 @pytest.mark.asyncio
 async def test_reconcile_preserves_mixed_stable_and_surrogate_documents():
     stable_id = "01HSTABLE"
-    surrogate_id = "fileSearchStores/s/documents/legacy"
+    legacy_document_id = "fileSearchStores/s/documents/legacy"
+    surrogate_id = (
+        "legacy_"
+        + hashlib.sha1(legacy_document_id.encode("utf-8")).hexdigest()[:16]
+    )
     outcome = await _reconcile_with_cloud_docs(
         [
             _doc_kv("fileSearchStores/s/documents/modern", [
                 ("type", "criteria"),
                 ("stable_id", stable_id),
             ]),
-            _doc_kv(surrogate_id, [("type", "criteria")]),
+            _doc_kv(legacy_document_id, [("type", "criteria")]),
         ],
         alias_entries={
             stable_id: AliasMapEntry(

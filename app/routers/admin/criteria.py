@@ -31,6 +31,7 @@ from app.repositories.app_state_repository import (
 )
 from app.services.criteria_reconciliation_service import (
     CriteriaReconciliationService,
+    is_legacy_surrogate_stable_id,
 )
 from app.services.criteria_vector_service import (
     CriteriaVectorService
@@ -378,6 +379,16 @@ async def _set_status_by_stable_id(
     alias_map과 DB 캐시를 동시에 업데이트.
     target_status == 'active'이면 기존 active는 'uploaded'로 강등 (단일 활성 불변).
     """
+    if target_status == "active" and is_legacy_surrogate_stable_id(stable_id):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "이 평가기준은 pre-v2 legacy 문서라 활성화할 수 없습니다. "
+                "삭제 후 다시 업로드하면 평가에 사용할 수 있는 v2 stable_id가 "
+                "생성됩니다."
+            ),
+        )
+
     vec = CriteriaVectorService()
     alias_svc = CriteriaAliasMapService(
         client=vec.file_search_service.client,

@@ -3,8 +3,12 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
+from app.schemas.alias_map import AliasMap, AliasMapEntry
 from app.routers.admin.criteria import (
+    activate_by_stable_id,
+    delete_criteria_by_stable_id,
     list_criteria_json,
     reconcile_criteria,
     router,
@@ -103,6 +107,104 @@ def test_upload_route_requires_sync_ready_dependency():
         dep.call is require_criteria_sync_ready
         for dep in upload_route.dependant.dependencies
     )
+
+
+@pytest.mark.asyncio
+async def test_activate_rejects_legacy_surrogate_stable_id():
+    legacy_stable_id = "legacy_0123456789abcdef"
+    db = AsyncMock()
+
+    with patch(
+        "app.routers.admin.criteria.CriteriaVectorService"
+    ) as vector_cls, patch(
+        "app.routers.admin.criteria.CriteriaAliasMapService"
+    ) as alias_cls, patch(
+        "app.routers.admin.criteria.CriteriaRepository"
+    ) as repo_cls:
+        vector_cls.return_value.file_search_service.client = MagicMock()
+        alias_cls.return_value.fetch = AsyncMock(return_value=(
+            "docs/alias-map",
+            AliasMap(
+                schema_version=1,
+                updated_at="2026-05-15T00:00:00Z",
+                entries={
+                    legacy_stable_id: AliasMapEntry(
+                        alias=None, status="uploaded", activated_at=None
+                    ),
+                },
+            ),
+        ))
+        alias_cls.return_value.replace = AsyncMock()
+        repo_cls.return_value.get_criteria_by_stable_id = AsyncMock(
+            return_value=SimpleNamespace(
+                stable_id=legacy_stable_id,
+                status="uploaded",
+                activated_at=None,
+            )
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            await activate_by_stable_id(
+                stable_id=legacy_stable_id,
+                current_admin=object(),
+                _sync_ready=None,
+                db=db,
+            )
+
+    assert exc.value.status_code == 400
+    assert "삭제 후 다시 업로드" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_delete_legacy_surrogate_uses_real_document_id():
+    legacy_stable_id = "legacy_0123456789abcdef"
+    real_document_id = "fileSearchStores/s/documents/pre-v2"
+    row = SimpleNamespace(
+        stable_id=legacy_stable_id,
+        document_id=real_document_id,
+    )
+    db = AsyncMock()
+
+    with patch(
+        "app.routers.admin.criteria.CriteriaRepository"
+    ) as repo_cls, patch(
+        "app.routers.admin.criteria.CriteriaVectorService"
+    ) as vector_cls, patch(
+        "app.routers.admin.criteria.CriteriaAliasMapService"
+    ) as alias_cls:
+        repo_cls.return_value.get_criteria_by_stable_id = AsyncMock(
+            return_value=row
+        )
+        vector = vector_cls.return_value
+        vector.delete_criteria = AsyncMock(return_value=True)
+        vector.file_search_service.client = MagicMock()
+        alias_cls.return_value.fetch = AsyncMock(return_value=(
+            "docs/alias-map",
+            AliasMap(
+                schema_version=1,
+                updated_at="2026-05-15T00:00:00Z",
+                entries={
+                    legacy_stable_id: AliasMapEntry(
+                        alias=None, status="uploaded", activated_at=None
+                    ),
+                },
+            ),
+        ))
+        alias_cls.return_value.replace = AsyncMock()
+
+        body = await delete_criteria_by_stable_id(
+            stable_id=legacy_stable_id,
+            current_admin=object(),
+            _sync_ready=None,
+            db=db,
+        )
+
+    assert body == {"stable_id": legacy_stable_id, "deleted": True}
+    vector.delete_criteria.assert_awaited_once_with(
+        document_id=real_document_id
+    )
+    db.delete.assert_awaited_once_with(row)
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio

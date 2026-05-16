@@ -29,11 +29,23 @@ from app.services.criteria_vector_service import CriteriaVectorService
 logger = logging.getLogger(__name__)
 
 _reconcile_lock = asyncio.Lock()
+LEGACY_SURROGATE_PREFIX = "legacy_"
 
 
 def sha256_hex_of_api_key() -> str:
     key = (settings.GOOGLE_API_KEY or "").encode("utf-8")
     return hashlib.sha256(key).hexdigest()
+
+
+def legacy_surrogate_stable_id(document_id: str) -> str:
+    """URL-safe surrogate for pre-v2 documents missing stable_id metadata."""
+    digest = hashlib.sha1(document_id.encode("utf-8")).hexdigest()[:16]
+    return f"{LEGACY_SURROGATE_PREFIX}{digest}"
+
+
+def is_legacy_surrogate_stable_id(stable_id: str) -> bool:
+    """Legacy surrogates cannot match cloud stable_id metadata filters."""
+    return stable_id.startswith(LEGACY_SURROGATE_PREFIX)
 
 
 def _now_iso() -> str:
@@ -109,11 +121,15 @@ class CriteriaReconciliationService:
                     if sid:
                         stable_ids_by_document[document_id] = sid
                     else:
-                        stable_ids_by_document[document_id] = document_id
+                        surrogate = legacy_surrogate_stable_id(document_id)
+                        stable_ids_by_document[document_id] = surrogate
                         logger.warning(
                             "Document %s migrated without proper stable_id; "
-                            "will use surrogate",
+                            "will use legacy surrogate %s. This criterion "
+                            "cannot be activated for evaluation; delete and "
+                            "re-upload it to create v2 metadata.",
                             document_id,
+                            surrogate,
                         )
 
                 fetched = await self._alias.fetch()

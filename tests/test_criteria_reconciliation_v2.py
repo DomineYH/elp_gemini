@@ -1,6 +1,8 @@
 """reconcile v2 — alias_map 기반"""
 import asyncio
+import hashlib
 import logging
+import re
 from contextlib import suppress
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -100,6 +102,24 @@ def test_kv_string_joins_string_list_metadata_chunks():
     }
 
     assert _kv_string(doc, "original_title_b64") == "7ZWc6riAIO2PieqwgA=="
+
+
+def test_legacy_surrogate_stable_id_is_url_safe_and_deterministic():
+    from app.services.criteria_reconciliation_service import (
+        legacy_surrogate_stable_id,
+    )
+
+    document_id = "fileSearchStores/s/documents/pre-v2-rubric"
+
+    first = legacy_surrogate_stable_id(document_id)
+    second = legacy_surrogate_stable_id(document_id)
+
+    assert first == second
+    assert first == (
+        "legacy_"
+        + hashlib.sha1(document_id.encode("utf-8")).hexdigest()[:16]
+    )
+    assert re.fullmatch(r"legacy_[a-f0-9]{16}", first)
 
 
 @pytest.mark.asyncio
@@ -353,7 +373,7 @@ async def test_reconcile_inserts_rows_with_alias_from_map(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_reconcile_uses_document_id_surrogates_for_missing_stable_ids(
+async def test_reconcile_uses_legacy_surrogates_for_missing_stable_ids(
     caplog,
 ):
     caplog.set_level(
@@ -363,6 +383,10 @@ async def test_reconcile_uses_document_id_surrogates_for_missing_stable_ids(
     doc_ids = [
         "fileSearchStores/s/documents/a",
         "fileSearchStores/s/documents/b",
+    ]
+    surrogate_ids = [
+        "legacy_" + hashlib.sha1(doc_id.encode("utf-8")).hexdigest()[:16]
+        for doc_id in doc_ids
     ]
     outcome = await _reconcile_with_cloud_docs([
         _doc_kv(doc_ids[0], [
@@ -378,8 +402,8 @@ async def test_reconcile_uses_document_id_surrogates_for_missing_stable_ids(
     assert outcome.result.ok is True
     outcome.alias.replace.assert_called_once()
     healed_map = outcome.alias.replace.call_args.args[0]
-    assert set(healed_map.entries) == set(doc_ids)
-    assert [row["stable_id"] for row in outcome.inserted] == doc_ids
+    assert set(healed_map.entries) == set(surrogate_ids)
+    assert [row["stable_id"] for row in outcome.inserted] == surrogate_ids
     assert [row["document_id"] for row in outcome.inserted] == doc_ids
     assert all(
         entry.alias is None and entry.status == "uploaded"
@@ -393,14 +417,18 @@ async def test_reconcile_uses_document_id_surrogates_for_missing_stable_ids(
 @pytest.mark.asyncio
 async def test_reconcile_preserves_mixed_stable_and_surrogate_documents():
     stable_id = "01HSTABLE"
-    surrogate_id = "fileSearchStores/s/documents/legacy"
+    legacy_document_id = "fileSearchStores/s/documents/legacy"
+    surrogate_id = (
+        "legacy_"
+        + hashlib.sha1(legacy_document_id.encode("utf-8")).hexdigest()[:16]
+    )
     outcome = await _reconcile_with_cloud_docs(
         [
             _doc_kv("fileSearchStores/s/documents/modern", [
                 ("type", "criteria"),
                 ("stable_id", stable_id),
             ]),
-            _doc_kv(surrogate_id, [("type", "criteria")]),
+            _doc_kv(legacy_document_id, [("type", "criteria")]),
         ],
         alias_entries={
             stable_id: AliasMapEntry(
