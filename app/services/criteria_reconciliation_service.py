@@ -70,8 +70,11 @@ class CriteriaReconciliationService:
                 stored_hash = await self._state.get(KEY_API_KEY_HASH)
                 stored_state = await self._state.get(KEY_SYNC_STATE)
             key_changed = stored_hash != current_hash
+            migration_v2_done = (
+                await self._state.get("criteria_migration_v2_done")
+            ) == "true"
 
-            if not key_changed and stored_state == "ok":
+            if not key_changed and stored_state == "ok" and migration_v2_done:
                 return ReconcileResult(skipped=True)
 
             try:
