@@ -35,6 +35,7 @@ def _enforcing_upload(document_name):
                                 "more than 256 characters long.\n"
                             ),
                         }},
+                        MagicMock(),
                     )
         op = MagicMock(done=True)
         op.response.document_name = document_name

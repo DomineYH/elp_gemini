@@ -737,6 +737,7 @@ async def test_reconcile_completes_dbcache_after_chunk_size_fix():
                         "long."
                     ),
                 }},
+                MagicMock(),
             )
         return "fileSearchStores/rs/docs/alias-map-new"
 
