@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from google.genai import errors as genai_errors
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -686,3 +687,121 @@ async def test_reconcile_self_heals_orphan_entries():
     healed_map = fake_alias.replace.call_args.args[0]
     assert "01HGHOST" not in healed_map.entries
     assert "01HA" in healed_map.entries
+
+
+@pytest.mark.asyncio
+async def test_reconcile_completes_dbcache_after_chunk_size_fix(monkeypatch):
+    """Issue #60: pre-v2 docs force a multi-chunk alias_map upload. Before the
+    fix, the upload failed with 400 INVALID_ARGUMENT (StringList > 256 chars)
+    and reconcile bailed out before populating the local criteria cache, so
+    the admin UI showed no criteria. After the fix, reconcile must reach the
+    insert step and the alias_map service must receive entries for every
+    pre-v2 doc.
+    """
+    docs = [
+        _doc_kv(
+            "fileSearchStores/rs/docs/pdf-xdo2amdu4xih",
+            [("type", "criteria")],
+        ),
+        _doc_kv(
+            "fileSearchStores/rs/docs/2022pdf-pbdczm0207y6",
+            [("type", "criteria")],
+        ),
+    ]
+
+    # Wrap _reconcile_with_cloud_docs's fake_alias.replace with a side_effect
+    # that mirrors the real 256-char API limit. We monkeypatch the AliasMap
+    # codec's chunker so the test fails if the chunk-size constant regresses.
+    from app.services import alias_map_codec
+
+    def _enforcing_replace(alias_map, old_doc_name=None):
+        chunks = alias_map_codec.encode_alias_map_payload(
+            alias_map.model_dump(mode="json")
+        )
+        longest = max((len(c) for c in chunks), default=0)
+        if longest > 256:
+            raise genai_errors.ClientError(
+                400,
+                {"error": {
+                    "code": 400,
+                    "status": "INVALID_ARGUMENT",
+                    "message": (
+                        "* UploadToFileSearchStoreRequest."
+                        "custom_metadata[1].string_list_value.values[0]: "
+                        "StringList value cannot be more than 256 characters "
+                        "long."
+                    ),
+                }},
+            )
+        return "fileSearchStores/rs/docs/alias-map-new"
+
+    # Patch the helper's AsyncMock replace before invoking the harness.
+    # _reconcile_with_cloud_docs builds fresh mocks each call, so we patch
+    # AsyncMock's call path at construction time by monkeypatching the
+    # service class instead — the cleanest way is to drive reconcile
+    # ourselves with the existing fakes plus our enforcing replace.
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from app.schemas.alias_map import AliasMap
+    from app.services.criteria_reconciliation_service import (
+        CriteriaReconciliationService,
+    )
+
+    fake_client = MagicMock()
+    fake_vec = MagicMock()
+    fake_vec.file_search_service.client = fake_client
+    fake_vec.list_criteria_documents = AsyncMock(return_value=docs)
+
+    fake_alias = MagicMock()
+    # Start from no existing alias_map so reconcile synthesises both entries.
+    fake_alias.fetch = AsyncMock(return_value=None)
+    fake_alias.replace = AsyncMock(side_effect=_enforcing_replace)
+
+    inserted = []
+    fake_repo = MagicMock()
+    fake_repo.truncate = AsyncMock()
+
+    async def _insert(**kwargs):
+        inserted.append(kwargs)
+
+    fake_repo.insert = _insert
+
+    state_values = {"criteria_sync_state": "needs_resync"}
+    fake_state = MagicMock()
+    fake_state.get = AsyncMock(side_effect=lambda key: state_values.get(key))
+    fake_state.set_many = AsyncMock(side_effect=state_values.update)
+    fake_state.set = AsyncMock()
+
+    db = MagicMock()
+    db.begin.return_value.__aenter__ = AsyncMock(return_value=None)
+    db.begin.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    with patch(
+        "app.services.criteria_reconciliation_service.sha256_hex_of_api_key",
+        return_value="newhash",
+    ):
+        svc = CriteriaReconciliationService(
+            db=db,
+            vector_service=fake_vec,
+            alias_map_service=fake_alias,
+            criteria_repo=fake_repo,
+            app_state_repo=fake_state,
+        )
+        result = await svc.reconcile()
+
+    # Reconcile completed successfully.
+    assert result.ok is True, f"reconcile failed: error={result.error}"
+    assert result.error is None
+    assert result.count == 2
+
+    # alias_map.replace was called with one entry per pre-v2 doc.
+    fake_alias.replace.assert_awaited_once()
+    sent_alias_map: AliasMap = fake_alias.replace.await_args.args[0]
+    assert len(sent_alias_map.entries) == 2
+
+    # Local cache was rebuilt — both legacy-surrogate stable_ids inserted.
+    assert len(inserted) == 2
+    surrogate_ids = sorted(row["stable_id"] for row in inserted)
+    assert all(sid.startswith("legacy_") for sid in surrogate_ids), surrogate_ids
+
+    # Sync state was advanced to ok (not stuck on needs_resync).
+    assert state_values.get("criteria_sync_state") == "ok"
