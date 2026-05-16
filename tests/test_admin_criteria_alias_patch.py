@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.repositories.app_state_repository import KEY_SYNC_STATE
 from app.routers.admin.criteria import _AliasPatch, patch_criteria_alias
@@ -26,6 +27,34 @@ def test_patch_alias_route_is_registered():
     from app.routers.admin.criteria import router
     paths = [r.path for r in router.routes if hasattr(r, "path")]
     assert "/api/admin/criteria/{stable_id}/alias" in paths
+
+
+def test_alias_patch_rejects_control_chars():
+    with pytest.raises(ValidationError):
+        _AliasPatch(alias="bad\x1fname")
+
+
+def test_alias_patch_rejects_emoji():
+    with pytest.raises(ValidationError):
+        _AliasPatch(alias="great 😀")
+
+
+def test_alias_patch_accepts_korean_text():
+    assert _AliasPatch(alias="  평가기준  ").alias == "평가기준"
+
+
+def test_alias_patch_accepts_ascii_punctuation():
+    alias = "Rubric #1: A/B (draft)!"
+    assert _AliasPatch(alias=alias).alias == alias
+
+
+def test_alias_patch_whitespace_only_clears_alias():
+    assert _AliasPatch(alias=" \t ").alias is None
+
+
+def test_alias_patch_rejects_256_chars():
+    with pytest.raises(ValidationError):
+        _AliasPatch(alias="a" * 256)
 
 
 @pytest.mark.asyncio
@@ -108,6 +137,39 @@ async def test_patch_alias_corrupted_alias_map_marks_resync_without_replace():
             )
 
     assert exc_info.value.status_code == 503
+    alias.replace.assert_not_awaited()
+    state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
+
+
+@pytest.mark.asyncio
+async def test_patch_alias_missing_alias_map_marks_resync_without_replace():
+    db = AsyncMock()
+
+    with patch(
+        "app.routers.admin.criteria.CriteriaVectorService"
+    ) as vector_cls, patch(
+        "app.routers.admin.criteria.CriteriaAliasMapService"
+    ) as alias_cls, patch(
+        "app.routers.admin.criteria.AppStateRepository"
+    ) as state_cls:
+        vector_cls.return_value.file_search_service.client = MagicMock()
+        alias = alias_cls.return_value
+        alias.fetch = AsyncMock(return_value=None)
+        alias.replace = AsyncMock()
+
+        state = state_cls.return_value
+        state.set = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await patch_criteria_alias(
+                stable_id="01HALIAS",
+                body=_AliasPatch(alias="new alias"),
+                current_admin=object(),
+                _sync_ready=None,
+                db=db,
+            )
+
+    assert exc_info.value.status_code == 409
     alias.replace.assert_not_awaited()
     state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
 

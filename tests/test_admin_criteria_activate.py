@@ -128,6 +128,39 @@ async def test_deactivate_replace_failure_marks_resync():
 
 
 @pytest.mark.asyncio
+async def test_activate_missing_alias_map_marks_resync_without_replace():
+    db = AsyncMock()
+    stable_id = "01HACTIVE"
+
+    with patch(
+        "app.routers.admin.criteria.CriteriaVectorService"
+    ) as vector_cls, patch(
+        "app.routers.admin.criteria.CriteriaAliasMapService"
+    ) as alias_cls, patch(
+        "app.routers.admin.criteria.AppStateRepository"
+    ) as state_cls:
+        vector_cls.return_value.file_search_service.client = MagicMock()
+        alias = alias_cls.return_value
+        alias.fetch = AsyncMock(return_value=None)
+        alias.replace = AsyncMock()
+
+        state = state_cls.return_value
+        state.set = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await activate_by_stable_id(
+                stable_id=stable_id,
+                current_admin=object(),
+                _sync_ready=None,
+                db=db,
+            )
+
+    assert exc_info.value.status_code == 409
+    alias.replace.assert_not_awaited()
+    state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
+
+
+@pytest.mark.asyncio
 async def test_activate_db_commit_failure_after_replace_marks_resync():
     db = AsyncMock()
     db.commit = AsyncMock(side_effect=[RuntimeError("commit failed"), None])

@@ -11,7 +11,7 @@ from fastapi import (
     status,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 import logging
 import tempfile
@@ -46,6 +46,7 @@ from app.schemas.alias_map import (
     AliasMapEntry,
     empty_alias_map,
 )
+from app.schemas.criteria import validate_display_alias_text
 from app.services.criteria_alias_map_service import (
     AliasMapParseError,
     CriteriaAliasMapService,
@@ -97,6 +98,16 @@ async def _raise_alias_map_parse_unavailable(
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="alias_map 파싱 실패 — 재동기화가 필요합니다",
+    )
+
+
+async def _raise_alias_map_missing_conflict(db: AsyncSession) -> None:
+    exc = RuntimeError("alias_map 미존재 — 재동기화가 필요합니다")
+    logger.error("alias_map 미존재로 평가기준 동기화 필요")
+    await _mark_criteria_needs_resync(db, exc)
+    raise HTTPException(
+        status_code=409,
+        detail="alias_map 미존재 — 재동기화가 필요합니다",
     )
 
 
@@ -317,24 +328,25 @@ async def delete_criteria_by_stable_id(
             fetched = await alias_svc.fetch()
         except AliasMapParseError as e:
             await _raise_alias_map_parse_unavailable(db, e)
+        if fetched is None:
+            await _raise_alias_map_missing_conflict(db)
 
         cloud_write_started = True
         await vec.delete_criteria(document_id=row.document_id)
 
-        if fetched:
-            old_doc_name, alias_map = fetched
-            if stable_id in alias_map.entries:
-                new_entries = dict(alias_map.entries)
-                new_entries.pop(stable_id, None)
-                new_alias_map = AliasMap(
-                    schema_version=1,
-                    updated_at=_now_iso_utc(),
-                    entries=new_entries,
-                )
-                cloud_write_started = True
-                await alias_svc.replace(
-                    new_alias_map, old_doc_name=old_doc_name
-                )
+        old_doc_name, alias_map = fetched
+        if stable_id in alias_map.entries:
+            new_entries = dict(alias_map.entries)
+            new_entries.pop(stable_id, None)
+            new_alias_map = AliasMap(
+                schema_version=1,
+                updated_at=_now_iso_utc(),
+                entries=new_entries,
+            )
+            cloud_write_started = True
+            await alias_svc.replace(
+                new_alias_map, old_doc_name=old_doc_name
+            )
 
         await db.delete(row)
         await db.commit()
@@ -354,7 +366,11 @@ async def delete_criteria_by_stable_id(
 
 
 class _AliasPatch(BaseModel):
-    alias: Optional[str] = Field(default=None, max_length=255)
+    alias: Optional[str] = Field(default=None)
+
+    @field_validator("alias")
+    def validate_alias(cls, v):
+        return validate_display_alias_text(v)
 
 
 @router.patch(
@@ -381,11 +397,8 @@ async def patch_criteria_alias(
             fetched = await alias_svc.fetch()
         except AliasMapParseError as e:
             await _raise_alias_map_parse_unavailable(db, e)
-        if not fetched:
-            raise HTTPException(
-                status_code=409,
-                detail="alias_map 미존재 — 재동기화가 필요합니다",
-            )
+        if fetched is None:
+            await _raise_alias_map_missing_conflict(db)
         old_doc_name, alias_map = fetched
 
         if stable_id not in alias_map.entries:
@@ -487,11 +500,8 @@ async def _set_status_by_stable_id(
             fetched = await alias_svc.fetch()
         except AliasMapParseError as e:
             await _raise_alias_map_parse_unavailable(db, e)
-        if not fetched:
-            raise HTTPException(
-                status_code=409,
-                detail="alias_map 미존재 — 재동기화가 필요합니다",
-            )
+        if fetched is None:
+            await _raise_alias_map_missing_conflict(db)
         old_doc_name, alias_map = fetched
         if stable_id not in alias_map.entries:
             raise HTTPException(
