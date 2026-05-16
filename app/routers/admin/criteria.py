@@ -29,10 +29,6 @@ from app.repositories.app_state_repository import (
     KEY_SYNC_ERROR,
     KEY_SYNC_STATE,
 )
-from app.schemas.criteria import (
-    UpdateDisplayAliasRequest,
-    UpdateDisplayAliasResponse,
-)
 from app.services.criteria_reconciliation_service import (
     CriteriaReconciliationService,
 )
@@ -282,60 +278,6 @@ async def delete_criteria_by_stable_id(
         f"평가기준 삭제: stable_id={stable_id} document_id={row.document_id}"
     )
     return {"stable_id": stable_id, "deleted": True}
-
-
-@router.patch(
-    "/{criteria_id}/display-alias",
-    response_model=UpdateDisplayAliasResponse,
-    summary="평가기준 표시명(alias) 업데이트",
-    description=(
-        "DB-only 업데이트. 클라우드 재업로드 없음. "
-        "ASCII printable 또는 한글 문자만 허용. "
-        "NULL/빈 문자열로 보내면 alias 제거."
-    ),
-)
-async def update_display_alias(
-    criteria_id: int,
-    payload: UpdateDisplayAliasRequest,
-    current_admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
-    _sync_ready=Depends(require_criteria_sync_ready),
-):
-    """관리자 전용. DB만 업데이트."""
-    try:
-        repo = CriteriaRepository(db)
-        updated = await repo.update_display_alias(
-            criteria_id, payload.display_alias
-        )
-        if updated is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="평가기준을 찾을 수 없습니다.",
-            )
-        await db.commit()
-        logger.info(
-            f"display_alias 업데이트: "
-            f"admin={current_admin.username}, "
-            f"id={criteria_id}, alias={payload.display_alias!r}"
-        )
-
-        return UpdateDisplayAliasResponse(
-            success=True,
-            criteria_id=criteria_id,
-            display_alias=updated.display_alias,
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        await db.rollback()
-        logger.error(
-            f"display_alias 업데이트 실패: {str(e)}",
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="표시명 업데이트 중 오류가 발생했습니다.",
-        )
 
 
 class _AliasPatch(BaseModel):
