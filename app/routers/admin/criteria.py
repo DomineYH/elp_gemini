@@ -618,9 +618,9 @@ async def _set_status_by_stable_id(
         raise HTTPException(
             status_code=400,
             detail=(
-                "이 평가기준은 pre-v2 legacy 문서라 활성화할 수 없습니다. "
-                "삭제 후 다시 업로드하면 평가에 사용할 수 있는 v2 stable_id가 "
-                "생성됩니다."
+                "Legacy(pre-v2) 평가기준은 직접 활성화할 수 없습니다. "
+                "목록의 '교체' 버튼으로 동일하거나 대체할 PDF를 재업로드하면 "
+                "v2 stable_id가 발급되어 활성화할 수 있습니다."
             ),
         )
 
