@@ -1,7 +1,13 @@
 """reconcile v2 — alias_map 기반"""
+import asyncio
+import logging
+from contextlib import suppress
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from app.schemas.alias_map import AliasMap, AliasMapEntry
 
@@ -13,6 +19,75 @@ def _doc_kv(name, kv_pairs):
         "display_name": "x",
         "custom_metadata_kv": {k: (v, []) for k, v in kv_pairs},
     }
+
+
+async def _keep_loop_awake():
+    while True:
+        await asyncio.sleep(0.01)
+
+
+async def _reconcile_with_cloud_docs(docs, alias_entries=None):
+    from app.services.criteria_reconciliation_service import (
+        CriteriaReconciliationService,
+    )
+
+    fake_client = MagicMock()
+    fake_vec = MagicMock()
+    fake_vec.file_search_service.client = fake_client
+    fake_vec.list_criteria_documents = AsyncMock(return_value=docs)
+
+    fake_alias = MagicMock()
+    fake_alias.fetch = AsyncMock(return_value=(
+        "docs/alias-map",
+        AliasMap(
+            schema_version=1,
+            updated_at="2026-05-15T00:00:00Z",
+            entries=alias_entries or {},
+        ),
+    ))
+    fake_alias.replace = AsyncMock()
+
+    inserted = []
+    fake_repo = MagicMock()
+    fake_repo.truncate = AsyncMock()
+
+    async def _insert(**kwargs):
+        inserted.append(kwargs)
+
+    fake_repo.insert = _insert
+
+    state_values = {
+        "criteria_api_key_hash": "samehash",
+        "criteria_sync_state": "needs_resync",
+        "criteria_migration_v2_done": "true",
+    }
+    fake_state = MagicMock()
+    fake_state.get = AsyncMock(side_effect=lambda key: state_values.get(key))
+    fake_state.set_many = AsyncMock(side_effect=state_values.update)
+    fake_state.set = AsyncMock()
+
+    db = MagicMock()
+    db.begin.return_value.__aenter__ = AsyncMock(return_value=None)
+    db.begin.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    with patch(
+        "app.services.criteria_reconciliation_service.sha256_hex_of_api_key",
+        return_value="samehash",
+    ):
+        svc = CriteriaReconciliationService(
+            db=db,
+            vector_service=fake_vec,
+            alias_map_service=fake_alias,
+            criteria_repo=fake_repo,
+            app_state_repo=fake_state,
+        )
+        result = await svc.reconcile()
+
+    return SimpleNamespace(
+        result=result,
+        alias=fake_alias,
+        inserted=inserted,
+    )
 
 
 def test_kv_string_joins_string_list_metadata_chunks():
@@ -121,6 +196,88 @@ async def test_reconcile_runs_v2_migration_before_skip_on_ok_state():
 
 
 @pytest.mark.asyncio
+async def test_reconcile_upgrade_ok_state_with_real_session_completes():
+    """migration marker read must not autobegin before later explicit begin()."""
+    from app.db import Base
+    from app.models import app_state as _app_state_model  # noqa: F401
+    from app.models import criteria as _criteria_model  # noqa: F401
+    from app.repositories.app_state_repository import (
+        AppStateRepository,
+        KEY_API_KEY_HASH,
+        KEY_SYNC_STATE,
+    )
+    from app.repositories.criteria_repository import CriteriaRepository
+    from app.services.criteria_reconciliation_service import (
+        CriteriaReconciliationService,
+    )
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    ticker = asyncio.create_task(_keep_loop_awake())
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        async with session_factory() as db:
+            state = AppStateRepository(db)
+            async with db.begin():
+                await state.set(KEY_API_KEY_HASH, "samehash")
+                await state.set(KEY_SYNC_STATE, "ok")
+
+        fake_client = MagicMock()
+        fake_client.file_search_stores.list.return_value = iter([])
+        fake_vec = MagicMock()
+        fake_vec.file_search_service.client = fake_client
+        fake_vec.list_criteria_documents = AsyncMock(return_value=[
+            _doc_kv("fileSearchStores/s/documents/a", [
+                ("type", "criteria"),
+                ("stable_id", "01HA"),
+            ]),
+        ])
+        fake_alias = MagicMock()
+        fake_alias.fetch = AsyncMock(return_value=(
+            "docs/alias-map",
+            AliasMap(
+                schema_version=1,
+                updated_at="2026-05-15T00:00:00Z",
+                entries={
+                    "01HA": AliasMapEntry(
+                        alias=None, status="uploaded", activated_at=None,
+                    ),
+                },
+            ),
+        ))
+        fake_alias.replace = AsyncMock()
+
+        async with session_factory() as db:
+            with patch(
+                "app.services.criteria_reconciliation_service.sha256_hex_of_api_key",
+                return_value="samehash",
+            ):
+                svc = CriteriaReconciliationService(
+                    db=db,
+                    vector_service=fake_vec,
+                    alias_map_service=fake_alias,
+                    criteria_repo=CriteriaRepository(db),
+                    app_state_repo=AppStateRepository(db),
+                )
+                result = await svc.reconcile()
+
+        assert result.ok is True
+        assert result.error is None
+        assert result.count == 1
+    finally:
+        await engine.dispose()
+        ticker.cancel()
+        with suppress(asyncio.CancelledError):
+            await ticker
+
+
+@pytest.mark.asyncio
 async def test_reconcile_inserts_rows_with_alias_from_map(monkeypatch):
     """alias_map의 항목이 DB에 그대로 머티리얼라이즈"""
     from app.services.criteria_reconciliation_service import (
@@ -193,6 +350,111 @@ async def test_reconcile_inserts_rows_with_alias_from_map(monkeypatch):
     assert inserted[0]["display_alias"] == "1학기"
     assert inserted[0]["status"] == "active"
     fake_alias.replace.assert_not_called()  # alias_map already consistent
+
+
+@pytest.mark.asyncio
+async def test_reconcile_uses_document_id_surrogates_for_missing_stable_ids(
+    caplog,
+):
+    caplog.set_level(
+        logging.WARNING,
+        logger="app.services.criteria_reconciliation_service",
+    )
+    doc_ids = [
+        "fileSearchStores/s/documents/a",
+        "fileSearchStores/s/documents/b",
+    ]
+    outcome = await _reconcile_with_cloud_docs([
+        _doc_kv(doc_ids[0], [
+            ("type", "criteria"),
+            ("original_title_b64", "Zmlyc3Q="),
+        ]),
+        _doc_kv(doc_ids[1], [
+            ("type", "criteria"),
+            ("original_title_b64", "c2Vjb25k"),
+        ]),
+    ])
+
+    assert outcome.result.ok is True
+    outcome.alias.replace.assert_called_once()
+    healed_map = outcome.alias.replace.call_args.args[0]
+    assert set(healed_map.entries) == set(doc_ids)
+    assert [row["stable_id"] for row in outcome.inserted] == doc_ids
+    assert [row["document_id"] for row in outcome.inserted] == doc_ids
+    assert all(
+        entry.alias is None and entry.status == "uploaded"
+        for entry in healed_map.entries.values()
+    )
+    assert doc_ids[0] in caplog.text
+    assert doc_ids[1] in caplog.text
+    assert "migrated without proper stable_id" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_reconcile_preserves_mixed_stable_and_surrogate_documents():
+    stable_id = "01HSTABLE"
+    surrogate_id = "fileSearchStores/s/documents/legacy"
+    outcome = await _reconcile_with_cloud_docs(
+        [
+            _doc_kv("fileSearchStores/s/documents/modern", [
+                ("type", "criteria"),
+                ("stable_id", stable_id),
+            ]),
+            _doc_kv(surrogate_id, [("type", "criteria")]),
+        ],
+        alias_entries={
+            stable_id: AliasMapEntry(
+                alias="existing",
+                status="active",
+                activated_at="2026-05-15T00:00:00Z",
+            ),
+        },
+    )
+
+    assert outcome.result.ok is True
+    outcome.alias.replace.assert_called_once()
+    healed_map = outcome.alias.replace.call_args.args[0]
+    assert set(healed_map.entries) == {stable_id, surrogate_id}
+    assert healed_map.entries[stable_id].alias == "existing"
+    assert healed_map.entries[stable_id].status == "active"
+    assert healed_map.entries[surrogate_id].alias is None
+    assert healed_map.entries[surrogate_id].status == "uploaded"
+    assert {row["stable_id"] for row in outcome.inserted} == {
+        stable_id,
+        surrogate_id,
+    }
+
+
+@pytest.mark.asyncio
+async def test_reconcile_fresh_install_stable_id_documents_do_not_use_surrogates(
+    caplog,
+):
+    caplog.set_level(
+        logging.WARNING,
+        logger="app.services.criteria_reconciliation_service",
+    )
+    doc_ids = [
+        "fileSearchStores/s/documents/modern-a",
+        "fileSearchStores/s/documents/modern-b",
+    ]
+    stable_ids = ["01HAAA", "01HBBB"]
+    outcome = await _reconcile_with_cloud_docs([
+        _doc_kv(doc_ids[0], [
+            ("type", "criteria"),
+            ("stable_id", stable_ids[0]),
+        ]),
+        _doc_kv(doc_ids[1], [
+            ("type", "criteria"),
+            ("stable_id", stable_ids[1]),
+        ]),
+    ])
+
+    assert outcome.result.ok is True
+    healed_map = outcome.alias.replace.call_args.args[0]
+    assert set(healed_map.entries) == set(stable_ids)
+    assert set(healed_map.entries).isdisjoint(doc_ids)
+    assert {row["stable_id"] for row in outcome.inserted} == set(stable_ids)
+    assert "migrated without proper stable_id" not in caplog.text
 
 
 @pytest.mark.asyncio

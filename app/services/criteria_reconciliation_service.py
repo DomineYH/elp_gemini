@@ -69,12 +69,16 @@ class CriteriaReconciliationService:
             async with self._db.begin():
                 stored_hash = await self._state.get(KEY_API_KEY_HASH)
                 stored_state = await self._state.get(KEY_SYNC_STATE)
+                migration_v2_done = await self._state.get(
+                    "criteria_migration_v2_done"
+                )
             key_changed = stored_hash != current_hash
-            migration_v2_done = (
-                await self._state.get("criteria_migration_v2_done")
-            ) == "true"
 
-            if not key_changed and stored_state == "ok" and migration_v2_done:
+            if (
+                not key_changed
+                and stored_state == "ok"
+                and migration_v2_done == "true"
+            ):
                 return ReconcileResult(skipped=True)
 
             try:
@@ -98,16 +102,26 @@ class CriteriaReconciliationService:
                 criteria_docs = [
                     d for d in docs if _kv_string(d, "type") == "criteria"
                 ]
+                stable_ids_by_document: dict[str, str] = {}
+                for d in criteria_docs:
+                    document_id = d["document_id"]
+                    sid = _kv_string(d, "stable_id")
+                    if sid:
+                        stable_ids_by_document[document_id] = sid
+                    else:
+                        stable_ids_by_document[document_id] = document_id
+                        logger.warning(
+                            "Document %s migrated without proper stable_id; "
+                            "will use surrogate",
+                            document_id,
+                        )
 
                 fetched = await self._alias.fetch()
                 old_doc_name, alias_map = (
                     fetched if fetched else (None, empty_alias_map(_now_iso()))
                 )
 
-                valid_stable_ids = {
-                    _kv_string(d, "stable_id") for d in criteria_docs
-                }
-                valid_stable_ids.discard(None)
+                valid_stable_ids = set(stable_ids_by_document.values())
 
                 # 4a. Remove entries pointing to nonexistent docs
                 cleaned = {
@@ -117,8 +131,8 @@ class CriteriaReconciliationService:
                 }
                 # 4b. Synthesize entries for unmapped cloud docs
                 for d in criteria_docs:
-                    sid = _kv_string(d, "stable_id")
-                    if sid and sid not in cleaned:
+                    sid = stable_ids_by_document[d["document_id"]]
+                    if sid not in cleaned:
                         cleaned[sid] = AliasMapEntry(
                             alias=None, status="uploaded", activated_at=None
                         )
@@ -138,13 +152,7 @@ class CriteriaReconciliationService:
                 async with self._db.begin():
                     await self._repo.truncate()
                     for d in criteria_docs:
-                        sid = _kv_string(d, "stable_id")
-                        if not sid:
-                            logger.warning(
-                                f"stable_id 없는 문서 {d['document_id']} — "
-                                f"캐시 누락"
-                            )
-                            continue
+                        sid = stable_ids_by_document[d["document_id"]]
                         entry = cleaned[sid]
                         title_b64 = _kv_string(d, "original_title_b64") or ""
                         try:
