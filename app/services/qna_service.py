@@ -14,10 +14,25 @@ from sqlalchemy import select
 from app.config import settings
 from app.models.chat_sessions import ChatSession
 from app.models.chat_messages import ChatMessage, MessageRole
+from app.repositories.app_state_repository import (
+    KEY_SYNC_ERROR,
+    KEY_SYNC_STATE,
+    SYNC_STATE_NEEDS_RESYNC,
+)
 from app.services.prompt_loader_service import PromptLoaderService
 from app.services.file_search_service import FileSearchService
 
 logger = logging.getLogger(__name__)
+
+
+async def _mark_criteria_filter_needs_resync(
+    app_state_repo: Any, exc: Exception
+) -> None:
+    try:
+        await app_state_repo.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
+        await app_state_repo.set(KEY_SYNC_ERROR, str(exc))
+    except Exception:
+        logger.warning("평가기준 동기화 필요 상태 표시 실패", exc_info=True)
 
 
 class QnAService:
@@ -121,18 +136,63 @@ class QnAService:
                     f"평가 기준 검색 중 오류 (무시): {e}"
                 )
 
+            # 질문 유형 분석 및 메타데이터 필터 결정
+            from app.services.question_analyzer import QuestionAnalyzer
+            analyzer = QuestionAnalyzer()
+            question_analysis = analyzer.analyze_question(question)
+            metadata_filter = question_analysis["metadata_filter"]
+            is_evaluation = question_analysis["question_type"] == "evaluation"
+
+            active_rubric_filter = None
+            if is_evaluation and not criteria_notice:
+                from app.services.criteria_vector_service import (
+                    CriteriaVectorService,
+                )
+
+                try:
+                    active_rubric_filter = await (
+                        CriteriaVectorService.active_stable_id_filter(
+                            client=self.client,
+                            store_display_name=settings.FS_RUBRIC_STORE_NAME,
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"활성 평가기준 필터 조회 실패 (무시): {e}",
+                        exc_info=True,
+                    )
+                    criteria_notice = "평가기준 동기화가 필요합니다."
+                    await _mark_criteria_filter_needs_resync(
+                        app_state_repo, e
+                    )
+                if not criteria_notice and not active_rubric_filter:
+                    criteria_notice = "활성 평가기준이 없습니다."
+
+            logger.info(
+                f"질문 분석 완료\n"
+                f"  - 질문 유형: {question_analysis['question_type']}\n"
+                f"  - 평가 요청 여부: {is_evaluation}\n"
+                f"  - 메타데이터 필터: {metadata_filter if metadata_filter else '없음 (모든 스토어 검색)'}"
+            )
+
             # Store ID 결정
             try:
-                if criteria_notice:
+                if criteria_notice or not is_evaluation:
                     user_store_id = self.file_search_service.get_user_store_id(
                         user_key=username
                     )
                     rubric_store_id = None
                     store_ids = [user_store_id]
-                    logger.info(
-                        "평가기준 동기화 미완료: 사용자 Store만 조회: %s",
-                        store_ids,
-                    )
+                    if criteria_notice:
+                        logger.info(
+                            "평가기준 사용 불가: 사용자 Store만 조회: %s",
+                            store_ids,
+                        )
+                    else:
+                        logger.info(
+                            "일반 질문: 사용자 Store만 조회: %s",
+                            store_ids,
+                        )
                 else:
                     # 사용자 스토어와 평가기준 스토어 모두 가져오기
                     store_ids = self.file_search_service.get_dual_store_ids(
@@ -153,20 +213,6 @@ class QnAService:
             except Exception as e:
                 logger.error(f"❌ 예상치 못한 오류: {e}")
                 raise
-
-            # 질문 유형 분석 및 메타데이터 필터 결정
-            from app.services.question_analyzer import QuestionAnalyzer
-            analyzer = QuestionAnalyzer()
-            question_analysis = analyzer.analyze_question(question)
-            metadata_filter = question_analysis["metadata_filter"]
-            is_evaluation = question_analysis["question_type"] == "evaluation"
-
-            logger.info(
-                f"질문 분석 완료\n"
-                f"  - 질문 유형: {question_analysis['question_type']}\n"
-                f"  - 평가 요청 여부: {is_evaluation}\n"
-                f"  - 메타데이터 필터: {metadata_filter if metadata_filter else '없음 (모든 스토어 검색)'}"
-            )
 
             # Store 역할 명시 프롬프트 구성
             if is_evaluation and not criteria_notice:
@@ -217,28 +263,39 @@ class QnAService:
                 f"  - User Store: {user_store_id}\n"
                 f"  - Rubric Store: {rubric_store_id}\n"
                 f"  - 평가 요청: {is_evaluation}\n"
-                f"  - 메타데이터 필터: {metadata_filter if metadata_filter else '미적용'}"
+                f"  - 메타데이터 필터: {active_rubric_filter or metadata_filter or '미적용'}"
             )
 
             # FileSearch 설정 구성
-            file_search_config = {
-                "file_search_store_names": store_ids
+            user_file_search_config = {
+                "file_search_store_names": [user_store_id]
             }
-            if metadata_filter:
-                file_search_config["metadata_filter"] = metadata_filter
+            if metadata_filter and not is_evaluation:
+                user_file_search_config["metadata_filter"] = metadata_filter
+
+            file_search_tools = [
+                types.Tool(
+                    file_search=types.FileSearch(
+                        **user_file_search_config
+                    )
+                )
+            ]
+            if is_evaluation and active_rubric_filter and rubric_store_id:
+                file_search_tools.append(
+                    types.Tool(
+                        file_search=types.FileSearch(
+                            file_search_store_names=[rubric_store_id],
+                            metadata_filter=active_rubric_filter,
+                        )
+                    )
+                )
 
             response = self.client.models.generate_content(
                 model=self.qna_model_name,
                 contents=contents,
                 config=types.GenerateContentConfig(
                     system_instruction=system_prompt,  # 시스템 프롬프트를 별도로 분리
-                    tools=[
-                        types.Tool(
-                            file_search=types.FileSearch(
-                                **file_search_config
-                            )
-                        )
-                    ],
+                    tools=file_search_tools,
                     temperature=settings.QNA_TEMPERATURE
                 )
             )
@@ -299,6 +356,7 @@ class QnAService:
                 "answer": answer,
                 "latency_ms": latency_ms,
                 "citations": citations,
+                "criteria_notice": criteria_notice,
                 "grounding_metadata": {
                     "search_performed": bool(citations),
                     "sources_count": sources_count
@@ -450,6 +508,21 @@ class QnAService:
         self.db.add(assistant_message)
 
         await self.db.flush()
+
+    def _build_context(
+        self,
+        system_prompt: str,
+        conversation_history: Optional[List[dict]] = None,
+    ) -> str:
+        context = f"시스템 프롬프트: {system_prompt}"
+        if conversation_history:
+            context += "\n\n이전 대화:"
+            for conv in conversation_history:
+                context += (
+                    f"\nQ: {conv.get('question', '')}"
+                    f"\nA: {conv.get('answer', '')}"
+                )
+        return context
 
     async def get_conversation_history(
         self, session_id: int, limit: int = 10

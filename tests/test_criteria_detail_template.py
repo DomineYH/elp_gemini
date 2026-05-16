@@ -1,83 +1,50 @@
-"""criteria_detail 템플릿 렌더링 검증"""
-import pytest
-import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import (
-    create_async_engine, AsyncSession, async_sessionmaker,
-)
-from sqlalchemy.pool import StaticPool
+"""criteria_detail template rendering checks without ASGI/TestClient."""
 
-from app.main import app
-from app.db import Base, get_db
-from app.dependencies import get_current_admin
-from app.repositories.criteria_repository import CriteriaRepository
-from app.models.users import User
+from datetime import datetime, timezone
+from pathlib import Path
+from types import SimpleNamespace
+
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 
-@pytest_asyncio.fixture
-async def admin_client(tmp_path):
-    db_path = tmp_path / "test.db"
-    engine = create_async_engine(
-        f"sqlite+aiosqlite:///{db_path}",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    session_factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
+TEMPLATE_DIR = Path("app/templates")
+
+
+def _criteria(display_alias: str | None):
+    return SimpleNamespace(
+        id=1,
+        title="orig.pdf",
+        display_alias=display_alias,
+        status="active",
+        file_path="/tmp/o.pdf",
+        mime_type="application/pdf",
+        file_size=1024,
+        created_at=datetime(2026, 5, 15, 3, 20, tzinfo=timezone.utc),
+        activated_at=None,
+        activated_by=None,
+        vector_store_id="stores/test",
     )
 
-    async def override_get_db():
-        async with session_factory() as session:
-            yield session
 
-    async def override_get_admin():
-        return User(
-            id=1, username="admin", email="a@b.c", is_admin=True
-        )
-
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_current_admin] = override_get_admin
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as client:
-        client._session_factory = session_factory
-        yield client
-
-    app.dependency_overrides.pop(get_db, None)
-    app.dependency_overrides.pop(get_current_admin, None)
-    await engine.dispose()
+def _render(criteria) -> str:
+    env = Environment(
+        loader=FileSystemLoader(TEMPLATE_DIR),
+        autoescape=select_autoescape(["html"]),
+    )
+    template = env.get_template("admin/criteria_detail.html")
+    return template.render(
+        user=SimpleNamespace(is_admin=True, email="admin@example.com"),
+        criteria=criteria,
+    )
 
 
-@pytest.mark.asyncio
-async def test_detail_shows_display_alias(admin_client):
-    async with admin_client._session_factory() as s:
-        repo = CriteriaRepository(s)
-        c = await repo.save_criteria(
-            title="orig.pdf", file_size=1, uploaded_by="admin",
-            file_path="/tmp/o.pdf", document_id=None,
-            status="active",
-        )
-        await repo.update_display_alias(c.id, "detail-alias")
-        await s.commit()
-    res = await admin_client.get(f"/admin/criteria/{c.id}")
-    assert res.status_code == 200
-    assert "표시명: detail-alias" in res.text
+def test_detail_shows_display_alias():
+    text = _render(_criteria(display_alias="detail-alias"))
+
+    assert "표시명: detail-alias" in text
 
 
-@pytest.mark.asyncio
-async def test_detail_hides_alias_line_when_null(admin_client):
-    async with admin_client._session_factory() as s:
-        repo = CriteriaRepository(s)
-        c = await repo.save_criteria(
-            title="orig.pdf", file_size=1, uploaded_by="admin",
-            file_path="/tmp/o.pdf", document_id=None,
-            status="active",
-        )
-        await s.commit()
-    res = await admin_client.get(f"/admin/criteria/{c.id}")
-    assert res.status_code == 200
-    assert "표시명:" not in res.text
+def test_detail_hides_alias_line_when_null():
+    text = _render(_criteria(display_alias=None))
+
+    assert "표시명:" not in text

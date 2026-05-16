@@ -1,40 +1,38 @@
 """QnA citation에 alias가 반영되는지 검증"""
 import pytest
-import pytest_asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
-from sqlalchemy.ext.asyncio import (
-    create_async_engine,
-    AsyncSession,
-    async_sessionmaker,
-)
-from sqlalchemy.pool import StaticPool
 
-from app.db import Base
 from app.models.criteria import Criteria
 from app.services.criteria_context_service import CriteriaContextService
 
 
-@pytest_asyncio.fixture
-async def db_session(tmp_path):
-    """테스트용 DB 세션"""
-    db_path = tmp_path / "test.db"
-    engine = create_async_engine(
-        f"sqlite+aiosqlite:///{db_path}",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+class _FakeCriteriaDb:
+    def __init__(self):
+        self.criteria = []
 
-    session_factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
-    async with session_factory() as session:
-        yield session
+    def add(self, criteria):
+        criteria.id = len(self.criteria) + 1
+        self.criteria.append(criteria)
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
+    async def commit(self):
+        pass
+
+    async def execute(self, _stmt):
+        row = next(
+            (
+                criteria
+                for criteria in self.criteria
+                if criteria.status == "active"
+            ),
+            None,
+        )
+        return SimpleNamespace(scalar_one_or_none=lambda: row)
+
+
+@pytest.fixture
+def db_session():
+    return _FakeCriteriaDb()
 
 
 @pytest.mark.asyncio

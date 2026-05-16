@@ -58,17 +58,9 @@ async def test_badge_renders_ok(admin_client):
             "error": None,
         },
     )
-    fake_cloud = AsyncMock(return_value=[])
-    with (
-        patch(
-            "app.routers.admin.criteria_views._fetch_sync_metadata",
-            fake_sync,
-        ),
-        patch(
-            "app.routers.admin.criteria_views.CriteriaVectorService"
-            ".list_criteria_documents",
-            fake_cloud,
-        ),
+    with patch(
+        "app.routers.admin.criteria_views._fetch_sync_metadata",
+        fake_sync,
     ):
         res = await admin_client.get("/admin/criteria")
     assert res.status_code == 200
@@ -84,17 +76,9 @@ async def test_badge_renders_error_with_disabled_buttons(admin_client):
             "error": "network down",
         },
     )
-    fake_cloud = AsyncMock(return_value=[])
-    with (
-        patch(
-            "app.routers.admin.criteria_views._fetch_sync_metadata",
-            fake_sync,
-        ),
-        patch(
-            "app.routers.admin.criteria_views.CriteriaVectorService"
-            ".list_criteria_documents",
-            fake_cloud,
-        ),
+    with patch(
+        "app.routers.admin.criteria_views._fetch_sync_metadata",
+        fake_sync,
     ):
         res = await admin_client.get("/admin/criteria")
     assert res.status_code == 200

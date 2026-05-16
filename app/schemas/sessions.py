@@ -64,6 +64,9 @@ class AskQuestionResponse(BaseModel):
     citations: Optional[Any] = Field(
         None, description="인용 정보"
     )
+    criteria_notice: Optional[str] = Field(
+        None, description="평가기준 사용 제한 안내"
+    )
 
 
 class ChatMessageResponse(BaseModel):

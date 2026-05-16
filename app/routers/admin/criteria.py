@@ -11,6 +11,8 @@ from fastapi import (
     status,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional
 import logging
 import tempfile
 import os
@@ -28,19 +30,9 @@ from app.repositories.app_state_repository import (
     KEY_SYNC_STATE,
     SYNC_STATE_NEEDS_RESYNC,
 )
-from app.schemas.criteria import (
-    UploadCriteriaResponse,
-    DeleteCriteriaResponse,
-    DeleteSingleCriteriaResponse,
-    UpdateDisplayAliasRequest,
-    UpdateDisplayAliasResponse,
-)
-from app.services.criteria_manifest_service import (
-    CloudUnavailable,
-    CriteriaManifestService,
-)
 from app.services.criteria_reconciliation_service import (
     CriteriaReconciliationService,
+    is_legacy_surrogate_stable_id,
 )
 from app.services.criteria_vector_service import (
     CriteriaVectorService
@@ -49,6 +41,17 @@ from app.services.file_validator import FileValidator
 from app.repositories.criteria_repository import (
     CriteriaRepository
 )
+from app.schemas.alias_map import (
+    AliasMap,
+    AliasMapEntry,
+    empty_alias_map,
+)
+from app.schemas.criteria import validate_display_alias_text
+from app.services.criteria_alias_map_service import (
+    AliasMapParseError,
+    CriteriaAliasMapService,
+)
+from app.config import settings
 
 router = APIRouter(
     prefix="/api/admin/criteria",
@@ -57,31 +60,77 @@ router = APIRouter(
 logger = logging.getLogger(__name__)
 
 
-async def _publish_or_mark_resync(
-    criteria_repo: CriteriaRepository,
-    db: AsyncSession,
-) -> None:
-    """매니페스트 publish 시도; 실패하면 sync_state=needs_resync 저장 후 502."""
+def _new_stable_id() -> str:
+    """26-char base32 ULID-ish (timestamp + random). Opaque to the system."""
+    import base64
+    import secrets
+    import time
+    ts = int(time.time() * 1000).to_bytes(6, "big")
+    rand = secrets.token_bytes(10)
+    return base64.b32encode(ts + rand).decode("ascii").rstrip("=")
+
+
+def _now_iso_utc() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+async def _mark_criteria_needs_resync(db: AsyncSession, exc: Exception) -> None:
     try:
-        manifest_svc = CriteriaManifestService()
-        await manifest_svc.publish_from_db(criteria_repo)
-    except CloudUnavailable as e:
+        await db.rollback()
+    except Exception:
+        logger.warning("criteria sync_state 표시 전 rollback 실패", exc_info=True)
+
+    try:
         state_repo = AppStateRepository(db=db)
         await state_repo.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
-        await state_repo.set(KEY_SYNC_ERROR, str(e))
+        await state_repo.set(KEY_SYNC_ERROR, str(exc))
         await db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=(
-                "변경은 저장되었으나 클라우드 동기화에 실패했습니다. "
-                "관리자 페이지에서 재동기화하세요."
-            ),
-        )
+    except Exception:
+        logger.error("criteria sync_state needs_resync 표시 실패", exc_info=True)
+
+
+async def _raise_alias_map_parse_unavailable(
+    db: AsyncSession, exc: AliasMapParseError
+) -> None:
+    logger.error("alias_map 파싱 실패로 평가기준 동기화 필요: %s", exc)
+    await _mark_criteria_needs_resync(db, exc)
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="alias_map 파싱 실패 — 재동기화가 필요합니다",
+    )
+
+
+async def _raise_alias_map_missing_conflict(db: AsyncSession) -> None:
+    exc = RuntimeError("alias_map 미존재 — 재동기화가 필요합니다")
+    logger.error("alias_map 미존재로 평가기준 동기화 필요")
+    await _mark_criteria_needs_resync(db, exc)
+    raise HTTPException(
+        status_code=409,
+        detail="alias_map 미존재 — 재동기화가 필요합니다",
+    )
+
+
+async def _raise_criteria_mutation_failed(
+    db: AsyncSession,
+    exc: Exception,
+    *,
+    cloud_write_started: bool,
+) -> None:
+    if cloud_write_started:
+        await _mark_criteria_needs_resync(db, exc)
+    logger.error("평가기준 변경 실패: %s", exc, exc_info=True)
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=(
+            "평가기준 변경 중 오류가 발생했습니다: "
+            f"{type(exc).__name__} - {exc}"
+        ),
+    )
 
 
 @router.post(
     "/upload",
-    response_model=UploadCriteriaResponse,
     status_code=status.HTTP_201_CREATED,
     summary="평가기준 업로드",
     description="평가기준 파일을 Vector DB에 업로드합니다. "
@@ -107,6 +156,7 @@ async def upload_criteria(
         HTTPException: 파일 검증 실패 또는 업로드 오류
     """
     temp_file_path = None
+    cloud_write_started = False
 
     try:
         logger.info(
@@ -147,63 +197,84 @@ async def upload_criteria(
             f"path={temp_file_path}, size={len(file_content)}"
         )
 
-        # 3단계: DB에 메타데이터 먼저 저장 (ID 생성용)
-        logger.debug("3단계: DB에 메타데이터 저장 시작")
-        criteria_repo = CriteriaRepository(db)
-        
-        # 임시 file_path로 저장 (나중에 업데이트)
-        criteria = await criteria_repo.save_criteria(
+        # 3단계: 클라우드 업로드 (stable_id 발급)
+        logger.debug("3단계: 클라우드 업로드 시작")
+        stable_id = _new_stable_id()
+        criteria_service = CriteriaVectorService()
+        cloud_write_started = True
+        upload_result = await criteria_service.upload_criteria(
+            file_path=temp_file_path,
             title=file.filename,
-            file_size=len(file_content),
-            uploaded_by=current_admin.username,
-            file_path="temp",  # 임시 값
-            document_id=None,  # 활성화 확정 전에는 None
-            status="uploaded",
+            stable_id=stable_id,
         )
-        await db.commit()
+        document_id = upload_result["document_id"]
         logger.debug(
-            f"3단계: DB 메타데이터 저장 완료 - "
-            f"criteria_id={criteria.id}"
+            f"3단계: 클라우드 업로드 완료 - "
+            f"stable_id={stable_id}, document_id={document_id}"
         )
 
-        # 4단계: 로컬 파일 저장
-        logger.debug("4단계: 로컬 파일 저장 시작")
-        from app.services.file_storage_service import (
-            FileStorageService
+        # 4단계: alias_map 업데이트 + 재게시
+        logger.debug("4단계: alias_map 업데이트 시작")
+        alias_svc = CriteriaAliasMapService(
+            client=criteria_service.file_search_service.client,
+            store_display_name=settings.FS_RUBRIC_STORE_NAME,
         )
-        storage = FileStorageService()
-        file_path = storage.save_file(
-            file_content,
-            criteria.id,
-            file.filename
+        fetched = await alias_svc.fetch()
+        old_doc_name, alias_map = (
+            fetched if fetched else (None, empty_alias_map(_now_iso_utc()))
         )
-        
-        # DB에 실제 file_path 업데이트
-        criteria.file_path = file_path
+        new_entries = dict(alias_map.entries)
+        new_entries[stable_id] = AliasMapEntry(
+            alias=None, status="uploaded", activated_at=None
+        )
+        updated_alias_map = AliasMap(
+            schema_version=1,
+            updated_at=_now_iso_utc(),
+            entries=new_entries,
+        )
+        cloud_write_started = True
+        await alias_svc.replace(
+            updated_alias_map, old_doc_name=old_doc_name
+        )
+        logger.debug("4단계: alias_map 재게시 완료")
+
+        # 5단계: DB 행 삽입 (cloud is source of truth; 로컬 파일 미사용)
+        logger.debug("5단계: DB 행 삽입 시작")
+        criteria_repo = CriteriaRepository(db)
+        await criteria_repo.insert(
+            stable_id=stable_id,
+            document_id=document_id,
+            title=file.filename,
+            display_alias=None,
+            status="uploaded",
+            created_at=None,
+            activated_at=None,
+            uploaded_by=current_admin.username,
+        )
         await db.commit()
-        logger.debug(
-            f"4단계: 로컬 파일 저장 완료 - "
-            f"path={file_path}"
-        )
+        logger.debug("5단계: DB 행 삽입 완료")
 
         logger.info(
             f"평가기준 업로드 성공: "
             f"admin={current_admin.username}, "
             f"file={file.filename}, "
-            f"criteria_id={criteria.id}"
+            f"stable_id={stable_id}, "
+            f"document_id={document_id}"
         )
 
-        return UploadCriteriaResponse(
-            file_id=str(criteria.id),  # criteria ID 사용
-            display_name=file.filename,
-            file_size=len(file_content),
-            upload_status="completed",
-        )
+        return {
+            "stable_id": stable_id,
+            "document_id": document_id,
+        }
 
+    except AliasMapParseError as e:
+        await _raise_alias_map_parse_unavailable(db, e)
     except HTTPException:
         raise
     except Exception as e:
         await db.rollback()
+        if cloud_write_started:
+            await _mark_criteria_needs_resync(db, e)
         error_type = type(e).__name__
         error_msg = str(e)
         logger.error(
@@ -228,529 +299,271 @@ async def upload_criteria(
 
 
 @router.delete(
-    "",
-    response_model=DeleteCriteriaResponse,
-    summary="평가기준 삭제",
-    description="모든 평가기준을 삭제합니다. (관리자 전용)",
+    "/{stable_id}",
+    summary="평가기준 삭제 (stable_id 기반)",
+    description="클라우드 문서 + alias_map entry + DB 행을 삭제합니다.",
 )
-async def delete_all_criteria(
+async def delete_criteria_by_stable_id(
+    stable_id: str,
     current_admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
     _sync_ready=Depends(require_criteria_sync_ready),
-):
-    """
-    모든 평가기준 삭제 (관리자 전용)
-
-    Note:
-        Gemini File Search API 제약으로
-        개별 문서 삭제 불가 → Store 재생성으로 전체 삭제
-
-    Args:
-        current_admin: 현재 로그인한 관리자
-
-    Returns:
-        삭제 결과 정보
-
-    Raises:
-        HTTPException: 삭제 오류
-    """
-    try:
-        # Vector Store 삭제
-        criteria_service = CriteriaVectorService()
-        success = await criteria_service.delete_all_criteria()
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="평가기준 삭제 실패"
-            )
-
-        # DB에서도 삭제
-        criteria_repo = CriteriaRepository(db)
-        deleted_count = await criteria_repo.delete_all_criteria()
-        await db.commit()
-
-        logger.info(
-            f"평가기준 전체 삭제 성공: "
-            f"admin={current_admin.username}, "
-            f"deleted_count={deleted_count}"
-        )
-
-        await _publish_or_mark_resync(criteria_repo, db)
-
-        return DeleteCriteriaResponse(
-            success=True,
-            message="모든 평가기준이 삭제되었습니다.",
-            deleted_count=deleted_count,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        await db.rollback()
-        logger.error(
-            f"평가기준 삭제 실패: {str(e)}",
-            exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="삭제 중 오류가 발생했습니다."
-        )
-
-
-@router.delete(
-    "/{criteria_id}",
-    response_model=DeleteSingleCriteriaResponse,
-    summary="평가기준 개별 삭제",
-    description="특정 평가기준을 삭제합니다. "
-    "활성 상태인 경우 Vector Store도 동기화됩니다.",
-)
-async def delete_single_criteria(
-    criteria_id: int,
-    current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
-    _sync_ready=Depends(require_criteria_sync_ready),
 ):
-    """
-    개별 평가기준 삭제 (관리자 전용)
-
-    Note:
-        Gemini File Search API 제약으로 개별 문서 삭제 불가.
-        활성 상태 평가기준 삭제 시 Vector Store를 재동기화합니다.
-
-    Args:
-        criteria_id: 삭제할 평가기준 ID
-        current_admin: 현재 로그인한 관리자
-        db: 데이터베이스 세션
-
-    Returns:
-        삭제 결과 정보
-
-    Raises:
-        HTTPException: 삭제 오류
-    """
-    try:
-        criteria_repo = CriteriaRepository(db)
-        
-        # 평가기준 존재 확인
-        criteria = await criteria_repo.get_criteria_by_id(
-            criteria_id
-        )
-        
-        if not criteria:
-            logger.warning(
-                f"평가기준 삭제 실패 (없음): id={criteria_id}"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="평가기준을 찾을 수 없습니다."
-            )
-        
-        # 활성 상태 여부 저장
-        was_active = criteria.status == "active"
-        criteria_title = criteria.title
-
-        # 로컬 파일 삭제
-        from app.services.file_storage_service import (
-            FileStorageService
-        )
-        storage = FileStorageService()
-        storage.delete_file(criteria.file_path)
-
-        # DB에서 삭제
-        success = await criteria_repo.delete_criteria(criteria_id)
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="평가기준 삭제 실패"
-            )
-
-        # flush()로 DELETE를 즉시 적용 (commit 전)
-        # 이후 _sync_criteria_store의 get_active_criteria가 정확한 결과 반환
-        await db.flush()
-
-        # 활성 상태였다면 Vector Store 재동기화
-        sync_message = ""
-        if was_active:
-            try:
-                sync_count = await _sync_criteria_store(
-                    db, current_admin.username
-                )
-                sync_message = f" (Vector Store 동기화: {sync_count}개 문서)"
-            except Exception as e:
-                logger.warning(f"Vector Store 동기화 실패: {e}")
-                sync_message = " (Vector Store 동기화 실패 - 수동 동기화 필요)"
-
-        await db.commit()
-
-        logger.info(
-            f"평가기준 삭제 성공: "
-            f"admin={current_admin.username}, "
-            f"id={criteria_id}, "
-            f"title={criteria_title}"
-        )
-
-        await _publish_or_mark_resync(criteria_repo, db)
-
-        return DeleteSingleCriteriaResponse(
-            success=True,
-            message=f"{criteria_title} 기준이 삭제되었습니다.{sync_message}",
-            criteria_id=criteria_id,
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        await db.rollback()
-        logger.error(
-            f"평가기준 삭제 실패: {str(e)}",
-            exc_info=True
-        )
+    repo = CriteriaRepository(db)
+    row = await repo.get_criteria_by_stable_id(stable_id)
+    if not row:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="삭제 중 오류가 발생했습니다."
+            status_code=404,
+            detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
         )
 
-
-async def _sync_criteria_store(
-    db: AsyncSession,
-    admin_username: str
-) -> int:
-    """
-    평가기준 Vector Store 동기화 (내부 헬퍼)
-    
-    활성화된 모든 평가기준을 Vector Store에 재업로드합니다.
-    
-    Args:
-        db: DB 세션
-        admin_username: 관리자 사용자명 (로깅용)
-        
-    Returns:
-        동기화된 문서 수
-    """
-    criteria_repo = CriteriaRepository(db)
-    
-    # 활성 평가기준 조회
-    active_criteria_list = await criteria_repo.get_active_criteria()
-    
-    logger.info(
-        f"평가기준 동기화 시작: "
-        f"{len(active_criteria_list)}개 문서 (by {admin_username})"
-    )
-    
-    # Vector Store 재생성
-    criteria_service = CriteriaVectorService()
-    await criteria_service.delete_all_criteria()
-    
-    if not active_criteria_list:
-        logger.info("활성화된 평가기준이 없어 빈 Store로 초기화됨")
-        return 0
-    
-    # 각 active 문서를 Vector Store에 업로드
-    for criteria in active_criteria_list:
+    cloud_write_started = False
+    try:
+        vec = CriteriaVectorService()
+        alias_svc = CriteriaAliasMapService(
+            client=vec.file_search_service.client,
+            store_display_name=settings.FS_RUBRIC_STORE_NAME,
+        )
         try:
-            # 파일 읽기
-            if not os.path.exists(criteria.file_path):
-                logger.error(f"파일 없음: {criteria.file_path}")
-                continue
-                
-            with open(criteria.file_path, "rb") as f:
-                file_content = f.read()
-            
-            # 임시 파일 생성
-            suffix = os.path.splitext(criteria.title)[1]
-            with tempfile.NamedTemporaryFile(
-                delete=False, suffix=suffix
-            ) as temp_file:
-                temp_file.write(file_content)
-                temp_path = temp_file.name
-            
-            try:
-                # Vector Store 업로드
-                result = await criteria_service.upload_criteria(
-                    file_path=temp_path,
-                    display_name=criteria.title,
-                    metadata={
-                        "uploaded_by": criteria.uploaded_by,
-                        "criteria_id": criteria.id,
-                    },
-                    # Store는 처음에 한 번만 재생성했으므로 여기선 유지
-                    recreate_store=False,
-                )
-                
-                # DB에 document_id 저장
-                await criteria_repo.update_document_id(
-                    criteria.id,
-                    result["document_id"]
-                )
+            fetched = await alias_svc.fetch()
+        except AliasMapParseError as e:
+            await _raise_alias_map_parse_unavailable(db, e)
+        if fetched is None:
+            await _raise_alias_map_missing_conflict(db)
 
-                # 동기화 시각 업데이트
-                await criteria_repo.update_synced_at(criteria.id)
+        cloud_write_started = True
+        await vec.delete_criteria(document_id=row.document_id)
 
-                logger.info(f"Vector Store 업로드 완료: {criteria.title}")
-                
-            finally:
-                # 임시 파일 삭제
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-                    
-        except Exception as e:
-            logger.error(
-                f"문서 업로드 실패: {criteria.title}, 오류: {str(e)}",
-                exc_info=True
+        old_doc_name, alias_map = fetched
+        if stable_id in alias_map.entries:
+            new_entries = dict(alias_map.entries)
+            new_entries.pop(stable_id, None)
+            new_alias_map = AliasMap(
+                schema_version=1,
+                updated_at=_now_iso_utc(),
+                entries=new_entries,
             )
-            continue
-    
-    return len(active_criteria_list)
-
-
-@router.post(
-    "/{criteria_id}/activate",
-    summary="평가기준 활성화",
-    description="특정 평가기준을 활성화합니다. Vector Store 반영은 '활성화 확정'에서 수행됩니다.",
-)
-async def activate_criteria(
-    criteria_id: int,
-    current_admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
-    _sync_ready=Depends(require_criteria_sync_ready),
-):
-    """
-    평가기준 활성화 (관리자 전용)
-    
-    Args:
-        criteria_id: 활성화할 평가기준 ID
-        current_admin: 현재 로그인한 관리자
-        db: 데이터베이스 세션
-        
-    Returns:
-        활성화 결과
-    """
-    try:
-        criteria_repo = CriteriaRepository(db)
-        criteria = await criteria_repo.activate_criteria(criteria_id)
-        
-        if not criteria:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="평가기준을 찾을 수 없습니다."
+            cloud_write_started = True
+            await alias_svc.replace(
+                new_alias_map, old_doc_name=old_doc_name
             )
 
-        # DB만 커밋 (Vector Store 동기화는 confirm-activation에서 수행)
+        await db.delete(row)
         await db.commit()
-
         logger.info(
-            f"평가기준 활성화 (DB만): "
-            f"admin={current_admin.username}, id={criteria_id}"
+            f"평가기준 삭제: stable_id={stable_id} "
+            f"document_id={row.document_id}"
         )
-
-        await _publish_or_mark_resync(criteria_repo, db)
-
-        return {
-            "success": True,
-            "message": f"{criteria.title}이(가) 활성화되었습니다. '활성화 확정'을 눌러 반영하세요.",
-            "criteria_id": criteria_id,
-            "needs_sync": True
-        }
-
+        return {"stable_id": stable_id, "deleted": True}
     except HTTPException:
         raise
     except Exception as e:
-        await db.rollback()
-        logger.error(f"평가기준 활성화 실패: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="활성화 중 오류가 발생했습니다."
+        await _raise_criteria_mutation_failed(
+            db,
+            e,
+            cloud_write_started=cloud_write_started,
         )
 
 
-@router.post(
-    "/{criteria_id}/deactivate",
-    summary="평가기준 비활성화",
-    description="특정 평가기준을 비활성화합니다. Vector Store 반영은 '활성화 확정'에서 수행됩니다.",
-)
-async def deactivate_criteria(
-    criteria_id: int,
-    current_admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
-    _sync_ready=Depends(require_criteria_sync_ready),
-):
-    """
-    평가기준 비활성화 (관리자 전용)
+class _AliasPatch(BaseModel):
+    alias: Optional[str] = Field(default=None)
 
-    Args:
-        criteria_id: 비활성화할 평가기준 ID
-        current_admin: 현재 로그인한 관리자
-        db: 데이터베이스 세션
-
-    Returns:
-        비활성화 결과
-    """
-    try:
-        criteria_repo = CriteriaRepository(db)
-        criteria = await criteria_repo.deactivate_criteria(criteria_id)
-
-        if not criteria:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="평가기준을 찾을 수 없습니다."
-            )
-
-        # DB만 커밋 (Vector Store 동기화는 confirm-activation에서 수행)
-        await db.commit()
-
-        logger.info(
-            f"평가기준 비활성화 (DB만): "
-            f"admin={current_admin.username}, id={criteria_id}"
-        )
-
-        await _publish_or_mark_resync(criteria_repo, db)
-
-        return {
-            "success": True,
-            "message": f"{criteria.title}이(가) 비활성화되었습니다. '활성화 확정'을 눌러 반영하세요.",
-            "criteria_id": criteria_id,
-            "needs_sync": True
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"평가기준 비활성화 실패: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="비활성화 중 오류가 발생했습니다."
-        )
-
-
-@router.post(
-    "/confirm-activation",
-    summary="활성화 확정 (수동 동기화)",
-    description="활성화된 평가기준들을 Vector Store에 강제로 재동기화합니다.",
-)
-async def confirm_activation(
-    current_admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
-    _sync_ready=Depends(require_criteria_sync_ready),
-):
-    """
-    활성화 확정 (관리자 전용)
-    
-    활성화된 평가기준들을 Vector Store에 업로드합니다.
-    (자동 동기화가 실패했을 경우 등을 위한 수동 트리거)
-    
-    Args:
-        current_admin: 현재 로그인한 관리자
-        db: 데이터베이스 세션
-        
-    Returns:
-        확정 결과
-    """
-    try:
-        count = await _sync_criteria_store(db, current_admin.username)
-        await db.commit()
-
-        criteria_repo = CriteriaRepository(db)
-        await _publish_or_mark_resync(criteria_repo, db)
-
-        return {
-            "success": True,
-            "message": f"{count}개의 평가기준이 동기화되었습니다.",
-            "count": count
-        }
-        
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"활성화 확정 실패: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="활성화 확정 중 오류가 발생했습니다."
-        )
-
-
-@router.get(
-    "/sync-status",
-    summary="동기화 상태 확인",
-    description="Vector Store 동기화 상태를 확인합니다.",
-)
-async def get_sync_status(
-    current_admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    동기화 상태 확인 (관리자 전용)
-
-    Returns:
-        동기화 상태 정보
-    """
-    criteria_repo = CriteriaRepository(db)
-    active_criteria = await criteria_repo.get_active_criteria()
-    pending_criteria = await criteria_repo.get_criteria_needing_sync()
-
-    return {
-        "needs_sync": len(pending_criteria) > 0,
-        "active_count": len(active_criteria),
-        "pending_count": len(pending_criteria),
-        "pending_titles": [c.title for c in pending_criteria]
-    }
+    @field_validator("alias")
+    def validate_alias(cls, v):
+        return validate_display_alias_text(v)
 
 
 @router.patch(
-    "/{criteria_id}/display-alias",
-    response_model=UpdateDisplayAliasResponse,
-    summary="평가기준 표시명(alias) 업데이트",
-    description=(
-        "DB-only 업데이트. 클라우드 재업로드 없음. "
-        "ASCII printable 또는 한글 문자만 허용. "
-        "NULL/빈 문자열로 보내면 alias 제거."
-    ),
+    "/{stable_id}/alias",
+    summary="평가기준 표시 이름 편집 (stable_id 기반)",
+    description="alias_map 문서를 업데이트하고 DB 캐시를 동기화합니다.",
 )
-async def update_display_alias(
-    criteria_id: int,
-    payload: UpdateDisplayAliasRequest,
+async def patch_criteria_alias(
+    stable_id: str,
+    body: _AliasPatch,
     current_admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
     _sync_ready=Depends(require_criteria_sync_ready),
+    db: AsyncSession = Depends(get_db),
 ):
-    """관리자 전용. DB만 업데이트."""
+    cloud_write_started = False
     try:
-        repo = CriteriaRepository(db)
-        updated = await repo.update_display_alias(
-            criteria_id, payload.display_alias
+        vec = CriteriaVectorService()
+        alias_svc = CriteriaAliasMapService(
+            client=vec.file_search_service.client,
+            store_display_name=settings.FS_RUBRIC_STORE_NAME,
         )
-        if updated is None:
+
+        try:
+            fetched = await alias_svc.fetch()
+        except AliasMapParseError as e:
+            await _raise_alias_map_parse_unavailable(db, e)
+        if fetched is None:
+            await _raise_alias_map_missing_conflict(db)
+        old_doc_name, alias_map = fetched
+
+        if stable_id not in alias_map.entries:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="평가기준을 찾을 수 없습니다.",
+                status_code=404,
+                detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
             )
-        await db.commit()
+
+        # Update the entry's alias only
+        updated_entry = alias_map.entries[stable_id].model_copy(
+            update={"alias": body.alias}
+        )
+        new_entries = dict(alias_map.entries)
+        new_entries[stable_id] = updated_entry
+
+        new_alias_map = AliasMap(
+            schema_version=1,
+            updated_at=_now_iso_utc(),
+            entries=new_entries,
+        )
+        cloud_write_started = True
+        await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
+
+        # Sync DB cache
+        repo = CriteriaRepository(db)
+        row = await repo.get_criteria_by_stable_id(stable_id)
+        if row:
+            row.display_alias = body.alias
+            await db.commit()
+
         logger.info(
-            f"display_alias 업데이트: "
-            f"admin={current_admin.username}, "
-            f"id={criteria_id}, alias={payload.display_alias!r}"
+            f"alias 변경: stable_id={stable_id} alias={body.alias}"
         )
-
-        await _publish_or_mark_resync(repo, db)
-
-        return UpdateDisplayAliasResponse(
-            success=True,
-            criteria_id=criteria_id,
-            display_alias=updated.display_alias,
-        )
+        return {"stable_id": stable_id, "alias": body.alias}
     except HTTPException:
         raise
     except Exception as e:
-        await db.rollback()
-        logger.error(
-            f"display_alias 업데이트 실패: {str(e)}",
-            exc_info=True,
+        await _raise_criteria_mutation_failed(
+            db,
+            e,
+            cloud_write_started=cloud_write_started,
         )
+
+
+@router.post(
+    "/{stable_id}/activate",
+    summary="평가기준 활성화 (stable_id 기반)",
+    description="해당 stable_id를 active로 전환하고 기존 active는 uploaded로 강등합니다.",
+)
+async def activate_by_stable_id(
+    stable_id: str,
+    current_admin: User = Depends(get_current_admin),
+    _sync_ready=Depends(require_criteria_sync_ready),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _set_status_by_stable_id(db, stable_id, "active")
+
+
+@router.post(
+    "/{stable_id}/deactivate",
+    summary="평가기준 비활성화 (stable_id 기반)",
+    description="해당 stable_id를 uploaded 상태로 변경합니다.",
+)
+async def deactivate_by_stable_id(
+    stable_id: str,
+    current_admin: User = Depends(get_current_admin),
+    _sync_ready=Depends(require_criteria_sync_ready),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _set_status_by_stable_id(db, stable_id, "uploaded")
+
+
+async def _set_status_by_stable_id(
+    db: AsyncSession, stable_id: str, target_status: str
+) -> dict:
+    """
+    alias_map과 DB 캐시를 동시에 업데이트.
+    target_status == 'active'이면 기존 active는 'uploaded'로 강등 (단일 활성 불변).
+    """
+    if target_status == "active" and is_legacy_surrogate_stable_id(stable_id):
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="표시명 업데이트 중 오류가 발생했습니다.",
+            status_code=400,
+            detail=(
+                "이 평가기준은 pre-v2 legacy 문서라 활성화할 수 없습니다. "
+                "삭제 후 다시 업로드하면 평가에 사용할 수 있는 v2 stable_id가 "
+                "생성됩니다."
+            ),
         )
+
+    cloud_write_started = False
+    try:
+        vec = CriteriaVectorService()
+        alias_svc = CriteriaAliasMapService(
+            client=vec.file_search_service.client,
+            store_display_name=settings.FS_RUBRIC_STORE_NAME,
+        )
+
+        try:
+            fetched = await alias_svc.fetch()
+        except AliasMapParseError as e:
+            await _raise_alias_map_parse_unavailable(db, e)
+        if fetched is None:
+            await _raise_alias_map_missing_conflict(db)
+        old_doc_name, alias_map = fetched
+        if stable_id not in alias_map.entries:
+            raise HTTPException(
+                status_code=404,
+                detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+            )
+
+        now = _now_iso_utc()
+        new_entries: dict = {}
+        for sid, entry in alias_map.entries.items():
+            if sid == stable_id:
+                new_entries[sid] = entry.model_copy(update={
+                    "status": target_status,
+                    "activated_at": now if target_status == "active" else None,
+                })
+            elif target_status == "active" and entry.status == "active":
+                new_entries[sid] = entry.model_copy(update={
+                    "status": "uploaded",
+                    "activated_at": None,
+                })
+            else:
+                new_entries[sid] = entry
+
+        new_alias_map = AliasMap(
+            schema_version=1, updated_at=now, entries=new_entries
+        )
+        cloud_write_started = True
+        await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
+
+        # Sync DB cache for both the target and any demoted entries
+        repo = CriteriaRepository(db)
+        parsed_now = _parse_iso(now)
+        for sid, entry in new_entries.items():
+            row = await repo.get_criteria_by_stable_id(sid)
+            if row:
+                row.status = entry.status
+                row.activated_at = (
+                    parsed_now if entry.status == "active" else None
+                )
+        await db.commit()
+
+        logger.info(f"상태 변경: stable_id={stable_id} status={target_status}")
+        return {"stable_id": stable_id, "status": target_status}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await _raise_criteria_mutation_failed(
+            db,
+            e,
+            cloud_write_started=cloud_write_started,
+        )
+
+
+def _parse_iso(value):
+    """ISO-8601 string → datetime; None on failure."""
+    from datetime import datetime
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return None
 
 
 @router.get(
@@ -777,6 +590,7 @@ async def list_criteria_json(
         "criteria": [
             {
                 "id": c.id,
+                "stable_id": c.stable_id,
                 "title": c.title,
                 "display_alias": c.display_alias,
                 "status": c.status,
@@ -800,15 +614,22 @@ async def reconcile_criteria(
     _admin=Depends(get_current_admin),
 ):
     """클라우드 reconcile 실행."""
+    from app.config import settings
+    from app.services.criteria_alias_map_service import CriteriaAliasMapService
+
     state_repo = AppStateRepository(db=db)
     criteria_repo = CriteriaRepository(db=db)
-    manifest_svc = CriteriaManifestService()
     vector_svc = CriteriaVectorService()
+    alias_svc = CriteriaAliasMapService(
+        client=vector_svc.file_search_service.client,
+        store_display_name=settings.FS_RUBRIC_STORE_NAME,
+    )
     svc = CriteriaReconciliationService(
-        app_state_repo=state_repo,
-        manifest_service=manifest_svc,
-        criteria_repo=criteria_repo,
+        db=db,
         vector_service=vector_svc,
+        alias_map_service=alias_svc,
+        criteria_repo=criteria_repo,
+        app_state_repo=state_repo,
     )
     result = await svc.reconcile()
     return {

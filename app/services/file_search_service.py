@@ -351,7 +351,7 @@ class FileSearchService:
         self,
         file_path: str,
         display_name: str,
-        metadata: Dict[str, Any],
+        metadata: Dict[str, Any] | list[dict],
         store_type: str = "main",
     ) -> Dict[str, str]:
         """
@@ -360,7 +360,7 @@ class FileSearchService:
         Args:
             file_path: 파일 경로
             display_name: 표시 이름
-            metadata: 메타데이터 (user_id, random_key 등)
+            metadata: 메타데이터 dict 또는 SDK custom_metadata list
             store_type: 스토어 타입 (main/rubric)
 
         Returns:
@@ -370,37 +370,51 @@ class FileSearchService:
             # 스토어 선택
             if store_type == "rubric":
                 store_name = self.rubric_store_name
-            else:
+            elif isinstance(metadata, dict):
                 # 메인 스토어 대신 사용자별 스토어 사용
                 user_key = metadata.get("user_id")  # user_id 키에 username 저장됨
                 if user_key:
                     store_name = f"user-{user_key}-store"
                 else:
                     store_name = self.main_store_name
+            else:
+                store_name = self.main_store_name
             
             store = self._get_or_create_store(store_name)
 
-            # 문서 타입 메타데이터 자동 추가
-            if store_type == "rubric":
-                metadata["document_type"] = "rubric"
+            document_type = (
+                "rubric" if store_type == "rubric" else "user_document"
+            )
+            if isinstance(metadata, list):
+                custom_metadata = [dict(entry) for entry in metadata]
+                has_document_type = any(
+                    _metadata_value(entry, "key") == "document_type"
+                    for entry in custom_metadata
+                )
+                if not has_document_type:
+                    custom_metadata.append({
+                        "key": "document_type",
+                        "string_value": document_type,
+                    })
             else:
-                metadata["document_type"] = "user_document"
+                metadata = dict(metadata)
+                metadata["document_type"] = document_type
 
-            # Custom metadata 구조 변환 (string_value도 ASCII 안전하게)
-            custom_metadata = []
-            for key, value in metadata.items():
-                if isinstance(value, (int, float)):
-                    custom_metadata.append({
-                        "key": key,
-                        "numeric_value": value
-                    })
-                else:
-                    # string_value도 ASCII 안전하게 변환 (HTTP 헤더 호환)
-                    safe_value = _sanitize_display_name(str(value))
-                    custom_metadata.append({
-                        "key": key,
-                        "string_value": safe_value
-                    })
+                # Custom metadata 구조 변환 (string_value도 ASCII 안전하게)
+                custom_metadata = []
+                for key, value in metadata.items():
+                    if isinstance(value, (int, float)):
+                        custom_metadata.append({
+                            "key": key,
+                            "numeric_value": value
+                        })
+                    else:
+                        # string_value도 ASCII 안전하게 변환 (HTTP 헤더 호환)
+                        safe_value = _sanitize_display_name(str(value))
+                        custom_metadata.append({
+                            "key": key,
+                            "string_value": safe_value
+                        })
 
             # display_name을 ASCII 안전하게 변환 (HTTP 헤더 호환)
             safe_display_name = _sanitize_display_name(display_name)

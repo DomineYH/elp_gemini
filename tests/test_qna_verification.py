@@ -3,10 +3,15 @@ import json
 import sys
 import os
 
+import pytest
+
 BASE_URL = "http://localhost:8000"
 SAMPLE_PDF = "/mnt/d/dev/elp_gemini/data/uploads/criteria/1763639522319_test_criteria.pdf"
 
 def test_qna_verification():
+    if os.environ.get("RUN_QNA_VERIFICATION") != "1":
+        pytest.skip("manual localhost verification; set RUN_QNA_VERIFICATION=1")
+
     print("\n" + "="*70)
     print("QnA Verification with Criteria")
     print("="*70)

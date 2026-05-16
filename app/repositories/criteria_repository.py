@@ -5,7 +5,7 @@ Criteria 데이터 액세스 레이어
 from typing import Optional, List
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, or_
+from sqlalchemy import select, delete
 import logging
 
 from app.models.criteria import Criteria
@@ -126,6 +126,24 @@ class CriteriaRepository:
         result = await self.db.execute(
             select(Criteria)
             .where(Criteria.document_id == document_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_criteria_by_stable_id(
+        self, stable_id: str
+    ) -> Optional[Criteria]:
+        """
+        stable_id로 평가기준 1행을 조회
+
+        Args:
+            stable_id: 클라우드 진실의 원천 고유 ID (ULID)
+
+        Returns:
+            Criteria 객체 또는 None
+        """
+        result = await self.db.execute(
+            select(Criteria)
+            .where(Criteria.stable_id == stable_id)
         )
         return result.scalar_one_or_none()
 
@@ -297,67 +315,6 @@ class CriteriaRepository:
         )
         return criteria
 
-    async def update_synced_at(
-        self, criteria_id: int
-    ) -> Optional[Criteria]:
-        """
-        평가기준 동기화 시각 업데이트
-
-        Args:
-            criteria_id: 평가기준 ID
-
-        Returns:
-            업데이트된 Criteria 객체 또는 None
-        """
-        criteria = await self.get_criteria_by_id(criteria_id)
-
-        if not criteria:
-            logger.warning(
-                f"평가기준 synced_at 업데이트 실패 (없음): "
-                f"id={criteria_id}"
-            )
-            return None
-
-        criteria.synced_at = datetime.utcnow()
-        await self.db.flush()
-
-        logger.info(
-            f"평가기준 동기화 시각 업데이트: "
-            f"id={criteria_id}, synced_at={criteria.synced_at}"
-        )
-        return criteria
-
-    async def get_criteria_needing_sync(self) -> List[Criteria]:
-        """
-        동기화가 필요한 활성 평가기준 조회
-        (synced_at이 NULL이거나 updated_at보다 이전인 경우)
-
-        Returns:
-            동기화 필요한 Criteria 리스트
-        """
-        result = await self.db.execute(
-            select(Criteria)
-            .where(Criteria.status == "active")
-            .where(
-                or_(
-                    Criteria.synced_at.is_(None),
-                    Criteria.synced_at < Criteria.updated_at
-                )
-            )
-            .order_by(Criteria.created_at.desc())
-        )
-        return list(result.scalars().all())
-
-    async def has_pending_sync(self) -> bool:
-        """
-        동기화 대기 중인 평가기준 존재 여부
-
-        Returns:
-            동기화 필요한 평가기준이 있으면 True
-        """
-        pending = await self.get_criteria_needing_sync()
-        return len(pending) > 0
-
     async def update_display_alias(
         self,
         criteria_id: int,
@@ -423,3 +380,42 @@ class CriteriaRepository:
             self.db.add(Criteria(**row))
         await self.db.flush()
         logger.info("criteria bulk insert 완료: %d건", len(rows))
+
+    async def insert(
+        self,
+        *,
+        stable_id: str,
+        document_id: str,
+        title: str,
+        display_alias: Optional[str],
+        status: str,
+        created_at: Optional[str],
+        activated_at: Optional[str],
+        uploaded_by: str = "cloud-sync",
+    ) -> None:
+        """reconcile에서 사용. 호출자가 트랜잭션을 관리."""
+        row = Criteria(
+            stable_id=stable_id,
+            document_id=document_id,
+            title=title,
+            display_alias=display_alias,
+            status=status,
+            file_size=0,
+            file_path="",
+            uploaded_by=uploaded_by,
+        )
+        if created_at:
+            try:
+                row.created_at = datetime.fromisoformat(
+                    created_at.replace("Z", "+00:00")
+                )
+            except Exception:
+                pass
+        if activated_at:
+            try:
+                row.activated_at = datetime.fromisoformat(
+                    activated_at.replace("Z", "+00:00")
+                )
+            except Exception:
+                pass
+        self.db.add(row)

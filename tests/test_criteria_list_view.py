@@ -1,174 +1,67 @@
-"""평가기준 목록 뷰의 데이터 보강 테스트"""
-import pytest
-import pytest_asyncio
-from unittest.mock import patch, AsyncMock
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import (
-    create_async_engine, AsyncSession, async_sessionmaker,
-)
-from sqlalchemy.pool import StaticPool
-from fastapi.templating import Jinja2Templates
+"""Criteria list view context mapping checks."""
 
-from app.main import app
-from app.db import Base, get_db
-from app.dependencies import get_current_admin
-from app.repositories.criteria_repository import CriteriaRepository
-from app.models.users import User
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
+from app.routers.admin.criteria_views import _criteria_items_from_rows
 
 
-@pytest_asyncio.fixture
-async def admin_client(tmp_path):
-    db_path = tmp_path / "test.db"
-    engine = create_async_engine(
-        f"sqlite+aiosqlite:///{db_path}",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    session_factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
-
-    async def override_get_db():
-        async with session_factory() as session:
-            yield session
-
-    async def override_get_admin():
-        return User(
-            id=1, username="admin", email="a@b.c", is_admin=True
-        )
-
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_current_admin] = override_get_admin
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as client:
-        client._session_factory = session_factory
-        yield client
-
-    app.dependency_overrides.pop(get_db, None)
-    app.dependency_overrides.pop(get_current_admin, None)
-    await engine.dispose()
-
-
-@pytest_asyncio.fixture
-async def make_criteria(admin_client):
-    async def _make(**kwargs):
-        defaults = dict(
-            title="orig.pdf", file_size=10, uploaded_by="admin",
-            file_path="/tmp/o.pdf", document_id=None, status="uploaded",
-        )
-        defaults.update(kwargs)
-        alias = kwargs.get("display_alias")
-        async with admin_client._session_factory() as s:
-            repo = CriteriaRepository(s)
-            c = await repo.save_criteria(
-                **{k: v for k, v in defaults.items() if k != "display_alias"}
-            )
-            if alias is not None:
-                await repo.update_display_alias(c.id, alias)
-            await s.commit()
-            return c
-    return _make
-
-
-@pytest.mark.asyncio
-async def test_cloud_docs_enriched_in_context(
-    admin_client, make_criteria
+def _row(
+    *,
+    stable_id: str | None,
+    title: str,
+    display_alias: str | None = None,
+    status: str = "uploaded",
+    document_id: str | None = None,
 ):
-    c = await make_criteria(
-        title="orig.pdf",
-        document_id="cloud-doc-123",
-        status="active",
-        display_alias="my-alias",
+    return SimpleNamespace(
+        stable_id=stable_id,
+        title=title,
+        display_alias=display_alias,
+        status=status,
+        created_at=datetime(2026, 5, 15, 3, 21, tzinfo=timezone.utc),
+        document_id=document_id,
     )
 
-    fake_list = AsyncMock(return_value=[
-        {"document_id": "cloud-doc-123", "display_name": "orig_pdf"},
-        {"document_id": "cloud-doc-orphan", "display_name": "orphan_pdf"},
+
+def test_context_uses_criteria_items_list():
+    items = _criteria_items_from_rows([
+        _row(
+            stable_id="01HSTABLE100",
+            title="orig.pdf",
+            display_alias="my-alias",
+            status="active",
+            document_id="cloud-doc-123",
+        )
     ])
 
-    captured = {}
-    original_template = Jinja2Templates.TemplateResponse
+    assert isinstance(items, list)
+    assert len(items) == 1
+    item = items[0]
+    assert item["stable_id"] == "01HSTABLE100"
+    assert item["title"] == "orig.pdf"
+    assert item["display_alias"] == "my-alias"
+    assert item["status"] == "active"
+    assert item["document_id"] == "cloud-doc-123"
+    assert "created_at" in item
 
-    def capture(self, name, context, **kwargs):
-        captured["context"] = context
-        return original_template(self, name, context, **kwargs)
-
-    with patch(
-        "app.routers.admin.criteria_views.CriteriaVectorService"
-        ".list_criteria_documents",
-        fake_list,
-    ), patch.object(
-        Jinja2Templates, "TemplateResponse", capture
+    for removed in (
+        "cloud_documents",
+        "cloud_error",
+        "needs_sync",
+        "pending_count",
+        "cloud_sync_warning",
+        "active_criteria",
     ):
-        res = await admin_client.get("/admin/criteria")
-
-    assert res.status_code == 200
-    ctx = captured["context"]
-
-    # 상단 표 데이터에 display_alias 노출
-    top_doc = ctx["criteria"]["documents"][0]
-    assert top_doc["display_alias"] == "my-alias"
-
-    # 하단 클라우드 표 enrichment
-    cloud_docs = ctx["cloud_documents"]
-    matched = next(
-        d for d in cloud_docs
-        if d["document_id"] == "cloud-doc-123"
-    )
-    assert matched["title"] == "orig.pdf"
-    assert matched["alias"] == "my-alias"
-    assert matched["criteria_id"] == c.id
-
-    orphan = next(
-        d for d in cloud_docs
-        if d["document_id"] == "cloud-doc-orphan"
-    )
-    assert orphan["title"] is None
-    assert orphan["alias"] is None
-    assert orphan["criteria_id"] is None
+        assert removed not in item
 
 
-@pytest.mark.asyncio
-async def test_top_table_exposes_display_alias_for_all_criteria(
-    admin_client, make_criteria
-):
-    """상단 표의 모든 항목에 display_alias 필드가 있어야 함"""
-    await make_criteria(
-        title="no-alias.pdf",
-        status="uploaded",
-    )
-    await make_criteria(
-        title="has-alias.pdf",
-        status="uploaded",
-        display_alias="nice-name",
-    )
+def test_criteria_items_skip_null_stable_id():
+    items = _criteria_items_from_rows([
+        _row(stable_id=None, title="legacy.pdf"),
+        _row(stable_id="01HSTABLE200", title="modern.pdf"),
+    ])
 
-    fake_list = AsyncMock(return_value=[])
-
-    captured = {}
-    original_template = Jinja2Templates.TemplateResponse
-
-    def capture(self, name, context, **kwargs):
-        captured["context"] = context
-        return original_template(self, name, context, **kwargs)
-
-    with patch(
-        "app.routers.admin.criteria_views.CriteriaVectorService"
-        ".list_criteria_documents",
-        fake_list,
-    ), patch.object(
-        Jinja2Templates, "TemplateResponse", capture
-    ):
-        res = await admin_client.get("/admin/criteria")
-
-    assert res.status_code == 200
-    docs = captured["context"]["criteria"]["documents"]
-    assert len(docs) == 2
-    # display_alias 필드가 존재해야 함 (None이더라도)
-    for doc in docs:
-        assert "display_alias" in doc
+    assert len(items) == 1
+    assert items[0]["title"] == "modern.pdf"
+    assert items[0]["stable_id"] == "01HSTABLE200"
