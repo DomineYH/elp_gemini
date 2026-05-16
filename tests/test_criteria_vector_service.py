@@ -3,6 +3,7 @@ CriteriaVectorService 단위 테스트
 """
 import pytest
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from app.schemas.alias_map import AliasMap, AliasMapEntry
 from app.services.criteria_vector_service import (
     CriteriaVectorService,
 )
@@ -68,8 +69,8 @@ async def test_upload_criteria_success(service):
 
 
 @pytest.mark.asyncio
-async def test_search_criteria_success(service):
-    """평가기준 검색 성공 테스트"""
+async def test_search_criteria_uses_active_stable_id(service, monkeypatch):
+    """activate(A) 후 activate(B) 상태에서는 active B만 검색한다."""
     # Given
     query = "What is the rubric for essay writing?"
 
@@ -83,6 +84,33 @@ async def test_search_criteria_success(service):
     mock_client.file_search_stores.list.return_value = [
         mock_store
     ]
+
+    fake_alias = MagicMock()
+    fake_alias.fetch = AsyncMock(return_value=(
+        "docs/alias-map",
+        AliasMap(
+            schema_version=1,
+            updated_at="2026-05-15T00:00:00Z",
+            entries={
+                "01HA": AliasMapEntry(
+                    alias=None, status="uploaded", activated_at=None,
+                ),
+                "01HB": AliasMapEntry(
+                    alias=None,
+                    status="active",
+                    activated_at="2026-05-15T00:00:00Z",
+                ),
+            },
+        ),
+    ))
+
+    from app.services import criteria_alias_map_service
+
+    monkeypatch.setattr(
+        criteria_alias_map_service,
+        "CriteriaAliasMapService",
+        lambda **_kwargs: fake_alias,
+    )
 
     # Mock search_in_store 응답
     expected_result = {
@@ -105,7 +133,50 @@ async def test_search_criteria_success(service):
     call_args = (
         service.file_search_service.search_in_store.call_args
     )
-    assert call_args[1]["metadata_filter"] == 'type="criteria"'
+    assert call_args[1]["metadata_filter"] == 'stable_id="01HB"'
+
+
+@pytest.mark.asyncio
+async def test_search_criteria_returns_empty_when_no_active_criteria(
+    service, monkeypatch
+):
+    """deactivate(A) 후 active가 없으면 criteria 검색을 수행하지 않는다."""
+    mock_client = service.file_search_service.client
+    mock_store = Mock()
+    mock_store.display_name = service.store_name
+    mock_store.name = "store123"
+    mock_client.file_search_stores.list.return_value = [mock_store]
+
+    fake_alias = MagicMock()
+    fake_alias.fetch = AsyncMock(return_value=(
+        "docs/alias-map",
+        AliasMap(
+            schema_version=1,
+            updated_at="2026-05-15T00:00:00Z",
+            entries={
+                "01HA": AliasMapEntry(
+                    alias=None, status="uploaded", activated_at=None,
+                ),
+            },
+        ),
+    ))
+
+    from app.services import criteria_alias_map_service
+
+    monkeypatch.setattr(
+        criteria_alias_map_service,
+        "CriteriaAliasMapService",
+        lambda **_kwargs: fake_alias,
+    )
+
+    result = await service.search_criteria("What is the rubric?")
+
+    assert result == {
+        "response_text": "",
+        "citations": [],
+        "sources_count": 0,
+    }
+    service.file_search_service.search_in_store.assert_not_called()
 
 
 @pytest.mark.asyncio

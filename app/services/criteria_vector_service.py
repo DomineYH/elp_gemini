@@ -4,10 +4,21 @@ Gemini File Search API를 사용한 평가기준 임베딩 저장 및 검색
 """
 import logging
 from typing import Dict, Any, Optional, List
-from app.services.file_search_service import FileSearchService
+from app.services.file_search_service import (
+    FileSearchService,
+    _MANIFEST_PAYLOAD_CHUNK_SIZE,
+)
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _string_list_metadata(key: str, value: str) -> dict:
+    chunks = [
+        value[i:i + _MANIFEST_PAYLOAD_CHUNK_SIZE]
+        for i in range(0, len(value), _MANIFEST_PAYLOAD_CHUNK_SIZE)
+    ] or [""]
+    return {"key": key, "string_list_value": {"values": chunks}}
 
 
 class CriteriaVectorService:
@@ -43,12 +54,12 @@ class CriteriaVectorService:
         original_title_b64 = base64.b64encode(title.encode("utf-8")).decode("ascii")
         created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-        metadata = {
-            "type": "criteria",
-            "stable_id": stable_id,
-            "original_title_b64": original_title_b64,
-            "created_at": created_at,
-        }
+        metadata = [
+            {"key": "type", "string_value": "criteria"},
+            {"key": "stable_id", "string_value": stable_id},
+            _string_list_metadata("original_title_b64", original_title_b64),
+            _string_list_metadata("created_at", created_at),
+        ]
         result = await self.file_search_service.upload_document(
             file_path=file_path,
             display_name=title,
@@ -105,9 +116,16 @@ class CriteriaVectorService:
                     f"{self.store_name}"
                 )
 
-            # metadata_filter 설정
-            # 올바른 구문: 'type=\"criteria\"'
-            metadata_filter = 'type="criteria"'
+            active_stable_id = await self._get_active_stable_id(client)
+            if not active_stable_id:
+                logger.info("활성 평가기준 없음 — 검색 생략")
+                return {
+                    "response_text": "",
+                    "citations": [],
+                    "sources_count": 0,
+                }
+
+            metadata_filter = f'stable_id="{active_stable_id}"'
 
             # 검색 수행
             result = await self.file_search_service.search_in_store(
@@ -127,6 +145,35 @@ class CriteriaVectorService:
         except Exception as e:
             logger.error(f"평가기준 검색 실패: {str(e)}")
             raise
+
+    async def _get_active_stable_id(self, client) -> Optional[str]:
+        """alias_map에서 현재 active stable_id를 반환."""
+        from app.services.criteria_alias_map_service import (
+            CriteriaAliasMapService,
+        )
+
+        alias_svc = CriteriaAliasMapService(
+            client=client,
+            store_display_name=self.store_name,
+        )
+        fetched = await alias_svc.fetch()
+        if not fetched:
+            return None
+
+        _, alias_map = fetched
+        active_entries = [
+            (stable_id, entry)
+            for stable_id, entry in alias_map.entries.items()
+            if entry.status == "active"
+        ]
+        if not active_entries:
+            return None
+
+        active_entries.sort(
+            key=lambda item: item[1].activated_at or "",
+            reverse=True,
+        )
+        return active_entries[0][0]
 
     async def list_criteria_documents(self) -> List[Dict[str, Any]]:
         """
