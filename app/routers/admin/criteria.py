@@ -190,12 +190,12 @@ async def upload_criteria(
         logger.debug("3단계: 클라우드 업로드 시작")
         stable_id = _new_stable_id()
         criteria_service = CriteriaVectorService()
+        cloud_write_started = True
         upload_result = await criteria_service.upload_criteria(
             file_path=temp_file_path,
             title=file.filename,
             stable_id=stable_id,
         )
-        cloud_write_started = True
         document_id = upload_result["document_id"]
         logger.debug(
             f"3단계: 클라우드 업로드 완료 - "
@@ -221,6 +221,7 @@ async def upload_criteria(
             updated_at=_now_iso_utc(),
             entries=new_entries,
         )
+        cloud_write_started = True
         await alias_svc.replace(
             updated_alias_map, old_doc_name=old_doc_name
         )
@@ -308,8 +309,8 @@ async def delete_criteria_by_stable_id(
     cloud_write_started = False
     try:
         vec = CriteriaVectorService()
-        await vec.delete_criteria(document_id=row.document_id)
         cloud_write_started = True
+        await vec.delete_criteria(document_id=row.document_id)
 
         alias_svc = CriteriaAliasMapService(
             client=vec.file_search_service.client,
@@ -329,6 +330,7 @@ async def delete_criteria_by_stable_id(
                     updated_at=_now_iso_utc(),
                     entries=new_entries,
                 )
+                cloud_write_started = True
                 await alias_svc.replace(
                     new_alias_map, old_doc_name=old_doc_name
                 )
