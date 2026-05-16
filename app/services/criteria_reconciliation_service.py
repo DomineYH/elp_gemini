@@ -66,8 +66,9 @@ class CriteriaReconciliationService:
     async def reconcile(self) -> ReconcileResult:
         async with _reconcile_lock:
             current_hash = sha256_hex_of_api_key()
-            stored_hash = await self._state.get(KEY_API_KEY_HASH)
-            stored_state = await self._state.get(KEY_SYNC_STATE)
+            async with self._db.begin():
+                stored_hash = await self._state.get(KEY_API_KEY_HASH)
+                stored_state = await self._state.get(KEY_SYNC_STATE)
             key_changed = stored_hash != current_hash
 
             if not key_changed and stored_state == "ok":
@@ -80,10 +81,11 @@ class CriteriaReconciliationService:
                     from app.services.criteria_legacy_migration import (  # noqa: F401
                         migrate_from_legacy_manifest,
                     )
-                    await migrate_from_legacy_manifest(
-                        client=self._vec.file_search_service.client,
-                        app_state=self._state,
-                    )
+                    async with self._db.begin():
+                        await migrate_from_legacy_manifest(
+                            client=self._vec.file_search_service.client,
+                            app_state=self._state,
+                        )
                 except ImportError:
                     pass  # Task 13 will add this module
                 except Exception as e:
@@ -160,23 +162,30 @@ class CriteriaReconciliationService:
                             activated_at=entry.activated_at,
                         )
 
-                await self._state.set_many({
-                    KEY_API_KEY_HASH: current_hash,
-                    KEY_LAST_SYNCED_AT: _now_iso(),
-                    KEY_SYNC_STATE: "ok",
-                    KEY_SYNC_ERROR: None,
-                })
+                    await self._state.set_many({
+                        KEY_API_KEY_HASH: current_hash,
+                        KEY_LAST_SYNCED_AT: _now_iso(),
+                        KEY_SYNC_STATE: "ok",
+                        KEY_SYNC_ERROR: None,
+                    })
                 return ReconcileResult(ok=True, count=len(criteria_docs))
 
             except Exception as e:
                 logger.error(f"reconcile 실패: {e}", exc_info=True)
-                await self._state.set_many({
-                    KEY_SYNC_STATE: "error" if key_changed else "needs_resync",
-                    KEY_SYNC_ERROR: str(e),
-                })
+                async with self._db.begin():
+                    await self._state.set_many({
+                        KEY_SYNC_STATE: (
+                            "error" if key_changed else "needs_resync"
+                        ),
+                        KEY_SYNC_ERROR: str(e),
+                    })
                 return ReconcileResult(error=str(e))
 
 
 def _kv_string(doc: dict, key: str) -> Optional[str]:
-    sv, _ = doc.get("custom_metadata_kv", {}).get(key, (None, []))
-    return sv
+    sv, values = doc.get("custom_metadata_kv", {}).get(key, (None, []))
+    if sv is not None:
+        return sv
+    if values:
+        return "".join(values)
+    return None
