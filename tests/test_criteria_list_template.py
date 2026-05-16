@@ -16,6 +16,7 @@ def _item(
     title: str = "orig.pdf",
     display_alias: str | None = "my-alias",
     status: str = "uploaded",
+    is_legacy: bool = False,
 ):
     return SimpleNamespace(
         stable_id=stable_id,
@@ -23,6 +24,7 @@ def _item(
         display_alias=display_alias,
         status=status,
         created_at=datetime(2026, 5, 15, 3, 21, tzinfo=timezone.utc),
+        is_legacy=is_legacy,
     )
 
 
@@ -86,3 +88,24 @@ def test_uploaded_rows_do_not_render_deactivate_control():
     text = _render([_item(stable_id="01HUPLOADED", status="uploaded")])
 
     assert 'data-action="deactivate"' not in text
+
+
+def _row_for(html: str, stable_id: str) -> str:
+    marker = f'data-stable-id="{stable_id}"'
+    idx = html.index(marker)
+    end = html.find("</tr>", idx)
+    return html[idx:end]
+
+
+def test_legacy_row_renders_replace_button_and_disables_activate_radio():
+    text = _render([_item(stable_id="legacy_aabbccdd", status="uploaded", is_legacy=True)])
+    assert 'data-action="replace"' in text
+    assert 'data-stable-id="legacy_aabbccdd"' in text
+    assert "교체" in text
+    assert "disabled" in _row_for(text, "legacy_aabbccdd")
+    assert "Legacy" in _row_for(text, "legacy_aabbccdd")
+
+
+def test_non_legacy_row_has_no_replace_button():
+    text = _render([_item(stable_id="01HV2REAL", status="uploaded", is_legacy=False)])
+    assert 'data-action="replace"' not in text
