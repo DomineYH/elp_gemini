@@ -75,12 +75,20 @@
           </td>
           <td class="px-6 py-4 text-sm text-gray-900">{{ item.title }}</td>
           <td class="px-6 py-4 text-sm">
-            <label class="inline-flex items-center gap-2">
-              <input type="radio" name="active_criteria" value="{{ item.stable_id }}"
-                     {% if item.status == 'active' %}checked{% endif %}
-                     class="active-radio">
-              <span>{{ '활성' if item.status == 'active' else '비활성' }}</span>
-            </label>
+            <div class="inline-flex items-center gap-3">
+              <label class="inline-flex items-center gap-2">
+                <input type="radio" name="active_criteria" value="{{ item.stable_id }}"
+                       {% if item.status == 'active' %}checked{% endif %}
+                       class="active-radio">
+                <span>{{ '활성' if item.status == 'active' else '비활성' }}</span>
+              </label>
+              {% if item.status == 'active' %}
+              <button type="button"
+                      class="text-xs text-gray-600 hover:underline"
+                      data-action="deactivate"
+                      data-stable-id="{{ item.stable_id }}">비활성화</button>
+              {% endif %}
+            </div>
           </td>
           <td class="px-6 py-4 text-sm text-gray-500">
             {% if item.created_at %}{{ item.created_at.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}
