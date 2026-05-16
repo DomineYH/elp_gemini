@@ -1,5 +1,4 @@
 """alias-map 페이로드 base64 청크 인/디코딩"""
-import json
 
 from app.services.alias_map_codec import (
     encode_alias_map_payload,

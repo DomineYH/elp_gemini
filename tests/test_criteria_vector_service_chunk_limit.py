@@ -1,10 +1,10 @@
-"""criteria_vector_service._string_list_metadata respects File Search 256-char limit (issue #60)."""
+"""criteria_vector_service._string_list_metadata chunk limit tests."""
 from app.services.criteria_vector_service import _string_list_metadata
 
 
 def test_string_list_metadata_chunks_under_256_chars():
     """Multi-chunk string_list_value entries must each be <= 256 chars."""
-    # Title large enough to force multi-chunk after base64.
+    # Value large enough to force multiple string_list_value chunks.
     long_value = "A" * 5000
     meta = _string_list_metadata("original_title_b64", long_value)
 

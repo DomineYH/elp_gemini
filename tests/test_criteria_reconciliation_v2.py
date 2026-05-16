@@ -690,7 +690,7 @@ async def test_reconcile_self_heals_orphan_entries():
 
 
 @pytest.mark.asyncio
-async def test_reconcile_completes_dbcache_after_chunk_size_fix(monkeypatch):
+async def test_reconcile_completes_dbcache_after_chunk_size_fix():
     """Issue #60: pre-v2 docs force a multi-chunk alias_map upload. Before the
     fix, the upload failed with 400 INVALID_ARGUMENT (StringList > 256 chars)
     and reconcile bailed out before populating the local criteria cache, so
@@ -709,15 +709,20 @@ async def test_reconcile_completes_dbcache_after_chunk_size_fix(monkeypatch):
         ),
     ]
 
-    # Wrap _reconcile_with_cloud_docs's fake_alias.replace with a side_effect
-    # that mirrors the real 256-char API limit. We monkeypatch the AliasMap
-    # codec's chunker so the test fails if the chunk-size constant regresses.
+    # Mirror the real 256-char API limit inside the alias_map replace call so
+    # this test fails if the chunk-size constant regresses.
     from app.services import alias_map_codec
+    from app.services.criteria_reconciliation_service import (
+        CriteriaReconciliationService,
+    )
+
+    observed_chunk_counts = []
 
     def _enforcing_replace(alias_map, old_doc_name=None):
         chunks = alias_map_codec.encode_alias_map_payload(
             alias_map.model_dump(mode="json")
         )
+        observed_chunk_counts.append(len(chunks))
         longest = max((len(c) for c in chunks), default=0)
         if longest > 256:
             raise genai_errors.ClientError(
@@ -734,17 +739,6 @@ async def test_reconcile_completes_dbcache_after_chunk_size_fix(monkeypatch):
                 }},
             )
         return "fileSearchStores/rs/docs/alias-map-new"
-
-    # Patch the helper's AsyncMock replace before invoking the harness.
-    # _reconcile_with_cloud_docs builds fresh mocks each call, so we patch
-    # AsyncMock's call path at construction time by monkeypatching the
-    # service class instead — the cleanest way is to drive reconcile
-    # ourselves with the existing fakes plus our enforcing replace.
-    from unittest.mock import AsyncMock, MagicMock, patch
-    from app.schemas.alias_map import AliasMap
-    from app.services.criteria_reconciliation_service import (
-        CriteriaReconciliationService,
-    )
 
     fake_client = MagicMock()
     fake_vec = MagicMock()
@@ -797,8 +791,9 @@ async def test_reconcile_completes_dbcache_after_chunk_size_fix(monkeypatch):
     fake_alias.replace.assert_awaited_once()
     sent_alias_map: AliasMap = fake_alias.replace.await_args.args[0]
     assert len(sent_alias_map.entries) == 2
+    assert observed_chunk_counts and observed_chunk_counts[0] > 1
 
-    # Local cache was rebuilt — both legacy-surrogate stable_ids inserted.
+    # Local cache was rebuilt: both legacy-surrogate stable_ids inserted.
     assert len(inserted) == 2
     surrogate_ids = sorted(row["stable_id"] for row in inserted)
     assert all(sid.startswith("legacy_") for sid in surrogate_ids), surrogate_ids
