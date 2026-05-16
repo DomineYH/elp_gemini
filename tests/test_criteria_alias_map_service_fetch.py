@@ -3,7 +3,10 @@ import pytest
 from unittest.mock import MagicMock
 
 from app.services.alias_map_codec import encode_alias_map_payload, ALIAS_MAP_PAYLOAD_KEY
-from app.services.criteria_alias_map_service import CriteriaAliasMapService
+from app.services.criteria_alias_map_service import (
+    CriteriaAliasMapService,
+    _read_metadata_kv,
+)
 
 
 def _meta(key, *, string_value=None, string_list_value=None):
@@ -19,6 +22,18 @@ def _doc(name, metas):
     d.name = name
     d.custom_metadata = metas
     return d
+
+
+def test_read_metadata_kv_accepts_dict_string_list_value():
+    kv = _read_metadata_kv([
+        {
+            "key": "payload",
+            "string_value": "a",
+            "string_list_value": {"values": ["a", "b"]},
+        }
+    ])
+
+    assert kv["payload"] == ("a", ["a", "b"])
 
 
 @pytest.mark.asyncio

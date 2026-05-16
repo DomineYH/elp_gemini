@@ -40,8 +40,12 @@ def _read_metadata_kv(custom_metadata):
         sv = _meta_value(m, "string_value")
         slv = _meta_value(m, "string_list_value")
         values = []
-        if slv is not None:
-            values = list(getattr(slv, "values", None) or (slv.get("values") if isinstance(slv, dict) else []))
+        if slv is None:
+            values = []
+        elif isinstance(slv, dict):
+            values = list(slv.get("values", []))
+        else:
+            values = list(getattr(slv, "values", []) or [])
         out[key] = (sv, values)
     return out
 
