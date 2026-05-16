@@ -27,6 +27,93 @@ def test_upload_generates_stable_id_and_alias_entry():
 
 
 @pytest.mark.asyncio
+async def test_upload_cloud_upload_failure_marks_resync():
+    file = SimpleNamespace(
+        filename="rubric.pdf",
+        read=AsyncMock(return_value=b"%PDF-1.4 rubric"),
+    )
+    db = AsyncMock()
+    current_admin = SimpleNamespace(username="admin")
+
+    with patch(
+        "app.routers.admin.criteria.FileValidator"
+    ) as validator_cls, patch(
+        "app.routers.admin.criteria.CriteriaVectorService"
+    ) as vector_cls, patch(
+        "app.routers.admin.criteria.AppStateRepository"
+    ) as state_cls:
+        validator_cls.return_value.validate_file = AsyncMock(
+            return_value={"valid": True}
+        )
+        vector = vector_cls.return_value
+        vector.upload_criteria = AsyncMock(
+            side_effect=RuntimeError("cloud upload failed")
+        )
+
+        state = state_cls.return_value
+        state.set = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await upload_criteria(
+                file=file,
+                current_admin=current_admin,
+                db=db,
+                _sync_ready=None,
+            )
+
+    assert exc_info.value.status_code == 500
+    state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
+
+
+@pytest.mark.asyncio
+async def test_upload_alias_replace_failure_marks_resync():
+    file = SimpleNamespace(
+        filename="rubric.pdf",
+        read=AsyncMock(return_value=b"%PDF-1.4 rubric"),
+    )
+    db = AsyncMock()
+    current_admin = SimpleNamespace(username="admin")
+
+    with patch(
+        "app.routers.admin.criteria.FileValidator"
+    ) as validator_cls, patch(
+        "app.routers.admin.criteria.CriteriaVectorService"
+    ) as vector_cls, patch(
+        "app.routers.admin.criteria.CriteriaAliasMapService"
+    ) as alias_cls, patch(
+        "app.routers.admin.criteria.AppStateRepository"
+    ) as state_cls:
+        validator_cls.return_value.validate_file = AsyncMock(
+            return_value={"valid": True}
+        )
+        vector = vector_cls.return_value
+        vector.upload_criteria = AsyncMock(
+            return_value={"document_id": "docs/rubric"}
+        )
+        vector.file_search_service.client = MagicMock()
+
+        alias = alias_cls.return_value
+        alias.fetch = AsyncMock(return_value=None)
+        alias.replace = AsyncMock(
+            side_effect=RuntimeError("alias publish failed")
+        )
+
+        state = state_cls.return_value
+        state.set = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await upload_criteria(
+                file=file,
+                current_admin=current_admin,
+                db=db,
+                _sync_ready=None,
+            )
+
+    assert exc_info.value.status_code == 500
+    state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
+
+
+@pytest.mark.asyncio
 async def test_upload_corrupted_alias_map_marks_resync_without_replace():
     file = SimpleNamespace(
         filename="rubric.pdf",

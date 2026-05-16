@@ -29,6 +29,53 @@ def test_patch_alias_route_is_registered():
 
 
 @pytest.mark.asyncio
+async def test_patch_alias_replace_failure_marks_resync():
+    db = AsyncMock()
+    stable_id = "01HALIAS"
+
+    with patch(
+        "app.routers.admin.criteria.CriteriaVectorService"
+    ) as vector_cls, patch(
+        "app.routers.admin.criteria.CriteriaAliasMapService"
+    ) as alias_cls, patch(
+        "app.routers.admin.criteria.AppStateRepository"
+    ) as state_cls:
+        vector_cls.return_value.file_search_service.client = MagicMock()
+        alias = alias_cls.return_value
+        alias.fetch = AsyncMock(return_value=(
+            "docs/alias-map",
+            AliasMap(
+                schema_version=1,
+                updated_at="2026-05-15T00:00:00Z",
+                entries={
+                    stable_id: AliasMapEntry(
+                        alias=None, status="uploaded", activated_at=None
+                    ),
+                },
+            ),
+        ))
+        alias.replace = AsyncMock(
+            side_effect=RuntimeError("alias publish failed")
+        )
+
+        state = state_cls.return_value
+        state.set = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await patch_criteria_alias(
+                stable_id=stable_id,
+                body=_AliasPatch(alias="new alias"),
+                current_admin=object(),
+                _sync_ready=None,
+                db=db,
+            )
+
+    assert exc_info.value.status_code == 500
+    alias.replace.assert_awaited_once()
+    state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
+
+
+@pytest.mark.asyncio
 async def test_patch_alias_corrupted_alias_map_marks_resync_without_replace():
     db = AsyncMock()
 

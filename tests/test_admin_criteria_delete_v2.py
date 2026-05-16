@@ -30,6 +30,100 @@ def test_delete_route_is_registered():
 
 
 @pytest.mark.asyncio
+async def test_delete_cloud_delete_failure_marks_resync():
+    stable_id = "01HDELETE"
+    row = SimpleNamespace(stable_id=stable_id, document_id="docs/rubric")
+    db = AsyncMock()
+
+    with patch(
+        "app.routers.admin.criteria.CriteriaRepository"
+    ) as repo_cls, patch(
+        "app.routers.admin.criteria.CriteriaVectorService"
+    ) as vector_cls, patch(
+        "app.routers.admin.criteria.AppStateRepository"
+    ) as state_cls:
+        repo_cls.return_value.get_criteria_by_stable_id = AsyncMock(
+            return_value=row
+        )
+
+        vector = vector_cls.return_value
+        vector.delete_criteria = AsyncMock(
+            side_effect=RuntimeError("cloud delete failed")
+        )
+
+        state = state_cls.return_value
+        state.set = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await delete_criteria_by_stable_id(
+                stable_id=stable_id,
+                current_admin=object(),
+                _sync_ready=None,
+                db=db,
+            )
+
+    assert exc_info.value.status_code == 500
+    vector.delete_criteria.assert_awaited_once_with(document_id="docs/rubric")
+    state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
+
+
+@pytest.mark.asyncio
+async def test_delete_alias_replace_failure_marks_resync():
+    stable_id = "01HDELETE"
+    row = SimpleNamespace(stable_id=stable_id, document_id="docs/rubric")
+    db = AsyncMock()
+
+    with patch(
+        "app.routers.admin.criteria.CriteriaRepository"
+    ) as repo_cls, patch(
+        "app.routers.admin.criteria.CriteriaVectorService"
+    ) as vector_cls, patch(
+        "app.routers.admin.criteria.CriteriaAliasMapService"
+    ) as alias_cls, patch(
+        "app.routers.admin.criteria.AppStateRepository"
+    ) as state_cls:
+        repo_cls.return_value.get_criteria_by_stable_id = AsyncMock(
+            return_value=row
+        )
+
+        vector = vector_cls.return_value
+        vector.delete_criteria = AsyncMock(return_value=True)
+        vector.file_search_service.client = MagicMock()
+
+        alias = alias_cls.return_value
+        alias.fetch = AsyncMock(return_value=(
+            "docs/alias-map",
+            AliasMap(
+                schema_version=1,
+                updated_at="2026-05-15T00:00:00Z",
+                entries={
+                    stable_id: AliasMapEntry(
+                        alias=None, status="uploaded", activated_at=None
+                    ),
+                },
+            ),
+        ))
+        alias.replace = AsyncMock(
+            side_effect=RuntimeError("alias publish failed")
+        )
+
+        state = state_cls.return_value
+        state.set = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await delete_criteria_by_stable_id(
+                stable_id=stable_id,
+                current_admin=object(),
+                _sync_ready=None,
+                db=db,
+            )
+
+    assert exc_info.value.status_code == 500
+    alias.replace.assert_awaited_once()
+    state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
+
+
+@pytest.mark.asyncio
 async def test_delete_db_commit_failure_after_cloud_writes_marks_resync():
     stable_id = "01HDELETE"
     row = SimpleNamespace(stable_id=stable_id, document_id="docs/rubric")
