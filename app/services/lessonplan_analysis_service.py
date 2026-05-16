@@ -22,6 +22,7 @@ from app.services.file_search_service import (
     FileSearchService,
     _sanitize_display_name,
 )
+from app.services.criteria_vector_service import CriteriaVectorService
 from app.services.lessonplan_storage_service import LessonPlanStorageService
 from app.services.prompt_loader_service import PromptLoaderService
 from app.services.report_storage_service import ReportStorageService
@@ -35,17 +36,33 @@ logger = logging.getLogger(__name__)
 
 @retry_on_resource_exhausted(max_attempts=3, initial_wait=2.0, max_wait=16.0)
 def _call_gemini_with_file_search(
-    client, model, contents, rubric_store_id, user_store_id
+    client,
+    model,
+    contents,
+    rubric_store_id,
+    user_store_id,
+    rubric_metadata_filter,
 ):
+    rubric_search_config = {
+        "file_search_store_names": [rubric_store_id],
+    }
+    if rubric_metadata_filter:
+        rubric_search_config["metadata_filter"] = rubric_metadata_filter
+
     return client.models.generate_content(
         model=model,
         contents=contents,
         config=types.GenerateContentConfig(
-            tools=[types.Tool(
-                file_search=types.FileSearch(
-                    file_search_store_names=[rubric_store_id, user_store_id]
-                )
-            )],
+            tools=[
+                types.Tool(
+                    file_search=types.FileSearch(**rubric_search_config)
+                ),
+                types.Tool(
+                    file_search=types.FileSearch(
+                        file_search_store_names=[user_store_id]
+                    )
+                ),
+            ],
             temperature=0.7,
         ),
     )
@@ -182,6 +199,23 @@ class LessonPlanAnalysisService:
                     f"  - Lesson Store: {user_store_id}"
                 )
 
+                rubric_metadata_filter = await (
+                    CriteriaVectorService.active_stable_id_filter(
+                        client=self.client,
+                        store_display_name=settings.FS_RUBRIC_STORE_NAME,
+                    )
+                )
+                if not rubric_metadata_filter:
+                    logger.info("활성 평가기준 없음 — 수업지도안 분석 생략")
+                    return {
+                        "success": False,
+                        "error_code": "NO_ACTIVE_CRITERIA",
+                        "error": (
+                            "활성 평가기준이 없습니다. "
+                            "관리자에게 평가기준 활성화를 요청해주세요."
+                        ),
+                    }
+
                 # 2. 프롬프트 구성 (Store 역할 명시)
                 system_prompt = self.prompt_loader.get_prompt("lesson_analysis")
                 full_prompt = self._build_analysis_prompt(
@@ -195,7 +229,7 @@ class LessonPlanAnalysisService:
                 response = await asyncio.to_thread(
                     _call_gemini_with_file_search,
                     self.client, self.model_name, full_prompt,
-                    rubric_store_id, user_store_id,
+                    rubric_store_id, user_store_id, rubric_metadata_filter,
                 )
 
                 # 4. Markdown 보고서 추출 및 후처리

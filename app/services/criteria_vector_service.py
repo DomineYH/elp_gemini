@@ -116,16 +116,17 @@ class CriteriaVectorService:
                     f"{self.store_name}"
                 )
 
-            active_stable_id = await self._get_active_stable_id(client)
-            if not active_stable_id:
+            metadata_filter = await self.active_stable_id_filter(
+                client=client,
+                store_display_name=self.store_name,
+            )
+            if not metadata_filter:
                 logger.info("활성 평가기준 없음 — 검색 생략")
                 return {
                     "response_text": "",
                     "citations": [],
                     "sources_count": 0,
                 }
-
-            metadata_filter = f'stable_id="{active_stable_id}"'
 
             # 검색 수행
             result = await self.file_search_service.search_in_store(
@@ -146,7 +147,27 @@ class CriteriaVectorService:
             logger.error(f"평가기준 검색 실패: {str(e)}")
             raise
 
-    async def _get_active_stable_id(self, client) -> Optional[str]:
+    @staticmethod
+    async def active_stable_id_filter(
+        client,
+        store_display_name: Optional[str] = None,
+    ) -> Optional[str]:
+        """현재 active stable_id에 대한 File Search metadata_filter를 반환."""
+        active_stable_id = await CriteriaVectorService._get_active_stable_id(
+            client=client,
+            store_display_name=store_display_name or settings.FS_RUBRIC_STORE_NAME,
+        )
+        if not active_stable_id:
+            return None
+
+        escaped = active_stable_id.replace("\\", "\\\\").replace('"', '\\"')
+        return f'stable_id="{escaped}"'
+
+    @staticmethod
+    async def _get_active_stable_id(
+        client,
+        store_display_name: Optional[str] = None,
+    ) -> Optional[str]:
         """alias_map에서 현재 active stable_id를 반환."""
         from app.services.criteria_alias_map_service import (
             CriteriaAliasMapService,
@@ -154,7 +175,7 @@ class CriteriaVectorService:
 
         alias_svc = CriteriaAliasMapService(
             client=client,
-            store_display_name=self.store_name,
+            store_display_name=store_display_name or settings.FS_RUBRIC_STORE_NAME,
         )
         fetched = await alias_svc.fetch()
         if not fetched:
