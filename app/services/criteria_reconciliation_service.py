@@ -9,6 +9,7 @@ import asyncio
 import base64
 import hashlib
 import logging
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
@@ -52,6 +53,17 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+@asynccontextmanager
+async def _transaction_if_needed(db):
+    in_transaction = getattr(db, "in_transaction", None)
+    if callable(in_transaction) and in_transaction() is True:
+        yield
+        return
+
+    async with db.begin():
+        yield
+
+
 @dataclass
 class ReconcileResult:
     ok: bool = False
@@ -78,7 +90,7 @@ class CriteriaReconciliationService:
     async def reconcile(self) -> ReconcileResult:
         async with _reconcile_lock:
             current_hash = sha256_hex_of_api_key()
-            async with self._db.begin():
+            async with _transaction_if_needed(self._db):
                 stored_hash = await self._state.get(KEY_API_KEY_HASH)
                 stored_state = await self._state.get(KEY_SYNC_STATE)
                 migration_v2_done = await self._state.get(
@@ -100,7 +112,7 @@ class CriteriaReconciliationService:
                     from app.services.criteria_legacy_migration import (  # noqa: F401
                         migrate_from_legacy_manifest,
                     )
-                    async with self._db.begin():
+                    async with _transaction_if_needed(self._db):
                         await migrate_from_legacy_manifest(
                             client=self._vec.file_search_service.client,
                             app_state=self._state,
@@ -165,7 +177,7 @@ class CriteriaReconciliationService:
                     )
 
                 # Rebuild local DB cache
-                async with self._db.begin():
+                async with _transaction_if_needed(self._db):
                     await self._repo.truncate()
                     for d in criteria_docs:
                         sid = stable_ids_by_document[d["document_id"]]
@@ -199,7 +211,7 @@ class CriteriaReconciliationService:
 
             except Exception as e:
                 logger.error(f"reconcile 실패: {e}", exc_info=True)
-                async with self._db.begin():
+                async with _transaction_if_needed(self._db):
                     await self._state.set_many({
                         KEY_SYNC_STATE: (
                             "error" if key_changed else "needs_resync"

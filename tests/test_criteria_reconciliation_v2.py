@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -274,6 +275,96 @@ async def test_reconcile_upgrade_ok_state_with_real_session_completes():
         fake_alias.replace = AsyncMock()
 
         async with session_factory() as db:
+            with patch(
+                "app.services.criteria_reconciliation_service.sha256_hex_of_api_key",
+                return_value="samehash",
+            ):
+                svc = CriteriaReconciliationService(
+                    db=db,
+                    vector_service=fake_vec,
+                    alias_map_service=fake_alias,
+                    criteria_repo=CriteriaRepository(db),
+                    app_state_repo=AppStateRepository(db),
+                )
+                result = await svc.reconcile()
+
+        assert result.ok is True
+        assert result.error is None
+        assert result.count == 1
+    finally:
+        await engine.dispose()
+        ticker.cancel()
+        with suppress(asyncio.CancelledError):
+            await ticker
+
+
+@pytest.mark.asyncio
+async def test_reconcile_completes_when_session_already_autobegun():
+    """Manual admin route reuses a session already touched by admin auth."""
+    from app.db import Base
+    from app.models import app_state as _app_state_model  # noqa: F401
+    from app.models import criteria as _criteria_model  # noqa: F401
+    from app.models.app_state import AppState
+    from app.repositories.app_state_repository import (
+        AppStateRepository,
+        KEY_API_KEY_HASH,
+        KEY_SYNC_STATE,
+    )
+    from app.repositories.criteria_repository import CriteriaRepository
+    from app.services.criteria_legacy_migration import MIGRATION_MARKER_KEY
+    from app.services.criteria_reconciliation_service import (
+        CriteriaReconciliationService,
+    )
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    ticker = asyncio.create_task(_keep_loop_awake())
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        async with session_factory() as db:
+            state = AppStateRepository(db)
+            async with db.begin():
+                await state.set(KEY_API_KEY_HASH, "samehash")
+                await state.set(KEY_SYNC_STATE, "needs_resync")
+                await state.set(MIGRATION_MARKER_KEY, "true")
+
+        fake_client = MagicMock()
+        fake_client.file_search_stores.list.return_value = iter([])
+        fake_vec = MagicMock()
+        fake_vec.file_search_service.client = fake_client
+        fake_vec.list_criteria_documents = AsyncMock(return_value=[
+            _doc_kv("fileSearchStores/s/documents/a", [
+                ("type", "criteria"),
+                ("stable_id", "01HA"),
+            ]),
+        ])
+        fake_alias = MagicMock()
+        fake_alias.fetch = AsyncMock(return_value=(
+            "docs/alias-map",
+            AliasMap(
+                schema_version=1,
+                updated_at="2026-05-15T00:00:00Z",
+                entries={
+                    "01HA": AliasMapEntry(
+                        alias=None, status="uploaded", activated_at=None,
+                    ),
+                },
+            ),
+        ))
+        fake_alias.replace = AsyncMock()
+
+        async with session_factory() as db:
+            await db.execute(
+                select(AppState).where(AppState.key == KEY_SYNC_STATE)
+            )
+            assert db.in_transaction() is True
+
             with patch(
                 "app.services.criteria_reconciliation_service.sha256_hex_of_api_key",
                 return_value="samehash",
