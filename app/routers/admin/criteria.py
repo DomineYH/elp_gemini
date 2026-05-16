@@ -466,6 +466,7 @@ async def list_criteria_json(
         "criteria": [
             {
                 "id": c.id,
+                "stable_id": c.stable_id,
                 "title": c.title,
                 "display_alias": c.display_alias,
                 "status": c.status,

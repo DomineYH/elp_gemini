@@ -3,29 +3,17 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
-from fastapi.testclient import TestClient
 
-from app.main import app
-from app.routers.admin.criteria import upload_criteria
-
-
-@pytest.fixture
-def admin_client():
-    from app.db import get_db
-    from app.dependencies import get_current_admin
-
-    app.dependency_overrides[get_current_admin] = lambda: object()
-
-    async def _fake_db():
-        yield AsyncMock()
-
-    app.dependency_overrides[get_db] = _fake_db
-    yield TestClient(app)
-    app.dependency_overrides.clear()
+from app.routers.admin.criteria import (
+    list_criteria_json,
+    reconcile_criteria,
+    router,
+    upload_criteria,
+)
 
 
-def test_reconcile_endpoint_returns_state(admin_client):
+@pytest.mark.asyncio
+async def test_reconcile_endpoint_returns_state():
     mock_result = type(
         "R", (), {"ok": True, "skipped": False, "count": 2, "error": None}
     )()
@@ -41,15 +29,14 @@ def test_reconcile_endpoint_returns_state(admin_client):
         mock_state.get = AsyncMock(return_value="ok")
         repo_cls.return_value = mock_state
 
-        resp = admin_client.post("/api/admin/criteria/reconcile")
+        body = await reconcile_criteria(db=object(), _admin=object())
 
-    assert resp.status_code == 200
-    body = resp.json()
     assert body["ok"] is True
     assert body["count"] == 2
 
 
-def test_list_endpoint_includes_sync_metadata(admin_client):
+@pytest.mark.asyncio
+async def test_list_endpoint_includes_sync_metadata():
     with patch(
         "app.routers.admin.criteria.AppStateRepository"
     ) as repo_cls, patch(
@@ -67,29 +54,55 @@ def test_list_endpoint_includes_sync_metadata(admin_client):
         crit_instance = crit_cls.return_value
         crit_instance.get_all_criteria = AsyncMock(return_value=[])
 
-        resp = admin_client.get("/api/admin/criteria")
+        body = await list_criteria_json(current_admin=object(), db=object())
 
-    assert resp.status_code == 200
-    body = resp.json()
     assert "sync" in body
     assert body["sync"]["state"] == "ok"
 
 
-def test_mutation_blocked_when_sync_state_not_ok(admin_client):
+@pytest.mark.asyncio
+async def test_list_criteria_json_includes_id_and_stable_id():
+    row = SimpleNamespace(
+        id=7,
+        stable_id="01HJSONSTABLE",
+        title="rubric.pdf",
+        display_alias=None,
+        status="uploaded",
+        file_size=123,
+        created_at=None,
+        document_id="fileSearchStores/s/documents/rubric",
+    )
+
+    with patch(
+        "app.routers.admin.criteria.AppStateRepository"
+    ) as repo_cls, patch(
+        "app.routers.admin.criteria.CriteriaRepository"
+    ) as crit_cls:
+        mock_state = AsyncMock()
+        mock_state.get = AsyncMock(return_value=None)
+        repo_cls.return_value = mock_state
+        crit_instance = crit_cls.return_value
+        crit_instance.get_all_criteria = AsyncMock(return_value=[row])
+
+        body = await list_criteria_json(current_admin=object(), db=object())
+
+    item = body["criteria"][0]
+    assert item["id"] == 7
+    assert item["stable_id"] == "01HJSONSTABLE"
+
+
+def test_upload_route_requires_sync_ready_dependency():
     from app.dependencies import require_criteria_sync_ready
 
-    async def blocked():
-        raise HTTPException(
-            status_code=503, detail="blocked"
-        )
-
-    app.dependency_overrides[require_criteria_sync_ready] = blocked
-    resp = admin_client.post(
-        "/api/admin/criteria/upload",
-        files={"file": ("r.pdf", b"data", "application/pdf")},
+    upload_route = next(
+        route for route in router.routes
+        if getattr(route, "path", None) == "/api/admin/criteria/upload"
+        and "POST" in getattr(route, "methods", set())
     )
-    assert resp.status_code == 503
-    app.dependency_overrides.pop(require_criteria_sync_ready, None)
+    assert any(
+        dep.call is require_criteria_sync_ready
+        for dep in upload_route.dependant.dependencies
+    )
 
 
 @pytest.mark.asyncio
