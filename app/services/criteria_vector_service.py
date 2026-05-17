@@ -152,23 +152,35 @@ class CriteriaVectorService:
         client,
         store_display_name: Optional[str] = None,
     ) -> Optional[str]:
-        """현재 active stable_id에 대한 File Search metadata_filter를 반환."""
-        active_stable_id = await CriteriaVectorService._get_active_stable_id(
+        """현재 active 평가기준들에 대한 File Search metadata_filter 반환.
+
+        - 0개: None (평가기준 미설정 안내 트리거)
+        - 1개: stable_id="X"
+        - N개: (stable_id="A" OR stable_id="B" ...) — AIP-160 OR 결합
+        """
+        active_stable_ids = await CriteriaVectorService._get_active_stable_ids(
             client=client,
             store_display_name=store_display_name or settings.FS_RUBRIC_STORE_NAME,
         )
-        if not active_stable_id:
+        if not active_stable_ids:
             return None
 
-        escaped = active_stable_id.replace("\\", "\\\\").replace('"', '\\"')
-        return f'stable_id="{escaped}"'
+        def _eq(sid: str) -> str:
+            escaped = sid.replace("\\", "\\\\").replace('"', '\\"')
+            return f'stable_id="{escaped}"'
+
+        if len(active_stable_ids) == 1:
+            return _eq(active_stable_ids[0])
+
+        joined = " OR ".join(_eq(sid) for sid in active_stable_ids)
+        return f"({joined})"
 
     @staticmethod
-    async def _get_active_stable_id(
+    async def _get_active_stable_ids(
         client,
         store_display_name: Optional[str] = None,
-    ) -> Optional[str]:
-        """alias_map에서 현재 active stable_id를 반환."""
+    ) -> list[str]:
+        """alias_map에서 active stable_id들을 activated_at desc 순으로 반환."""
         from app.services.criteria_alias_map_service import (
             CriteriaAliasMapService,
         )
@@ -179,7 +191,7 @@ class CriteriaVectorService:
         )
         fetched = await alias_svc.fetch()
         if not fetched:
-            return None
+            return []
 
         _, alias_map = fetched
         from app.services.criteria_reconciliation_service import (
@@ -195,13 +207,13 @@ class CriteriaVectorService:
             )
         ]
         if not active_entries:
-            return None
+            return []
 
         active_entries.sort(
             key=lambda item: item[1].activated_at or "",
             reverse=True,
         )
-        return active_entries[0][0]
+        return [sid for sid, _ in active_entries]
 
     async def list_criteria_documents(self) -> List[Dict[str, Any]]:
         """
