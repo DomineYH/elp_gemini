@@ -133,7 +133,8 @@ async def test_fetch_returns_newest_alias_map_when_duplicates_exist(caplog):
     assert alias_map.entries["01HID"].alias == "new"
     assert "multiple alias_map documents" in caplog.text
     client.file_search_stores.documents.delete.assert_called_once_with(
-        name="docs/alias-map-old"
+        name="docs/alias-map-old",
+        config={"force": True},
     )
 
 
