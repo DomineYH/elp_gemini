@@ -78,11 +78,17 @@ class CriteriaVectorService:
         return result
 
     async def delete_criteria(self, document_id: str) -> bool:
-        """document_id로 식별되는 평가기준 1개를 삭제. store 재생성 없음."""
+        """document_id로 식별되는 평가기준 1개를 삭제. store 재생성 없음.
+
+        Gemini File Search Document는 chunk를 포함한 상태에서 삭제하려면
+        ``force=True`` 가 필요하다. 미전달 시 ``400 FAILED_PRECONDITION
+        Cannot delete non-empty Document`` 가 발생한다 (issue #68).
+        """
         if not document_id:
             raise ValueError("document_id가 비어있습니다")
         self.file_search_service.client.file_search_stores.documents.delete(
-            name=document_id
+            name=document_id,
+            config={"force": True},
         )
         logger.info(f"평가기준 삭제 완료: {document_id}")
         return True
