@@ -63,7 +63,10 @@ async def test_replace_uploads_then_deletes_old():
 
     assert new_name == "docs/alias-map-new"
     client.file_search_stores.upload_to_file_search_store.assert_called_once()
-    client.file_search_stores.documents.delete.assert_called_once_with(name="docs/alias-map-old")
+    client.file_search_stores.documents.delete.assert_called_once_with(
+        name="docs/alias-map-old",
+        config={"force": True},
+    )
 
 
 @pytest.mark.asyncio

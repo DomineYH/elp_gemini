@@ -181,7 +181,10 @@ class CriteriaAliasMapService:
         )
         for doc_name in cleanup_names:
             try:
-                self._client.file_search_stores.documents.delete(name=doc_name)
+                self._client.file_search_stores.documents.delete(
+                    name=doc_name,
+                    config={"force": True},
+                )
             except Exception:
                 logger.warning(
                     "stale alias_map cleanup failed for %s",
@@ -239,6 +242,9 @@ class CriteriaAliasMapService:
                 pass
 
         if old_doc_name:
-            self._client.file_search_stores.documents.delete(name=old_doc_name)
+            self._client.file_search_stores.documents.delete(
+                name=old_doc_name,
+                config={"force": True},
+            )
 
         return new_doc_name
