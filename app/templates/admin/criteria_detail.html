@@ -223,38 +223,5 @@
         </dl>
     </div>
     {% endif %}
-
-    <!-- 작업 버튼 -->
-    <div class="flex justify-end space-x-3">
-        {% if criteria.status == 'active' %}
-        <button
-            onclick="deactivateCriteria()"
-            class="px-6 py-3 bg-gray-600 text-white
-            rounded-lg hover:bg-gray-700
-            transition-colors font-medium"
-        >
-            비활성화
-        </button>
-        {% else %}
-        <button
-            onclick="activateCriteria()"
-            class="px-6 py-3 bg-green-600 text-white
-            rounded-lg hover:bg-green-700
-            transition-colors font-medium"
-        >
-            활성화
-        </button>
-        {% endif %}
-    </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script src="/static/js/criteria_detail.js"></script>
-<script>
-initCriteriaDetail(
-    {{ criteria.id }},
-    "{{ criteria.title }}"
-);
-</script>
 {% endblock %}
