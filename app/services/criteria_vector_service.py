@@ -210,7 +210,7 @@ class CriteriaVectorService:
             return []
 
         active_entries.sort(
-            key=lambda item: item[1].activated_at or "",
+            key=lambda item: (item[1].activated_at or "", item[0]),
             reverse=True,
         )
         return [sid for sid, _ in active_entries]
