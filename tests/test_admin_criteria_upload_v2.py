@@ -18,7 +18,7 @@ def test_upload_generates_stable_id_and_alias_entry():
     2. CriteriaVectorService.upload_criteria called with a freshly-generated 26-char
        stable_id and the user-supplied title.
     3. CriteriaAliasMapService.replace() called with an AliasMap whose entries contain
-       the new stable_id, alias=None, status="uploaded".
+       the new stable_id, alias=None, status="active", activated_at populated.
     4. The criteria row in DB has matching stable_id and document_id.
 
     Full integration coverage lands in tests/test_e2e_criteria_meta_flow.py (Task 22).
