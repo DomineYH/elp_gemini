@@ -5,7 +5,10 @@ import pytest
 from fastapi import HTTPException
 
 from app.repositories.app_state_repository import KEY_SYNC_STATE
-from app.routers.admin.criteria import activate_by_stable_id, deactivate_by_stable_id
+from app.routers.admin.criteria import (
+    activate_by_stable_id,
+    deactivate_by_stable_id,
+)
 from app.schemas.alias_map import AliasMap, AliasMapEntry
 
 

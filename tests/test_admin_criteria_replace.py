@@ -134,7 +134,7 @@ async def test_replace_uploads_new_doc_preserves_alias_and_deletes_old():
 
 @pytest.mark.asyncio
 async def test_replace_creates_active_without_demoting_others():
-    """Legacy replace creates new entry as active; other existing actives stay active."""
+    """Legacy replace creates active entry and preserves existing actives."""
     legacy_sid = "legacy_0123456789abcdef"
     active_sid = "01HREALACTIVE"
     old_doc = "fileSearchStores/s/documents/old"
@@ -215,7 +215,10 @@ async def test_replace_creates_active_without_demoting_others():
 
     # Existing active stays active
     assert new_alias_map.entries[active_sid].status == "active"
-    assert new_alias_map.entries[active_sid].activated_at == "2026-05-15T00:00:00Z"
+    assert (
+        new_alias_map.entries[active_sid].activated_at
+        == "2026-05-15T00:00:00Z"
+    )
 
     # DB insert also active
     repo.insert.assert_awaited_once()

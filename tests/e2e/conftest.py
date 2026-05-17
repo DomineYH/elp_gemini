@@ -1,17 +1,19 @@
 """E2E test fixtures for criteria multi-active tests."""
-import pytest
-import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock
 
-from httpx import AsyncClient, ASGITransport
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import (
-    create_async_engine, AsyncSession, async_sessionmaker,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
 )
 from sqlalchemy.pool import StaticPool
 
-from app.main import app
 from app.db import Base, get_db
 from app.dependencies import get_current_admin
+from app.main import app
 from app.models.users import User
 
 

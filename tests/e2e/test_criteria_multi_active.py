@@ -8,7 +8,9 @@ import pytest
 
 from app.repositories.criteria_repository import CriteriaRepository
 from app.schemas.alias_map import AliasMap, AliasMapEntry
-from app.services.criteria_reconciliation_service import legacy_surrogate_stable_id
+from app.services.criteria_reconciliation_service import (
+    legacy_surrogate_stable_id,
+)
 from app.services.criteria_vector_service import CriteriaVectorService
 
 
@@ -43,11 +45,13 @@ async def test_reconcile_promotes_all_cloud_criteria_to_active(
     e2e_client, fake_vector_client, db_session
 ):
     """key change → reconcile → all 3 cloud criteria become status=active."""
-    fake_vector_client.list_criteria_documents = AsyncMock(return_value=[
-        _criteria_doc("doc-1", "sid_a", "Criteria A"),
-        _criteria_doc("doc-2", "sid_b", "Criteria B"),
-        _criteria_doc("doc-3", "sid_c", "Criteria C"),
-    ])
+    fake_vector_client.list_criteria_documents = AsyncMock(
+        return_value=[
+            _criteria_doc("doc-1", "sid_a", "Criteria A"),
+            _criteria_doc("doc-2", "sid_b", "Criteria B"),
+            _criteria_doc("doc-3", "sid_c", "Criteria C"),
+        ],
+    )
 
     fake_alias_svc = MagicMock()
     fake_alias_svc.fetch = AsyncMock(return_value=None)
@@ -76,10 +80,12 @@ async def test_upload_after_reconcile_keeps_existing_actives(
 ):
     """existing 2 active + new upload → 3 active."""
     # Phase 1: reconcile 2 criteria
-    fake_vector_client.list_criteria_documents = AsyncMock(return_value=[
-        _criteria_doc("doc-1", "sid_a", "Criteria A"),
-        _criteria_doc("doc-2", "sid_b", "Criteria B"),
-    ])
+    fake_vector_client.list_criteria_documents = AsyncMock(
+        return_value=[
+            _criteria_doc("doc-1", "sid_a", "Criteria A"),
+            _criteria_doc("doc-2", "sid_b", "Criteria B"),
+        ],
+    )
 
     alias_reconcile = MagicMock()
     alias_reconcile.fetch = AsyncMock(return_value=None)
@@ -129,7 +135,7 @@ async def test_upload_after_reconcile_keeps_existing_actives(
 
 @pytest.mark.asyncio
 async def test_search_filter_uses_or_expression_for_multi_active():
-    """In multi-active state, metadata_filter == '(stable_id="X" OR stable_id="Y")'."""
+    """Multi-active state emits an OR metadata_filter expression."""
     alias_map = AliasMap(
         schema_version=1,
         updated_at="2026-05-17T00:00:00Z",

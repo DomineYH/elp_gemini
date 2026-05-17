@@ -2,21 +2,23 @@
 관리자 - 평가기준 관리 라우터
 평가기준 업로드 및 삭제 엔드포인트
 """
+import logging
+import os
+import tempfile
+from typing import Optional
+
 from fastapi import (
     APIRouter,
     Depends,
+    File,
     HTTPException,
     UploadFile,
-    File,
     status,
 )
-from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional
-import logging
-import tempfile
-import os
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db import get_db
 from app.dependencies import (
     get_current_admin,
@@ -24,34 +26,25 @@ from app.dependencies import (
 )
 from app.models.users import User
 from app.repositories.app_state_repository import (
-    AppStateRepository,
     KEY_LAST_SYNCED_AT,
     KEY_SYNC_ERROR,
     KEY_SYNC_STATE,
     SYNC_STATE_NEEDS_RESYNC,
+    AppStateRepository,
 )
-from app.services.criteria_reconciliation_service import (
-    CriteriaReconciliationService,
-    is_legacy_surrogate_stable_id,
-)
-from app.services.criteria_vector_service import (
-    CriteriaVectorService
-)
-from app.services.file_validator import FileValidator
-from app.repositories.criteria_repository import (
-    CriteriaRepository
-)
-from app.schemas.alias_map import (
-    AliasMap,
-    AliasMapEntry,
-    empty_alias_map,
-)
+from app.repositories.criteria_repository import CriteriaRepository
+from app.schemas.alias_map import AliasMap, AliasMapEntry, empty_alias_map
 from app.schemas.criteria import validate_display_alias_text
 from app.services.criteria_alias_map_service import (
     AliasMapParseError,
     CriteriaAliasMapService,
 )
-from app.config import settings
+from app.services.criteria_reconciliation_service import (
+    CriteriaReconciliationService,
+    is_legacy_surrogate_stable_id,
+)
+from app.services.criteria_vector_service import CriteriaVectorService
+from app.services.file_validator import FileValidator
 
 router = APIRouter(
     prefix="/api/admin/criteria",
@@ -79,7 +72,10 @@ async def _mark_criteria_needs_resync(db: AsyncSession, exc: Exception) -> None:
     try:
         await db.rollback()
     except Exception:
-        logger.warning("criteria sync_state 표시 전 rollback 실패", exc_info=True)
+        logger.warning(
+            "criteria sync_state 표시 전 rollback 실패",
+            exc_info=True,
+        )
 
     try:
         state_repo = AppStateRepository(db=db)
@@ -87,7 +83,10 @@ async def _mark_criteria_needs_resync(db: AsyncSession, exc: Exception) -> None:
         await state_repo.set(KEY_SYNC_ERROR, str(exc))
         await db.commit()
     except Exception:
-        logger.error("criteria sync_state needs_resync 표시 실패", exc_info=True)
+        logger.error(
+            "criteria sync_state needs_resync 표시 실패",
+            exc_info=True,
+        )
 
 
 async def _raise_alias_map_parse_unavailable(
@@ -285,7 +284,10 @@ async def upload_criteria(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"파일 업로드 중 오류가 발생했습니다: {error_type} - {error_msg}"
+            detail=(
+                "파일 업로드 중 오류가 발생했습니다: "
+                f"{error_type} - {error_msg}"
+            ),
         )
     finally:
         # 임시 파일 삭제
@@ -505,6 +507,7 @@ class _AliasPatch(BaseModel):
     alias: Optional[str] = Field(default=None)
 
     @field_validator("alias")
+    @classmethod
     def validate_alias(cls, v):
         return validate_display_alias_text(v)
 
@@ -582,7 +585,9 @@ async def patch_criteria_alias(
 @router.post(
     "/{stable_id}/activate",
     summary="평가기준 활성화 (stable_id 기반)",
-    description="해당 stable_id를 active로 전환합니다. 다중 active를 허용합니다.",
+    description=(
+        "해당 stable_id를 active로 전환합니다. 다중 active를 허용합니다."
+    ),
 )
 async def activate_by_stable_id(
     stable_id: str,
@@ -726,7 +731,9 @@ async def list_criteria_json(
                 "display_alias": c.display_alias,
                 "status": c.status,
                 "file_size": c.file_size,
-                "created_at": c.created_at.isoformat() if c.created_at else None,
+                "created_at": (
+                    c.created_at.isoformat() if c.created_at else None
+                ),
                 "document_id": c.document_id,
             }
             for c in all_criteria

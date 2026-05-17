@@ -16,11 +16,11 @@ from typing import Optional
 
 from app.config import settings
 from app.repositories.app_state_repository import (
-    AppStateRepository,
     KEY_API_KEY_HASH,
     KEY_LAST_SYNCED_AT,
     KEY_SYNC_ERROR,
     KEY_SYNC_STATE,
+    AppStateRepository,
 )
 from app.repositories.criteria_repository import CriteriaRepository
 from app.schemas.alias_map import AliasMap, AliasMapEntry, empty_alias_map
@@ -60,10 +60,12 @@ def _normalize_active_entries(
     normalized: dict[str, AliasMapEntry] = {}
     for sid, entry in entries.items():
         if entry.status == "active" and is_legacy_surrogate_stable_id(sid):
-            normalized[sid] = entry.model_copy(update={
-                "status": "uploaded",
-                "activated_at": None,
-            })
+            normalized[sid] = entry.model_copy(
+                update={
+                    "status": "uploaded",
+                    "activated_at": None,
+                }
+            )
         else:
             normalized[sid] = entry
     return normalized
@@ -122,8 +124,8 @@ class CriteriaReconciliationService:
                 return ReconcileResult(skipped=True)
 
             try:
-                # Legacy migration (Task 13 will add migrate_from_legacy_manifest).
-                # Lazy import so the absence of the module does not block reconcile.
+                # Task 13 will add migrate_from_legacy_manifest.
+                # Lazy import keeps its absence from blocking reconcile.
                 try:
                     from app.services.criteria_legacy_migration import (  # noqa: F401
                         migrate_from_legacy_manifest,
