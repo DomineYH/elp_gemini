@@ -6,11 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.repositories.app_state_repository import (
-    KEY_API_KEY_HASH,
-    KEY_LAST_SYNCED_AT,
-    KEY_SYNC_STATE,
-)
 from app.repositories.criteria_repository import CriteriaRepository
 from app.schemas.alias_map import AliasMap, AliasMapEntry
 from app.services.criteria_reconciliation_service import legacy_surrogate_stable_id
@@ -133,9 +128,7 @@ async def test_upload_after_reconcile_keeps_existing_actives(
 
 
 @pytest.mark.asyncio
-async def test_search_filter_uses_or_expression_for_multi_active(
-    e2e_client, fake_vector_client, db_session
-):
+async def test_search_filter_uses_or_expression_for_multi_active():
     """In multi-active state, metadata_filter == '(stable_id="X" OR stable_id="Y")'."""
     alias_map = AliasMap(
         schema_version=1,
