@@ -225,7 +225,7 @@ async def upload_criteria(
         )
         new_entries = dict(alias_map.entries)
         new_entries[stable_id] = AliasMapEntry(
-            alias=None, status="uploaded", activated_at=None
+            alias=None, status="active", activated_at=_now_iso_utc()
         )
         updated_alias_map = AliasMap(
             schema_version=1,
@@ -246,9 +246,9 @@ async def upload_criteria(
             document_id=document_id,
             title=file.filename,
             display_alias=None,
-            status="uploaded",
+            status="active",
             created_at=None,
-            activated_at=None,
+            activated_at=_now_iso_utc(),
             uploaded_by=current_admin.username,
         )
         await db.commit()
@@ -450,8 +450,8 @@ async def replace_legacy_criteria(
         new_entries.pop(stable_id, None)
         new_entries[new_stable_id] = AliasMapEntry(
             alias=old_alias,
-            status="uploaded",
-            activated_at=None,
+            status="active",
+            activated_at=_now_iso_utc(),
         )
         new_alias_map = AliasMap(
             schema_version=1,
@@ -470,9 +470,9 @@ async def replace_legacy_criteria(
             document_id=new_document_id,
             title=file.filename,
             display_alias=old_alias,
-            status="uploaded",
+            status="active",
             created_at=None,
-            activated_at=None,
+            activated_at=_now_iso_utc(),
             uploaded_by=current_admin.username,
         )
         await db.commit()
@@ -582,7 +582,7 @@ async def patch_criteria_alias(
 @router.post(
     "/{stable_id}/activate",
     summary="평가기준 활성화 (stable_id 기반)",
-    description="해당 stable_id를 active로 전환하고 기존 active는 uploaded로 강등합니다.",
+    description="해당 stable_id를 active로 전환합니다. 다중 active를 허용합니다.",
 )
 async def activate_by_stable_id(
     stable_id: str,
@@ -612,7 +612,7 @@ async def _set_status_by_stable_id(
 ) -> dict:
     """
     alias_map과 DB 캐시를 동시에 업데이트.
-    target_status == 'active'이면 기존 active는 'uploaded'로 강등 (단일 활성 불변).
+    다중 active를 허용합니다.
     """
     if target_status == "active" and is_legacy_surrogate_stable_id(stable_id):
         raise HTTPException(
@@ -653,11 +653,6 @@ async def _set_status_by_stable_id(
                     "status": target_status,
                     "activated_at": now if target_status == "active" else None,
                 })
-            elif target_status == "active" and entry.status == "active":
-                new_entries[sid] = entry.model_copy(update={
-                    "status": "uploaded",
-                    "activated_at": None,
-                })
             else:
                 new_entries[sid] = entry
 
@@ -667,7 +662,7 @@ async def _set_status_by_stable_id(
         cloud_write_started = True
         await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
 
-        # Sync DB cache for both the target and any demoted entries
+        # Sync DB cache for all entries
         repo = CriteriaRepository(db)
         parsed_now = _parse_iso(now)
         for sid, entry in new_entries.items():

@@ -125,8 +125,100 @@ async def test_replace_uploads_new_doc_preserves_alias_and_deletes_old():
     assert legacy_sid not in new_alias_map.entries
     new_entry = new_alias_map.entries[new_sid]
     assert new_entry.alias == "1학기 평가기준"
-    assert new_entry.status == "uploaded"
-    assert new_entry.activated_at is None
+    assert new_entry.status == "active"
+    assert new_entry.activated_at is not None
 
     # old cloud document deleted after alias_map updated
     vec.delete_criteria.assert_awaited_once_with(document_id=old_doc)
+
+
+@pytest.mark.asyncio
+async def test_replace_creates_active_without_demoting_others():
+    """Legacy replace creates new entry as active; other existing actives stay active."""
+    legacy_sid = "legacy_0123456789abcdef"
+    active_sid = "01HREALACTIVE"
+    old_doc = "fileSearchStores/s/documents/old"
+    new_doc = "fileSearchStores/s/documents/new"
+
+    file = SimpleNamespace(
+        filename="rubric.pdf",
+        read=AsyncMock(return_value=b"%PDF-1.4 r"),
+    )
+    db = AsyncMock()
+
+    with (
+        patch("app.routers.admin.criteria.FileValidator") as validator_cls,
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+    ):
+        validator_cls.return_value.validate_file = AsyncMock(
+            return_value={"valid": True}
+        )
+
+        vec = vector_cls.return_value
+        vec.file_search_service.client = MagicMock()
+        vec.upload_criteria = AsyncMock(return_value={"document_id": new_doc})
+        vec.delete_criteria = AsyncMock(return_value=True)
+
+        alias = alias_cls.return_value
+        alias.fetch = AsyncMock(
+            return_value=(
+                "docs/alias-map",
+                AliasMap(
+                    schema_version=1,
+                    updated_at="2026-05-15T00:00:00Z",
+                    entries={
+                        legacy_sid: AliasMapEntry(
+                            alias="1학기 평가기준",
+                            status="uploaded",
+                            activated_at=None,
+                        ),
+                        active_sid: AliasMapEntry(
+                            alias=None,
+                            status="active",
+                            activated_at="2026-05-15T00:00:00Z",
+                        ),
+                    },
+                ),
+            )
+        )
+        alias.replace = AsyncMock()
+
+        repo = repo_cls.return_value
+        repo.get_criteria_by_stable_id = AsyncMock(
+            return_value=SimpleNamespace(
+                stable_id=legacy_sid,
+                document_id=old_doc,
+                display_alias="1학기 평가기준",
+            )
+        )
+        repo.insert = AsyncMock()
+
+        result = await replace_legacy_criteria(
+            stable_id=legacy_sid,
+            file=file,
+            current_admin=SimpleNamespace(username="admin"),
+            _sync_ready=None,
+            db=db,
+        )
+
+    new_sid = result["new_stable_id"]
+
+    # New entry is active
+    alias.replace.assert_awaited_once()
+    new_alias_map = alias.replace.await_args.args[0]
+    assert new_alias_map.entries[new_sid].status == "active"
+    assert new_alias_map.entries[new_sid].activated_at is not None
+
+    # Existing active stays active
+    assert new_alias_map.entries[active_sid].status == "active"
+    assert new_alias_map.entries[active_sid].activated_at == "2026-05-15T00:00:00Z"
+
+    # DB insert also active
+    repo.insert.assert_awaited_once()
+    insert_kwargs = repo.insert.await_args.kwargs
+    assert insert_kwargs["status"] == "active"
+    assert insert_kwargs["activated_at"] is not None
