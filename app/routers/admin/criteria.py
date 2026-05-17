@@ -662,7 +662,7 @@ async def _set_status_by_stable_id(
         cloud_write_started = True
         await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
 
-        # Sync DB cache for both the target and any demoted entries
+        # Sync DB cache for all entries
         repo = CriteriaRepository(db)
         parsed_now = _parse_iso(now)
         for sid, entry in new_entries.items():
