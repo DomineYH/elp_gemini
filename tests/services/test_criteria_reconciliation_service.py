@@ -1,7 +1,5 @@
 """Unit tests for criteria_reconciliation_service helpers."""
-import pytest
-
-from app.schemas.alias_map import AliasMap, AliasMapEntry, empty_alias_map
+from app.schemas.alias_map import AliasMapEntry
 from app.services.criteria_reconciliation_service import (
     _normalize_active_entries,
     legacy_surrogate_stable_id,
@@ -16,6 +14,7 @@ def test_normalize_keeps_multiple_real_actives():
     }
     result = _normalize_active_entries(entries)
     assert result["sid_a"].status == "active"
+    assert result["sid_a"].activated_at == "2026-05-17T00:00:00Z"
     assert result["sid_b"].status == "active"
     assert result["sid_c"].status == "uploaded"
 
