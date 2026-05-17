@@ -56,22 +56,10 @@ def _now_iso() -> str:
 def _normalize_active_entries(
     entries: dict[str, AliasMapEntry],
 ) -> dict[str, AliasMapEntry]:
-    """Keep one non-legacy active entry; demote legacy or duplicate actives."""
-    active_real_entries = [
-        (sid, entry)
-        for sid, entry in entries.items()
-        if entry.status == "active" and not is_legacy_surrogate_stable_id(sid)
-    ]
-    keep_active_sid = None
-    if active_real_entries:
-        keep_active_sid = max(
-            active_real_entries,
-            key=lambda item: (item[1].activated_at or "", item[0]),
-        )[0]
-
+    """Demote legacy surrogate active entries; allow multiple real actives."""
     normalized: dict[str, AliasMapEntry] = {}
     for sid, entry in entries.items():
-        if entry.status == "active" and sid != keep_active_sid:
+        if entry.status == "active" and is_legacy_surrogate_stable_id(sid):
             normalized[sid] = entry.model_copy(update={
                 "status": "uploaded",
                 "activated_at": None,
@@ -185,12 +173,14 @@ class CriteriaReconciliationService:
                     for sid, e in alias_map.entries.items()
                     if sid in valid_stable_ids
                 }
-                # 4b. Synthesize entries for unmapped cloud docs
+                # 4b. Synthesize entries for unmapped cloud docs (auto-active)
                 for d in criteria_docs:
                     sid = stable_ids_by_document[d["document_id"]]
                     if sid not in cleaned:
                         cleaned[sid] = AliasMapEntry(
-                            alias=None, status="uploaded", activated_at=None
+                            alias=None,
+                            status="active",
+                            activated_at=_now_iso(),
                         )
                 cleaned = _normalize_active_entries(cleaned)
 
