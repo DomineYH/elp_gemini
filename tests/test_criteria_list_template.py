@@ -50,11 +50,11 @@ def test_template_renders_empty_state():
     assert "평가 기준이 없습니다" in text
 
 
-def test_template_has_single_table_with_alias_cell_and_active_radio():
+def test_template_has_single_table_with_alias_cell_and_active_checkbox():
     text = _render([_item(status="active")])
 
     assert 'class="alias-cell' in text
-    assert 'class="active-radio' in text
+    assert 'class="active-checkbox' in text
     assert "my-alias" in text
     assert "01HSTABLE001" in text
     assert "활성" in text
@@ -77,18 +77,6 @@ def test_template_alias_unset_placeholder():
     assert "(미설정)" in text
     assert "비활성" in text
 
-
-def test_active_row_has_deactivate_control_with_stable_id():
-    text = _render([_item(stable_id="01HACTIVE", status="active")])
-
-    assert 'data-action="deactivate"' in text
-    assert 'data-stable-id="01HACTIVE"' in text
-
-
-def test_uploaded_rows_do_not_render_deactivate_control():
-    text = _render([_item(stable_id="01HUPLOADED", status="uploaded")])
-
-    assert 'data-action="deactivate"' not in text
 
 
 def _row_for(html: str, stable_id: str) -> str:

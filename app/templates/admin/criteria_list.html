@@ -85,18 +85,13 @@
           <td class="px-6 py-4 text-sm">
             <div class="inline-flex items-center gap-3">
               <label class="inline-flex items-center gap-2">
-                <input type="radio" name="active_criteria" value="{{ item.stable_id }}"
+                <input type="checkbox" name="active_criteria"
+                       value="{{ item.stable_id }}"
                        {% if item.status == 'active' %}checked{% endif %}
                        {% if item.is_legacy %}disabled{% endif %}
-                       class="active-radio">
-                <span>{{ '활성' if item.status == 'active' else '비활성' }}</span>
+                       class="active-checkbox">
+                <span class="status-label">{{ '활성' if item.status == 'active' else '비활성' }}</span>
               </label>
-              {% if item.status == 'active' and not item.is_legacy %}
-              <button type="button"
-                      class="text-xs text-gray-600 hover:underline"
-                      data-action="deactivate"
-                      data-stable-id="{{ item.stable_id }}">비활성화</button>
-              {% endif %}
             </div>
           </td>
           <td class="px-6 py-4 text-sm text-gray-500">

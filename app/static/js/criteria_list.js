@@ -1,19 +1,25 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const checkedRadio = document.querySelector('.active-radio:checked');
-  const confirmedActiveStableId = checkedRadio ? checkedRadio.value : null;
-
   document.querySelectorAll('.alias-cell').forEach((cell) => {
     cell.addEventListener('click', () => startInlineEdit(cell));
   });
-  document.querySelectorAll('.active-radio').forEach((r) => {
-    r.addEventListener('change', (e) => {
-      const sid = e.target.value;
-      activate(sid, confirmedActiveStableId);
-    });
-  });
-  document.querySelectorAll('[data-action="deactivate"]').forEach((b) => {
-    b.addEventListener('click', () => {
-      deactivate(b.dataset.stableId);
+  document.querySelectorAll('.active-checkbox').forEach((cb) => {
+    cb.addEventListener('change', async () => {
+      const sid = cb.value;
+      const wasChecked = cb.checked;
+      const previous = !wasChecked;
+      try {
+        const url = wasChecked
+          ? `/api/admin/criteria/${sid}/activate`
+          : `/api/admin/criteria/${sid}/deactivate`;
+        const r = await fetch(url, { method: 'POST' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const row = cb.closest('tr');
+        const label = row.querySelector('.status-label');
+        if (label) label.textContent = wasChecked ? '활성' : '비활성';
+      } catch (err) {
+        cb.checked = previous;
+        alert(`상태 변경 실패: ${err.message}`);
+      }
     });
   });
   document.querySelectorAll('.delete-btn').forEach((b) => {
@@ -48,12 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
     reconcileBtn.addEventListener('click', reconcile);
   }
 });
-
-function restoreActiveSelection(previousStableId) {
-  document.querySelectorAll('.active-radio').forEach((radio) => {
-    radio.checked = previousStableId ? radio.value === previousStableId : false;
-  });
-}
 
 async function startInlineEdit(cell) {
   const row = cell.closest('tr');
@@ -106,27 +106,6 @@ async function startInlineEdit(cell) {
     if (e.key === 'Escape') { reset(cssClass, original); }
   });
   input.addEventListener('blur', commit);
-}
-
-async function activate(sid, previousStableId) {
-  try {
-    const r = await fetch(`/api/admin/criteria/${sid}/activate`, { method: 'POST' });
-    if (!r.ok) throw new Error(await r.text());
-    location.reload();
-  } catch (e) {
-    restoreActiveSelection(previousStableId);
-    alert(`활성화 실패: ${e.message}`);
-  }
-}
-
-async function deactivate(sid) {
-  try {
-    const r = await fetch(`/api/admin/criteria/${sid}/deactivate`, { method: 'POST' });
-    if (!r.ok) throw new Error(await r.text());
-    location.reload();
-  } catch (e) {
-    alert(`비활성화 실패: ${e.message}`);
-  }
 }
 
 async function deleteCriteria(sid) {

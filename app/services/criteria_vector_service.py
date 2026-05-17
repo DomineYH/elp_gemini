@@ -3,12 +3,13 @@
 Gemini File Search API를 사용한 평가기준 임베딩 저장 및 검색
 """
 import logging
-from typing import Dict, Any, Optional, List
-from app.services.file_search_service import (
-    FileSearchService,
-    _MANIFEST_PAYLOAD_CHUNK_SIZE,
-)
+from typing import Any, Dict, List, Optional
+
 from app.config import settings
+from app.services.file_search_service import (
+    _MANIFEST_PAYLOAD_CHUNK_SIZE,
+    FileSearchService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +52,12 @@ class CriteriaVectorService:
         import base64
         from datetime import datetime, timezone
 
-        original_title_b64 = base64.b64encode(title.encode("utf-8")).decode("ascii")
-        created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        original_title_b64 = base64.b64encode(
+            title.encode("utf-8")
+        ).decode("ascii")
+        created_at = (
+            datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        )
 
         metadata = [
             {"key": "type", "string_value": "criteria"},
@@ -66,7 +71,10 @@ class CriteriaVectorService:
             metadata=metadata,
             store_type="rubric",
         )
-        logger.info(f"평가기준 업로드 완료: stable_id={stable_id} document_id={result['document_id']}")
+        logger.info(
+            "평가기준 업로드 완료: "
+            f"stable_id={stable_id} document_id={result['document_id']}"
+        )
         return result
 
     async def delete_criteria(self, document_id: str) -> bool:
@@ -101,7 +109,7 @@ class CriteriaVectorService:
         try:
             if model is None:
                 model = settings.GEMINI_QNA_MODEL
-            
+
             client = self.file_search_service.client
             store = None
 
@@ -152,34 +160,53 @@ class CriteriaVectorService:
         client,
         store_display_name: Optional[str] = None,
     ) -> Optional[str]:
-        """현재 active stable_id에 대한 File Search metadata_filter를 반환."""
-        active_stable_id = await CriteriaVectorService._get_active_stable_id(
+        """현재 active 평가기준들에 대한 File Search metadata_filter 반환.
+
+        - 0개: None (평가기준 미설정 안내 트리거)
+        - 1개: stable_id="X"
+        - N개: (stable_id="A" OR stable_id="B" ...) — AIP-160 OR 결합
+        """
+        active_stable_ids = await CriteriaVectorService._get_active_stable_ids(
             client=client,
-            store_display_name=store_display_name or settings.FS_RUBRIC_STORE_NAME,
+            store_display_name=(
+                store_display_name or settings.FS_RUBRIC_STORE_NAME
+            ),
         )
-        if not active_stable_id:
+        if not active_stable_ids:
             return None
 
-        escaped = active_stable_id.replace("\\", "\\\\").replace('"', '\\"')
-        return f'stable_id="{escaped}"'
+        def _eq(sid: str) -> str:
+            escaped = sid.replace("\\", "\\\\").replace('"', '\\"')
+            return f'stable_id="{escaped}"'
+
+        if len(active_stable_ids) == 1:
+            return _eq(active_stable_ids[0])
+
+        joined = " OR ".join(_eq(sid) for sid in active_stable_ids)
+        return f"({joined})"
 
     @staticmethod
-    async def _get_active_stable_id(
+    async def _get_active_stable_ids(
         client,
         store_display_name: Optional[str] = None,
-    ) -> Optional[str]:
-        """alias_map에서 현재 active stable_id를 반환."""
+    ) -> list[str]:
+        """alias_map에서 active stable_id들을 정렬해 반환.
+
+        정렬: activated_at desc, stable_id desc.
+        """
         from app.services.criteria_alias_map_service import (
             CriteriaAliasMapService,
         )
 
         alias_svc = CriteriaAliasMapService(
             client=client,
-            store_display_name=store_display_name or settings.FS_RUBRIC_STORE_NAME,
+            store_display_name=(
+                store_display_name or settings.FS_RUBRIC_STORE_NAME
+            ),
         )
         fetched = await alias_svc.fetch()
         if not fetched:
-            return None
+            return []
 
         _, alias_map = fetched
         from app.services.criteria_reconciliation_service import (
@@ -195,26 +222,34 @@ class CriteriaVectorService:
             )
         ]
         if not active_entries:
-            return None
+            return []
 
         active_entries.sort(
-            key=lambda item: item[1].activated_at or "",
+            key=lambda item: (item[1].activated_at or "", item[0]),
             reverse=True,
         )
-        return active_entries[0][0]
+        return [sid for sid, _ in active_entries]
 
     async def list_criteria_documents(self) -> List[Dict[str, Any]]:
         """
         rubric-store 모든 문서를 메타데이터와 함께 반환.
 
         반환 형식:
-          [{document_id, display_name, custom_metadata_kv: {key: (string_value, [string_list_values])}}]
+          [{
+              document_id,
+              display_name,
+              custom_metadata_kv: {key: (string_value, [string_list_values])},
+          }]
         """
         from app.services.criteria_alias_map_service import _read_metadata_kv
 
         client = self.file_search_service.client
         store = next(
-            (s for s in client.file_search_stores.list() if s.display_name == self.store_name),
+            (
+                s
+                for s in client.file_search_stores.list()
+                if s.display_name == self.store_name
+            ),
             None,
         )
         if not store:
@@ -223,11 +258,15 @@ class CriteriaVectorService:
 
         documents = []
         for doc in client.file_search_stores.documents.list(parent=store.name):
-            documents.append({
-                "document_id": doc.name,
-                "display_name": getattr(doc, "display_name", None),
-                "custom_metadata_kv": _read_metadata_kv(getattr(doc, "custom_metadata", None)),
-            })
+            documents.append(
+                {
+                    "document_id": doc.name,
+                    "display_name": getattr(doc, "display_name", None),
+                    "custom_metadata_kv": _read_metadata_kv(
+                        getattr(doc, "custom_metadata", None)
+                    ),
+                }
+            )
         return documents
 
     async def list_document_ids(self) -> List[str]:

@@ -14,16 +14,16 @@ def test_upload_generates_stable_id_and_alias_entry():
     """
     Behavioral assertion checklist (verified manually + via service unit tests):
 
-    1. POST /admin/criteria/upload with a small PDF returns 201/200 with {stable_id, document_id}.
-    2. CriteriaVectorService.upload_criteria called with a freshly-generated 26-char
-       stable_id and the user-supplied title.
-    3. CriteriaAliasMapService.replace() called with an AliasMap whose entries contain
-       the new stable_id, alias=None, status="uploaded".
+    1. Small-PDF upload returns 201/200 with stable_id and document_id.
+    2. CriteriaVectorService.upload_criteria receives a generated stable_id.
+    3. CriteriaAliasMapService.replace() receives an active alias_map entry.
     4. The criteria row in DB has matching stable_id and document_id.
 
-    Full integration coverage lands in tests/test_e2e_criteria_meta_flow.py (Task 22).
+    Integration coverage lives in tests/test_e2e_criteria_meta_flow.py.
     """
-    pytest.skip("Structural test; behavior verified by service-level unit tests and Wave 7 e2e smoke")
+    pytest.skip(
+        "Structural test; covered by service-level units and e2e smoke"
+    )
 
 
 @pytest.mark.asyncio
@@ -214,3 +214,59 @@ async def test_upload_db_commit_failure_after_cloud_writes_marks_resync():
     assert exc_info.value.status_code == 500
     alias.replace.assert_awaited_once()
     state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
+
+
+@pytest.mark.asyncio
+async def test_upload_creates_active_entry():
+    """New upload immediately has status='active', activated_at is not None."""
+    file = SimpleNamespace(
+        filename="rubric.pdf",
+        read=AsyncMock(return_value=b"%PDF-1.4 rubric"),
+    )
+    db = AsyncMock()
+    current_admin = SimpleNamespace(username="admin")
+
+    with patch(
+        "app.routers.admin.criteria.FileValidator"
+    ) as validator_cls, patch(
+        "app.routers.admin.criteria.CriteriaVectorService"
+    ) as vector_cls, patch(
+        "app.routers.admin.criteria.CriteriaAliasMapService"
+    ) as alias_cls, patch(
+        "app.routers.admin.criteria.CriteriaRepository"
+    ) as repo_cls:
+        validator_cls.return_value.validate_file = AsyncMock(
+            return_value={"valid": True}
+        )
+        vector = vector_cls.return_value
+        vector.upload_criteria = AsyncMock(
+            return_value={"document_id": "docs/rubric"}
+        )
+        vector.file_search_service.client = MagicMock()
+
+        alias = alias_cls.return_value
+        alias.fetch = AsyncMock(return_value=None)
+        alias.replace = AsyncMock(return_value="docs/alias-map-new")
+
+        repo_cls.return_value.insert = AsyncMock()
+
+        result = await upload_criteria(
+            file=file,
+            current_admin=current_admin,
+            db=db,
+            _sync_ready=None,
+        )
+
+    new_sid = result["stable_id"]
+
+    # alias_map entry is active
+    alias.replace.assert_awaited_once()
+    new_alias_map = alias.replace.await_args.args[0]
+    assert new_alias_map.entries[new_sid].status == "active"
+    assert new_alias_map.entries[new_sid].activated_at is not None
+
+    # DB insert is active
+    repo_cls.return_value.insert.assert_awaited_once()
+    insert_kwargs = repo_cls.return_value.insert.await_args.kwargs
+    assert insert_kwargs["status"] == "active"
+    assert insert_kwargs["activated_at"] is not None
