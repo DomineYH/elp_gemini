@@ -56,13 +56,19 @@ async def _insert_profile(engine, role, region):
 
 
 @pytest.mark.asyncio
-async def test_rename_mapping_covers_all_legacy_values():
-    """매핑 테이블이 옛 11개 값을 모두 포함한다."""
+async def test_rename_mapping_covers_legacy_kyodae_values():
+    """매핑 테이블이 옛 10개 시·도 값을 포함한다 ('한국교원대'는 제외)."""
     expected_keys = {
         "서울", "경인", "공주", "광주", "대구", "부산",
-        "전주", "진주", "청주", "춘천", "한국교원대",
+        "전주", "진주", "청주", "춘천",
     }
     assert set(PRESERVICE_REGION_RENAME.keys()) == expected_keys
+
+
+@pytest.mark.asyncio
+async def test_rename_mapping_does_not_include_kornu():
+    """'한국교원대'는 유효한 신규 라벨이므로 매핑 대상이 아니다 (이슈 #72)."""
+    assert "한국교원대" not in PRESERVICE_REGION_RENAME
 
 
 @pytest.mark.asyncio
@@ -86,14 +92,15 @@ async def test_rename_updates_legacy_region(memory_engine):
 
 
 @pytest.mark.asyncio
-async def test_rename_maps_kornu_to_etc(memory_engine):
-    """'한국교원대' → '기타'로 매핑된다."""
+async def test_rename_preserves_kornu(memory_engine):
+    """'한국교원대'는 유효한 라벨이므로 마이그레이션이 건드리지 않는다."""
     await _insert_profile(
         memory_engine, "preservice_teacher", "한국교원대"
     )
 
-    await rename_preservice_university_regions(memory_engine)
+    updated = await rename_preservice_university_regions(memory_engine)
 
+    assert updated == 0
     async with memory_engine.connect() as conn:
         row = await conn.execute(
             text(
@@ -101,7 +108,7 @@ async def test_rename_maps_kornu_to_etc(memory_engine):
                 "FROM user_profiles"
             )
         )
-        assert row.scalar() == "기타"
+        assert row.scalar() == "한국교원대"
 
 
 @pytest.mark.asyncio
