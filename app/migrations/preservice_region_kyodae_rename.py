@@ -26,7 +26,6 @@ PRESERVICE_REGION_RENAME: dict[str, str] = {
     "진주": "진주교대",
     "청주": "청주교대",
     "춘천": "춘천교대",
-    "한국교원대": "기타",
 }
 
 

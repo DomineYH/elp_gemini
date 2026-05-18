@@ -44,6 +44,7 @@ PRESERVICE_UNIVERSITY_REGIONS = [
     "진주교대",
     "청주교대",
     "춘천교대",
+    "한국교원대",
     "기타",
 ]
 
