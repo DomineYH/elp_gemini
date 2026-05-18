@@ -152,6 +152,7 @@ async def _recover_status_mutation_from_cloud(
     alias_svc: CriteriaAliasMapService,
     stable_id: str,
     target_status: str,
+    expected_alias_map: AliasMap,
     exc: Exception,
 ) -> bool:
     try:
@@ -175,8 +176,15 @@ async def _recover_status_mutation_from_cloud(
         return False
 
     _, cloud_alias_map = fetched
+    expected_entry = expected_alias_map.entries.get(stable_id)
     entry = cloud_alias_map.entries.get(stable_id)
-    if entry is None or entry.status != target_status:
+    if (
+        cloud_alias_map.updated_at != expected_alias_map.updated_at
+        or expected_entry is None
+        or entry is None
+        or entry != expected_entry
+        or entry.status != target_status
+    ):
         return False
 
     try:
@@ -757,6 +765,7 @@ async def _set_status_by_stable_id(
             alias_svc,
             stable_id,
             target_status,
+            new_alias_map,
             e,
         ):
             return {"stable_id": stable_id, "status": target_status}

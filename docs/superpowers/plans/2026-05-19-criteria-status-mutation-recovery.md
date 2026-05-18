@@ -23,8 +23,8 @@
 
 수정 원칙:
 
-- 클라우드 alias-map이 요청 상태를 already contains target status 하면 성공으로 복구한다.
-- 클라우드 alias-map이 요청 상태를 포함하지 않으면 기존 실패 처리와 동일하게 `needs_resync`를 남긴다.
+- 클라우드 alias-map의 `updated_at`과 대상 entry가 이번 요청에서 만든 alias-map과 일치하고, 대상 entry가 요청 상태를 포함할 때만 성공으로 복구한다.
+- 클라우드 alias-map이 이번 요청에서 만든 alias-map 반영을 증명하지 못하면 기존 실패 처리와 동일하게 `needs_resync`를 남긴다.
 - `CriteriaAliasMapService.replace()`의 upload-then-delete 순서는 유지한다.
 - 프론트엔드 변경 없이 API 결과만 안정화한다.
 
@@ -313,6 +313,7 @@ async def _recover_status_mutation_from_cloud(
     alias_svc: CriteriaAliasMapService,
     stable_id: str,
     target_status: str,
+    expected_alias_map: AliasMap,
     exc: Exception,
 ) -> bool:
     try:
@@ -336,8 +337,15 @@ async def _recover_status_mutation_from_cloud(
         return False
 
     _, cloud_alias_map = fetched
+    expected_entry = expected_alias_map.entries.get(stable_id)
     entry = cloud_alias_map.entries.get(stable_id)
-    if entry is None or entry.status != target_status:
+    if (
+        cloud_alias_map.updated_at != expected_alias_map.updated_at
+        or expected_entry is None
+        or entry is None
+        or entry != expected_entry
+        or entry.status != target_status
+    ):
         return False
 
     try:
@@ -384,6 +392,7 @@ with:
             alias_svc,
             stable_id,
             target_status,
+            new_alias_map,
             e,
         ):
             return {"stable_id": stable_id, "status": target_status}

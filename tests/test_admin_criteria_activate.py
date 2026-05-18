@@ -74,6 +74,7 @@ async def test_activate_replace_failure_marks_resync():
 async def test_activate_replace_failure_recovers_when_cloud_has_target_status():
     db = AsyncMock()
     stable_id = "01HACTIVE"
+    now = "2026-05-15T00:00:01Z"
     row = MagicMock(status="uploaded", activated_at=None)
 
     with patch(
@@ -84,7 +85,10 @@ async def test_activate_replace_failure_recovers_when_cloud_has_target_status():
         "app.routers.admin.criteria.CriteriaRepository"
     ) as repo_cls, patch(
         "app.routers.admin.criteria.AppStateRepository"
-    ) as state_cls:
+    ) as state_cls, patch(
+        "app.routers.admin.criteria._now_iso_utc",
+        return_value=now,
+    ):
         vector_cls.return_value.file_search_service.client = MagicMock()
         alias = alias_cls.return_value
         alias.fetch = AsyncMock(side_effect=[
@@ -106,12 +110,12 @@ async def test_activate_replace_failure_recovers_when_cloud_has_target_status():
                 "docs/alias-map-new",
                 AliasMap(
                     schema_version=1,
-                    updated_at="2026-05-15T00:00:01Z",
+                    updated_at=now,
                     entries={
                         stable_id: AliasMapEntry(
                             alias=None,
                             status="active",
-                            activated_at="2026-05-15T00:00:01Z",
+                            activated_at=now,
                         ),
                     },
                 ),
@@ -135,7 +139,7 @@ async def test_activate_replace_failure_recovers_when_cloud_has_target_status():
 
     assert result == {"stable_id": stable_id, "status": "active"}
     assert row.status == "active"
-    assert row.activated_at is not None
+    assert row.activated_at.isoformat().replace("+00:00", "Z") == now
     alias.replace.assert_awaited_once()
     assert alias.fetch.await_count == 2
     db.rollback.assert_awaited_once()
@@ -147,6 +151,7 @@ async def test_activate_replace_failure_recovers_when_cloud_has_target_status():
 async def test_deactivate_replace_failure_recovers_when_cloud_has_target_status():
     db = AsyncMock()
     stable_id = "01HDEACTIVE"
+    now = "2026-05-15T00:00:01Z"
     row = MagicMock(
         status="active",
         activated_at="2026-05-15T00:00:00Z",
@@ -160,7 +165,10 @@ async def test_deactivate_replace_failure_recovers_when_cloud_has_target_status(
         "app.routers.admin.criteria.CriteriaRepository"
     ) as repo_cls, patch(
         "app.routers.admin.criteria.AppStateRepository"
-    ) as state_cls:
+    ) as state_cls, patch(
+        "app.routers.admin.criteria._now_iso_utc",
+        return_value=now,
+    ):
         vector_cls.return_value.file_search_service.client = MagicMock()
         alias = alias_cls.return_value
         alias.fetch = AsyncMock(side_effect=[
@@ -182,7 +190,7 @@ async def test_deactivate_replace_failure_recovers_when_cloud_has_target_status(
                 "docs/alias-map-new",
                 AliasMap(
                     schema_version=1,
-                    updated_at="2026-05-15T00:00:01Z",
+                    updated_at=now,
                     entries={
                         stable_id: AliasMapEntry(
                             alias=None,
@@ -217,6 +225,68 @@ async def test_deactivate_replace_failure_recovers_when_cloud_has_target_status(
     db.rollback.assert_awaited_once()
     db.commit.assert_awaited_once()
     state.set.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_activate_already_active_replace_failure_marks_resync_when_cloud_unchanged():
+    db = AsyncMock()
+    stable_id = "01HACTIVE"
+    old = "2026-05-15T00:00:00Z"
+    now = "2026-05-15T00:00:01Z"
+    row = MagicMock(status="active", activated_at=None)
+
+    with patch(
+        "app.routers.admin.criteria.CriteriaVectorService"
+    ) as vector_cls, patch(
+        "app.routers.admin.criteria.CriteriaAliasMapService"
+    ) as alias_cls, patch(
+        "app.routers.admin.criteria.CriteriaRepository"
+    ) as repo_cls, patch(
+        "app.routers.admin.criteria.AppStateRepository"
+    ) as state_cls, patch(
+        "app.routers.admin.criteria._now_iso_utc",
+        return_value=now,
+    ):
+        vector_cls.return_value.file_search_service.client = MagicMock()
+        alias = alias_cls.return_value
+        old_alias_map = AliasMap(
+            schema_version=1,
+            updated_at=old,
+            entries={
+                stable_id: AliasMapEntry(
+                    alias=None,
+                    status="active",
+                    activated_at=old,
+                ),
+            },
+        )
+        alias.fetch = AsyncMock(side_effect=[
+            ("docs/alias-map", old_alias_map),
+            ("docs/alias-map", old_alias_map),
+        ])
+        alias.replace = AsyncMock(
+            side_effect=RuntimeError("upload_to_file_search_store 503")
+        )
+        repo_cls.return_value.get_criteria_by_stable_id = AsyncMock(
+            return_value=row
+        )
+
+        state = state_cls.return_value
+        state.set = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await activate_by_stable_id(
+                stable_id=stable_id,
+                current_admin=object(),
+                _sync_ready=None,
+                db=db,
+            )
+
+    assert exc_info.value.status_code == 500
+    assert alias.fetch.await_count == 2
+    alias.replace.assert_awaited_once()
+    repo_cls.return_value.get_criteria_by_stable_id.assert_not_awaited()
+    state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
 
 
 @pytest.mark.asyncio
@@ -407,6 +477,83 @@ async def test_activate_db_commit_failure_after_replace_marks_resync():
     assert exc_info.value.status_code == 500
     alias.replace.assert_awaited_once()
     state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
+
+
+@pytest.mark.asyncio
+async def test_activate_db_commit_failure_after_replace_recovers_from_cloud_success():
+    db = AsyncMock()
+    db.commit = AsyncMock(side_effect=[RuntimeError("commit failed"), None])
+    stable_id = "01HACTIVE"
+    now = "2026-05-15T00:00:01Z"
+    row = MagicMock(status="uploaded", activated_at=None)
+
+    with patch(
+        "app.routers.admin.criteria.CriteriaVectorService"
+    ) as vector_cls, patch(
+        "app.routers.admin.criteria.CriteriaAliasMapService"
+    ) as alias_cls, patch(
+        "app.routers.admin.criteria.CriteriaRepository"
+    ) as repo_cls, patch(
+        "app.routers.admin.criteria.AppStateRepository"
+    ) as state_cls, patch(
+        "app.routers.admin.criteria._now_iso_utc",
+        return_value=now,
+    ):
+        vector_cls.return_value.file_search_service.client = MagicMock()
+        alias = alias_cls.return_value
+        alias.fetch = AsyncMock(side_effect=[
+            (
+                "docs/alias-map-old",
+                AliasMap(
+                    schema_version=1,
+                    updated_at="2026-05-15T00:00:00Z",
+                    entries={
+                        stable_id: AliasMapEntry(
+                            alias=None,
+                            status="uploaded",
+                            activated_at=None,
+                        ),
+                    },
+                ),
+            ),
+            (
+                "docs/alias-map-new",
+                AliasMap(
+                    schema_version=1,
+                    updated_at=now,
+                    entries={
+                        stable_id: AliasMapEntry(
+                            alias=None,
+                            status="active",
+                            activated_at=now,
+                        ),
+                    },
+                ),
+            ),
+        ])
+        alias.replace = AsyncMock(return_value="docs/alias-map-new")
+        repo_cls.return_value.get_criteria_by_stable_id = AsyncMock(
+            return_value=row
+        )
+
+        state = state_cls.return_value
+        state.set = AsyncMock()
+
+        result = await activate_by_stable_id(
+            stable_id=stable_id,
+            current_admin=object(),
+            _sync_ready=None,
+            db=db,
+        )
+
+    assert result == {"stable_id": stable_id, "status": "active"}
+    assert row.status == "active"
+    assert row.activated_at.isoformat().replace("+00:00", "Z") == now
+    assert alias.fetch.await_count == 2
+    alias.replace.assert_awaited_once()
+    db.rollback.assert_awaited_once()
+    assert db.commit.await_count == 2
+    state.set.assert_not_awaited()
 
 
 @pytest.mark.asyncio
