@@ -128,6 +128,23 @@ async def _raise_criteria_mutation_failed(
     )
 
 
+async def _sync_criteria_db_cache_from_alias_entries(
+    db: AsyncSession,
+    entries: dict[str, AliasMapEntry],
+) -> None:
+    repo = CriteriaRepository(db)
+    for sid, entry in entries.items():
+        row = await repo.get_criteria_by_stable_id(sid)
+        if row:
+            row.status = entry.status
+            row.activated_at = (
+                _parse_iso(entry.activated_at)
+                if entry.status == "active"
+                else None
+            )
+    await db.commit()
+
+
 @router.post(
     "/upload",
     status_code=status.HTTP_201_CREATED,
@@ -668,16 +685,7 @@ async def _set_status_by_stable_id(
         await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
 
         # Sync DB cache for all entries
-        repo = CriteriaRepository(db)
-        parsed_now = _parse_iso(now)
-        for sid, entry in new_entries.items():
-            row = await repo.get_criteria_by_stable_id(sid)
-            if row:
-                row.status = entry.status
-                row.activated_at = (
-                    parsed_now if entry.status == "active" else None
-                )
-        await db.commit()
+        await _sync_criteria_db_cache_from_alias_entries(db, new_entries)
 
         logger.info(f"상태 변경: stable_id={stable_id} status={target_status}")
         return {"stable_id": stable_id, "status": target_status}
