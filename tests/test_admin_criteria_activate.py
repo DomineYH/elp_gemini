@@ -220,6 +220,56 @@ async def test_deactivate_replace_failure_recovers_when_cloud_has_target_status(
 
 
 @pytest.mark.asyncio
+async def test_activate_replace_failure_still_marks_resync_when_cloud_unchanged():
+    db = AsyncMock()
+    stable_id = "01HACTIVE"
+
+    with patch(
+        "app.routers.admin.criteria.CriteriaVectorService"
+    ) as vector_cls, patch(
+        "app.routers.admin.criteria.CriteriaAliasMapService"
+    ) as alias_cls, patch(
+        "app.routers.admin.criteria.AppStateRepository"
+    ) as state_cls:
+        vector_cls.return_value.file_search_service.client = MagicMock()
+        alias = alias_cls.return_value
+        old_alias_map = AliasMap(
+            schema_version=1,
+            updated_at="2026-05-15T00:00:00Z",
+            entries={
+                stable_id: AliasMapEntry(
+                    alias=None,
+                    status="uploaded",
+                    activated_at=None,
+                ),
+            },
+        )
+        alias.fetch = AsyncMock(side_effect=[
+            ("docs/alias-map", old_alias_map),
+            ("docs/alias-map", old_alias_map),
+        ])
+        alias.replace = AsyncMock(
+            side_effect=RuntimeError("upload_to_file_search_store 503")
+        )
+
+        state = state_cls.return_value
+        state.set = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await activate_by_stable_id(
+                stable_id=stable_id,
+                current_admin=object(),
+                _sync_ready=None,
+                db=db,
+            )
+
+    assert exc_info.value.status_code == 500
+    assert alias.fetch.await_count == 2
+    alias.replace.assert_awaited_once()
+    state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
+
+
+@pytest.mark.asyncio
 async def test_deactivate_replace_failure_marks_resync():
     db = AsyncMock()
     stable_id = "01HDEACTIVE"
