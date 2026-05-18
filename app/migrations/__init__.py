@@ -13,6 +13,9 @@ from .criteria_schema import (
 from .criteria_stable_id import ensure_criteria_stable_id_column
 from .drop_invite_codes_table import drop_invite_codes_table
 from .lessonplan_uploads_table import ensure_lessonplan_uploads_table
+from .preservice_region_kyodae_rename import (
+    rename_preservice_university_regions,
+)
 from .user_profiles import ensure_user_profiles_table
 from .users_lockout_columns import ensure_users_lockout_columns
 
@@ -26,4 +29,5 @@ __all__ = [
     "ensure_users_lockout_columns",
     "ensure_lessonplan_uploads_table",
     "rename_chat_session_in_service_teacher_label",
+    "rename_preservice_university_regions",
 ]

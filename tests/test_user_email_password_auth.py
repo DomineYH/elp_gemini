@@ -245,7 +245,7 @@ async def _register_preservice(
             "email": email,
             "password": password,
             "role": "preservice_teacher",
-            "preservice_university_region": "서울",
+            "preservice_university_region": "서울교대",
             "preservice_grade": "3",
         },
         follow_redirects=False,
@@ -395,7 +395,7 @@ async def test_preservice_registration_creates_profile(
         expected={
             "teacher_region": None,
             "teacher_career_years": None,
-            "preservice_university_region": "서울",
+            "preservice_university_region": "서울교대",
             "preservice_grade": 3,
         },
     )
@@ -417,7 +417,7 @@ async def test_preservice_registration_rejects_invalid_region_or_grade(
         "email": "invalid-preservice@example.com",
         "password": PRESERVICE_PASSWORD,
         "role": "preservice_teacher",
-        "preservice_university_region": "서울",
+        "preservice_university_region": "서울교대",
         "preservice_grade": "3",
     }
     payload.update(override)
