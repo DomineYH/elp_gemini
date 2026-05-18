@@ -131,6 +131,8 @@ async def _raise_criteria_mutation_failed(
 async def _sync_criteria_db_cache_from_alias_entries(
     db: AsyncSession,
     entries: dict[str, AliasMapEntry],
+    *,
+    active_timestamp_override: str | None = None,
 ) -> None:
     repo = CriteriaRepository(db)
     for sid, entry in entries.items():
@@ -138,7 +140,7 @@ async def _sync_criteria_db_cache_from_alias_entries(
         if row:
             row.status = entry.status
             row.activated_at = (
-                _parse_iso(entry.activated_at)
+                _parse_iso(active_timestamp_override or entry.activated_at)
                 if entry.status == "active"
                 else None
             )
@@ -685,7 +687,11 @@ async def _set_status_by_stable_id(
         await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
 
         # Sync DB cache for all entries
-        await _sync_criteria_db_cache_from_alias_entries(db, new_entries)
+        await _sync_criteria_db_cache_from_alias_entries(
+            db,
+            new_entries,
+            active_timestamp_override=now,
+        )
 
         logger.info(f"상태 변경: stable_id={stable_id} status={target_status}")
         return {"stable_id": stable_id, "status": target_status}
