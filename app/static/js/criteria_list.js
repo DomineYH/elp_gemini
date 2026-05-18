@@ -7,17 +7,19 @@ document.addEventListener('DOMContentLoaded', () => {
       const sid = cb.value;
       const wasChecked = cb.checked;
       const previous = !wasChecked;
+      const row = cb.closest('tr');
+      const label = row.querySelector('.status-label');
+      const previousLabelText = label ? label.textContent : null;
+      if (label) label.textContent = wasChecked ? '활성' : '비활성';
       try {
         const url = wasChecked
           ? `/api/admin/criteria/${sid}/activate`
           : `/api/admin/criteria/${sid}/deactivate`;
         const r = await fetch(url, { method: 'POST' });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const row = cb.closest('tr');
-        const label = row.querySelector('.status-label');
-        if (label) label.textContent = wasChecked ? '활성' : '비활성';
       } catch (err) {
         cb.checked = previous;
+        if (label) label.textContent = previousLabelText;
         alert(`상태 변경 실패: ${err.message}`);
       }
     });
