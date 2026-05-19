@@ -176,13 +176,11 @@ async def _recover_status_mutation_from_cloud(
         return False
 
     _, cloud_alias_map = fetched
-    expected_entry = expected_alias_map.entries.get(stable_id)
     entry = cloud_alias_map.entries.get(stable_id)
     if (
         cloud_alias_map.updated_at != expected_alias_map.updated_at
-        or expected_entry is None
+        or cloud_alias_map.entries != expected_alias_map.entries
         or entry is None
-        or entry != expected_entry
         or entry.status != target_status
     ):
         return False
