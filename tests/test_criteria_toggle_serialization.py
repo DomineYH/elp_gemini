@@ -192,11 +192,16 @@ async def test_toggle_lock_is_released_after_exception():
             "fileSearchStores/s/documents/alias-map-old",
             _alias_map_with([stable_id]),
         ))
-        # 첫 호출은 실패, 두 번째 호출은 정상 진행
-        alias.replace = AsyncMock(side_effect=[
-            RuntimeError("transient cloud error"),
-            probe,
-        ])
+        # 첫 호출은 실패, 두 번째 호출은 probe 를 경유 (정상 진행)
+        call_count = {"n": 0}
+
+        async def _replace(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise RuntimeError("transient cloud error")
+            return await probe(*args, **kwargs)
+
+        alias.replace = _replace
 
         repo = repo_cls.return_value
         row = MagicMock()
@@ -228,3 +233,6 @@ async def test_toggle_lock_is_released_after_exception():
             db=db,
         )
         assert result["status"] == "uploaded"
+        assert probe.calls == 1, (
+            "두 번째 호출이 실제로 probe 를 경유해야 락이 풀린 것이 검증된다"
+        )

@@ -58,6 +58,7 @@ logger = logging.getLogger(__name__)
 # 공존한다. 동시에 다른 mutation 의 fetch() 가 그 두 문서를 모두 보면
 # AliasMapParseError 가 발생해 sync_state=needs_resync 로 떨어진다 (이슈 #78).
 # 모든 alias_map 변형 경로를 이 락으로 직렬화한다.
+# 단일 uvicorn 프로세스 배포 전제; 멀티 워커 시 별도 분산 락이 필요.
 _alias_map_mutation_lock = asyncio.Lock()
 
 
