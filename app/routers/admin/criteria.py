@@ -128,6 +128,85 @@ async def _raise_criteria_mutation_failed(
     )
 
 
+async def _sync_criteria_db_cache_from_alias_entries(
+    db: AsyncSession,
+    entries: dict[str, AliasMapEntry],
+    *,
+    active_timestamp_override: str | None = None,
+) -> None:
+    repo = CriteriaRepository(db)
+    for sid, entry in entries.items():
+        row = await repo.get_criteria_by_stable_id(sid)
+        if row:
+            row.status = entry.status
+            row.activated_at = (
+                _parse_iso(active_timestamp_override or entry.activated_at)
+                if entry.status == "active"
+                else None
+            )
+    await db.commit()
+
+
+async def _recover_status_mutation_from_cloud(
+    db: AsyncSession,
+    alias_svc: CriteriaAliasMapService,
+    stable_id: str,
+    target_status: str,
+    expected_alias_map: AliasMap,
+    exc: Exception,
+) -> bool:
+    try:
+        await db.rollback()
+    except Exception:
+        logger.warning(
+            "평가기준 상태 변경 복구 전 rollback 실패",
+            exc_info=True,
+        )
+
+    try:
+        fetched = await alias_svc.fetch()
+    except Exception:
+        logger.warning(
+            "평가기준 상태 변경 실패 후 alias_map 재조회 실패",
+            exc_info=True,
+        )
+        return False
+
+    if fetched is None:
+        return False
+
+    _, cloud_alias_map = fetched
+    entry = cloud_alias_map.entries.get(stable_id)
+    if (
+        cloud_alias_map.updated_at != expected_alias_map.updated_at
+        or cloud_alias_map.entries != expected_alias_map.entries
+        or entry is None
+        or entry.status != target_status
+    ):
+        return False
+
+    try:
+        await _sync_criteria_db_cache_from_alias_entries(
+            db,
+            cloud_alias_map.entries,
+        )
+    except Exception:
+        logger.warning(
+            "평가기준 상태 변경 cloud 반영 후 DB 캐시 복구 실패",
+            exc_info=True,
+        )
+        return False
+
+    logger.info(
+        "평가기준 상태 변경 예외 후 cloud truth 기준 복구: "
+        "stable_id=%s status=%s original_error=%s",
+        stable_id,
+        target_status,
+        exc,
+    )
+    return True
+
+
 @router.post(
     "/upload",
     status_code=status.HTTP_201_CREATED,
@@ -668,22 +747,27 @@ async def _set_status_by_stable_id(
         await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
 
         # Sync DB cache for all entries
-        repo = CriteriaRepository(db)
-        parsed_now = _parse_iso(now)
-        for sid, entry in new_entries.items():
-            row = await repo.get_criteria_by_stable_id(sid)
-            if row:
-                row.status = entry.status
-                row.activated_at = (
-                    parsed_now if entry.status == "active" else None
-                )
-        await db.commit()
+        await _sync_criteria_db_cache_from_alias_entries(
+            db,
+            new_entries,
+            active_timestamp_override=now,
+        )
 
         logger.info(f"상태 변경: stable_id={stable_id} status={target_status}")
         return {"stable_id": stable_id, "status": target_status}
     except HTTPException:
         raise
     except Exception as e:
+        if cloud_write_started and await _recover_status_mutation_from_cloud(
+            db,
+            alias_svc,
+            stable_id,
+            target_status,
+            new_alias_map,
+            e,
+        ):
+            return {"stable_id": stable_id, "status": target_status}
+
         await _raise_criteria_mutation_failed(
             db,
             e,
