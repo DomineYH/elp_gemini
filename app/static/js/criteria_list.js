@@ -10,17 +10,23 @@ document.addEventListener('DOMContentLoaded', () => {
       const row = cb.closest('tr');
       const label = row.querySelector('.status-label');
       const previousLabelText = label ? label.textContent : null;
-      if (label) label.textContent = wasChecked ? '활성' : '비활성';
+      const finalLabelText = wasChecked ? '활성' : '비활성';
+      const pendingLabelText = wasChecked ? '활성 반영중…' : '비활성 반영중…';
+      if (label) label.textContent = pendingLabelText;
+      cb.disabled = true;
       try {
         const url = wasChecked
           ? `/api/admin/criteria/${sid}/activate`
           : `/api/admin/criteria/${sid}/deactivate`;
         const r = await fetch(url, { method: 'POST' });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        if (label) label.textContent = finalLabelText;
       } catch (err) {
         cb.checked = previous;
         if (label) label.textContent = previousLabelText;
         alert(`상태 변경 실패: ${err.message}`);
+      } finally {
+        cb.disabled = false;
       }
     });
   });
