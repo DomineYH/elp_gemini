@@ -478,7 +478,8 @@ async def replace_legacy_criteria(
                 status_code=400,
                 detail=(
                     "교체는 legacy(pre-v2) 평가기준에만 적용됩니다. "
-                    "이미 v2 stable_id를 가진 행은 일반 삭제/업로드를 사용하세요."
+                    "이미 v2 stable_id를 가진 행은 "
+                    "일반 삭제/업로드를 사용하세요."
                 ),
             )
 
@@ -495,7 +496,9 @@ async def replace_legacy_criteria(
 
             file_content = await file.read()
             suffix = os.path.splitext(file.filename)[1]
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=suffix
+            ) as tmp:
                 tmp.write(file_content)
                 temp_file_path = tmp.name
 
@@ -516,7 +519,9 @@ async def replace_legacy_criteria(
             if stable_id not in alias_map.entries:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+                    detail=(
+                        f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다"
+                    ),
                 )
             old_alias = alias_map.entries[stable_id].alias
 
@@ -538,7 +543,8 @@ async def replace_legacy_criteria(
             )
             new_document_id = upload_result["document_id"]
 
-            # 2) alias_map: remove legacy entry + add new entry (preserve alias).
+            # 2) alias_map: remove legacy entry + add new entry
+            #    (preserve alias).
             new_entries = dict(alias_map.entries)
             new_entries.pop(stable_id, None)
             new_entries[new_stable_id] = AliasMapEntry(
@@ -635,7 +641,9 @@ async def patch_criteria_alias(
             if stable_id not in alias_map.entries:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+                    detail=(
+                        f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다"
+                    ),
                 )
 
             # Update the entry's alias only
@@ -740,7 +748,9 @@ async def _set_status_by_stable_id(
             if stable_id not in alias_map.entries:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+                    detail=(
+                        f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다"
+                    ),
                 )
 
             now = _now_iso_utc()
@@ -749,7 +759,9 @@ async def _set_status_by_stable_id(
                 if sid == stable_id:
                     new_entries[sid] = entry.model_copy(update={
                         "status": target_status,
-                        "activated_at": now if target_status == "active" else None,
+                        "activated_at": (
+                            now if target_status == "active" else None
+                        ),
                     })
                 else:
                     new_entries[sid] = entry
@@ -767,18 +779,23 @@ async def _set_status_by_stable_id(
                 active_timestamp_override=now,
             )
 
-            logger.info(f"상태 변경: stable_id={stable_id} status={target_status}")
+            logger.info(
+                f"상태 변경: stable_id={stable_id} status={target_status}"
+            )
             return {"stable_id": stable_id, "status": target_status}
         except HTTPException:
             raise
         except Exception as e:
-            if cloud_write_started and await _recover_status_mutation_from_cloud(
-                db,
-                alias_svc,
-                stable_id,
-                target_status,
-                new_alias_map,
-                e,
+            if (
+                cloud_write_started
+                and await _recover_status_mutation_from_cloud(
+                    db,
+                    alias_svc,
+                    stable_id,
+                    target_status,
+                    new_alias_map,
+                    e,
+                )
             ):
                 return {"stable_id": stable_id, "status": target_status}
 
@@ -852,7 +869,9 @@ async def reconcile_criteria(
     """클라우드 reconcile 실행."""
     async with _alias_map_mutation_lock:
         from app.config import settings
-        from app.services.criteria_alias_map_service import CriteriaAliasMapService
+        from app.services.criteria_alias_map_service import (
+            CriteriaAliasMapService,
+        )
 
         state_repo = AppStateRepository(db=db)
         criteria_repo = CriteriaRepository(db=db)

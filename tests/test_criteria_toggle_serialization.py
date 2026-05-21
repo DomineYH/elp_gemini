@@ -37,7 +37,9 @@ def _reset_alias_map_lock():
     yield
 
 
-def _alias_map_with(stable_ids: list[str], status: str = "uploaded") -> AliasMap:
+def _alias_map_with(
+    stable_ids: list[str], status: str = "uploaded"
+) -> AliasMap:
     return AliasMap(
         schema_version=1,
         updated_at="2026-05-21T00:00:00Z",
@@ -112,7 +114,9 @@ async def test_concurrent_toggle_same_stable_id_is_serialized():
         )
 
     assert len(results) == 2
-    assert probe.calls == 2, "두 mutation 모두 alias_svc.replace 를 호출해야 한다"
+    assert probe.calls == 2, (
+        "두 mutation 모두 alias_svc.replace 를 호출해야 한다"
+    )
     assert probe.max_in_progress == 1, (
         "alias_svc.replace 가 동시에 두 번 진행 중이면 안 된다 "
         "(asyncio.Lock 직렬화 실패)"
@@ -121,7 +125,10 @@ async def test_concurrent_toggle_same_stable_id_is_serialized():
 
 @pytest.mark.asyncio
 async def test_concurrent_toggle_different_stable_ids_is_serialized():
-    """서로 다른 stable_id 동시 호출도 alias_map 은 단일 문서이므로 직렬화된다."""
+    (
+        "서로 다른 stable_id 동시 호출도 alias_map 은 단일 문서이므로 "
+        "직렬화된다."
+    )
     sid_a = "01HTOGGLEA"
     sid_b = "01HTOGGLEB"
     probe = _ConcurrencyProbe()
