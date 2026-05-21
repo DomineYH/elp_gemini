@@ -2,7 +2,6 @@
 관리자 - 평가기준 관리 라우터
 평가기준 업로드 및 삭제 엔드포인트
 """
-import asyncio
 import logging
 import os
 import tempfile
@@ -39,6 +38,7 @@ from app.schemas.criteria import validate_display_alias_text
 from app.services.criteria_alias_map_service import (
     AliasMapParseError,
     CriteriaAliasMapService,
+    alias_map_mutation_lock,
 )
 from app.services.criteria_reconciliation_service import (
     CriteriaReconciliationService,
@@ -52,14 +52,6 @@ router = APIRouter(
     tags=["관리자-평가기준"]
 )
 logger = logging.getLogger(__name__)
-
-# alias-map 문서는 File Search store 내 단일 문서이며, replace() 가
-# upload-then-delete 순서로 진행되어 수 초~수십 초 동안 두 개의 문서가
-# 공존한다. 동시에 다른 mutation 의 fetch() 가 그 두 문서를 모두 보면
-# AliasMapParseError 가 발생해 sync_state=needs_resync 로 떨어진다 (이슈 #78).
-# 모든 alias_map 변형 경로를 이 락으로 직렬화한다.
-# 단일 uvicorn 프로세스 배포 전제; 멀티 워커 시 별도 분산 락이 필요.
-_alias_map_mutation_lock = asyncio.Lock()
 
 
 def _new_stable_id() -> str:
@@ -242,7 +234,7 @@ async def upload_criteria(
     Raises:
         HTTPException: 파일 검증 실패 또는 업로드 오류
     """
-    async with _alias_map_mutation_lock:
+    async with alias_map_mutation_lock:
         temp_file_path = None
         cloud_write_started = False
 
@@ -400,7 +392,7 @@ async def delete_criteria_by_stable_id(
     _sync_ready=Depends(require_criteria_sync_ready),
     db: AsyncSession = Depends(get_db),
 ):
-    async with _alias_map_mutation_lock:
+    async with alias_map_mutation_lock:
         repo = CriteriaRepository(db)
         row = await repo.get_criteria_by_stable_id(stable_id)
         if not row:
@@ -472,7 +464,7 @@ async def replace_legacy_criteria(
     _sync_ready=Depends(require_criteria_sync_ready),
     db: AsyncSession = Depends(get_db),
 ):
-    async with _alias_map_mutation_lock:
+    async with alias_map_mutation_lock:
         if not is_legacy_surrogate_stable_id(stable_id):
             raise HTTPException(
                 status_code=400,
@@ -621,7 +613,7 @@ async def patch_criteria_alias(
     _sync_ready=Depends(require_criteria_sync_ready),
     db: AsyncSession = Depends(get_db),
 ):
-    async with _alias_map_mutation_lock:
+    async with alias_map_mutation_lock:
         cloud_write_started = False
         try:
             vec = CriteriaVectorService()
@@ -729,7 +721,7 @@ async def _set_status_by_stable_id(
             ),
         )
 
-    async with _alias_map_mutation_lock:
+    async with alias_map_mutation_lock:
         cloud_write_started = False
         try:
             vec = CriteriaVectorService()
@@ -867,32 +859,31 @@ async def reconcile_criteria(
     _admin=Depends(get_current_admin),
 ):
     """클라우드 reconcile 실행."""
-    async with _alias_map_mutation_lock:
-        from app.config import settings
-        from app.services.criteria_alias_map_service import (
-            CriteriaAliasMapService,
-        )
+    from app.config import settings
+    from app.services.criteria_alias_map_service import (
+        CriteriaAliasMapService,
+    )
 
-        state_repo = AppStateRepository(db=db)
-        criteria_repo = CriteriaRepository(db=db)
-        vector_svc = CriteriaVectorService()
-        alias_svc = CriteriaAliasMapService(
-            client=vector_svc.file_search_service.client,
-            store_display_name=settings.FS_RUBRIC_STORE_NAME,
-        )
-        svc = CriteriaReconciliationService(
-            db=db,
-            vector_service=vector_svc,
-            alias_map_service=alias_svc,
-            criteria_repo=criteria_repo,
-            app_state_repo=state_repo,
-        )
-        result = await svc.reconcile()
-        return {
-            "ok": result.ok,
-            "skipped": result.skipped,
-            "count": result.count,
-            "error": result.error,
-            "sync_state": await state_repo.get(KEY_SYNC_STATE),
-            "last_synced_at": await state_repo.get(KEY_LAST_SYNCED_AT),
-        }
+    state_repo = AppStateRepository(db=db)
+    criteria_repo = CriteriaRepository(db=db)
+    vector_svc = CriteriaVectorService()
+    alias_svc = CriteriaAliasMapService(
+        client=vector_svc.file_search_service.client,
+        store_display_name=settings.FS_RUBRIC_STORE_NAME,
+    )
+    svc = CriteriaReconciliationService(
+        db=db,
+        vector_service=vector_svc,
+        alias_map_service=alias_svc,
+        criteria_repo=criteria_repo,
+        app_state_repo=state_repo,
+    )
+    result = await svc.reconcile()
+    return {
+        "ok": result.ok,
+        "skipped": result.skipped,
+        "count": result.count,
+        "error": result.error,
+        "sync_state": await state_repo.get(KEY_SYNC_STATE),
+        "last_synced_at": await state_repo.get(KEY_LAST_SYNCED_AT),
+    }

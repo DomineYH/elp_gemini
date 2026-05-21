@@ -26,6 +26,9 @@ from app.services.alias_map_codec import (
 
 logger = logging.getLogger(__name__)
 
+# Single-process lock; guards alias-map mutations across router and reconcile paths.  # noqa: E501
+alias_map_mutation_lock = asyncio.Lock()
+
 
 @dataclass(frozen=True)
 class _ParsedAliasMapDoc:
@@ -113,7 +116,9 @@ class CriteriaAliasMapService:
         unparseable_docs: list[_UnparseableAliasMapDoc] = []
         alias_doc_names: list[str] = []
 
-        for doc in self._client.file_search_stores.documents.list(parent=store.name):
+        for doc in self._client.file_search_stores.documents.list(
+            parent=store.name
+        ):
             kv = _read_metadata_kv(getattr(doc, "custom_metadata", None))
             type_value = (kv.get("type") or (None, []))[0]
             if type_value != "alias_map":
@@ -152,7 +157,8 @@ class CriteriaAliasMapService:
 
         if len(alias_doc_names) > 1:
             logger.warning(
-                "multiple alias_map documents found; using newest valid doc: %s",
+                "multiple alias_map documents found; using newest valid "
+                "doc: %s",
                 alias_doc_names,
             )
 
@@ -194,20 +200,29 @@ class CriteriaAliasMapService:
 
         return newest.name, newest.alias_map
 
-    async def replace(self, alias_map: AliasMap, old_doc_name: Optional[str]) -> str:
+    async def replace(
+        self, alias_map: AliasMap, old_doc_name: Optional[str]
+    ) -> str:
         """
         새 alias-map.txt 문서를 업로드한 뒤(만 성공 시) 이전 문서를 삭제한다.
         upload-then-delete 순서로 부분 손실을 방지.
         """
         store = self._find_store()
         if not store:
-            raise RuntimeError(f"rubric-store '{self._store_display_name}' 미존재")
+            raise RuntimeError(
+                f"rubric-store '{self._store_display_name}' 미존재"
+            )
 
-        payload_chunks = encode_alias_map_payload(alias_map.model_dump(mode="json"))
+        payload_chunks = encode_alias_map_payload(
+            alias_map.model_dump(mode="json")
+        )
 
-        # alias-map.txt는 내용물이 중요하지 않음(메타데이터에 데이터가 들어있음).
+        # alias-map.txt는 내용물이 중요하지 않음
+        # (메타데이터에 데이터가 들어있음).
         # File Search는 파일을 요구하므로 placeholder 텍스트를 임시 파일로.
-        with tempfile.NamedTemporaryFile(suffix=".txt", mode="w", delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(
+            suffix=".txt", mode="w", delete=False
+        ) as tmp:
             tmp.write("alias-map placeholder; data lives in custom_metadata")
             tmp_path = tmp.name
 
@@ -219,7 +234,10 @@ class CriteriaAliasMapService:
                     "display_name": "alias-map",
                     "custom_metadata": [
                         {"key": "type", "string_value": "alias_map"},
-                        {"key": ALIAS_MAP_PAYLOAD_KEY, "string_list_value": {"values": payload_chunks}},
+                        {
+                            "key": ALIAS_MAP_PAYLOAD_KEY,
+                            "string_list_value": {"values": payload_chunks},
+                        },
                     ],
                 },
             )
