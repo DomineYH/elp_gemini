@@ -48,16 +48,71 @@ def test_label_updates_optimistically_before_fetch():
     """체크박스 change 시 라벨은 fetch 응답 전에 즉시 갱신되어야 한다.
 
     근거: 백엔드 alias_map.replace()는 클라우드 업로드 폴링(최대 60초)으로
-    느릴 수 있으므로, UI 라벨은 optimistic 업데이트 후 실패 시 롤백한다.
+    느릴 수 있으므로, UI 라벨은 optimistic 업데이트('반영중…') 후 응답
+    수신 시 최종 텍스트로 확정한다.
     """
     src = JS_SOURCE.read_text()
 
     fetch_index = src.find('await fetch(url')
     assert fetch_index != -1, "fetch 호출이 존재해야 한다"
 
-    # 라벨 즉시 갱신은 fetch 호출보다 먼저 등장해야 한다.
-    optimistic_index = src.find("label.textContent = wasChecked ? '활성' : '비활성'")
-    assert optimistic_index != -1, "라벨 갱신 라인이 존재해야 한다"
-    assert optimistic_index < fetch_index, (
-        "라벨 갱신은 fetch 호출보다 먼저 실행되어야 한다 (optimistic update)"
+    # 시작 시 pending 라벨이 fetch 호출보다 먼저 등장해야 한다.
+    pending_assignment = (
+        "label.textContent = pendingLabelText"
+    )
+    pending_index = src.find(pending_assignment)
+    assert pending_index != -1, "pending 라벨 할당 라인이 존재해야 한다"
+    assert pending_index < fetch_index, (
+        "pending 라벨 할당은 fetch 호출보다 먼저 실행되어야 한다 "
+        "(optimistic update)"
+    )
+
+
+def test_checkbox_disabled_while_request_in_flight():
+    """change 핸들러는 fetch 호출 전에 체크박스를 disable 해야 한다.
+
+    근거: alias_map.replace() 가 수 초~수십 초 걸리는 동안 사용자가 다시
+    토글하면 두 번째 요청이 서버 측 alias_map 충돌을 일으켜 503/needs_resync
+    가 발생한다. 클라이언트에서 in-flight 잠금으로 첫 단계 차단.
+    """
+    src = JS_SOURCE.read_text()
+
+    fetch_index = src.find('await fetch(url')
+    assert fetch_index != -1
+    disable_index = src.find('cb.disabled = true')
+    assert disable_index != -1, "체크박스 disable 라인이 존재해야 한다"
+    assert disable_index < fetch_index, (
+        "cb.disabled = true 는 fetch 호출보다 먼저 실행되어야 한다"
+    )
+
+
+def test_label_shows_pending_while_request_in_flight():
+    """change 시작 시 라벨은 '반영중…' 으로 표시되어야 한다.
+
+    근거: optimistic 라벨 갱신은 유지하되, 아직 클라우드에 commit 되지
+    않았음을 사용자에게 알린다.
+    """
+    src = JS_SOURCE.read_text()
+
+    pending_active = "'활성 반영중…'"
+    pending_inactive = "'비활성 반영중…'"
+    assert pending_active in src, "'활성 반영중…' 라벨이 존재해야 한다"
+    assert pending_inactive in src, "'비활성 반영중…' 라벨이 존재해야 한다"
+
+
+def test_checkbox_re_enabled_after_request_finishes():
+    """요청 종료 후 체크박스는 항상 다시 enable 되어야 한다 (try/finally).
+
+    근거: 성공/실패 어느 경로에서도 disabled 상태가 남으면 행이 영구
+    잠긴다.
+    """
+    src = JS_SOURCE.read_text()
+
+    # finally 블록 또는 catch/then 양쪽에서 enable 보장
+    assert 'cb.disabled = false' in src, (
+        "응답 후 체크박스를 enable 하는 라인이 존재해야 한다"
+    )
+    # finally 키워드 사용 (가장 안전한 패턴)
+    assert '} finally {' in src, (
+        "try/finally 패턴으로 disabled 해제를 보장해야 한다"
     )
