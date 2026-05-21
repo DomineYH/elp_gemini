@@ -20,6 +20,7 @@ import app.routers.admin.criteria as criteria_module
 from app.routers.admin.criteria import (
     activate_by_stable_id,
     deactivate_by_stable_id,
+    patch_criteria_alias,
 )
 from app.schemas.alias_map import AliasMap, AliasMapEntry
 
@@ -236,3 +237,63 @@ async def test_toggle_lock_is_released_after_exception():
         assert probe.calls == 1, (
             "두 번째 호출이 실제로 probe 를 경유해야 락이 풀린 것이 검증된다"
         )
+
+
+@pytest.mark.asyncio
+async def test_alias_patch_serialized_with_toggle():
+    """patch_criteria_alias 와 activate_by_stable_id 동시 호출이 직렬화된다.
+
+    근거: alias-map 은 단일 문서이므로 alias 편집과 토글이 동시에 replace 를
+    호출하면 같은 다중 문서 충돌이 발생한다.
+    """
+    stable_id = "01HMIX"
+    probe = _ConcurrencyProbe()
+
+    class _AliasPatchBody:
+        alias = "새이름"
+
+    with patch(
+        "app.routers.admin.criteria.CriteriaVectorService"
+    ) as vector_cls, patch(
+        "app.routers.admin.criteria.CriteriaAliasMapService"
+    ) as alias_cls, patch(
+        "app.routers.admin.criteria.CriteriaRepository"
+    ) as repo_cls:
+        vector_cls.return_value.file_search_service.client = MagicMock()
+        alias = alias_cls.return_value
+        alias.fetch = AsyncMock(return_value=(
+            "fileSearchStores/s/documents/alias-map-old",
+            _alias_map_with([stable_id]),
+        ))
+        alias.replace = probe
+
+        repo = repo_cls.return_value
+        row = MagicMock()
+        row.status = "uploaded"
+        row.activated_at = None
+        row.display_alias = None
+        repo.get_criteria_by_stable_id = AsyncMock(return_value=row)
+
+        db = AsyncMock()
+
+        results = await asyncio.gather(
+            activate_by_stable_id(
+                stable_id=stable_id,
+                current_admin=object(),
+                _sync_ready=None,
+                db=db,
+            ),
+            patch_criteria_alias(
+                stable_id=stable_id,
+                body=_AliasPatchBody(),
+                current_admin=object(),
+                _sync_ready=None,
+                db=db,
+            ),
+        )
+
+    assert len(results) == 2
+    assert probe.calls == 2
+    assert probe.max_in_progress == 1, (
+        "alias 편집과 토글 사이에도 alias_svc.replace 는 직렬화되어야 한다"
+    )

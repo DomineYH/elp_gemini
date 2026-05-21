@@ -242,150 +242,151 @@ async def upload_criteria(
     Raises:
         HTTPException: 파일 검증 실패 또는 업로드 오류
     """
-    temp_file_path = None
-    cloud_write_started = False
+    async with _alias_map_mutation_lock:
+        temp_file_path = None
+        cloud_write_started = False
 
-    try:
-        logger.info(
-            f"평가기준 업로드 시작: "
-            f"admin={current_admin.username}, "
-            f"file={file.filename}"
-        )
+        try:
+            logger.info(
+                f"평가기준 업로드 시작: "
+                f"admin={current_admin.username}, "
+                f"file={file.filename}"
+            )
 
-        # 파일 검증
-        logger.debug("1단계: 파일 검증 시작")
-        validator = FileValidator()
-        validation_result = await validator.validate_file(file)
+            # 파일 검증
+            logger.debug("1단계: 파일 검증 시작")
+            validator = FileValidator()
+            validation_result = await validator.validate_file(file)
 
-        if not validation_result["valid"]:
-            logger.warning(
-                f"파일 검증 실패: {validation_result['error']}"
+            if not validation_result["valid"]:
+                logger.warning(
+                    f"파일 검증 실패: {validation_result['error']}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=validation_result["error"]
+                )
+            logger.debug("1단계: 파일 검증 완료")
+
+            # 임시 파일로 저장
+            logger.debug("2단계: 임시 파일 저장 시작")
+            file_content = await file.read()
+            suffix = os.path.splitext(file.filename)[1]
+
+            with tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=suffix
+            ) as temp_file:
+                temp_file.write(file_content)
+                temp_file_path = temp_file.name
+
+            logger.debug(
+                f"2단계: 임시 파일 저장 완료 - "
+                f"path={temp_file_path}, size={len(file_content)}"
+            )
+
+            # 3단계: 클라우드 업로드 (stable_id 발급)
+            logger.debug("3단계: 클라우드 업로드 시작")
+            stable_id = _new_stable_id()
+            criteria_service = CriteriaVectorService()
+            cloud_write_started = True
+            upload_result = await criteria_service.upload_criteria(
+                file_path=temp_file_path,
+                title=file.filename,
+                stable_id=stable_id,
+            )
+            document_id = upload_result["document_id"]
+            logger.debug(
+                f"3단계: 클라우드 업로드 완료 - "
+                f"stable_id={stable_id}, document_id={document_id}"
+            )
+
+            # 4단계: alias_map 업데이트 + 재게시
+            logger.debug("4단계: alias_map 업데이트 시작")
+            alias_svc = CriteriaAliasMapService(
+                client=criteria_service.file_search_service.client,
+                store_display_name=settings.FS_RUBRIC_STORE_NAME,
+            )
+            fetched = await alias_svc.fetch()
+            old_doc_name, alias_map = (
+                fetched if fetched else (None, empty_alias_map(_now_iso_utc()))
+            )
+            new_entries = dict(alias_map.entries)
+            new_entries[stable_id] = AliasMapEntry(
+                alias=None, status="active", activated_at=_now_iso_utc()
+            )
+            updated_alias_map = AliasMap(
+                schema_version=1,
+                updated_at=_now_iso_utc(),
+                entries=new_entries,
+            )
+            cloud_write_started = True
+            await alias_svc.replace(
+                updated_alias_map, old_doc_name=old_doc_name
+            )
+            logger.debug("4단계: alias_map 재게시 완료")
+
+            # 5단계: DB 행 삽입 (cloud is source of truth; 로컬 파일 미사용)
+            logger.debug("5단계: DB 행 삽입 시작")
+            criteria_repo = CriteriaRepository(db)
+            await criteria_repo.insert(
+                stable_id=stable_id,
+                document_id=document_id,
+                title=file.filename,
+                display_alias=None,
+                status="active",
+                created_at=None,
+                activated_at=_now_iso_utc(),
+                uploaded_by=current_admin.username,
+            )
+            await db.commit()
+            logger.debug("5단계: DB 행 삽입 완료")
+
+            logger.info(
+                f"평가기준 업로드 성공: "
+                f"admin={current_admin.username}, "
+                f"file={file.filename}, "
+                f"stable_id={stable_id}, "
+                f"document_id={document_id}"
+            )
+
+            return {
+                "stable_id": stable_id,
+                "document_id": document_id,
+            }
+
+        except AliasMapParseError as e:
+            await _raise_alias_map_parse_unavailable(db, e)
+        except HTTPException:
+            raise
+        except Exception as e:
+            await db.rollback()
+            if cloud_write_started:
+                await _mark_criteria_needs_resync(db, e)
+            error_type = type(e).__name__
+            error_msg = str(e)
+            logger.error(
+                f"평가기준 업로드 실패 - "
+                f"유형: {error_type}, "
+                f"메시지: {error_msg}",
+                exc_info=True
             )
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=validation_result["error"]
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=(
+                    "파일 업로드 중 오류가 발생했습니다: "
+                    f"{error_type} - {error_msg}"
+                ),
             )
-        logger.debug("1단계: 파일 검증 완료")
-
-        # 임시 파일로 저장
-        logger.debug("2단계: 임시 파일 저장 시작")
-        file_content = await file.read()
-        suffix = os.path.splitext(file.filename)[1]
-
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=suffix
-        ) as temp_file:
-            temp_file.write(file_content)
-            temp_file_path = temp_file.name
-
-        logger.debug(
-            f"2단계: 임시 파일 저장 완료 - "
-            f"path={temp_file_path}, size={len(file_content)}"
-        )
-
-        # 3단계: 클라우드 업로드 (stable_id 발급)
-        logger.debug("3단계: 클라우드 업로드 시작")
-        stable_id = _new_stable_id()
-        criteria_service = CriteriaVectorService()
-        cloud_write_started = True
-        upload_result = await criteria_service.upload_criteria(
-            file_path=temp_file_path,
-            title=file.filename,
-            stable_id=stable_id,
-        )
-        document_id = upload_result["document_id"]
-        logger.debug(
-            f"3단계: 클라우드 업로드 완료 - "
-            f"stable_id={stable_id}, document_id={document_id}"
-        )
-
-        # 4단계: alias_map 업데이트 + 재게시
-        logger.debug("4단계: alias_map 업데이트 시작")
-        alias_svc = CriteriaAliasMapService(
-            client=criteria_service.file_search_service.client,
-            store_display_name=settings.FS_RUBRIC_STORE_NAME,
-        )
-        fetched = await alias_svc.fetch()
-        old_doc_name, alias_map = (
-            fetched if fetched else (None, empty_alias_map(_now_iso_utc()))
-        )
-        new_entries = dict(alias_map.entries)
-        new_entries[stable_id] = AliasMapEntry(
-            alias=None, status="active", activated_at=_now_iso_utc()
-        )
-        updated_alias_map = AliasMap(
-            schema_version=1,
-            updated_at=_now_iso_utc(),
-            entries=new_entries,
-        )
-        cloud_write_started = True
-        await alias_svc.replace(
-            updated_alias_map, old_doc_name=old_doc_name
-        )
-        logger.debug("4단계: alias_map 재게시 완료")
-
-        # 5단계: DB 행 삽입 (cloud is source of truth; 로컬 파일 미사용)
-        logger.debug("5단계: DB 행 삽입 시작")
-        criteria_repo = CriteriaRepository(db)
-        await criteria_repo.insert(
-            stable_id=stable_id,
-            document_id=document_id,
-            title=file.filename,
-            display_alias=None,
-            status="active",
-            created_at=None,
-            activated_at=_now_iso_utc(),
-            uploaded_by=current_admin.username,
-        )
-        await db.commit()
-        logger.debug("5단계: DB 행 삽입 완료")
-
-        logger.info(
-            f"평가기준 업로드 성공: "
-            f"admin={current_admin.username}, "
-            f"file={file.filename}, "
-            f"stable_id={stable_id}, "
-            f"document_id={document_id}"
-        )
-
-        return {
-            "stable_id": stable_id,
-            "document_id": document_id,
-        }
-
-    except AliasMapParseError as e:
-        await _raise_alias_map_parse_unavailable(db, e)
-    except HTTPException:
-        raise
-    except Exception as e:
-        await db.rollback()
-        if cloud_write_started:
-            await _mark_criteria_needs_resync(db, e)
-        error_type = type(e).__name__
-        error_msg = str(e)
-        logger.error(
-            f"평가기준 업로드 실패 - "
-            f"유형: {error_type}, "
-            f"메시지: {error_msg}",
-            exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=(
-                "파일 업로드 중 오류가 발생했습니다: "
-                f"{error_type} - {error_msg}"
-            ),
-        )
-    finally:
-        # 임시 파일 삭제
-        if temp_file_path and os.path.exists(temp_file_path):
-            try:
-                os.remove(temp_file_path)
-            except Exception as e:
-                logger.warning(
-                    f"임시 파일 삭제 실패: {e}"
-                )
+        finally:
+            # 임시 파일 삭제
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.remove(temp_file_path)
+                except Exception as e:
+                    logger.warning(
+                        f"임시 파일 삭제 실패: {e}"
+                    )
 
 
 @router.delete(
@@ -399,60 +400,61 @@ async def delete_criteria_by_stable_id(
     _sync_ready=Depends(require_criteria_sync_ready),
     db: AsyncSession = Depends(get_db),
 ):
-    repo = CriteriaRepository(db)
-    row = await repo.get_criteria_by_stable_id(stable_id)
-    if not row:
-        raise HTTPException(
-            status_code=404,
-            detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
-        )
+    async with _alias_map_mutation_lock:
+        repo = CriteriaRepository(db)
+        row = await repo.get_criteria_by_stable_id(stable_id)
+        if not row:
+            raise HTTPException(
+                status_code=404,
+                detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+            )
 
-    cloud_write_started = False
-    try:
-        vec = CriteriaVectorService()
-        alias_svc = CriteriaAliasMapService(
-            client=vec.file_search_service.client,
-            store_display_name=settings.FS_RUBRIC_STORE_NAME,
-        )
+        cloud_write_started = False
         try:
-            fetched = await alias_svc.fetch()
-        except AliasMapParseError as e:
-            await _raise_alias_map_parse_unavailable(db, e)
-        if fetched is None:
-            await _raise_alias_map_missing_conflict(db)
-
-        cloud_write_started = True
-        await vec.delete_criteria(document_id=row.document_id)
-
-        old_doc_name, alias_map = fetched
-        if stable_id in alias_map.entries:
-            new_entries = dict(alias_map.entries)
-            new_entries.pop(stable_id, None)
-            new_alias_map = AliasMap(
-                schema_version=1,
-                updated_at=_now_iso_utc(),
-                entries=new_entries,
+            vec = CriteriaVectorService()
+            alias_svc = CriteriaAliasMapService(
+                client=vec.file_search_service.client,
+                store_display_name=settings.FS_RUBRIC_STORE_NAME,
             )
+            try:
+                fetched = await alias_svc.fetch()
+            except AliasMapParseError as e:
+                await _raise_alias_map_parse_unavailable(db, e)
+            if fetched is None:
+                await _raise_alias_map_missing_conflict(db)
+
             cloud_write_started = True
-            await alias_svc.replace(
-                new_alias_map, old_doc_name=old_doc_name
-            )
+            await vec.delete_criteria(document_id=row.document_id)
 
-        await db.delete(row)
-        await db.commit()
-        logger.info(
-            f"평가기준 삭제: stable_id={stable_id} "
-            f"document_id={row.document_id}"
-        )
-        return {"stable_id": stable_id, "deleted": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        await _raise_criteria_mutation_failed(
-            db,
-            e,
-            cloud_write_started=cloud_write_started,
-        )
+            old_doc_name, alias_map = fetched
+            if stable_id in alias_map.entries:
+                new_entries = dict(alias_map.entries)
+                new_entries.pop(stable_id, None)
+                new_alias_map = AliasMap(
+                    schema_version=1,
+                    updated_at=_now_iso_utc(),
+                    entries=new_entries,
+                )
+                cloud_write_started = True
+                await alias_svc.replace(
+                    new_alias_map, old_doc_name=old_doc_name
+                )
+
+            await db.delete(row)
+            await db.commit()
+            logger.info(
+                f"평가기준 삭제: stable_id={stable_id} "
+                f"document_id={row.document_id}"
+            )
+            return {"stable_id": stable_id, "deleted": True}
+        except HTTPException:
+            raise
+        except Exception as e:
+            await _raise_criteria_mutation_failed(
+                db,
+                e,
+                cloud_write_started=cloud_write_started,
+            )
 
 
 @router.post(
@@ -470,125 +472,126 @@ async def replace_legacy_criteria(
     _sync_ready=Depends(require_criteria_sync_ready),
     db: AsyncSession = Depends(get_db),
 ):
-    if not is_legacy_surrogate_stable_id(stable_id):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "교체는 legacy(pre-v2) 평가기준에만 적용됩니다. "
-                "이미 v2 stable_id를 가진 행은 일반 삭제/업로드를 사용하세요."
-            ),
-        )
-
-    temp_file_path = None
-    cloud_write_started = False
-    try:
-        validator = FileValidator()
-        validation_result = await validator.validate_file(file)
-        if not validation_result["valid"]:
+    async with _alias_map_mutation_lock:
+        if not is_legacy_surrogate_stable_id(stable_id):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=validation_result["error"],
+                status_code=400,
+                detail=(
+                    "교체는 legacy(pre-v2) 평가기준에만 적용됩니다. "
+                    "이미 v2 stable_id를 가진 행은 일반 삭제/업로드를 사용하세요."
+                ),
             )
 
-        file_content = await file.read()
-        suffix = os.path.splitext(file.filename)[1]
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(file_content)
-            temp_file_path = tmp.name
-
-        vec = CriteriaVectorService()
-        alias_svc = CriteriaAliasMapService(
-            client=vec.file_search_service.client,
-            store_display_name=settings.FS_RUBRIC_STORE_NAME,
-        )
-        repo = CriteriaRepository(db)
-
+        temp_file_path = None
+        cloud_write_started = False
         try:
-            fetched = await alias_svc.fetch()
-        except AliasMapParseError as e:
-            await _raise_alias_map_parse_unavailable(db, e)
-        if fetched is None:
-            await _raise_alias_map_missing_conflict(db)
-        old_doc_name, alias_map = fetched
-        if stable_id not in alias_map.entries:
-            raise HTTPException(
-                status_code=404,
-                detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+            validator = FileValidator()
+            validation_result = await validator.validate_file(file)
+            if not validation_result["valid"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=validation_result["error"],
+                )
+
+            file_content = await file.read()
+            suffix = os.path.splitext(file.filename)[1]
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(file_content)
+                temp_file_path = tmp.name
+
+            vec = CriteriaVectorService()
+            alias_svc = CriteriaAliasMapService(
+                client=vec.file_search_service.client,
+                store_display_name=settings.FS_RUBRIC_STORE_NAME,
             )
-        old_alias = alias_map.entries[stable_id].alias
+            repo = CriteriaRepository(db)
 
-        old_row = await repo.get_criteria_by_stable_id(stable_id)
-        if not old_row:
-            raise HTTPException(
-                status_code=404,
-                detail=f"DB 캐시에 stable_id={stable_id} 행이 없습니다",
-            )
-        old_document_id = old_row.document_id
-
-        # 1) Cloud upload with new stable_id BEFORE any destructive op.
-        new_stable_id = _new_stable_id()
-        cloud_write_started = True
-        upload_result = await vec.upload_criteria(
-            file_path=temp_file_path,
-            title=file.filename,
-            stable_id=new_stable_id,
-        )
-        new_document_id = upload_result["document_id"]
-
-        # 2) alias_map: remove legacy entry + add new entry (preserve alias).
-        new_entries = dict(alias_map.entries)
-        new_entries.pop(stable_id, None)
-        new_entries[new_stable_id] = AliasMapEntry(
-            alias=old_alias,
-            status="active",
-            activated_at=_now_iso_utc(),
-        )
-        new_alias_map = AliasMap(
-            schema_version=1,
-            updated_at=_now_iso_utc(),
-            entries=new_entries,
-        )
-        await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
-
-        # 3) Delete old cloud document AFTER alias_map publish succeeded.
-        await vec.delete_criteria(document_id=old_document_id)
-
-        # 4) DB: delete old row + insert new row.
-        await db.delete(old_row)
-        await repo.insert(
-            stable_id=new_stable_id,
-            document_id=new_document_id,
-            title=file.filename,
-            display_alias=old_alias,
-            status="active",
-            created_at=None,
-            activated_at=_now_iso_utc(),
-            uploaded_by=current_admin.username,
-        )
-        await db.commit()
-
-        logger.info(
-            "평가기준 교체: legacy_stable_id=%s → new_stable_id=%s "
-            "old_document_id=%s new_document_id=%s",
-            stable_id, new_stable_id, old_document_id, new_document_id,
-        )
-        return {
-            "old_stable_id": stable_id,
-            "new_stable_id": new_stable_id,
-            "document_id": new_document_id,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        await _raise_criteria_mutation_failed(
-            db, e, cloud_write_started=cloud_write_started,
-        )
-    finally:
-        if temp_file_path and os.path.exists(temp_file_path):
             try:
-                os.remove(temp_file_path)
-            except Exception:
-                logger.warning("임시 파일 삭제 실패", exc_info=True)
+                fetched = await alias_svc.fetch()
+            except AliasMapParseError as e:
+                await _raise_alias_map_parse_unavailable(db, e)
+            if fetched is None:
+                await _raise_alias_map_missing_conflict(db)
+            old_doc_name, alias_map = fetched
+            if stable_id not in alias_map.entries:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+                )
+            old_alias = alias_map.entries[stable_id].alias
+
+            old_row = await repo.get_criteria_by_stable_id(stable_id)
+            if not old_row:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"DB 캐시에 stable_id={stable_id} 행이 없습니다",
+                )
+            old_document_id = old_row.document_id
+
+            # 1) Cloud upload with new stable_id BEFORE any destructive op.
+            new_stable_id = _new_stable_id()
+            cloud_write_started = True
+            upload_result = await vec.upload_criteria(
+                file_path=temp_file_path,
+                title=file.filename,
+                stable_id=new_stable_id,
+            )
+            new_document_id = upload_result["document_id"]
+
+            # 2) alias_map: remove legacy entry + add new entry (preserve alias).
+            new_entries = dict(alias_map.entries)
+            new_entries.pop(stable_id, None)
+            new_entries[new_stable_id] = AliasMapEntry(
+                alias=old_alias,
+                status="active",
+                activated_at=_now_iso_utc(),
+            )
+            new_alias_map = AliasMap(
+                schema_version=1,
+                updated_at=_now_iso_utc(),
+                entries=new_entries,
+            )
+            await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
+
+            # 3) Delete old cloud document AFTER alias_map publish succeeded.
+            await vec.delete_criteria(document_id=old_document_id)
+
+            # 4) DB: delete old row + insert new row.
+            await db.delete(old_row)
+            await repo.insert(
+                stable_id=new_stable_id,
+                document_id=new_document_id,
+                title=file.filename,
+                display_alias=old_alias,
+                status="active",
+                created_at=None,
+                activated_at=_now_iso_utc(),
+                uploaded_by=current_admin.username,
+            )
+            await db.commit()
+
+            logger.info(
+                "평가기준 교체: legacy_stable_id=%s → new_stable_id=%s "
+                "old_document_id=%s new_document_id=%s",
+                stable_id, new_stable_id, old_document_id, new_document_id,
+            )
+            return {
+                "old_stable_id": stable_id,
+                "new_stable_id": new_stable_id,
+                "document_id": new_document_id,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            await _raise_criteria_mutation_failed(
+                db, e, cloud_write_started=cloud_write_started,
+            )
+        finally:
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.remove(temp_file_path)
+                except Exception:
+                    logger.warning("임시 파일 삭제 실패", exc_info=True)
 
 
 class _AliasPatch(BaseModel):
@@ -612,62 +615,63 @@ async def patch_criteria_alias(
     _sync_ready=Depends(require_criteria_sync_ready),
     db: AsyncSession = Depends(get_db),
 ):
-    cloud_write_started = False
-    try:
-        vec = CriteriaVectorService()
-        alias_svc = CriteriaAliasMapService(
-            client=vec.file_search_service.client,
-            store_display_name=settings.FS_RUBRIC_STORE_NAME,
-        )
-
+    async with _alias_map_mutation_lock:
+        cloud_write_started = False
         try:
-            fetched = await alias_svc.fetch()
-        except AliasMapParseError as e:
-            await _raise_alias_map_parse_unavailable(db, e)
-        if fetched is None:
-            await _raise_alias_map_missing_conflict(db)
-        old_doc_name, alias_map = fetched
-
-        if stable_id not in alias_map.entries:
-            raise HTTPException(
-                status_code=404,
-                detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+            vec = CriteriaVectorService()
+            alias_svc = CriteriaAliasMapService(
+                client=vec.file_search_service.client,
+                store_display_name=settings.FS_RUBRIC_STORE_NAME,
             )
 
-        # Update the entry's alias only
-        updated_entry = alias_map.entries[stable_id].model_copy(
-            update={"alias": body.alias}
-        )
-        new_entries = dict(alias_map.entries)
-        new_entries[stable_id] = updated_entry
+            try:
+                fetched = await alias_svc.fetch()
+            except AliasMapParseError as e:
+                await _raise_alias_map_parse_unavailable(db, e)
+            if fetched is None:
+                await _raise_alias_map_missing_conflict(db)
+            old_doc_name, alias_map = fetched
 
-        new_alias_map = AliasMap(
-            schema_version=1,
-            updated_at=_now_iso_utc(),
-            entries=new_entries,
-        )
-        cloud_write_started = True
-        await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
+            if stable_id not in alias_map.entries:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"평가기준 stable_id={stable_id} 를 찾을 수 없습니다",
+                )
 
-        # Sync DB cache
-        repo = CriteriaRepository(db)
-        row = await repo.get_criteria_by_stable_id(stable_id)
-        if row:
-            row.display_alias = body.alias
-            await db.commit()
+            # Update the entry's alias only
+            updated_entry = alias_map.entries[stable_id].model_copy(
+                update={"alias": body.alias}
+            )
+            new_entries = dict(alias_map.entries)
+            new_entries[stable_id] = updated_entry
 
-        logger.info(
-            f"alias 변경: stable_id={stable_id} alias={body.alias}"
-        )
-        return {"stable_id": stable_id, "alias": body.alias}
-    except HTTPException:
-        raise
-    except Exception as e:
-        await _raise_criteria_mutation_failed(
-            db,
-            e,
-            cloud_write_started=cloud_write_started,
-        )
+            new_alias_map = AliasMap(
+                schema_version=1,
+                updated_at=_now_iso_utc(),
+                entries=new_entries,
+            )
+            cloud_write_started = True
+            await alias_svc.replace(new_alias_map, old_doc_name=old_doc_name)
+
+            # Sync DB cache
+            repo = CriteriaRepository(db)
+            row = await repo.get_criteria_by_stable_id(stable_id)
+            if row:
+                row.display_alias = body.alias
+                await db.commit()
+
+            logger.info(
+                f"alias 변경: stable_id={stable_id} alias={body.alias}"
+            )
+            return {"stable_id": stable_id, "alias": body.alias}
+        except HTTPException:
+            raise
+        except Exception as e:
+            await _raise_criteria_mutation_failed(
+                db,
+                e,
+                cloud_write_started=cloud_write_started,
+            )
 
 
 @router.post(
@@ -846,29 +850,30 @@ async def reconcile_criteria(
     _admin=Depends(get_current_admin),
 ):
     """클라우드 reconcile 실행."""
-    from app.config import settings
-    from app.services.criteria_alias_map_service import CriteriaAliasMapService
+    async with _alias_map_mutation_lock:
+        from app.config import settings
+        from app.services.criteria_alias_map_service import CriteriaAliasMapService
 
-    state_repo = AppStateRepository(db=db)
-    criteria_repo = CriteriaRepository(db=db)
-    vector_svc = CriteriaVectorService()
-    alias_svc = CriteriaAliasMapService(
-        client=vector_svc.file_search_service.client,
-        store_display_name=settings.FS_RUBRIC_STORE_NAME,
-    )
-    svc = CriteriaReconciliationService(
-        db=db,
-        vector_service=vector_svc,
-        alias_map_service=alias_svc,
-        criteria_repo=criteria_repo,
-        app_state_repo=state_repo,
-    )
-    result = await svc.reconcile()
-    return {
-        "ok": result.ok,
-        "skipped": result.skipped,
-        "count": result.count,
-        "error": result.error,
-        "sync_state": await state_repo.get(KEY_SYNC_STATE),
-        "last_synced_at": await state_repo.get(KEY_LAST_SYNCED_AT),
-    }
+        state_repo = AppStateRepository(db=db)
+        criteria_repo = CriteriaRepository(db=db)
+        vector_svc = CriteriaVectorService()
+        alias_svc = CriteriaAliasMapService(
+            client=vector_svc.file_search_service.client,
+            store_display_name=settings.FS_RUBRIC_STORE_NAME,
+        )
+        svc = CriteriaReconciliationService(
+            db=db,
+            vector_service=vector_svc,
+            alias_map_service=alias_svc,
+            criteria_repo=criteria_repo,
+            app_state_repo=state_repo,
+        )
+        result = await svc.reconcile()
+        return {
+            "ok": result.ok,
+            "skipped": result.skipped,
+            "count": result.count,
+            "error": result.error,
+            "sync_state": await state_repo.get(KEY_SYNC_STATE),
+            "last_synced_at": await state_repo.get(KEY_LAST_SYNCED_AT),
+        }
