@@ -17,6 +17,7 @@ from typing import Optional
 from app.config import settings
 from app.repositories.app_state_repository import (
     KEY_API_KEY_HASH,
+    KEY_LAST_ALIAS_MAP_UPDATED_AT,
     KEY_LAST_SYNCED_AT,
     KEY_SYNC_ERROR,
     KEY_SYNC_STATE,
@@ -118,14 +119,29 @@ class CriteriaReconciliationService:
                     migration_v2_done = await self._state.get(
                         "criteria_migration_v2_done"
                     )
+                    stored_alias_updated_at = await self._state.get(
+                        KEY_LAST_ALIAS_MAP_UPDATED_AT
+                    )
                 key_changed = stored_hash != current_hash
 
+                fetched_for_guard = None
                 if (
                     not key_changed
                     and stored_state == "ok"
                     and migration_v2_done == "true"
+                    and stored_alias_updated_at is not None
                 ):
-                    return ReconcileResult(skipped=True)
+                    try:
+                        fetched_for_guard = await self._alias.fetch()
+                    except Exception:
+                        # cloud 일시 장애 시에는 skip하지 않고 기존 로직으로 진행
+                        fetched_for_guard = None
+                    if (
+                        fetched_for_guard is not None
+                        and fetched_for_guard[1].updated_at
+                        == stored_alias_updated_at
+                    ):
+                        return ReconcileResult(skipped=True)
 
                 try:
                     # Task 13 will add migrate_from_legacy_manifest.
@@ -170,7 +186,11 @@ class CriteriaReconciliationService:
                                 surrogate,
                             )
 
-                    fetched = await self._alias.fetch()
+                    fetched = (
+                        fetched_for_guard
+                        if fetched_for_guard is not None
+                        else await self._alias.fetch()
+                    )
                     old_doc_name, alias_map = (
                         fetched
                         if fetched
@@ -240,6 +260,7 @@ class CriteriaReconciliationService:
                             KEY_LAST_SYNCED_AT: _now_iso(),
                             KEY_SYNC_STATE: "ok",
                             KEY_SYNC_ERROR: None,
+                            KEY_LAST_ALIAS_MAP_UPDATED_AT: alias_map.updated_at,
                         })
                     return ReconcileResult(ok=True, count=len(criteria_docs))
 
