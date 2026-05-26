@@ -488,7 +488,9 @@ class CriteriaRepository:
         """주어진 stable_id 집합에 없는 행을 모두 삭제. 호출자가 트랜잭션 관리."""
         if keep_stable_ids:
             stmt = delete(Criteria).where(
-                Criteria.stable_id.notin_(keep_stable_ids)
+                (
+                    Criteria.stable_id.notin_(keep_stable_ids)
+                ) | Criteria.stable_id.is_(None)
             )
         else:
             stmt = delete(Criteria)
