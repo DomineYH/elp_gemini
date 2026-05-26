@@ -155,3 +155,35 @@ async def test_reconcile_proceeds_on_first_run_when_stored_updated_at_missing():
 
     # skip 가드가 stored_alias_updated_at is None 시에는 발동하지 않으므로 진행
     assert result.skipped is False
+
+
+@pytest.mark.asyncio
+async def test_reconcile_proceeds_when_guard_fetch_raises():
+    """guard 단계의 fetch() 가 cloud 일시 장애로 실패하면 skip 하지 않고 진행해야 한다."""
+    alias_map = AliasMap(
+        schema_version=1,
+        updated_at="2026-05-26T01:00:00Z",
+        entries={},
+    )
+    state_values = {
+        KEY_API_KEY_HASH: sha256_hex_of_api_key(),
+        KEY_SYNC_STATE: "ok",
+        "criteria_migration_v2_done": "true",
+        KEY_LAST_ALIAS_MAP_UPDATED_AT: "2026-05-26T00:00:00Z",
+    }
+    svc, vec, alias, repo = _make_service(state_values, alias_map, [])
+
+    # First call (the guard) raises; subsequent calls (proceed path) succeed.
+    alias.fetch = AsyncMock(
+        side_effect=[
+            RuntimeError("cloud temporary outage"),
+            ("doc/1", alias_map),
+        ]
+    )
+
+    result = await svc.reconcile()
+
+    assert result.skipped is False
+    assert result.ok is True
+    assert alias.fetch.await_count >= 2
+    vec.list_criteria_documents.assert_awaited()
