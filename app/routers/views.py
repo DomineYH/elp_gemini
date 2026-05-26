@@ -22,6 +22,7 @@ from app.services.file_search_service import (
     FileSearchService,
     _sanitize_display_name,
 )
+from app.services.criteria_freshness import ensure_criteria_cache_fresh
 from app.services.file_validator import FileValidator
 
 router = APIRouter(tags=["뷰"])
@@ -54,6 +55,7 @@ async def user_dashboard(
     request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _fresh=Depends(ensure_criteria_cache_fresh),
 ):
     """
     사용자 대시보드
@@ -93,6 +95,7 @@ async def upload_document(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _fresh=Depends(ensure_criteria_cache_fresh),
 ):
     """
     문서 업로드 및 처리

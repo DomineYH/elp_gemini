@@ -37,3 +37,17 @@ def test_admin_list_html_declares_freshness_dependency():
         "no async handler in app.routers.admin.criteria_views depends on "
         "ensure_criteria_cache_fresh"
     )
+
+
+def test_user_dashboard_get_declares_freshness_dependency():
+    from app.routers.views import user_dashboard
+    from app.services.criteria_freshness import ensure_criteria_cache_fresh
+
+    assert _uses_dependency(user_dashboard, ensure_criteria_cache_fresh)
+
+
+def test_user_dashboard_upload_declares_freshness_dependency():
+    from app.routers.views import upload_document
+    from app.services.criteria_freshness import ensure_criteria_cache_fresh
+
+    assert _uses_dependency(upload_document, ensure_criteria_cache_fresh)
