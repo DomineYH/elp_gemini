@@ -54,11 +54,13 @@ async def _reconcile_with_cloud_docs(docs, alias_entries=None):
     inserted = []
     fake_repo = MagicMock()
     fake_repo.truncate = AsyncMock()
+    fake_repo.delete_by_stable_ids_except = AsyncMock()
 
-    async def _insert(**kwargs):
+    async def _upsert_from_cloud(**kwargs):
         inserted.append(kwargs)
 
-    fake_repo.insert = _insert
+    fake_repo.upsert_from_cloud = _upsert_from_cloud
+    fake_repo.get_criteria_by_stable_id = AsyncMock(return_value=None)
 
     state_values = {
         "criteria_api_key_hash": "samehash",
@@ -151,11 +153,13 @@ async def test_reconcile_runs_v2_migration_before_skip_on_ok_state():
 
     fake_repo = MagicMock()
     fake_repo.truncate = AsyncMock()
+    fake_repo.delete_by_stable_ids_except = AsyncMock()
 
-    async def _insert(**kwargs):
+    async def _upsert_from_cloud(**kwargs):
         pass
 
-    fake_repo.insert = _insert
+    fake_repo.upsert_from_cloud = _upsert_from_cloud
+    fake_repo.get_criteria_by_stable_id = AsyncMock(return_value=None)
 
     state_values = {
         "criteria_api_key_hash": "samehash",
@@ -199,13 +203,13 @@ async def test_reconcile_runs_v2_migration_before_skip_on_ok_state():
         client.file_search_stores.list.assert_called_once()
         fake_vec.list_criteria_documents.assert_called_once()
         fake_alias.replace.assert_called_once()
-        fake_repo.truncate.assert_called_once()
+        fake_repo.delete_by_stable_ids_except.assert_called_once()
 
         client.file_search_stores.list.reset_mock()
         fake_vec.list_criteria_documents.reset_mock()
         fake_alias.fetch.reset_mock()
         fake_alias.replace.reset_mock()
-        fake_repo.truncate.reset_mock()
+        fake_repo.delete_by_stable_ids_except.reset_mock()
 
         second = await svc.reconcile()
 
@@ -214,7 +218,7 @@ async def test_reconcile_runs_v2_migration_before_skip_on_ok_state():
     fake_vec.list_criteria_documents.assert_not_called()
     fake_alias.fetch.assert_not_called()
     fake_alias.replace.assert_not_called()
-    fake_repo.truncate.assert_not_called()
+    fake_repo.delete_by_stable_ids_except.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -424,12 +428,14 @@ async def test_reconcile_inserts_rows_with_alias_from_map(monkeypatch):
 
     fake_repo = MagicMock()
     fake_repo.truncate = AsyncMock()
+    fake_repo.delete_by_stable_ids_except = AsyncMock()
     inserted = []
 
-    async def _insert(**kwargs):
+    async def _upsert_from_cloud(**kwargs):
         inserted.append(kwargs)
 
-    fake_repo.insert = _insert
+    fake_repo.upsert_from_cloud = _upsert_from_cloud
+    fake_repo.get_criteria_by_stable_id = AsyncMock(return_value=None)
 
     fake_state = MagicMock()
     fake_state.get = AsyncMock(side_effect=lambda key: {
@@ -654,11 +660,13 @@ async def test_reconcile_self_heals_orphan_entries():
 
     fake_repo = MagicMock()
     fake_repo.truncate = AsyncMock()
+    fake_repo.delete_by_stable_ids_except = AsyncMock()
 
-    async def _insert(**kwargs):
+    async def _upsert_from_cloud(**kwargs):
         pass
 
-    fake_repo.insert = _insert
+    fake_repo.upsert_from_cloud = _upsert_from_cloud
+    fake_repo.get_criteria_by_stable_id = AsyncMock(return_value=None)
 
     fake_state = MagicMock()
     fake_state.get = AsyncMock(return_value=None)
@@ -754,11 +762,13 @@ async def test_reconcile_completes_dbcache_after_chunk_size_fix():
     inserted = []
     fake_repo = MagicMock()
     fake_repo.truncate = AsyncMock()
+    fake_repo.delete_by_stable_ids_except = AsyncMock()
 
-    async def _insert(**kwargs):
+    async def _upsert_from_cloud(**kwargs):
         inserted.append(kwargs)
 
-    fake_repo.insert = _insert
+    fake_repo.upsert_from_cloud = _upsert_from_cloud
+    fake_repo.get_criteria_by_stable_id = AsyncMock(return_value=None)
 
     state_values = {"criteria_sync_state": "needs_resync"}
     fake_state = MagicMock()

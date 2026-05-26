@@ -419,3 +419,79 @@ class CriteriaRepository:
             except Exception:
                 pass
         self.db.add(row)
+
+    async def upsert_from_cloud(
+        self,
+        *,
+        stable_id: str,
+        document_id: str,
+        title: str,
+        display_alias: Optional[str],
+        status: str,
+        created_at: Optional[str],
+        activated_at: Optional[str],
+    ) -> None:
+        """
+        cloud truth로부터 row를 upsert. 기존 행이 있으면 cloud-소스 필드만
+        업데이트하여 uploaded_by / file_size / file_path 등 local-only 컬럼을
+        보존한다. 호출자가 트랜잭션을 관리한다.
+        """
+        existing = await self.get_criteria_by_stable_id(stable_id)
+        created_dt = None
+        if created_at:
+            try:
+                created_dt = datetime.fromisoformat(
+                    created_at.replace("Z", "+00:00")
+                )
+            except Exception:
+                created_dt = None
+        activated_dt = None
+        if activated_at:
+            try:
+                activated_dt = datetime.fromisoformat(
+                    activated_at.replace("Z", "+00:00")
+                )
+            except Exception:
+                activated_dt = None
+
+        if existing is not None:
+            existing.document_id = document_id
+            existing.title = title
+            existing.display_alias = display_alias
+            existing.status = status
+            if created_dt is not None:
+                existing.created_at = created_dt
+            existing.activated_at = activated_dt
+            await self.db.flush()
+            return
+
+        row = Criteria(
+            stable_id=stable_id,
+            document_id=document_id,
+            title=title,
+            display_alias=display_alias,
+            status=status,
+            file_size=0,
+            file_path="",
+            uploaded_by="cloud-sync",
+        )
+        if created_dt is not None:
+            row.created_at = created_dt
+        if activated_dt is not None:
+            row.activated_at = activated_dt
+        self.db.add(row)
+        await self.db.flush()
+
+    async def delete_by_stable_ids_except(
+        self, keep_stable_ids: set[str]
+    ) -> int:
+        """주어진 stable_id 집합에 없는 행을 모두 삭제. 호출자가 트랜잭션 관리."""
+        if keep_stable_ids:
+            stmt = delete(Criteria).where(
+                Criteria.stable_id.notin_(keep_stable_ids)
+            )
+        else:
+            stmt = delete(Criteria)
+        result = await self.db.execute(stmt)
+        await self.db.flush()
+        return result.rowcount or 0

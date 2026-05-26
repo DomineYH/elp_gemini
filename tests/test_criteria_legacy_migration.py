@@ -41,11 +41,13 @@ async def _reconcile_with_cloud_docs(docs, alias_entries=None):
     inserted = []
     fake_repo = MagicMock()
     fake_repo.truncate = AsyncMock()
+    fake_repo.delete_by_stable_ids_except = AsyncMock()
 
-    async def _insert(**kwargs):
+    async def _upsert_from_cloud(**kwargs):
         inserted.append(kwargs)
 
-    fake_repo.insert = _insert
+    fake_repo.upsert_from_cloud = _upsert_from_cloud
+    fake_repo.get_criteria_by_stable_id = AsyncMock(return_value=None)
 
     state_values = {
         "criteria_api_key_hash": "samehash",

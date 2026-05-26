@@ -38,6 +38,8 @@ def _make_service(state_values, alias_map, list_docs):
     repo = MagicMock()
     repo.truncate = AsyncMock()
     repo.insert = AsyncMock()
+    repo.upsert_from_cloud = AsyncMock()
+    repo.delete_by_stable_ids_except = AsyncMock()
     repo.get_criteria_by_stable_id = AsyncMock(return_value=None)
 
     db = MagicMock()

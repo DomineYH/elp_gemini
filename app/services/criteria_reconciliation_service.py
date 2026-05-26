@@ -228,9 +228,11 @@ class CriteriaReconciliationService:
                             alias_map, old_doc_name=old_doc_name
                         )
 
-                    # Rebuild local DB cache
+                    # Rebuild local DB cache (upsert preserves local-only cols)
                     async with _transaction_if_needed(self._db):
-                        await self._repo.truncate()
+                        await self._repo.delete_by_stable_ids_except(
+                            set(stable_ids_by_document.values())
+                        )
                         for d in criteria_docs:
                             sid = stable_ids_by_document[d["document_id"]]
                             entry = cleaned[sid]
@@ -245,7 +247,7 @@ class CriteriaReconciliationService:
                                 )
                             except Exception:
                                 title = d.get("display_name") or sid
-                            await self._repo.insert(
+                            await self._repo.upsert_from_cloud(
                                 stable_id=sid,
                                 document_id=d["document_id"],
                                 title=title,
