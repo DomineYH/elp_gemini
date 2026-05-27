@@ -686,3 +686,99 @@ class TestLessonPlanAnalysisService:
         assert "**두 번째 섹션**" in processed
         # 빈 줄 보존
         assert "\n\n" in processed
+
+    @pytest.mark.asyncio
+    async def test_collect_active_criteria_display_names_sorted(
+        self, service
+    ):
+        """active 항목들의 alias 가 activated_at desc, stable_id desc 로 정렬되어 반환된다."""
+        from app.schemas.alias_map import AliasMap, AliasMapEntry
+
+        alias_map = AliasMap(
+            schema_version=1,
+            updated_at="2026-05-27T00:00:00Z",
+            entries={
+                "01OLDER": AliasMapEntry(
+                    alias="구버전 기준",
+                    status="active",
+                    activated_at="2026-05-20T00:00:00Z",
+                ),
+                "01NEWER": AliasMapEntry(
+                    alias="최신 기준",
+                    status="active",
+                    activated_at="2026-05-25T00:00:00Z",
+                ),
+                "01INACTIVE": AliasMapEntry(
+                    alias="비활성",
+                    status="uploaded",
+                    activated_at=None,
+                ),
+            },
+        )
+
+        with patch(
+            "app.services.criteria_alias_map_service"
+            ".CriteriaAliasMapService.fetch",
+            new=AsyncMock(return_value=("doc/name", alias_map)),
+        ):
+            names = await service._collect_active_criteria_display_names()
+
+        assert names == ["최신 기준", "구버전 기준"]
+
+    @pytest.mark.asyncio
+    async def test_collect_active_criteria_display_names_skips_missing_alias(
+        self, service, caplog
+    ):
+        """alias 가 None/빈 문자열인 active 항목은 결과에서 제외되고 경고 로그가 남는다."""
+        from app.schemas.alias_map import AliasMap, AliasMapEntry
+
+        alias_map = AliasMap(
+            schema_version=1,
+            updated_at="2026-05-27T00:00:00Z",
+            entries={
+                "01ALIASNONE": AliasMapEntry(
+                    alias=None,
+                    status="active",
+                    activated_at="2026-05-25T00:00:00Z",
+                ),
+                "01EMPTY": AliasMapEntry(
+                    alias="",
+                    status="active",
+                    activated_at="2026-05-24T00:00:00Z",
+                ),
+                "01OK": AliasMapEntry(
+                    alias="정상 alias",
+                    status="active",
+                    activated_at="2026-05-23T00:00:00Z",
+                ),
+            },
+        )
+
+        with patch(
+            "app.services.criteria_alias_map_service"
+            ".CriteriaAliasMapService.fetch",
+            new=AsyncMock(return_value=("doc/name", alias_map)),
+        ):
+            with caplog.at_level("WARNING"):
+                names = await service._collect_active_criteria_display_names()
+
+        assert names == ["정상 alias"]
+        assert any(
+            "alias 누락" in record.message
+            or "alias missing" in record.message.lower()
+            for record in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_collect_active_criteria_display_names_fetch_failure(
+        self, service
+    ):
+        """fetch 가 예외를 던지면 빈 리스트를 반환하고 예외를 전파하지 않는다."""
+        with patch(
+            "app.services.criteria_alias_map_service"
+            ".CriteriaAliasMapService.fetch",
+            new=AsyncMock(side_effect=RuntimeError("network down")),
+        ):
+            names = await service._collect_active_criteria_display_names()
+
+        assert names == []

@@ -739,6 +739,65 @@ class LessonPlanAnalysisService:
         flush_buffer()
         return "\n".join(sanitized)
 
+    async def _collect_active_criteria_display_names(self) -> list[str]:
+        """활성 평가기준의 표시 이름(alias)을 정렬해 반환한다.
+
+        정렬: activated_at 내림차순, stable_id 내림차순 (CriteriaVectorService
+        ._get_active_stable_ids 와 동일한 정책).
+
+        alias 가 None/빈 항목은 결과에서 제외하고 경고 로그를 남긴다.
+        alias_map fetch 자체가 실패하면 빈 리스트를 반환하고 예외를 전파하지 않는다.
+        """
+        from app.services.criteria_alias_map_service import (
+            CriteriaAliasMapService,
+        )
+        from app.services.criteria_reconciliation_service import (
+            is_legacy_surrogate_stable_id,
+        )
+
+        try:
+            alias_svc = CriteriaAliasMapService(
+                client=self.client,
+                store_display_name=settings.FS_RUBRIC_STORE_NAME,
+            )
+            fetched = await alias_svc.fetch()
+        except Exception as exc:
+            logger.warning(
+                f"활성 평가기준 alias 목록 조회 실패 (참고 문서 표시 생략): {exc}"
+            )
+            return []
+
+        if not fetched:
+            return []
+
+        _, alias_map = fetched
+
+        active_entries = [
+            (stable_id, entry)
+            for stable_id, entry in alias_map.entries.items()
+            if (
+                entry.status == "active"
+                and not is_legacy_surrogate_stable_id(stable_id)
+            )
+        ]
+
+        active_entries.sort(
+            key=lambda item: (item[1].activated_at or "", item[0]),
+            reverse=True,
+        )
+
+        names: list[str] = []
+        for stable_id, entry in active_entries:
+            alias = (entry.alias or "").strip()
+            if not alias:
+                logger.warning(
+                    f"활성 평가기준 alias 누락: stable_id={stable_id} "
+                    "(보고서 참고 문서 목록에서 제외)"
+                )
+                continue
+            names.append(alias)
+        return names
+
     def _extract_citations(self, response) -> Optional[dict]:
         """
         Citation 정보 추출 (QnA 패턴 재사용)
