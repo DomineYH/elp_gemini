@@ -5,7 +5,7 @@ Criteria 데이터 액세스 레이어
 from typing import Optional, List
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 import logging
 
 from app.models.criteria import Criteria
@@ -487,13 +487,35 @@ class CriteriaRepository:
     ) -> int:
         """주어진 stable_id 집합에 없는 행을 모두 삭제. 호출자가 트랜잭션 관리."""
         if keep_stable_ids:
-            stmt = delete(Criteria).where(
-                (
-                    Criteria.stable_id.notin_(keep_stable_ids)
-                ) | Criteria.stable_id.is_(None)
+            deleted_count = 0
+
+            result = await self.db.execute(
+                delete(Criteria).where(Criteria.stable_id.is_(None))
             )
+            deleted_count += result.rowcount or 0
+
+            result = await self.db.execute(
+                delete(Criteria).where(
+                    Criteria.stable_id.notin_(keep_stable_ids)
+                )
+            )
+            deleted_count += result.rowcount or 0
+
+            survivor_ids = (
+                select(func.min(Criteria.id))
+                .where(Criteria.stable_id.in_(keep_stable_ids))
+                .group_by(Criteria.stable_id)
+            )
+            result = await self.db.execute(
+                delete(Criteria).where(
+                    Criteria.stable_id.in_(keep_stable_ids),
+                    Criteria.id.notin_(survivor_ids),
+                )
+            )
+            deleted_count += result.rowcount or 0
         else:
             stmt = delete(Criteria)
-        result = await self.db.execute(stmt)
+            result = await self.db.execute(stmt)
+            deleted_count = result.rowcount or 0
         await self.db.flush()
-        return result.rowcount or 0
+        return deleted_count
