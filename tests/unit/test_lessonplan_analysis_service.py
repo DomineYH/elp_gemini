@@ -687,6 +687,69 @@ class TestLessonPlanAnalysisService:
         # 빈 줄 보존
         assert "\n\n" in processed
 
+    def test_post_process_replaces_file_search_section(self, service):
+        """LLM 이 생성한 `### File Search 참고 문서` 본문이 서버 렌더로 교체된다."""
+        raw = (
+            "## 종합 평가\n\n"
+            "요약 본문\n\n"
+            "### File Search 참고 문서\n"
+            "- LLM 이 적은 임의의 문서 제목\n"
+            "- 또 다른 임의 항목\n"
+        )
+
+        processed = service._post_process_report(
+            raw,
+            criteria_aliases=["정보 교육과정 평가기준"],
+            lessonplan_original_filename="수업안.pdf",
+        )
+
+        # 서버 렌더 항목이 등장한다
+        assert "- 정보 교육과정 평가기준" in processed
+        assert "- 수업안.pdf" in processed
+        # LLM 이 적은 임의 항목은 사라진다
+        assert "LLM 이 적은 임의의 문서 제목" not in processed
+        assert "또 다른 임의 항목" not in processed
+        # 헤더는 보존된다
+        assert "### File Search 참고 문서" in processed
+        # 이전 섹션도 보존
+        assert "## 종합 평가" in processed
+        assert "요약 본문" in processed
+
+    def test_post_process_appends_file_search_section_when_missing(
+        self, service
+    ):
+        """보고서에 섹션이 없으면 끝에 부착한다."""
+        raw = (
+            "## 종합 평가\n\n"
+            "요약 본문\n"
+        )
+
+        processed = service._post_process_report(
+            raw,
+            criteria_aliases=["A 기준"],
+            lessonplan_original_filename="lesson.pdf",
+        )
+
+        assert "### File Search 참고 문서" in processed
+        assert "- A 기준" in processed
+        assert "- lesson.pdf" in processed
+        # 부착되어도 이전 본문은 보존
+        assert "## 종합 평가" in processed
+
+    def test_post_process_keeps_legacy_signature(self, service):
+        """기존 호출 형태(인자 미제공)는 그대로 작동하여 회귀가 없다."""
+        raw = (
+            "## 종합 평가\n\n"
+            "요약 본문\n\n"
+            "### File Search 참고 문서\n"
+            "- LLM 이 적은 임의 항목\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 인자가 없으면 섹션 치환 단계가 건너뛰어진다 → LLM 출력 유지
+        assert "LLM 이 적은 임의 항목" in processed
+
     @pytest.mark.asyncio
     async def test_collect_active_criteria_display_names_sorted(
         self, service

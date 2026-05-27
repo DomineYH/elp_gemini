@@ -607,16 +607,25 @@ class LessonPlanAnalysisService:
 반드시 Markdown 형식의 보고서로 작성해주세요.
 """
 
-    def _post_process_report(self, report: str) -> str:
+    def _post_process_report(
+        self,
+        report: str,
+        criteria_aliases: Optional[list[str]] = None,
+        lessonplan_original_filename: Optional[str] = None,
+    ) -> str:
         """
         보고서 후처리:
-        1. 'Vector Search 참고 자료' 섹션이 비구조화된 긴 텍스트일 경우
-           목록으로 정리
-        2. 본문 전체에서 이모지/픽토그램 제거
+        0. `**분석 모델**:` 줄 제거
+        1. 'Vector Search 참고 자료' 섹션이 비구조화된 긴 텍스트일 경우 목록으로 정리
+        2. 'File Search 참고 문서' 섹션을 서버 렌더로 교체 (인자 제공 시).
+           섹션이 없으면 보고서 끝에 부착.
+        3. 본문 전체에서 이모지/픽토그램 제거
            (LLM이 출력했더라도 일관된 텍스트 형식 유지)
 
         Args:
             report: 원본 Markdown 보고서
+            criteria_aliases: 활성 평가기준 표시 이름 목록 (정렬 완료)
+            lessonplan_original_filename: 분석 대상 수업지도안 원본 파일명
 
         Returns:
             후처리된 보고서
@@ -665,7 +674,46 @@ class LessonPlanAnalysisService:
                         + report[match.end():]
                     )
 
-            # 2) 본문 이모지 제거. 블록 인용 라인은 사용자 문서
+            # 2) "File Search 참고 문서" 섹션을 서버 렌더로 교체
+            #    (인자 제공 시). 섹션이 없으면 보고서 끝에 부착.
+            should_render_refs = (
+                criteria_aliases is not None
+                or lessonplan_original_filename is not None
+            )
+            if should_render_refs:
+                body = self._render_file_search_references_section(
+                    criteria_aliases=criteria_aliases or [],
+                    lessonplan_original_filename=(
+                        lessonplan_original_filename
+                    ),
+                )
+                refs_pattern = (
+                    r'(###\s*(?:[^\n]*?)?File Search 참고 문서\s*\n)'
+                    r'(.*?)(\n###|\Z)'
+                )
+                refs_match = re.search(
+                    refs_pattern, report, flags=re.DOTALL
+                )
+                if refs_match:
+                    header = refs_match.group(1)
+                    next_section = refs_match.group(3)
+                    new_section = f"{header}{body}\n{next_section}"
+                    report = (
+                        report[: refs_match.start()]
+                        + new_section
+                        + report[refs_match.end():]
+                    )
+                else:
+                    # 섹션이 누락된 경우 끝에 부착
+                    suffix = (
+                        "\n\n### File Search 참고 문서\n"
+                        f"{body}\n"
+                    )
+                    if not report.endswith("\n"):
+                        report += "\n"
+                    report += suffix
+
+            # 3) 본문 이모지 제거. 블록 인용 라인은 사용자 문서
             # 인용 충실성을 위해 보존한다.
             report = self._sanitize_report_lines(report)
 
