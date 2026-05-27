@@ -2,14 +2,12 @@
 LessonPlanAnalysisService 단위 테스트
 Phase 3에서 구현된 수업 지도안 분석 기능 검증
 """
-import pytest
 import asyncio
-from unittest.mock import Mock, patch, AsyncMock
-from google.api_core import exceptions
-from app.services.lessonplan_analysis_service import (
-    LessonPlanAnalysisService
-)
-from app.config import settings
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+
+from app.services.lessonplan_analysis_service import LessonPlanAnalysisService
 
 
 class TestLessonPlanAnalysisService:
@@ -104,9 +102,9 @@ class TestLessonPlanAnalysisService:
 
     def test_build_analysis_prompt_omits_model_name(self, service):
         """프롬프트에서 모델 이름이 더 이상 치환/포함되지 않는다."""
-        # Given: 템플릿에 {model_name} 플레이스홀더가 그대로 남아 있는 경우에도
-        #         치환되지 않고, 동시에 빌더가 self.model_name 을 본문에 끼워넣지도
-        #         않아야 한다.
+        # Given: 템플릿에 {model_name} 플레이스홀더가 그대로 남아 있는
+        #         경우에도 치환되지 않고, 동시에 빌더가 self.model_name 을
+        #         본문에 끼워넣지도 않아야 한다.
         system_prompt = (
             "수업 지도안 평가 시스템 프롬프트\n"
             "분석 모델: {model_name}"
@@ -271,7 +269,8 @@ class TestLessonPlanAnalysisService:
 
     def test_post_process_strips_emojis(self, service):
         """
-        Gemini가 이모지를 포함한 보고서를 반환해도 후처리 단계에서 모두 제거된다.
+        Gemini가 이모지를 포함한 보고서를 반환해도 후처리 단계에서
+        모두 제거된다.
         """
         raw = (
             "# 📑 수업 지도안 평가 보고서\n\n"
@@ -298,7 +297,8 @@ class TestLessonPlanAnalysisService:
         assert "강점" in processed
 
     def test_post_process_strips_stray_model_line(self, service):
-        """LLM 이 학습된 양식으로 `**분석 모델**:` 줄을 출력해도 후처리가 제거한다."""
+        """LLM 이 학습된 양식으로 `**분석 모델**:` 줄을 출력해도
+        후처리가 제거한다."""
         raw = (
             "# 수업 지도안 평가 보고서\n\n"
             "> **분석 개요**\n"
@@ -324,8 +324,10 @@ class TestLessonPlanAnalysisService:
         self, service
     ):
         """
-        '🔍 Vector Search 참고 자료' 헤더에서 이모지가 사라져도 후처리가 정상 동작한다.
-        (LLM이 이모지 없이 헤더를 출력해도 기존 가독성 개선 로직이 작동해야 한다)
+        '🔍 Vector Search 참고 자료' 헤더에서 이모지가 사라져도 후처리가
+        정상 동작한다.
+        (LLM이 이모지 없이 헤더를 출력해도 기존 가독성 개선 로직이
+        작동해야 한다)
         """
         raw = (
             "## 종합 평가\n\n"
@@ -394,8 +396,8 @@ class TestLessonPlanAnalysisService:
         self, service
     ):
         """
-        '> **수업지도안**:' 가 아닌 블록 인용 라인(분석 개요, 평가기준 라벨 등)은
-        살균된다. 실제 사용자 인용만 verbatim 보존.
+        '> **수업지도안**:' 가 아닌 블록 인용 라인(분석 개요, 평가기준
+        라벨 등)은 살균된다. 실제 사용자 인용만 verbatim 보존.
         """
         raw = (
             "> **분석 개요**\n"
@@ -545,8 +547,9 @@ class TestLessonPlanAnalysisService:
         self, service
     ):
         """
-        다중 라인 인용 본문 안에 굵은 텍스트(`> **준비물**`) 가 있어도 인용 모드를
-        종료하지 않고 verbatim 보존한다. 새 라벨은 콜론 형태(`> **라벨**:`) 로만 인식.
+        다중 라인 인용 본문 안에 굵은 텍스트(`> **준비물**`) 가 있어도
+        인용 모드를 종료하지 않고 verbatim 보존한다. 새 라벨은 콜론
+        형태(`> **라벨**:`) 로만 인식.
         """
         raw = (
             "**근거**\n"
@@ -569,8 +572,9 @@ class TestLessonPlanAnalysisService:
         self, service
     ):
         """
-        인용 모드는 콜론 형태의 새 라벨('> **<라벨>**:') 을 만났을 때만 종료된다.
-        콜론 없는 굵은 블록인용은 continuation 으로 간주.
+        인용 모드는 콜론 형태의 새 라벨('> **<라벨>**:') 을 만났을
+        때만 종료된다. 콜론 없는 굵은 블록인용은 continuation 으로
+        간주.
         """
         raw = (
             "> **수업지도안**: \"본문 1\n"
@@ -602,7 +606,8 @@ class TestLessonPlanAnalysisService:
 
         processed = service._post_process_report(raw)
 
-        # 멀티라인 굵은 영역의 잔여 공백 정리: '** 분석\n내용**' → '**분석\n내용**'
+        # 멀티라인 굵은 영역의 잔여 공백 정리:
+        # '** 분석\n내용**' → '**분석\n내용**'
         # (이모지 제거 후 strip 이 양 끝에 적용됨)
         assert "**분석\n내용**" in processed
         # 잘못된 단독 opener('** 분석') 부재
@@ -688,7 +693,8 @@ class TestLessonPlanAnalysisService:
         assert "\n\n" in processed
 
     def test_post_process_replaces_file_search_section(self, service):
-        """LLM 이 생성한 `### File Search 참고 문서` 본문이 서버 렌더로 교체된다."""
+        """LLM 이 생성한 `### File Search 참고 문서` 본문이 서버
+        렌더로 교체된다."""
         raw = (
             "## 종합 평가\n\n"
             "요약 본문\n\n"
@@ -754,7 +760,8 @@ class TestLessonPlanAnalysisService:
     async def test_collect_active_criteria_display_names_sorted(
         self, service
     ):
-        """active 항목들의 alias 가 activated_at desc, stable_id desc 로 정렬되어 반환된다."""
+        """active 항목들의 alias 가 activated_at desc, stable_id desc
+        로 정렬되어 반환된다."""
         from app.schemas.alias_map import AliasMap, AliasMapEntry
 
         alias_map = AliasMap(
@@ -792,7 +799,8 @@ class TestLessonPlanAnalysisService:
     async def test_collect_active_criteria_display_names_skips_missing_alias(
         self, service, caplog
     ):
-        """alias 가 None/빈 문자열인 active 항목은 결과에서 제외되고 경고 로그가 남는다."""
+        """alias 가 None/빈 문자열인 active 항목은 결과에서 제외되고
+        경고 로그가 남는다."""
         from app.schemas.alias_map import AliasMap, AliasMapEntry
 
         alias_map = AliasMap(
@@ -836,7 +844,8 @@ class TestLessonPlanAnalysisService:
     async def test_collect_active_criteria_display_names_fetch_failure(
         self, service
     ):
-        """fetch 가 예외를 던지면 빈 리스트를 반환하고 예외를 전파하지 않는다."""
+        """fetch 가 예외를 던지면 빈 리스트를 반환하고 예외를
+        전파하지 않는다."""
         with patch(
             "app.services.criteria_alias_map_service"
             ".CriteriaAliasMapService.fetch",
@@ -847,7 +856,8 @@ class TestLessonPlanAnalysisService:
         assert names == []
 
     def test_render_file_search_references_full(self, service):
-        """평가기준 alias + 수업지도안 파일명이 모두 있으면 항목 3개를 반환한다."""
+        """평가기준 alias + 수업지도안 파일명이 모두 있으면 항목 3개를
+        반환한다."""
         rendered = service._render_file_search_references_section(
             criteria_aliases=["A 기준", "B 기준"],
             lessonplan_original_filename="우리반 수업계획.pdf",
@@ -927,7 +937,8 @@ class TestLessonPlanAnalysisService:
     async def test_analyze_lesson_plan_writes_server_rendered_refs(
         self, service
     ):
-        """분석 결과 보고서에 서버 렌더 참고 문서 섹션이 포함되고 모델명은 노출되지 않는다."""
+        """분석 결과 보고서에 서버 렌더 참고 문서 섹션이 포함되고
+        모델명은 노출되지 않는다."""
         from app.schemas.alias_map import AliasMap, AliasMapEntry
 
         service._get_store_ids = AsyncMock(

@@ -19,16 +19,16 @@ from app.models.analysis_reports import AnalysisReport
 from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
 from app.repositories.app_state_repository import (
-    AppStateRepository,
     KEY_SYNC_ERROR,
     KEY_SYNC_STATE,
     SYNC_STATE_NEEDS_RESYNC,
+    AppStateRepository,
 )
+from app.services.criteria_vector_service import CriteriaVectorService
 from app.services.file_search_service import (
     FileSearchService,
     _sanitize_display_name,
 )
-from app.services.criteria_vector_service import CriteriaVectorService
 from app.services.lessonplan_storage_service import LessonPlanStorageService
 from app.services.prompt_loader_service import PromptLoaderService
 from app.services.report_storage_service import ReportStorageService
@@ -629,7 +629,8 @@ class LessonPlanAnalysisService:
         """
         보고서 후처리:
         0. `**분석 모델**:` 줄 제거
-        1. 'Vector Search 참고 자료' 섹션이 비구조화된 긴 텍스트일 경우 목록으로 정리
+        1. 'Vector Search 참고 자료' 섹션이 비구조화된 긴 텍스트일 경우
+           목록으로 정리
         2. 'File Search 참고 문서' 섹션을 서버 렌더로 교체 (인자 제공 시).
            섹션이 없으면 보고서 끝에 부착.
         3. 본문 전체에서 이모지/픽토그램 제거
@@ -809,7 +810,8 @@ class LessonPlanAnalysisService:
         ._get_active_stable_ids 와 동일한 정책).
 
         alias 가 None/빈 항목은 결과에서 제외하고 경고 로그를 남긴다.
-        alias_map fetch 자체가 실패하면 빈 리스트를 반환하고 예외를 전파하지 않는다.
+        alias_map fetch 자체가 실패하면 빈 리스트를 반환하고 예외를
+        전파하지 않는다.
         """
         from app.services.criteria_alias_map_service import (
             CriteriaAliasMapService,
@@ -826,7 +828,8 @@ class LessonPlanAnalysisService:
             fetched = await alias_svc.fetch()
         except Exception as exc:
             logger.warning(
-                f"활성 평가기준 alias 목록 조회 실패 (참고 문서 표시 생략): {exc}"
+                "활성 평가기준 alias 목록 조회 실패 "
+                f"(참고 문서 표시 생략): {exc}"
             )
             return []
 
@@ -869,7 +872,8 @@ class LessonPlanAnalysisService:
         """분석 대상 수업지도안의 원본 파일명을 결정한다.
 
         - latest_upload 가 있으면 그 original_filename
-        - 없으면 legacy_lessonplans 중 created_at 최댓값 항목의 original_filename
+        - 없으면 legacy_lessonplans 중 created_at 최댓값 항목의
+          original_filename
         - 둘 다 없으면 None
         """
         if latest_upload is not None:
