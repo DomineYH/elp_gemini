@@ -19,16 +19,16 @@ from app.models.analysis_reports import AnalysisReport
 from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
 from app.repositories.app_state_repository import (
-    AppStateRepository,
     KEY_SYNC_ERROR,
     KEY_SYNC_STATE,
     SYNC_STATE_NEEDS_RESYNC,
+    AppStateRepository,
 )
+from app.services.criteria_vector_service import CriteriaVectorService
 from app.services.file_search_service import (
     FileSearchService,
     _sanitize_display_name,
 )
-from app.services.criteria_vector_service import CriteriaVectorService
 from app.services.lessonplan_storage_service import LessonPlanStorageService
 from app.services.prompt_loader_service import PromptLoaderService
 from app.services.report_storage_service import ReportStorageService
@@ -261,7 +261,20 @@ class LessonPlanAnalysisService:
 
                 # 4. Markdown 보고서 추출 및 후처리
                 raw_report = response.text if response.text else ""
-                report = self._post_process_report(raw_report)  # 후처리 적용
+                criteria_aliases = (
+                    await self._collect_active_criteria_display_names()
+                )
+                lessonplan_original_filename = (
+                    self._resolve_lessonplan_original_filename(
+                        latest_upload=latest_upload,
+                        legacy_lessonplans=legacy_lessonplans,
+                    )
+                )
+                report = self._post_process_report(
+                    raw_report,
+                    criteria_aliases=criteria_aliases,
+                    lessonplan_original_filename=lessonplan_original_filename,
+                )
 
                 # 5. Citation 추출
                 citations = self._extract_citations(response)
@@ -571,10 +584,6 @@ class LessonPlanAnalysisService:
         Returns:
             완전한 프롬프트
         """
-        # 모델 이름 플레이스홀더 치환
-        system_prompt = system_prompt.replace(
-            "{model_name}", self.model_name
-        )
         prompt_intro = (
             f"**{rubric_store_id}의 평가기준 자료를 바탕으로 "
             f"{lesson_store_id}에 저장된 사용자의 수업 지도안을 평가하세요.**"
@@ -611,16 +620,26 @@ class LessonPlanAnalysisService:
 반드시 Markdown 형식의 보고서로 작성해주세요.
 """
 
-    def _post_process_report(self, report: str) -> str:
+    def _post_process_report(
+        self,
+        report: str,
+        criteria_aliases: Optional[list[str]] = None,
+        lessonplan_original_filename: Optional[str] = None,
+    ) -> str:
         """
         보고서 후처리:
+        0. `**분석 모델**:` 줄 제거
         1. 'Vector Search 참고 자료' 섹션이 비구조화된 긴 텍스트일 경우
            목록으로 정리
-        2. 본문 전체에서 이모지/픽토그램 제거
+        2. 'File Search 참고 문서' 섹션을 서버 렌더로 교체 (인자 제공 시).
+           섹션이 없으면 보고서 끝에 부착.
+        3. 본문 전체에서 이모지/픽토그램 제거
            (LLM이 출력했더라도 일관된 텍스트 형식 유지)
 
         Args:
             report: 원본 Markdown 보고서
+            criteria_aliases: 활성 평가기준 표시 이름 목록 (정렬 완료)
+            lessonplan_original_filename: 분석 대상 수업지도안 원본 파일명
 
         Returns:
             후처리된 보고서
@@ -628,6 +647,17 @@ class LessonPlanAnalysisService:
         import re
 
         try:
+            # 0) LLM 이 학습된 양식으로 출력했을 수 있는 모델명 라인 제거.
+            #    형태: `> - **분석 모델**: <임의 텍스트>` 또는
+            #          `> **분석 모델**: <임의 텍스트>` (전후 공백 허용,
+            #          dash prefix 옵션)
+            report = re.sub(
+                r'^\s*>\s*(?:-\s*)?\*\*분석\s*모델\*\*\s*:.*$\n?',
+                '',
+                report,
+                flags=re.MULTILINE,
+            )
+
             # 1) "Vector Search 참고 자료" 섹션 가독성 개선
             # 이모지 유무와 무관하게 매칭되도록 패턴에서 🔍 의존을 제거한다.
             pattern = (
@@ -660,7 +690,46 @@ class LessonPlanAnalysisService:
                         + report[match.end():]
                     )
 
-            # 2) 본문 이모지 제거. 블록 인용 라인은 사용자 문서
+            # 2) "File Search 참고 문서" 섹션을 서버 렌더로 교체
+            #    (인자 제공 시). 섹션이 없으면 보고서 끝에 부착.
+            should_render_refs = (
+                criteria_aliases is not None
+                or lessonplan_original_filename is not None
+            )
+            if should_render_refs:
+                body = self._render_file_search_references_section(
+                    criteria_aliases=criteria_aliases or [],
+                    lessonplan_original_filename=(
+                        lessonplan_original_filename
+                    ),
+                )
+                refs_pattern = (
+                    r'(###\s*(?:[^\n]*?)?File Search 참고 문서\s*\n)'
+                    r'(.*?)(\n###|\Z)'
+                )
+                refs_match = re.search(
+                    refs_pattern, report, flags=re.DOTALL
+                )
+                if refs_match:
+                    header = refs_match.group(1)
+                    next_section = refs_match.group(3)
+                    new_section = f"{header}{body}\n{next_section}"
+                    report = (
+                        report[: refs_match.start()]
+                        + new_section
+                        + report[refs_match.end():]
+                    )
+                else:
+                    # 섹션이 누락된 경우 끝에 부착
+                    suffix = (
+                        "\n\n### File Search 참고 문서\n"
+                        f"{body}\n"
+                    )
+                    if not report.endswith("\n"):
+                        report += "\n"
+                    report += suffix
+
+            # 3) 본문 이모지 제거. 블록 인용 라인은 사용자 문서
             # 인용 충실성을 위해 보존한다.
             report = self._sanitize_report_lines(report)
 
@@ -733,6 +802,106 @@ class LessonPlanAnalysisService:
 
         flush_buffer()
         return "\n".join(sanitized)
+
+    async def _collect_active_criteria_display_names(self) -> list[str]:
+        """활성 평가기준의 표시 이름(alias)을 정렬해 반환한다.
+
+        정렬: activated_at 내림차순, stable_id 내림차순 (CriteriaVectorService
+        ._get_active_stable_ids 와 동일한 정책).
+
+        alias 가 None/빈 항목은 결과에서 제외하고 경고 로그를 남긴다.
+        alias_map fetch 자체가 실패하면 빈 리스트를 반환하고 예외를
+        전파하지 않는다.
+        """
+        from app.services.criteria_alias_map_service import (
+            CriteriaAliasMapService,
+        )
+        from app.services.criteria_reconciliation_service import (
+            is_legacy_surrogate_stable_id,
+        )
+
+        try:
+            alias_svc = CriteriaAliasMapService(
+                client=self.client,
+                store_display_name=settings.FS_RUBRIC_STORE_NAME,
+            )
+            fetched = await alias_svc.fetch()
+        except Exception as exc:
+            logger.warning(
+                "활성 평가기준 alias 목록 조회 실패 "
+                f"(참고 문서 표시 생략): {exc}"
+            )
+            return []
+
+        if not fetched:
+            return []
+
+        _, alias_map = fetched
+
+        active_entries = [
+            (stable_id, entry)
+            for stable_id, entry in alias_map.entries.items()
+            if (
+                entry.status == "active"
+                and not is_legacy_surrogate_stable_id(stable_id)
+            )
+        ]
+
+        active_entries.sort(
+            key=lambda item: (item[1].activated_at or "", item[0]),
+            reverse=True,
+        )
+
+        names: list[str] = []
+        for stable_id, entry in active_entries:
+            alias = (entry.alias or "").strip()
+            if not alias:
+                logger.warning(
+                    f"활성 평가기준 alias 누락: stable_id={stable_id} "
+                    "(보고서 참고 문서 목록에서 제외)"
+                )
+                continue
+            names.append(alias)
+        return names
+
+    @staticmethod
+    def _resolve_lessonplan_original_filename(
+        latest_upload,
+        legacy_lessonplans: list,
+    ) -> Optional[str]:
+        """분석 대상 수업지도안의 원본 파일명을 결정한다.
+
+        - latest_upload 가 있으면 그 original_filename
+        - 없으면 legacy_lessonplans 중 created_at 최댓값 항목의
+          original_filename
+        - 둘 다 없으면 None
+        """
+        if latest_upload is not None:
+            return getattr(latest_upload, "original_filename", None)
+        if legacy_lessonplans:
+            latest = max(
+                legacy_lessonplans, key=lambda x: x["created_at"]
+            )
+            return latest.get("original_filename")
+        return None
+
+    @staticmethod
+    def _render_file_search_references_section(
+        criteria_aliases: list[str],
+        lessonplan_original_filename: Optional[str],
+    ) -> str:
+        """### File Search 참고 문서 섹션의 본문(헤더 제외) 마크다운을 생성한다.
+
+        - 활성 평가기준 표시 이름들 (이미 정렬됨)
+        - 수업 지도안 원본 파일명 (있을 경우)
+        둘 다 비면 placeholder 반환.
+        """
+        items: list[str] = list(criteria_aliases)
+        if lessonplan_original_filename:
+            items.append(lessonplan_original_filename)
+        if not items:
+            return "(표시할 항목이 없습니다)"
+        return "\n".join(f"- {item}" for item in items)
 
     def _extract_citations(self, response) -> Optional[dict]:
         """

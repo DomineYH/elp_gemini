@@ -2,14 +2,12 @@
 LessonPlanAnalysisService 단위 테스트
 Phase 3에서 구현된 수업 지도안 분석 기능 검증
 """
-import pytest
 import asyncio
-from unittest.mock import Mock, patch, AsyncMock
-from google.api_core import exceptions
-from app.services.lessonplan_analysis_service import (
-    LessonPlanAnalysisService
-)
-from app.config import settings
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+
+from app.services.lessonplan_analysis_service import LessonPlanAnalysisService
 
 
 class TestLessonPlanAnalysisService:
@@ -101,6 +99,30 @@ class TestLessonPlanAnalysisService:
         assert "교수·학습 방법" in result
         assert "평가 방향" in result
         assert "개선 및 보완" in result
+
+    def test_build_analysis_prompt_omits_model_name(self, service):
+        """프롬프트에서 모델 이름이 더 이상 치환/포함되지 않는다."""
+        # Given: 템플릿에 {model_name} 플레이스홀더가 그대로 남아 있는
+        #         경우에도 치환되지 않고, 동시에 빌더가 self.model_name 을
+        #         본문에 끼워넣지도 않아야 한다.
+        system_prompt = (
+            "수업 지도안 평가 시스템 프롬프트\n"
+            "분석 모델: {model_name}"
+        )
+
+        # When
+        result = service._build_analysis_prompt(
+            system_prompt,
+            rubric_store_id="rubric-store",
+            lesson_store_id="lesson-store",
+        )
+
+        # Then: 실제 모델 식별자(self.model_name)는 본문에 등장하지 않는다
+        assert service.model_name not in result
+        # 그리고 {model_name} 플레이스홀더도 치환되지 않은 채 그대로다
+        #  (이 줄은 prompt.md 에서 삭제되었지만, 빌더 단위로는 input string 의
+        #   해당 토큰을 더 이상 치환하지 않음을 보장하기 위한 검사)
+        assert "{model_name}" in result
 
     def test_extract_citations_success(
         self,
@@ -247,7 +269,8 @@ class TestLessonPlanAnalysisService:
 
     def test_post_process_strips_emojis(self, service):
         """
-        Gemini가 이모지를 포함한 보고서를 반환해도 후처리 단계에서 모두 제거된다.
+        Gemini가 이모지를 포함한 보고서를 반환해도 후처리 단계에서
+        모두 제거된다.
         """
         raw = (
             "# 📑 수업 지도안 평가 보고서\n\n"
@@ -273,12 +296,38 @@ class TestLessonPlanAnalysisService:
         assert "평가 등급: 상" in processed
         assert "강점" in processed
 
+    def test_post_process_strips_stray_model_line(self, service):
+        """LLM 이 학습된 양식으로 `**분석 모델**:` 줄을 출력해도
+        후처리가 제거한다."""
+        raw = (
+            "# 수업 지도안 평가 보고서\n\n"
+            "> **분석 개요**\n"
+            "> - **분석 일시**: 2026-05-27 12:34\n"
+            "> - **분석 모델**: gemini-2.5-flash\n"
+            "\n"
+            "## 1. 교육과정 목표 및 성격과의 부합\n"
+            "본문\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 모델명 줄이 제거된다
+        assert "**분석 모델**" not in processed
+        assert "gemini-2.5-flash" not in processed
+        # 인접한 다른 헤더 라인은 보존
+        assert "**분석 개요**" in processed
+        assert "**분석 일시**" in processed
+        assert "2026-05-27 12:34" in processed
+        assert "## 1. 교육과정 목표 및 성격과의 부합" in processed
+
     def test_post_process_handles_vector_search_section_without_emoji(
         self, service
     ):
         """
-        '🔍 Vector Search 참고 자료' 헤더에서 이모지가 사라져도 후처리가 정상 동작한다.
-        (LLM이 이모지 없이 헤더를 출력해도 기존 가독성 개선 로직이 작동해야 한다)
+        '🔍 Vector Search 참고 자료' 헤더에서 이모지가 사라져도 후처리가
+        정상 동작한다.
+        (LLM이 이모지 없이 헤더를 출력해도 기존 가독성 개선 로직이
+        작동해야 한다)
         """
         raw = (
             "## 종합 평가\n\n"
@@ -347,8 +396,8 @@ class TestLessonPlanAnalysisService:
         self, service
     ):
         """
-        '> **수업지도안**:' 가 아닌 블록 인용 라인(분석 개요, 평가기준 라벨 등)은
-        살균된다. 실제 사용자 인용만 verbatim 보존.
+        '> **수업지도안**:' 가 아닌 블록 인용 라인(분석 개요, 평가기준
+        라벨 등)은 살균된다. 실제 사용자 인용만 verbatim 보존.
         """
         raw = (
             "> **분석 개요**\n"
@@ -498,8 +547,9 @@ class TestLessonPlanAnalysisService:
         self, service
     ):
         """
-        다중 라인 인용 본문 안에 굵은 텍스트(`> **준비물**`) 가 있어도 인용 모드를
-        종료하지 않고 verbatim 보존한다. 새 라벨은 콜론 형태(`> **라벨**:`) 로만 인식.
+        다중 라인 인용 본문 안에 굵은 텍스트(`> **준비물**`) 가 있어도
+        인용 모드를 종료하지 않고 verbatim 보존한다. 새 라벨은 콜론
+        형태(`> **라벨**:`) 로만 인식.
         """
         raw = (
             "**근거**\n"
@@ -522,8 +572,9 @@ class TestLessonPlanAnalysisService:
         self, service
     ):
         """
-        인용 모드는 콜론 형태의 새 라벨('> **<라벨>**:') 을 만났을 때만 종료된다.
-        콜론 없는 굵은 블록인용은 continuation 으로 간주.
+        인용 모드는 콜론 형태의 새 라벨('> **<라벨>**:') 을 만났을
+        때만 종료된다. 콜론 없는 굵은 블록인용은 continuation 으로
+        간주.
         """
         raw = (
             "> **수업지도안**: \"본문 1\n"
@@ -555,7 +606,8 @@ class TestLessonPlanAnalysisService:
 
         processed = service._post_process_report(raw)
 
-        # 멀티라인 굵은 영역의 잔여 공백 정리: '** 분석\n내용**' → '**분석\n내용**'
+        # 멀티라인 굵은 영역의 잔여 공백 정리:
+        # '** 분석\n내용**' → '**분석\n내용**'
         # (이모지 제거 후 strip 이 양 끝에 적용됨)
         assert "**분석\n내용**" in processed
         # 잘못된 단독 opener('** 분석') 부재
@@ -639,3 +691,328 @@ class TestLessonPlanAnalysisService:
         assert "**두 번째 섹션**" in processed
         # 빈 줄 보존
         assert "\n\n" in processed
+
+    def test_post_process_replaces_file_search_section(self, service):
+        """LLM 이 생성한 `### File Search 참고 문서` 본문이 서버
+        렌더로 교체된다."""
+        raw = (
+            "## 종합 평가\n\n"
+            "요약 본문\n\n"
+            "### File Search 참고 문서\n"
+            "- LLM 이 적은 임의의 문서 제목\n"
+            "- 또 다른 임의 항목\n"
+        )
+
+        processed = service._post_process_report(
+            raw,
+            criteria_aliases=["정보 교육과정 평가기준"],
+            lessonplan_original_filename="수업안.pdf",
+        )
+
+        # 서버 렌더 항목이 등장한다
+        assert "- 정보 교육과정 평가기준" in processed
+        assert "- 수업안.pdf" in processed
+        # LLM 이 적은 임의 항목은 사라진다
+        assert "LLM 이 적은 임의의 문서 제목" not in processed
+        assert "또 다른 임의 항목" not in processed
+        # 헤더는 보존된다
+        assert "### File Search 참고 문서" in processed
+        # 이전 섹션도 보존
+        assert "## 종합 평가" in processed
+        assert "요약 본문" in processed
+
+    def test_post_process_appends_file_search_section_when_missing(
+        self, service
+    ):
+        """보고서에 섹션이 없으면 끝에 부착한다."""
+        raw = (
+            "## 종합 평가\n\n"
+            "요약 본문\n"
+        )
+
+        processed = service._post_process_report(
+            raw,
+            criteria_aliases=["A 기준"],
+            lessonplan_original_filename="lesson.pdf",
+        )
+
+        assert "### File Search 참고 문서" in processed
+        assert "- A 기준" in processed
+        assert "- lesson.pdf" in processed
+        # 부착되어도 이전 본문은 보존
+        assert "## 종합 평가" in processed
+
+    def test_post_process_keeps_legacy_signature(self, service):
+        """기존 호출 형태(인자 미제공)는 그대로 작동하여 회귀가 없다."""
+        raw = (
+            "## 종합 평가\n\n"
+            "요약 본문\n\n"
+            "### File Search 참고 문서\n"
+            "- LLM 이 적은 임의 항목\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 인자가 없으면 섹션 치환 단계가 건너뛰어진다 → LLM 출력 유지
+        assert "LLM 이 적은 임의 항목" in processed
+
+    @pytest.mark.asyncio
+    async def test_collect_active_criteria_display_names_sorted(
+        self, service
+    ):
+        """active 항목들의 alias 가 activated_at desc, stable_id desc
+        로 정렬되어 반환된다."""
+        from app.schemas.alias_map import AliasMap, AliasMapEntry
+
+        alias_map = AliasMap(
+            schema_version=1,
+            updated_at="2026-05-27T00:00:00Z",
+            entries={
+                "01OLDER": AliasMapEntry(
+                    alias="구버전 기준",
+                    status="active",
+                    activated_at="2026-05-20T00:00:00Z",
+                ),
+                "01NEWER": AliasMapEntry(
+                    alias="최신 기준",
+                    status="active",
+                    activated_at="2026-05-25T00:00:00Z",
+                ),
+                "01INACTIVE": AliasMapEntry(
+                    alias="비활성",
+                    status="uploaded",
+                    activated_at=None,
+                ),
+            },
+        )
+
+        with patch(
+            "app.services.criteria_alias_map_service"
+            ".CriteriaAliasMapService.fetch",
+            new=AsyncMock(return_value=("doc/name", alias_map)),
+        ):
+            names = await service._collect_active_criteria_display_names()
+
+        assert names == ["최신 기준", "구버전 기준"]
+
+    @pytest.mark.asyncio
+    async def test_collect_active_criteria_display_names_skips_missing_alias(
+        self, service, caplog
+    ):
+        """alias 가 None/빈 문자열인 active 항목은 결과에서 제외되고
+        경고 로그가 남는다."""
+        from app.schemas.alias_map import AliasMap, AliasMapEntry
+
+        alias_map = AliasMap(
+            schema_version=1,
+            updated_at="2026-05-27T00:00:00Z",
+            entries={
+                "01ALIASNONE": AliasMapEntry(
+                    alias=None,
+                    status="active",
+                    activated_at="2026-05-25T00:00:00Z",
+                ),
+                "01EMPTY": AliasMapEntry(
+                    alias="",
+                    status="active",
+                    activated_at="2026-05-24T00:00:00Z",
+                ),
+                "01OK": AliasMapEntry(
+                    alias="정상 alias",
+                    status="active",
+                    activated_at="2026-05-23T00:00:00Z",
+                ),
+            },
+        )
+
+        with patch(
+            "app.services.criteria_alias_map_service"
+            ".CriteriaAliasMapService.fetch",
+            new=AsyncMock(return_value=("doc/name", alias_map)),
+        ):
+            with caplog.at_level("WARNING"):
+                names = await service._collect_active_criteria_display_names()
+
+        assert names == ["정상 alias"]
+        assert any(
+            "alias 누락" in record.message
+            or "alias missing" in record.message.lower()
+            for record in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_collect_active_criteria_display_names_fetch_failure(
+        self, service
+    ):
+        """fetch 가 예외를 던지면 빈 리스트를 반환하고 예외를
+        전파하지 않는다."""
+        with patch(
+            "app.services.criteria_alias_map_service"
+            ".CriteriaAliasMapService.fetch",
+            new=AsyncMock(side_effect=RuntimeError("network down")),
+        ):
+            names = await service._collect_active_criteria_display_names()
+
+        assert names == []
+
+    def test_render_file_search_references_full(self, service):
+        """평가기준 alias + 수업지도안 파일명이 모두 있으면 항목 3개를
+        반환한다."""
+        rendered = service._render_file_search_references_section(
+            criteria_aliases=["A 기준", "B 기준"],
+            lessonplan_original_filename="우리반 수업계획.pdf",
+        )
+        assert rendered == (
+            "- A 기준\n"
+            "- B 기준\n"
+            "- 우리반 수업계획.pdf"
+        )
+
+    def test_render_file_search_references_only_criteria(self, service):
+        """수업지도안 파일명이 없으면 평가기준만 표시한다."""
+        rendered = service._render_file_search_references_section(
+            criteria_aliases=["A 기준"],
+            lessonplan_original_filename=None,
+        )
+        assert rendered == "- A 기준"
+
+    def test_render_file_search_references_only_lessonplan(self, service):
+        """평가기준 alias 가 비어도 수업지도안 파일명만 표시한다."""
+        rendered = service._render_file_search_references_section(
+            criteria_aliases=[],
+            lessonplan_original_filename="lesson.pdf",
+        )
+        assert rendered == "- lesson.pdf"
+
+    def test_render_file_search_references_empty(self, service):
+        """둘 다 비면 placeholder 를 반환한다."""
+        rendered = service._render_file_search_references_section(
+            criteria_aliases=[],
+            lessonplan_original_filename=None,
+        )
+        assert rendered == "(표시할 항목이 없습니다)"
+
+    def test_resolve_lessonplan_original_filename_from_upload(self, service):
+        """latest_upload 가 있으면 그것의 original_filename 을 반환한다."""
+        upload = Mock()
+        upload.original_filename = "수업안.pdf"
+        result = service._resolve_lessonplan_original_filename(
+            latest_upload=upload,
+            legacy_lessonplans=[],
+        )
+        assert result == "수업안.pdf"
+
+    def test_resolve_lessonplan_original_filename_from_legacy(self, service):
+        """latest_upload 가 None 이면 legacy 목록 중 최신 항목 사용."""
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        legacy = [
+            {
+                "original_filename": "old.pdf",
+                "filename": "x_old.pdf",
+                "created_at": now - timedelta(days=1),
+            },
+            {
+                "original_filename": "new.pdf",
+                "filename": "x_new.pdf",
+                "created_at": now,
+            },
+        ]
+        result = service._resolve_lessonplan_original_filename(
+            latest_upload=None,
+            legacy_lessonplans=legacy,
+        )
+        assert result == "new.pdf"
+
+    def test_resolve_lessonplan_original_filename_none(self, service):
+        """둘 다 없으면 None 반환."""
+        result = service._resolve_lessonplan_original_filename(
+            latest_upload=None,
+            legacy_lessonplans=[],
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_analyze_lesson_plan_writes_server_rendered_refs(
+        self, service
+    ):
+        """분석 결과 보고서에 서버 렌더 참고 문서 섹션이 포함되고
+        모델명은 노출되지 않는다."""
+        from app.schemas.alias_map import AliasMap, AliasMapEntry
+
+        service._get_store_ids = AsyncMock(
+            return_value=["user-store", "rubric-store"]
+        )
+        service.prompt_loader.get_prompt = Mock(
+            return_value="lesson_analysis prompt"
+        )
+
+        # active criteria filter & alias_map fetch
+        with patch(
+            "app.services.criteria_vector_service"
+            ".CriteriaVectorService.active_stable_id_filter",
+            new=AsyncMock(return_value='stable_id="X"'),
+        ), patch(
+            "app.services.criteria_alias_map_service"
+            ".CriteriaAliasMapService.fetch",
+            new=AsyncMock(
+                return_value=(
+                    "doc/name",
+                    AliasMap(
+                        schema_version=1,
+                        updated_at="2026-05-27T00:00:00Z",
+                        entries={
+                            "01OK": AliasMapEntry(
+                                alias="정보 교육과정 평가기준",
+                                status="active",
+                                activated_at="2026-05-25T00:00:00Z",
+                            ),
+                        },
+                    ),
+                )
+            ),
+        ):
+            # Gemini 응답에 모델명 라인과 임의 참고문서 섹션 포함
+            mock_response = Mock()
+            mock_response.text = (
+                "# 보고서\n\n"
+                "> **분석 모델**: secret-internal-model\n\n"
+                "## 종합 평가\n본문\n\n"
+                "### File Search 참고 문서\n- 임의 항목\n"
+            )
+            mock_response.candidates = []
+            service.client.models.generate_content = Mock(
+                return_value=mock_response
+            )
+
+            # legacy 경로 사용 — DB 의존 분기 회피
+            service._find_existing_report_for_latest_upload = AsyncMock(
+                return_value=(None, None)
+            )
+            service._user_file_search_store_has_documents = Mock(
+                return_value=True
+            )
+            service.lessonplan_storage.list_lessonplans = Mock(
+                return_value=[]
+            )
+            # 보고서 저장 모킹 — 파일 시스템 회피
+            service.report_storage.save_report = Mock(
+                return_value={
+                    "filename": "report.md",
+                    "file_path": "/tmp/report.md",
+                }
+            )
+
+            result = await service.analyze_lesson_plan(
+                session_id=1,
+                user_id=123,
+                username="alice",
+            )
+
+        assert result["success"] is True
+        report = result["report"]
+        assert "정보 교육과정 평가기준" in report
+        assert "secret-internal-model" not in report
+        assert "**분석 모델**" not in report
+        assert "임의 항목" not in report
