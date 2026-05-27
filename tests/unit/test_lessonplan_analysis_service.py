@@ -881,3 +881,127 @@ class TestLessonPlanAnalysisService:
             lessonplan_original_filename=None,
         )
         assert rendered == "(표시할 항목이 없습니다)"
+
+    def test_resolve_lessonplan_original_filename_from_upload(self, service):
+        """latest_upload 가 있으면 그것의 original_filename 을 반환한다."""
+        upload = Mock()
+        upload.original_filename = "수업안.pdf"
+        result = service._resolve_lessonplan_original_filename(
+            latest_upload=upload,
+            legacy_lessonplans=[],
+        )
+        assert result == "수업안.pdf"
+
+    def test_resolve_lessonplan_original_filename_from_legacy(self, service):
+        """latest_upload 가 None 이면 legacy 목록 중 최신 항목 사용."""
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        legacy = [
+            {
+                "original_filename": "old.pdf",
+                "filename": "x_old.pdf",
+                "created_at": now - timedelta(days=1),
+            },
+            {
+                "original_filename": "new.pdf",
+                "filename": "x_new.pdf",
+                "created_at": now,
+            },
+        ]
+        result = service._resolve_lessonplan_original_filename(
+            latest_upload=None,
+            legacy_lessonplans=legacy,
+        )
+        assert result == "new.pdf"
+
+    def test_resolve_lessonplan_original_filename_none(self, service):
+        """둘 다 없으면 None 반환."""
+        result = service._resolve_lessonplan_original_filename(
+            latest_upload=None,
+            legacy_lessonplans=[],
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_analyze_lesson_plan_writes_server_rendered_refs(
+        self, service
+    ):
+        """분석 결과 보고서에 서버 렌더 참고 문서 섹션이 포함되고 모델명은 노출되지 않는다."""
+        from app.schemas.alias_map import AliasMap, AliasMapEntry
+
+        service._get_store_ids = AsyncMock(
+            return_value=["user-store", "rubric-store"]
+        )
+        service.prompt_loader.get_prompt = Mock(
+            return_value="lesson_analysis prompt"
+        )
+
+        # active criteria filter & alias_map fetch
+        with patch(
+            "app.services.criteria_vector_service"
+            ".CriteriaVectorService.active_stable_id_filter",
+            new=AsyncMock(return_value='stable_id="X"'),
+        ), patch(
+            "app.services.criteria_alias_map_service"
+            ".CriteriaAliasMapService.fetch",
+            new=AsyncMock(
+                return_value=(
+                    "doc/name",
+                    AliasMap(
+                        schema_version=1,
+                        updated_at="2026-05-27T00:00:00Z",
+                        entries={
+                            "01OK": AliasMapEntry(
+                                alias="정보 교육과정 평가기준",
+                                status="active",
+                                activated_at="2026-05-25T00:00:00Z",
+                            ),
+                        },
+                    ),
+                )
+            ),
+        ):
+            # Gemini 응답에 모델명 라인과 임의 참고문서 섹션 포함
+            mock_response = Mock()
+            mock_response.text = (
+                "# 보고서\n\n"
+                "> **분석 모델**: secret-internal-model\n\n"
+                "## 종합 평가\n본문\n\n"
+                "### File Search 참고 문서\n- 임의 항목\n"
+            )
+            mock_response.candidates = []
+            service.client.models.generate_content = Mock(
+                return_value=mock_response
+            )
+
+            # legacy 경로 사용 — DB 의존 분기 회피
+            service._find_existing_report_for_latest_upload = AsyncMock(
+                return_value=(None, None)
+            )
+            service._user_file_search_store_has_documents = Mock(
+                return_value=True
+            )
+            service.lessonplan_storage.list_lessonplans = Mock(
+                return_value=[]
+            )
+            # 보고서 저장 모킹 — 파일 시스템 회피
+            service.report_storage.save_report = Mock(
+                return_value={
+                    "filename": "report.md",
+                    "file_path": "/tmp/report.md",
+                }
+            )
+
+            result = await service.analyze_lesson_plan(
+                session_id=1,
+                user_id=123,
+                username="alice",
+            )
+
+        assert result["success"] is True
+        report = result["report"]
+        assert "정보 교육과정 평가기준" in report
+        assert "secret-internal-model" not in report
+        assert "**분석 모델**" not in report
+        assert "임의 항목" not in report

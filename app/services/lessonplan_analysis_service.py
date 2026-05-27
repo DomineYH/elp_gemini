@@ -261,7 +261,20 @@ class LessonPlanAnalysisService:
 
                 # 4. Markdown 보고서 추출 및 후처리
                 raw_report = response.text if response.text else ""
-                report = self._post_process_report(raw_report)  # 후처리 적용
+                criteria_aliases = (
+                    await self._collect_active_criteria_display_names()
+                )
+                lessonplan_original_filename = (
+                    self._resolve_lessonplan_original_filename(
+                        latest_upload=latest_upload,
+                        legacy_lessonplans=legacy_lessonplans,
+                    )
+                )
+                report = self._post_process_report(
+                    raw_report,
+                    criteria_aliases=criteria_aliases,
+                    lessonplan_original_filename=lessonplan_original_filename,
+                )
 
                 # 5. Citation 추출
                 citations = self._extract_citations(response)
@@ -634,9 +647,11 @@ class LessonPlanAnalysisService:
 
         try:
             # 0) LLM 이 학습된 양식으로 출력했을 수 있는 모델명 라인 제거.
-            #    형태: `> - **분석 모델**: <임의 텍스트>` (전후 공백 허용)
+            #    형태: `> - **분석 모델**: <임의 텍스트>` 또는
+            #          `> **분석 모델**: <임의 텍스트>` (전후 공백 허용,
+            #          dash prefix 옵션)
             report = re.sub(
-                r'^\s*>\s*-\s*\*\*분석\s*모델\*\*\s*:.*$\n?',
+                r'^\s*>\s*(?:-\s*)?\*\*분석\s*모델\*\*\s*:.*$\n?',
                 '',
                 report,
                 flags=re.MULTILINE,
@@ -845,6 +860,26 @@ class LessonPlanAnalysisService:
                 continue
             names.append(alias)
         return names
+
+    @staticmethod
+    def _resolve_lessonplan_original_filename(
+        latest_upload,
+        legacy_lessonplans: list,
+    ) -> Optional[str]:
+        """분석 대상 수업지도안의 원본 파일명을 결정한다.
+
+        - latest_upload 가 있으면 그 original_filename
+        - 없으면 legacy_lessonplans 중 created_at 최댓값 항목의 original_filename
+        - 둘 다 없으면 None
+        """
+        if latest_upload is not None:
+            return getattr(latest_upload, "original_filename", None)
+        if legacy_lessonplans:
+            latest = max(
+                legacy_lessonplans, key=lambda x: x["created_at"]
+            )
+            return latest.get("original_filename")
+        return None
 
     @staticmethod
     def _render_file_search_references_section(
