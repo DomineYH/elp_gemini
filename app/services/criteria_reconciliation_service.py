@@ -136,7 +136,8 @@ class CriteriaReconciliationService:
                     try:
                         fetched_for_guard = await self._alias.fetch()
                     except Exception:
-                        # cloud 일시 장애 시에는 skip하지 않고 기존 로직으로 진행
+                        # cloud 일시 장애 시에는 skip하지 않고
+                        # 기존 로직으로 진행
                         fetched_for_guard = None
                     if (
                         fetched_for_guard is not None
@@ -270,7 +271,7 @@ class CriteriaReconciliationService:
 
                 except Exception as e:
                     logger.error(f"reconcile 실패: {e}", exc_info=True)
-                    if swallow_errors:
+                    if swallow_errors and not key_changed:
                         return ReconcileResult(error=str(e))
                     async with _transaction_if_needed(self._db):
                         await self._state.set_many({

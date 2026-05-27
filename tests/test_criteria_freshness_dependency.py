@@ -349,3 +349,129 @@ async def test_explicit_reconcile_marks_needs_resync_on_alias_fetch_failure():
         ticker.cancel()
         with suppress(asyncio.CancelledError):
             await ticker
+
+
+@pytest.mark.asyncio
+async def test_swallow_errors_does_not_swallow_key_change_failures():
+    from app.db import Base
+    from app.models import app_state as _app_state_model  # noqa: F401
+    from app.repositories.app_state_repository import (
+        KEY_API_KEY_HASH,
+        KEY_SYNC_ERROR,
+        KEY_SYNC_STATE,
+        AppStateRepository,
+    )
+    from app.repositories.criteria_repository import CriteriaRepository
+    from app.services.criteria_reconciliation_service import (
+        CriteriaReconciliationService,
+    )
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    ticker = asyncio.create_task(_keep_loop_awake())
+
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        async with session_factory() as db:
+            state = AppStateRepository(db)
+            await state.set(KEY_API_KEY_HASH, "old_hash")
+            await state.set(KEY_SYNC_STATE, "ok")
+            await state.set(KEY_SYNC_ERROR, None)
+            await state.set("criteria_migration_v2_done", "true")
+            await db.commit()
+
+        fake_vec, fake_alias = _make_alias_fetch_failure_services()
+
+        async with session_factory() as db:
+            state = AppStateRepository(db)
+            svc = CriteriaReconciliationService(
+                db=db,
+                vector_service=fake_vec,
+                alias_map_service=fake_alias,
+                criteria_repo=CriteriaRepository(db=db),
+                app_state_repo=state,
+            )
+            with patch(
+                "app.services.criteria_reconciliation_service.sha256_hex_of_api_key",
+                return_value="new_hash",
+            ):
+                result = await svc.reconcile(swallow_errors=True)
+
+            assert result.ok is False
+            assert result.error == "cloud 503"
+            assert await state.get(KEY_SYNC_STATE) == "error"
+            assert await state.get(KEY_SYNC_ERROR) == "cloud 503"
+    finally:
+        await engine.dispose()
+        ticker.cancel()
+        with suppress(asyncio.CancelledError):
+            await ticker
+
+
+@pytest.mark.asyncio
+async def test_swallow_errors_swallows_transient_cloud_failure_when_key_unchanged():  # noqa: E501
+    from app.db import Base
+    from app.models import app_state as _app_state_model  # noqa: F401
+    from app.repositories.app_state_repository import (
+        KEY_API_KEY_HASH,
+        KEY_SYNC_ERROR,
+        KEY_SYNC_STATE,
+        AppStateRepository,
+    )
+    from app.repositories.criteria_repository import CriteriaRepository
+    from app.services.criteria_reconciliation_service import (
+        CriteriaReconciliationService,
+    )
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    ticker = asyncio.create_task(_keep_loop_awake())
+
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        async with session_factory() as db:
+            state = AppStateRepository(db)
+            await state.set(KEY_API_KEY_HASH, "samehash")
+            await state.set(KEY_SYNC_STATE, "ok")
+            await state.set(KEY_SYNC_ERROR, "previous-error")
+            await state.set("criteria_migration_v2_done", "true")
+            await db.commit()
+
+        fake_vec, fake_alias = _make_alias_fetch_failure_services()
+
+        async with session_factory() as db:
+            state = AppStateRepository(db)
+            svc = CriteriaReconciliationService(
+                db=db,
+                vector_service=fake_vec,
+                alias_map_service=fake_alias,
+                criteria_repo=CriteriaRepository(db=db),
+                app_state_repo=state,
+            )
+            with patch(
+                "app.services.criteria_reconciliation_service.sha256_hex_of_api_key",
+                return_value="samehash",
+            ):
+                result = await svc.reconcile(swallow_errors=True)
+
+            assert result.ok is False
+            assert result.error == "cloud 503"
+            assert await state.get(KEY_SYNC_STATE) == "ok"
+            assert await state.get(KEY_SYNC_ERROR) == "previous-error"
+    finally:
+        await engine.dispose()
+        ticker.cancel()
+        with suppress(asyncio.CancelledError):
+            await ticker
