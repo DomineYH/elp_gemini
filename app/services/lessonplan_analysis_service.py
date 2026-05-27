@@ -620,6 +620,16 @@ class LessonPlanAnalysisService:
 반드시 Markdown 형식의 보고서로 작성해주세요.
 """
 
+    # 표준 보고서 헤더 — LLM 이 인사말(preamble) 을 앞에 붙여도
+    # 이 라인을 기준으로 앞부분을 잘라낸다.
+    _CANONICAL_HEADING_PATTERN = (
+        r'^#\s+수업\s*지도안\s*평가\s*보고서\s*$'
+    )
+    # `> - **분석 일시**: ...` 라인. 이 다음 줄에 적용 평가기준 라인을 삽입.
+    _ANALYSIS_DATE_LINE_PATTERN = (
+        r'^(?P<line>\s*>\s*-\s*\*\*분석\s*일시\*\*\s*:.*)$'
+    )
+
     def _post_process_report(
         self,
         report: str,
@@ -628,7 +638,12 @@ class LessonPlanAnalysisService:
     ) -> str:
         """
         보고서 후처리:
+        A. LLM 이 표준 헤더(`# 수업 지도안 평가 보고서`) 앞에 자율 생성한
+           인사말 prose 제거 (헤더 미존재 시 변경 안 함)
         0. `**분석 모델**:` 줄 제거
+        B. `> **분석 개요**` blockquote 안 `> - **분석 일시**:` 라인 다음에
+           `> - **적용 평가기준 (N개)**: alias1, alias2, ...` 삽입
+           (criteria_aliases 비어있거나 삽입 지점 없으면 변경 안 함)
         1. 'Vector Search 참고 자료' 섹션이 비구조화된 긴 텍스트일 경우
            목록으로 정리
         2. 'File Search 참고 문서' 섹션을 서버 렌더로 교체 (인자 제공 시).
@@ -647,6 +662,16 @@ class LessonPlanAnalysisService:
         import re
 
         try:
+            # A) LLM 이 표준 헤더 앞에 자율 prose 를 생성한 경우 잘라낸다.
+            #    표준 헤더가 없으면 안전 가드로 변경하지 않는다.
+            heading_match = re.search(
+                self._CANONICAL_HEADING_PATTERN,
+                report,
+                flags=re.MULTILINE,
+            )
+            if heading_match and heading_match.start() > 0:
+                report = report[heading_match.start():]
+
             # 0) LLM 이 학습된 양식으로 출력했을 수 있는 모델명 라인 제거.
             #    형태: `> - **분석 모델**: <임의 텍스트>` 또는
             #          `> **분석 모델**: <임의 텍스트>` (전후 공백 허용,
@@ -657,6 +682,22 @@ class LessonPlanAnalysisService:
                 report,
                 flags=re.MULTILINE,
             )
+
+            # B) `> **분석 개요**` blockquote 의 `> - **분석 일시**:` 라인
+            #    다음에 `> - **적용 평가기준 (N개)**: ...` 라인 삽입.
+            #    데이터(criteria_aliases) 또는 삽입 지점이 없으면 skip.
+            if criteria_aliases:
+                applied_line = (
+                    f"> - **적용 평가기준 ({len(criteria_aliases)}개)**: "
+                    + ", ".join(criteria_aliases)
+                )
+                report = re.sub(
+                    self._ANALYSIS_DATE_LINE_PATTERN,
+                    lambda m: m.group("line") + "\n" + applied_line,
+                    report,
+                    count=1,
+                    flags=re.MULTILINE,
+                )
 
             # 1) "Vector Search 참고 자료" 섹션 가독성 개선
             # 이모지 유무와 무관하게 매칭되도록 패턴에서 🔍 의존을 제거한다.

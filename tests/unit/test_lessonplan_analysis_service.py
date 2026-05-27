@@ -692,6 +692,144 @@ class TestLessonPlanAnalysisService:
         # 빈 줄 보존
         assert "\n\n" in processed
 
+    def test_post_process_strips_llm_preamble_before_canonical_heading(
+        self, service
+    ):
+        """LLM 이 보고서 시작 전 자율 prose 를 생성해도 표준 헤더
+        (`# 수업 지도안 평가 보고서`) 가 첫 라인이 되도록 제거한다."""
+        raw = (
+            "교육과정 전문가로서 제공해주신 수업 지도안을 평가하기 위해, "
+            "'AI·디지털교과서 초등학교 정보과 교육과정(한국정보교육학회)'의 "
+            "기준을 바탕으로 분석을 진행하였습니다.\n\n"
+            "---\n\n"
+            "# 수업 지도안 평가 보고서\n\n"
+            "> **분석 개요**\n"
+            "> - **분석 일시**: 2026-05-27 12:49\n\n"
+            "## 1. 교육과정 목표 및 성격과의 부합\n본문\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 첫 라인이 표준 헤더가 된다
+        assert processed.lstrip().startswith("# 수업 지도안 평가 보고서")
+        # LLM 인사말 prose 는 사라진다
+        assert "교육과정 전문가로서 제공해주신" not in processed
+        assert "AI·디지털교과서" not in processed
+        # 헤더 이후 본문은 보존
+        assert "**분석 개요**" in processed
+        assert "## 1. 교육과정 목표 및 성격과의 부합" in processed
+
+    def test_post_process_keeps_preamble_when_canonical_heading_missing(
+        self, service
+    ):
+        """표준 헤더가 없으면 안전 가드로 preamble 을 손대지 않는다."""
+        raw = (
+            "사용자 문서가 확인되지 않아 평가를 진행할 수 없습니다.\n\n"
+            "## 안내\n다시 업로드해주세요.\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 표준 헤더 부재 → 원본 내용 보존
+        assert "사용자 문서가 확인되지 않아" in processed
+        assert "## 안내" in processed
+
+    def test_post_process_inserts_applied_criteria_line(self, service):
+        """`> **분석 개요**` blockquote 의 `> - **분석 일시**:` 라인 다음에
+        `> - **적용 평가기준 (N개)**: ...` 라인을 삽입한다."""
+        raw = (
+            "# 수업 지도안 평가 보고서\n\n"
+            "> **분석 개요**\n"
+            "> - **분석 일시**: 2026-05-27 12:49\n\n"
+            "---\n\n"
+            "## 1. 교육과정 목표 및 성격과의 부합\n본문\n"
+        )
+
+        processed = service._post_process_report(
+            raw,
+            criteria_aliases=["초등교육과정총론", "정보교육과정"],
+        )
+
+        # 적용 평가기준 라인이 삽입된다
+        assert (
+            "> - **적용 평가기준 (2개)**: 초등교육과정총론, 정보교육과정"
+            in processed
+        )
+        # 분석 일시 라인 바로 다음에 삽입되어 순서가 유지된다
+        lines = processed.splitlines()
+        date_idx = next(
+            i for i, ln in enumerate(lines) if "분석 일시" in ln
+        )
+        criteria_idx = next(
+            i for i, ln in enumerate(lines) if "적용 평가기준" in ln
+        )
+        assert criteria_idx == date_idx + 1
+
+    def test_post_process_skips_applied_criteria_when_aliases_empty(
+        self, service
+    ):
+        """`criteria_aliases` 가 빈 리스트면 적용 평가기준 라인을
+        삽입하지 않는다."""
+        raw = (
+            "# 수업 지도안 평가 보고서\n\n"
+            "> **분석 개요**\n"
+            "> - **분석 일시**: 2026-05-27 12:49\n\n"
+            "## 1. 교육과정 목표 및 성격과의 부합\n본문\n"
+        )
+
+        processed = service._post_process_report(
+            raw,
+            criteria_aliases=[],
+        )
+
+        assert "적용 평가기준" not in processed
+
+    def test_post_process_skips_applied_criteria_when_overview_missing(
+        self, service
+    ):
+        """`> **분석 개요**` blockquote 또는 `분석 일시` 라인이 없으면
+        적용 평가기준 라인을 삽입하지 않는다 (안전 가드)."""
+        raw = (
+            "# 수업 지도안 평가 보고서\n\n"
+            "## 1. 교육과정 목표 및 성격과의 부합\n본문\n"
+        )
+
+        processed = service._post_process_report(
+            raw,
+            criteria_aliases=["초등교육과정총론", "정보교육과정"],
+        )
+
+        # 삽입 지점이 없으면 라인을 추가하지 않는다
+        assert "적용 평가기준" not in processed
+
+    def test_post_process_full_flow_preamble_and_criteria_together(
+        self, service
+    ):
+        """preamble 제거 + 적용 평가기준 라인 삽입이 한 번에 동작한다."""
+        raw = (
+            "교육과정 전문가로서 제공해주신 수업 지도안을 평가하기 위해, "
+            "'정보과 교육과정'의 기준을 바탕으로 분석을 진행하였습니다.\n\n"
+            "---\n\n"
+            "# 수업 지도안 평가 보고서\n\n"
+            "> **분석 개요**\n"
+            "> - **분석 일시**: 2026-05-27 12:49\n\n"
+            "## 1. 교육과정 목표 및 성격과의 부합\n본문\n"
+        )
+
+        processed = service._post_process_report(
+            raw,
+            criteria_aliases=["초등교육과정총론", "정보교육과정"],
+        )
+
+        # preamble 제거 효과
+        assert "교육과정 전문가로서 제공해주신" not in processed
+        assert processed.lstrip().startswith("# 수업 지도안 평가 보고서")
+        # 적용 평가기준 삽입 효과
+        assert (
+            "> - **적용 평가기준 (2개)**: 초등교육과정총론, 정보교육과정"
+            in processed
+        )
+
     def test_post_process_replaces_file_search_section(self, service):
         """LLM 이 생성한 `### File Search 참고 문서` 본문이 서버
         렌더로 교체된다."""
