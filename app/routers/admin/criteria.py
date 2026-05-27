@@ -40,6 +40,7 @@ from app.services.criteria_alias_map_service import (
     CriteriaAliasMapService,
     alias_map_mutation_lock,
 )
+from app.services.criteria_freshness import ensure_criteria_cache_fresh
 from app.services.criteria_reconciliation_service import (
     CriteriaReconciliationService,
     is_legacy_surrogate_stable_id,
@@ -817,6 +818,7 @@ def _parse_iso(value):
 async def list_criteria_json(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
+    _fresh=Depends(ensure_criteria_cache_fresh),
 ):
     """평가기준 목록 + sync 메타데이터 (JSON)."""
     criteria_repo = CriteriaRepository(db)

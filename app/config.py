@@ -137,6 +137,13 @@ class Settings(BaseSettings):
         default=True,
         description="평가기준 클라우드 reconcile 활성화 (긴급 차단 시 False)",
     )
+    CRITERIA_LIST_RECONCILE_TTL_SECONDS: int = Field(
+        default=30,
+        description=(
+            "평가기준 목록 endpoint에서 cloud freshness를 확인하는 "
+            "최소 간격(초). 0이면 매 요청마다 확인."
+        ),
+    )
 
     # 관리자 로그인 brute-force 방어 (Issue #5)
     RATE_LIMIT_ENABLED: bool = Field(

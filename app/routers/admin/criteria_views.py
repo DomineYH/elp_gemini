@@ -20,6 +20,7 @@ from app.repositories.app_state_repository import (
 from app.repositories.criteria_repository import (
     CriteriaRepository
 )
+from app.services.criteria_freshness import ensure_criteria_cache_fresh
 
 router = APIRouter(
     prefix="/admin/criteria",
@@ -69,6 +70,7 @@ async def criteria_list(
     request: Request,
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
+    _fresh=Depends(ensure_criteria_cache_fresh),
 ):
     """
     평가기준 목록 페이지
