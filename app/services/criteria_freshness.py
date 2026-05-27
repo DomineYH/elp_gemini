@@ -16,7 +16,11 @@ import logging
 import time
 from typing import Optional
 
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config import settings
+from app.db import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +34,8 @@ def _reset_throttle_for_test() -> None:
     _last_check_monotonic = None
 
 
-async def _run_reconcile_once() -> None:
-    """새 세션에서 reconcile을 1회 실행."""
-    from app.db import async_session_maker
+async def _run_reconcile_once(db: AsyncSession) -> None:
+    """주어진 request-scoped 세션에서 reconcile을 1회 실행."""
     from app.repositories.app_state_repository import AppStateRepository
     from app.repositories.criteria_repository import CriteriaRepository
     from app.services.criteria_alias_map_service import (
@@ -43,24 +46,24 @@ async def _run_reconcile_once() -> None:
     )
     from app.services.criteria_vector_service import CriteriaVectorService
 
-    async with async_session_maker() as db:
-        vec = CriteriaVectorService()
-        alias = CriteriaAliasMapService(
-            client=vec.file_search_service.client,
-            store_display_name=settings.FS_RUBRIC_STORE_NAME,
-        )
-        svc = CriteriaReconciliationService(
-            db=db,
-            vector_service=vec,
-            alias_map_service=alias,
-            criteria_repo=CriteriaRepository(db=db),
-            app_state_repo=AppStateRepository(db=db),
-        )
-        await svc.reconcile(swallow_errors=True)
-        await db.commit()
+    vec = CriteriaVectorService()
+    alias = CriteriaAliasMapService(
+        client=vec.file_search_service.client,
+        store_display_name=settings.FS_RUBRIC_STORE_NAME,
+    )
+    svc = CriteriaReconciliationService(
+        db=db,
+        vector_service=vec,
+        alias_map_service=alias,
+        criteria_repo=CriteriaRepository(db=db),
+        app_state_repo=AppStateRepository(db=db),
+    )
+    await svc.reconcile(swallow_errors=True)
 
 
-async def ensure_criteria_cache_fresh() -> None:
+async def ensure_criteria_cache_fresh(
+    db: AsyncSession = Depends(get_db),
+) -> None:
     """FastAPI Depends() 대상 — list endpoint 진입 시 호출."""
     global _last_check_monotonic
 
@@ -80,7 +83,7 @@ async def ensure_criteria_cache_fresh() -> None:
         _last_check_monotonic = now
 
     try:
-        await _run_reconcile_once()
+        await _run_reconcile_once(db)
     except Exception:
         logger.warning(
             "평가기준 freshness 확인 실패 (cache 그대로 응답)",
