@@ -571,10 +571,6 @@ class LessonPlanAnalysisService:
         Returns:
             완전한 프롬프트
         """
-        # 모델 이름 플레이스홀더 치환
-        system_prompt = system_prompt.replace(
-            "{model_name}", self.model_name
-        )
         prompt_intro = (
             f"**{rubric_store_id}의 평가기준 자료를 바탕으로 "
             f"{lesson_store_id}에 저장된 사용자의 수업 지도안을 평가하세요.**"

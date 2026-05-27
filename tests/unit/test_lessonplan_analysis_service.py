@@ -102,6 +102,30 @@ class TestLessonPlanAnalysisService:
         assert "평가 방향" in result
         assert "개선 및 보완" in result
 
+    def test_build_analysis_prompt_omits_model_name(self, service):
+        """프롬프트에서 모델 이름이 더 이상 치환/포함되지 않는다."""
+        # Given: 템플릿에 {model_name} 플레이스홀더가 그대로 남아 있는 경우에도
+        #         치환되지 않고, 동시에 빌더가 self.model_name 을 본문에 끼워넣지도
+        #         않아야 한다.
+        system_prompt = (
+            "수업 지도안 평가 시스템 프롬프트\n"
+            "분석 모델: {model_name}"
+        )
+
+        # When
+        result = service._build_analysis_prompt(
+            system_prompt,
+            rubric_store_id="rubric-store",
+            lesson_store_id="lesson-store",
+        )
+
+        # Then: 실제 모델 식별자(self.model_name)는 본문에 등장하지 않는다
+        assert service.model_name not in result
+        # 그리고 {model_name} 플레이스홀더도 치환되지 않은 채 그대로다
+        #  (이 줄은 prompt.md 에서 삭제되었지만, 빌더 단위로는 input string 의
+        #   해당 토큰을 더 이상 치환하지 않음을 보장하기 위한 검사)
+        assert "{model_name}" in result
+
     def test_extract_citations_success(
         self,
         service
