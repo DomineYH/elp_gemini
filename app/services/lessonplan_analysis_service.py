@@ -624,6 +624,15 @@ class LessonPlanAnalysisService:
         import re
 
         try:
+            # 0) LLM 이 학습된 양식으로 출력했을 수 있는 모델명 라인 제거.
+            #    형태: `> - **분석 모델**: <임의 텍스트>` (전후 공백 허용)
+            report = re.sub(
+                r'^\s*>\s*-\s*\*\*분석\s*모델\*\*\s*:.*$\n?',
+                '',
+                report,
+                flags=re.MULTILINE,
+            )
+
             # 1) "Vector Search 참고 자료" 섹션 가독성 개선
             # 이모지 유무와 무관하게 매칭되도록 패턴에서 🔍 의존을 제거한다.
             pattern = (

@@ -297,6 +297,29 @@ class TestLessonPlanAnalysisService:
         assert "평가 등급: 상" in processed
         assert "강점" in processed
 
+    def test_post_process_strips_stray_model_line(self, service):
+        """LLM 이 학습된 양식으로 `**분석 모델**:` 줄을 출력해도 후처리가 제거한다."""
+        raw = (
+            "# 수업 지도안 평가 보고서\n\n"
+            "> **분석 개요**\n"
+            "> - **분석 일시**: 2026-05-27 12:34\n"
+            "> - **분석 모델**: gemini-2.5-flash\n"
+            "\n"
+            "## 1. 교육과정 목표 및 성격과의 부합\n"
+            "본문\n"
+        )
+
+        processed = service._post_process_report(raw)
+
+        # 모델명 줄이 제거된다
+        assert "**분석 모델**" not in processed
+        assert "gemini-2.5-flash" not in processed
+        # 인접한 다른 헤더 라인은 보존
+        assert "**분석 개요**" in processed
+        assert "**분석 일시**" in processed
+        assert "2026-05-27 12:34" in processed
+        assert "## 1. 교육과정 목표 및 성격과의 부합" in processed
+
     def test_post_process_handles_vector_search_section_without_emoji(
         self, service
     ):
