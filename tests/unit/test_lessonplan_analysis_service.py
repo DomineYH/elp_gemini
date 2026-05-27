@@ -782,3 +782,39 @@ class TestLessonPlanAnalysisService:
             names = await service._collect_active_criteria_display_names()
 
         assert names == []
+
+    def test_render_file_search_references_full(self, service):
+        """평가기준 alias + 수업지도안 파일명이 모두 있으면 항목 3개를 반환한다."""
+        rendered = service._render_file_search_references_section(
+            criteria_aliases=["A 기준", "B 기준"],
+            lessonplan_original_filename="우리반 수업계획.pdf",
+        )
+        assert rendered == (
+            "- A 기준\n"
+            "- B 기준\n"
+            "- 우리반 수업계획.pdf"
+        )
+
+    def test_render_file_search_references_only_criteria(self, service):
+        """수업지도안 파일명이 없으면 평가기준만 표시한다."""
+        rendered = service._render_file_search_references_section(
+            criteria_aliases=["A 기준"],
+            lessonplan_original_filename=None,
+        )
+        assert rendered == "- A 기준"
+
+    def test_render_file_search_references_only_lessonplan(self, service):
+        """평가기준 alias 가 비어도 수업지도안 파일명만 표시한다."""
+        rendered = service._render_file_search_references_section(
+            criteria_aliases=[],
+            lessonplan_original_filename="lesson.pdf",
+        )
+        assert rendered == "- lesson.pdf"
+
+    def test_render_file_search_references_empty(self, service):
+        """둘 다 비면 placeholder 를 반환한다."""
+        rendered = service._render_file_search_references_section(
+            criteria_aliases=[],
+            lessonplan_original_filename=None,
+        )
+        assert rendered == "(표시할 항목이 없습니다)"

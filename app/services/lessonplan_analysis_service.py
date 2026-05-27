@@ -798,6 +798,24 @@ class LessonPlanAnalysisService:
             names.append(alias)
         return names
 
+    @staticmethod
+    def _render_file_search_references_section(
+        criteria_aliases: list[str],
+        lessonplan_original_filename: Optional[str],
+    ) -> str:
+        """### File Search 참고 문서 섹션의 본문(헤더 제외) 마크다운을 생성한다.
+
+        - 활성 평가기준 표시 이름들 (이미 정렬됨)
+        - 수업 지도안 원본 파일명 (있을 경우)
+        둘 다 비면 placeholder 반환.
+        """
+        items: list[str] = list(criteria_aliases)
+        if lessonplan_original_filename:
+            items.append(lessonplan_original_filename)
+        if not items:
+            return "(표시할 항목이 없습니다)"
+        return "\n".join(f"- {item}" for item in items)
+
     def _extract_citations(self, response) -> Optional[dict]:
         """
         Citation 정보 추출 (QnA 패턴 재사용)
