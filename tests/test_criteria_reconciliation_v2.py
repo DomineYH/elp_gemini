@@ -205,6 +205,12 @@ async def test_reconcile_runs_v2_migration_before_skip_on_ok_state():
         fake_alias.replace.assert_called_once()
         fake_repo.delete_by_stable_ids_except.assert_called_once()
 
+        uploaded_alias_map = fake_alias.replace.call_args.args[0]
+        fake_alias.fetch.return_value = (
+            "fileSearchStores/s/documents/alias-map",
+            uploaded_alias_map,
+        )
+
         client.file_search_stores.list.reset_mock()
         fake_vec.list_criteria_documents.reset_mock()
         fake_alias.fetch.reset_mock()
@@ -216,7 +222,7 @@ async def test_reconcile_runs_v2_migration_before_skip_on_ok_state():
     assert second.skipped is True
     client.file_search_stores.list.assert_not_called()
     fake_vec.list_criteria_documents.assert_not_called()
-    fake_alias.fetch.assert_not_called()
+    fake_alias.fetch.assert_awaited_once()
     fake_alias.replace.assert_not_called()
     fake_repo.delete_by_stable_ids_except.assert_not_called()
 
