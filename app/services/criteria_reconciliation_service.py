@@ -109,7 +109,9 @@ class CriteriaReconciliationService:
         self._repo = criteria_repo
         self._state = app_state_repo
 
-    async def reconcile(self) -> ReconcileResult:
+    async def reconcile(
+        self, *, swallow_errors: bool = False
+    ) -> ReconcileResult:
         async with alias_map_mutation_lock:
             async with _reconcile_lock:
                 current_hash = sha256_hex_of_api_key()
@@ -268,6 +270,8 @@ class CriteriaReconciliationService:
 
                 except Exception as e:
                     logger.error(f"reconcile 실패: {e}", exc_info=True)
+                    if swallow_errors:
+                        return ReconcileResult(error=str(e))
                     async with _transaction_if_needed(self._db):
                         await self._state.set_many({
                             KEY_SYNC_STATE: (

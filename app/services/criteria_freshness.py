@@ -56,7 +56,7 @@ async def _run_reconcile_once() -> None:
             criteria_repo=CriteriaRepository(db=db),
             app_state_repo=AppStateRepository(db=db),
         )
-        await svc.reconcile()
+        await svc.reconcile(swallow_errors=True)
         await db.commit()
 
 
