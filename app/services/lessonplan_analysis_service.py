@@ -66,18 +66,21 @@ def _call_gemini_with_file_search(
     if rubric_metadata_filter:
         rubric_search_config["metadata_filter"] = rubric_metadata_filter
 
+    # Tool ordering matters: user store tool MUST come first so the model
+    # grounds answers in the uploaded lesson plan. Putting rubric first
+    # caused the model to ignore the user document (issue #86).
     return client.models.generate_content(
         model=model,
         contents=contents,
         config=types.GenerateContentConfig(
             tools=[
                 types.Tool(
-                    file_search=types.FileSearch(**rubric_search_config)
-                ),
-                types.Tool(
                     file_search=types.FileSearch(
                         file_search_store_names=[user_store_id]
                     )
+                ),
+                types.Tool(
+                    file_search=types.FileSearch(**rubric_search_config)
                 ),
             ],
             temperature=0.7,
