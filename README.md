@@ -4,7 +4,7 @@ Python 3.10+ FastAPI 기반 AI 수업설계 피드백 시스템
 
 ## 주요 기능
 
-### 🎯 MVP 핵심 기능
+### MVP 핵심 기능
 - **문서 QnA**: PDF 업로드 후 Google Gemini API를 통한 RAG 기반 질문답변
 - **자동 평가**: 루브릭 기반 문서 자동 평가 및 보고서 생성
 - **사용자 인증**: 세션 기반 로그인/로그아웃, 사용자별 데이터 격리
@@ -13,7 +13,7 @@ Python 3.10+ FastAPI 기반 AI 수업설계 피드백 시스템
 
 ### 기술 스택
 - **Backend**: FastAPI (async), SQLAlchemy (async), SQLite (WAL mode)
-- **LLM**: Google Gemini API (gemini-2.0-flash-exp, gemini-2.0-flash-thinking-exp)
+- **LLM**: Google Gemini API (gemini-3.1-flash-lite)
 - **RAG**: Google File Search Tool
 - **Frontend**: Jinja2 Templates, Tailwind CSS (CDN)
 - **Auth**: Session-based with bcrypt
@@ -161,8 +161,8 @@ DEBUG=false              # 디버그 모드
 DATABASE_URL=            # 데이터베이스 경로
 MAX_UPLOAD_SIZE=52428800 # 최대 업로드 크기 (50MB)
 UPLOAD_DIR=./data/uploads
-GEMINI_QNA_MODEL=gemini-2.0-flash-exp
-GEMINI_EVAL_MODEL=gemini-2.0-flash-thinking-exp
+GEMINI_QNA_MODEL=gemini-3.1-flash-lite
+GEMINI_EVAL_MODEL=gemini-3.1-flash-lite
 FS_MAIN_STORE_NAME=main-store
 FS_RUBRIC_STORE_NAME=rubric-store
 ```
