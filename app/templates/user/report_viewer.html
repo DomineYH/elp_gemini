@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}분석 보고서 - AI 문서 평가 플랫폼{% endblock %}
+{% block title %}분석 보고서 - AI기반 수업설계 피드백 시스템{% endblock %}
 
 {% block head %}
 <style>
@@ -133,7 +133,7 @@
                 || data.lessonplan_original_name
                 || `보고서 #${REPORT_ID}`;
             titleEl.textContent = title;
-            document.title = `${title} - AI 문서 평가 플랫폼`;
+            document.title = `${title} - AI기반 수업설계 피드백 시스템`;
 
             const lesson = data.lessonplan_original_name
                 || data.lessonplan_filename

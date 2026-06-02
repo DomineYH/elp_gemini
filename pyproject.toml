@@ -1,7 +1,7 @@
 [project]
 name = "elp-gemini"
 version = "0.1.0"
-description = "AI RAG-Based Document Evaluation & QnA Platform"
+description = "AI-Based Lesson Design Feedback System"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
