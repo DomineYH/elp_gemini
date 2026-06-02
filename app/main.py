@@ -42,8 +42,8 @@ logger = logging.getLogger(__name__)
 
 # FastAPI 앱 인스턴스
 app = FastAPI(
-    title="AI RAG Document Evaluation & QnA Platform",
-    description="문서 평가 및 질문답변 플랫폼",
+    title="AI-Based Lesson Design Feedback System",
+    description="AI기반 수업설계 피드백 시스템",
     version="0.1.0",
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
