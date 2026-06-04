@@ -9,7 +9,7 @@
 <a href="/admin/qna-logs" class="text-gray-600 hover:text-blue-600">QnA 로그</a>
 <a href="/admin/prompts" class="text-blue-600 font-medium">프롬프트</a>
 {% endif %}
-<span class="text-gray-600">{{ user.email }}</span>
+<span class="text-gray-600">{{ user.nickname }}</span>
 <form method="POST" action="/auth/logout" class="inline">
     <button type="submit" class="text-gray-600 hover:text-red-600">로그아웃</button>
 </form>
