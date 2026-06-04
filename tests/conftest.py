@@ -163,7 +163,6 @@ async def admin_user():
         user = User(
             username="admin_test",
             nickname="Admin",
-            email="admin@test.com",
             hashed_password="hashed",
             is_admin=True
         )

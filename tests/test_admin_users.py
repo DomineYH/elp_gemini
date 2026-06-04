@@ -35,7 +35,6 @@ _admin = User(
     id=999,
     username="test_admin",
     nickname="TestAdmin",
-    email="tadmin@test.com",
     hashed_password="hashed",
     is_admin=True,
 )
@@ -256,7 +255,6 @@ async def seed_data(db_tables):
         user = User(
             username="stu1",
             nickname="Student1",
-            email="stu1@test.com",
             hashed_password="h",
             is_admin=False,
         )
@@ -368,7 +366,6 @@ async def test_stats_includes_unprofiled_segment(db_tables):
         user = User(
             username="idonly1",
             nickname="idonly1",
-            email=None,
             hashed_password="h",
             is_admin=False,
         )
@@ -556,7 +553,6 @@ async def test_admin_report_detail_file_missing(db_tables):
         user = User(
             username="ghost",
             nickname="Ghost",
-            email="ghost@test.com",
             hashed_password="h",
             is_admin=False,
         )
