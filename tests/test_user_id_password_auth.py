@@ -257,6 +257,8 @@ async def test_register_normalizes_id_to_lowercase(client, session_factory):
         "administrator",  # 예약어
         "root",  # 예약어
         "system",  # 예약어
+        "teacher",  # legacy role id 예약어
+        "preservice_teacher",  # legacy role id 예약어
         "ADMIN",  # 정규화(소문자) 후 예약어
     ],
 )

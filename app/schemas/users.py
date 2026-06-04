@@ -13,7 +13,14 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 # - 예약어 금지
 USER_ID_PATTERN = re.compile(r"^[a-z0-9]{1,9}$")
 RESERVED_USER_IDS = frozenset(
-    {"admin", "administrator", "root", "system"}
+    {
+        "admin",
+        "administrator",
+        "root",
+        "system",
+        "teacher",
+        "preservice_teacher",
+    }
 )
 
 
