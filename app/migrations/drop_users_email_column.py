@@ -21,26 +21,6 @@ _USERS_COLUMNS_NO_EMAIL = (
     "created_at, updated_at"
 )
 
-_RECREATE_SQL = """
-CREATE TABLE users_new (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username VARCHAR(255) NOT NULL UNIQUE,
-    nickname VARCHAR(255) NOT NULL,
-    hashed_password VARCHAR(255),
-    is_admin BOOLEAN NOT NULL DEFAULT 0,
-    failed_login_count INTEGER NOT NULL DEFAULT 0,
-    locked_until DATETIME,
-    last_failed_login_at DATETIME,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX ix_users_id ON users_new (id);
-CREATE INDEX ix_users_username ON users_new (username);
-INSERT INTO users_new ({cols}) SELECT {cols} FROM users;
-DROP TABLE users;
-ALTER TABLE users_new RENAME TO users;
-""".format(cols=_USERS_COLUMNS_NO_EMAIL)
-
 # Inbound FK indexes that reference users.id.
 # Only created if the child table exists.
 _FK_INDEX_DEFS = [
@@ -60,6 +40,76 @@ _FK_INDEX_DEFS = [
         "ix_lessonplan_uploads_user_id ON lessonplan_uploads (user_id)",
     ),
 ]
+
+
+async def _rebuild_users_without_email(engine: AsyncEngine) -> None:
+    """
+    Rebuild the users table without the email column.
+
+    Order matters: the old ``users`` table (and its global index names
+    ``ix_users_id``, ``ix_users_username``) must be **dropped before** the
+    new indexes are created, otherwise SQLite raises
+    ``OperationalError: index … already exists``.
+
+    ``PRAGMA foreign_keys`` is toggled outside the transaction (SQLite
+    requirement) so the intermediate parent-less state does not trip FK
+    enforcement.
+    """
+    async with engine.begin() as conn:
+        await conn.execute(text("DROP TABLE IF EXISTS users_new"))
+
+        # Temporarily disable FK enforcement so the intermediate state
+        # (users dropped → users_new not yet renamed) does not violate
+        # child FK constraints.  SQLite requires PRAGMA outside txns,
+        # but within aiosqlite's synchronous bridge this is safe.
+        await conn.execute(text("PRAGMA foreign_keys=OFF"))
+
+        # 1. Create bare table (no secondary indexes yet)
+        await conn.execute(text("""
+            CREATE TABLE users_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username VARCHAR(255) NOT NULL UNIQUE,
+                nickname VARCHAR(255) NOT NULL,
+                hashed_password VARCHAR(255),
+                is_admin BOOLEAN NOT NULL DEFAULT 0,
+                failed_login_count INTEGER NOT NULL DEFAULT 0,
+                locked_until DATETIME,
+                last_failed_login_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
+        # 2. Copy data
+        await conn.execute(text(
+            "INSERT INTO users_new ({cols}) SELECT {cols} FROM users"
+            .format(cols=_USERS_COLUMNS_NO_EMAIL)
+        ))
+
+        # 3. Drop old table — frees global index names
+        await conn.execute(text("DROP TABLE users"))
+
+        # 4. Rename new → users
+        await conn.execute(text("ALTER TABLE users_new RENAME TO users"))
+
+        # 5. NOW create secondary indexes on the renamed table
+        await conn.execute(text(
+            "CREATE INDEX ix_users_id ON users (id)"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX ix_users_username ON users (username)"
+        ))
+
+        # 6. Restore inbound FK indexes (only for tables that exist)
+        existing_tables = await conn.run_sync(
+            lambda sync_conn: set(inspect(sync_conn).get_table_names())
+        )
+        for child_table, create_sql in _FK_INDEX_DEFS:
+            if child_table in existing_tables:
+                await conn.execute(text(create_sql))
+
+        # Re-enable FK enforcement
+        await conn.execute(text("PRAGMA foreign_keys=ON"))
 
 
 async def drop_users_email_column(engine: AsyncEngine) -> bool:
@@ -110,19 +160,7 @@ async def drop_users_email_column(engine: AsyncEngine) -> bool:
                 "ALTER TABLE DROP COLUMN 실패 → 테이블 재구성으로 전환"
             )
 
-        await conn.execute(text("DROP TABLE IF EXISTS users_new"))
-        for stmt in _RECREATE_SQL.strip().split(";"):
-            stmt = stmt.strip()
-            if stmt:
-                await conn.execute(text(stmt))
-
-        # Restore inbound FK indexes (only for tables that exist)
-        existing_tables = await conn.run_sync(
-            lambda sync_conn: set(inspect(sync_conn).get_table_names())
-        )
-        for child_table, create_sql in _FK_INDEX_DEFS:
-            if child_table in existing_tables:
-                await conn.execute(text(create_sql))
-
-        logger.info("users.email 컬럼 제거 완료 (테이블 재구성)")
-        return True
+    # Rebuild uses its own transaction
+    await _rebuild_users_without_email(engine)
+    logger.info("users.email 컬럼 제거 완료 (테이블 재구성)")
+    return True

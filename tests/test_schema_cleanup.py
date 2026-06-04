@@ -135,3 +135,131 @@ async def test_both_migrations_on_fresh_empty_db():
         assert await drop_users_email_column(eng) is False
     finally:
         await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_rebuild_path_preserves_data_and_child_fks():
+    """
+    Exercise the table-rebuild path directly.
+
+    Builds a production-like schema with ix_users_id, ix_users_username,
+    ix_users_email indexes + a chat_sessions child FK row, forces the
+    rebuild helper, then asserts:
+      - email column gone
+      - user row preserved
+      - child FK row preserved
+      - PRAGMA foreign_key_check clean
+      - idempotent (second run returns False)
+    """
+    from app.migrations.drop_users_email_column import (
+        _rebuild_users_without_email,
+    )
+
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        # --- Set up production-like schema with indexes & data ---
+        async with eng.begin() as conn:
+            await conn.execute(text("""
+                CREATE TABLE users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username VARCHAR(255) NOT NULL UNIQUE,
+                    nickname VARCHAR(255) NOT NULL,
+                    email VARCHAR(255) UNIQUE,
+                    hashed_password VARCHAR(255),
+                    is_admin BOOLEAN NOT NULL DEFAULT 0,
+                    failed_login_count INTEGER NOT NULL DEFAULT 0,
+                    locked_until DATETIME,
+                    last_failed_login_at DATETIME,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            # Production indexes (the names that would collide if created
+            # before DROP TABLE in the rebuild).
+            await conn.execute(text(
+                "CREATE INDEX ix_users_id ON users (id)"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX ix_users_username ON users (username)"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX ix_users_email ON users (email)"
+            ))
+            # Seed a user row
+            await conn.execute(text("""
+                INSERT INTO users (username, nickname, email, hashed_password,
+                                   is_admin, failed_login_count)
+                VALUES ('testuser', 'Test', 'test@example.com', 'hash', 0, 0)
+            """))
+            # Child table with FK → users.id
+            await conn.execute(text("""
+                CREATE TABLE chat_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    title VARCHAR(255),
+                    user_type VARCHAR(50),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (id)
+                        ON DELETE CASCADE
+                )
+            """))
+            await conn.execute(text(
+                "CREATE INDEX ix_chat_sessions_user_id "
+                "ON chat_sessions (user_id)"
+            ))
+            # Seed a child row referencing the user
+            await conn.execute(text("""
+                INSERT INTO chat_sessions (user_id, title, user_type)
+                VALUES (1, 'test session', '미지정')
+            """))
+
+        # --- Run the rebuild directly ---
+        await _rebuild_users_without_email(eng)
+
+        # --- Verify ---
+        async with eng.begin() as conn:
+            cols = await conn.run_sync(
+                lambda c: [
+                    col["name"] for col in inspect(c).get_columns("users")
+                ]
+            )
+            assert "email" not in cols, (
+                f"email column still present: {cols}"
+            )
+
+            # User row preserved
+            row = await conn.execute(
+                text("SELECT username, nickname FROM users WHERE id = 1")
+            )
+            user = row.fetchone()
+            assert user is not None
+            assert user[0] == "testuser"
+            assert user[1] == "Test"
+
+            # Child FK row preserved
+            child = await conn.execute(
+                text(
+                    "SELECT title, user_id FROM chat_sessions "
+                    "WHERE user_id = 1"
+                )
+            )
+            sess = child.fetchone()
+            assert sess is not None
+            assert sess[0] == "test session"
+            assert sess[1] == 1
+
+            # FK integrity
+            fk_violations = await conn.execute(
+                text("PRAGMA foreign_key_check")
+            )
+            assert fk_violations.fetchall() == [], "FK violations found"
+
+        # Idempotent: running the rebuild again on an email-less table
+        # should not fail (the top-level function returns False)
+        from app.migrations.drop_users_email_column import (
+            drop_users_email_column,
+        )
+        assert await drop_users_email_column(eng) is False
+    finally:
+        await eng.dispose()
