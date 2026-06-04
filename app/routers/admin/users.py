@@ -17,7 +17,7 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
@@ -30,7 +30,6 @@ from app.models.chat_messages import (
     MessageRole,
 )
 from app.models.chat_sessions import ChatSession
-from app.models.user_profiles import UserProfile
 from app.models.users import User
 from app.services.admin_deletion_service import AdminDeletionService
 from app.services.auth_service import AuthService
@@ -44,11 +43,6 @@ router = APIRouter(tags=["관리자-사용자관리"])
 templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
 
-PROFILE_ROLE_LABELS = {
-    "teacher": "교사",
-    "preservice_teacher": "예비교사",
-}
-
 
 def _role_str(role):
     """role 문자열 추출 (방어적)"""
@@ -56,170 +50,18 @@ def _role_str(role):
         else str(role)
 
 
-def _value_str(value: Any) -> str | None:
-    """Enum/문자열 값을 JSON 친화 문자열로 변환한다."""
-    if value is None:
-        return None
-    return value.value if hasattr(value, "value") else str(value)
-
-
 def _user_identifier(user: Any) -> str | None:
-    """관리자 화면용 사용자 식별자: email 우선, 없으면 username."""
+    """관리자 화면용 사용자 식별자: username."""
     if user is None:
         return None
-    return getattr(user, "email", None) or getattr(user, "username", None)
+    return getattr(user, "username", None)
 
 
 def _user_can_login(user: Any) -> bool:
     """비밀번호 재설정 후 실제 로그인 가능한 계정인지 확인한다."""
     if user is None:
         return False
-    if getattr(user, "email", None) is not None:
-        return True
     return AuthService._has_valid_custom_id(user)
-
-
-def _serialize_profile(profile: Any) -> dict[str, Any]:
-    """프로필 객체를 관리자 화면/API 표시용으로 직렬화한다."""
-    if profile is None:
-        return {
-            "role": None,
-            "role_label": "-",
-            "teacher_region": None,
-            "teacher_career_years": None,
-            "preservice_university_region": None,
-            "preservice_grade": None,
-            "summary": "-",
-        }
-
-    role = _value_str(getattr(profile, "role", None))
-    role_label = PROFILE_ROLE_LABELS.get(role, role or "-")
-    teacher_region = getattr(profile, "teacher_region", None)
-    teacher_career_years = getattr(
-        profile, "teacher_career_years", None
-    )
-    preservice_university_region = getattr(
-        profile, "preservice_university_region", None
-    )
-    preservice_grade = getattr(profile, "preservice_grade", None)
-
-    if role == "teacher":
-        detail_parts = [
-            teacher_region,
-            (
-                f"{teacher_career_years}년"
-                if teacher_career_years is not None
-                else None
-            ),
-        ]
-    elif role == "preservice_teacher":
-        detail_parts = [
-            preservice_university_region,
-            (
-                f"{preservice_grade}학년"
-                if preservice_grade is not None
-                else None
-            ),
-        ]
-    else:
-        detail_parts = [
-            teacher_region or preservice_university_region,
-            (
-                f"{teacher_career_years}년"
-                if teacher_career_years is not None
-                else None
-            ),
-            (
-                f"{preservice_grade}학년"
-                if preservice_grade is not None
-                else None
-            ),
-        ]
-
-    detail = " · ".join(
-        str(part) for part in detail_parts if part not in (None, "")
-    )
-    summary = role_label if not detail else f"{role_label} · {detail}"
-
-    return {
-        "role": role,
-        "role_label": role_label,
-        "teacher_region": teacher_region,
-        "teacher_career_years": teacher_career_years,
-        "preservice_university_region": preservice_university_region,
-        "preservice_grade": preservice_grade,
-        "summary": summary,
-    }
-
-
-async def _load_profiles(
-    db: AsyncSession,
-    user_ids: set[int],
-) -> dict[int, dict[str, Any]]:
-    """사용자 프로필을 일괄 조회한다. 프로필 미구현/미마이그레이션은 무시."""
-    if not user_ids:
-        return {}
-
-    try:
-        result = await db.execute(
-            select(UserProfile).where(UserProfile.user_id.in_(user_ids))
-        )
-    except Exception as exc:
-        await db.rollback()
-        logger.warning("사용자 프로필 조회 생략: %s", exc)
-        return {}
-
-    return {
-        profile.user_id: _serialize_profile(profile)
-        for profile in result.scalars().all()
-    }
-
-
-async def _get_profile_totals(db: AsyncSession) -> dict[str, int]:
-    """등록 사용자/프로필 통계를 가져온다."""
-    totals = {
-        "regular_user_count": 0,
-        "teacher_count": 0,
-        "preservice_teacher_count": 0,
-        "no_profile_count": 0,
-    }
-
-    result = await db.execute(
-        select(func.count(User.id)).where(User.is_admin.is_(False))
-    )
-    totals["regular_user_count"] = result.scalar() or 0
-
-    try:
-        role_counts = await db.execute(
-            select(
-                UserProfile.role,
-                func.count(UserProfile.user_id),
-            )
-            .join(User, User.id == UserProfile.user_id)
-            .where(User.is_admin.is_(False))
-            .group_by(UserProfile.role)
-        )
-    except Exception as exc:
-        await db.rollback()
-        logger.warning("사용자 프로필 통계 생략: %s", exc)
-        totals["no_profile_count"] = totals["regular_user_count"]
-        return totals
-
-    counted = 0
-    for role, count in role_counts:
-        role_value = _value_str(role)
-        count = count or 0
-        counted += count
-        if role_value == "teacher":
-            totals["teacher_count"] = count
-        elif role_value == "preservice_teacher":
-            totals["preservice_teacher_count"] = count
-
-    totals["no_profile_count"] = max(
-        totals["regular_user_count"] - counted,
-        0,
-    )
-    return totals
 
 
 async def _count_sessions_by_user(
@@ -358,14 +200,12 @@ async def get_user_stats(
             stats.append(entry)
             for k in totals:
                 totals[k] += entry[k]
-        profile_totals = await _get_profile_totals(db)
         logger.info(
             f"사용자 통계 조회: "
             f"admin={current_admin.username}")
         return {
             "stats": stats,
             "totals": totals,
-            "profile_totals": profile_totals,
         }
     except Exception as e:
         logger.error(
@@ -416,7 +256,6 @@ async def get_user_sessions(
                 ).group_by(AnalysisReport.user_id))
             for row in await db.execute(rc_q):
                 rpt_map[row.user_id] = row.cnt
-        profile_map = await _load_profiles(db, uids)
         sessions_data = []
         for s in sessions:
             msgs = sorted(
@@ -427,19 +266,12 @@ async def get_user_sessions(
                 if m.role == MessageRole.USER)
             last = msgs[-1] if msgs else None
             user = getattr(s, "user", None)
-            profile = profile_map.get(
-                s.user_id,
-                _serialize_profile(None),
-            )
             last_at = (
                 last.created_at.isoformat() if last
                 else s.created_at.isoformat())
             sessions_data.append({
                 "session_id": s.id,
                 "user_id": s.user_id,
-                "user_email": (
-                    user.email if user is not None else None
-                ),
                 "user_identifier": _user_identifier(user),
                 "username": (
                     user.username if user is not None else None
@@ -447,9 +279,6 @@ async def get_user_sessions(
                 "nickname": (
                     user.nickname if user is not None else None
                 ),
-                "profile": profile,
-                "profile_role": profile["role"],
-                "profile_summary": profile["summary"],
                 "user_type": s.user_type,
                 "title": s.title,
                 "created_at": (
@@ -501,11 +330,7 @@ async def get_user_accounts(
         if q:
             term = f"%{q.strip().lower()}%"
             filters.append(
-                or_(
-                    func.lower(User.email).like(term),
-                    func.lower(User.username).like(term),
-                    func.lower(User.nickname).like(term),
-                )
+                func.lower(User.username).like(term),
             )
 
         query = select(User).order_by(
@@ -528,19 +353,13 @@ async def get_user_accounts(
         user_ids = {user.id for user in users}
         session_counts = await _count_sessions_by_user(db, user_ids)
         report_counts = await _count_reports_by_user(db, user_ids)
-        profile_map = await _load_profiles(db, user_ids)
 
         accounts = []
         for account in users:
-            profile = profile_map.get(
-                account.id,
-                _serialize_profile(None),
-            )
             accounts.append({
                 "user_id": account.id,
                 "username": account.username,
                 "nickname": account.nickname,
-                "email": account.email,
                 "user_identifier": _user_identifier(account),
                 "is_admin": account.is_admin,
                 "created_at": (
@@ -548,12 +367,9 @@ async def get_user_accounts(
                     if account.created_at
                     else None
                 ),
-                "profile": profile,
-                "profile_role": profile["role"],
-                "profile_summary": profile["summary"],
                 "session_count": session_counts.get(account.id, 0),
                 "report_count": report_counts.get(account.id, 0),
-                # Issue #90: 재설정 후 실제 로그인 가능한 계정만 허용한다.
+                # Issue #91: 재설정 후 실제 로그인 가능한 계정만 허용한다.
                 "can_change_password": (
                     not account.is_admin and _user_can_login(account)
                 ),
@@ -815,8 +631,6 @@ async def get_user_profile_for_admin(
             detail="사용자를 찾을 수 없습니다.",
         )
 
-    profile_map = await _load_profiles(db, {target.id})
-    profile = profile_map.get(target.id, _serialize_profile(None))
     session_counts = await _count_sessions_by_user(db, {target.id})
     report_counts = await _count_reports_by_user(db, {target.id})
 
@@ -824,12 +638,10 @@ async def get_user_profile_for_admin(
         "user_id": target.id,
         "username": target.username,
         "nickname": target.nickname,
-        "email": target.email,
         "is_admin": target.is_admin,
         "created_at": (
             target.created_at.isoformat() if target.created_at else None
         ),
-        "profile": profile,
         "session_count": session_counts.get(target.id, 0),
         "report_count": report_counts.get(target.id, 0),
     }
