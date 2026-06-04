@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.constants import SESSION_USER_TYPE_LABELS
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models.chat_messages import ChatMessage
@@ -100,8 +101,8 @@ async def _session_segment_label_for_user(
     nickname = _model_optional_str(current_user.nickname) or ""
     if nickname == "teacher":
         return "교사"
-    if nickname == "preservice_teacher":
-        return "미지정"
+    if nickname in SESSION_USER_TYPE_LABELS:
+        return nickname
     return "미지정"
 
 

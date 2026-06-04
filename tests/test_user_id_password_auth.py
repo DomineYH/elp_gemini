@@ -34,6 +34,7 @@ from app.db import Base, get_db
 from app.main import app
 from app.models.users import User
 from app.rate_limit import limiter
+from app.routers import auth as auth_router
 from app.routers.qna import _session_segment_label_for_user
 from app.services.auth_service import AuthService
 
@@ -429,6 +430,62 @@ async def test_login_id_is_case_insensitive(client, session_factory):
 
 
 @pytest.mark.asyncio
+async def test_login_rejects_invalid_id_before_user_lookup(monkeypatch):
+    bad_id = "teacher_550e8400e29b41d4a716446655440000"
+    auth_events = []
+    request = auth_router.Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/auth/login/user",
+            "headers": [],
+            "query_string": b"",
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "client": ("testclient", 50000),
+            "session": {},
+        }
+    )
+
+    def record_auth_event(event_type, **kwargs):
+        auth_events.append((event_type, kwargs))
+
+    async def fail_if_lookup_runs(self, user_id, password):
+        raise AssertionError("invalid login id must not reach user lookup")
+
+    monkeypatch.setattr(auth_router, "log_auth_event", record_auth_event)
+    monkeypatch.setattr(
+        AuthService,
+        "authenticate_regular_user_by_username",
+        fail_if_lookup_runs,
+    )
+
+    response = await auth_router.login_user(
+        request,
+        user_id=bad_id,
+        password=USER_PASSWORD,
+        db=object(),
+    )
+
+    assert response.status_code == 401
+    assert request.session == {}
+    assert response.context["error"] == (
+        auth_router.INVALID_USER_CREDENTIALS_MESSAGE
+    )
+    assert "영문/숫자" not in response.context["error"]
+    assert auth_events == [
+        (
+            "login",
+            {
+                "username": bad_id,
+                "success": False,
+                "reason": "Invalid regular-user credentials",
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_regular_user_login_lookup_query_is_case_insensitive():
     class EmptyResult:
         def scalar_one_or_none(self):
@@ -555,10 +612,15 @@ async def test_qna_session_segment_for_id_only_user_is_neutral():
     ("nickname", "expected_label"),
     [
         ("teacher", "교사"),
+        ("1학년", "1학년"),
+        ("2학년", "2학년"),
+        ("3학년", "3학년"),
+        ("4학년", "4학년"),
+        ("교사", "교사"),
         ("preservice_teacher", "미지정"),
     ],
 )
-async def test_qna_session_segment_keeps_legacy_profileless_role_nicknames(
+async def test_qna_session_segment_keeps_legacy_profileless_segment_nicknames(
     nickname, expected_label
 ):
     class EmptyProfileResult:

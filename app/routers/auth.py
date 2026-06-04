@@ -32,6 +32,7 @@ from app.schemas.users import (
     IdPasswordLogin,
     RegularUserRegistration,
     UserResponse,
+    validate_user_id,
 )
 from app.services.auth_service import AuthService
 from app.utils.logging import log_auth_event
@@ -177,6 +178,24 @@ async def login_user(
         )
 
     normalized_id = login_data.user_id
+    try:
+        normalized_id = validate_user_id(normalized_id)
+    except ValueError:
+        log_auth_event(
+            "login",
+            username=normalized_id,
+            success=False,
+            reason="Invalid regular-user credentials",
+        )
+        return templates.TemplateResponse(
+            "user/login.html",
+            _login_context(
+                request,
+                user_id=normalized_id,
+                error=INVALID_USER_CREDENTIALS_MESSAGE,
+            ),
+            status_code=401,
+        )
 
     try:
         auth_service = AuthService(db)
