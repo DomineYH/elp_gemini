@@ -178,38 +178,30 @@ async def login_user(
         )
 
     normalized_id = login_data.user_id
-    use_legacy_email_fallback = False
     try:
         normalized_id = validate_user_id(normalized_id)
     except ValueError:
-        use_legacy_email_fallback = "@" in normalized_id
-        if not use_legacy_email_fallback:
-            log_auth_event(
-                "login",
-                username=normalized_id,
-                success=False,
-                reason="Invalid regular-user credentials",
-            )
-            return templates.TemplateResponse(
-                "user/login.html",
-                _login_context(
-                    request,
-                    user_id=normalized_id,
-                    error=INVALID_USER_CREDENTIALS_MESSAGE,
-                ),
-                status_code=401,
-            )
+        log_auth_event(
+            "login",
+            username=normalized_id,
+            success=False,
+            reason="Invalid regular-user credentials",
+        )
+        return templates.TemplateResponse(
+            "user/login.html",
+            _login_context(
+                request,
+                user_id=normalized_id,
+                error=INVALID_USER_CREDENTIALS_MESSAGE,
+            ),
+            status_code=401,
+        )
 
     try:
         auth_service = AuthService(db)
-        if use_legacy_email_fallback:
-            user = await auth_service.authenticate_regular_user_by_legacy_email(
-                normalized_id, login_data.password
-            )
-        else:
-            user = await auth_service.authenticate_regular_user_by_username(
-                normalized_id, login_data.password
-            )
+        user = await auth_service.authenticate_regular_user_by_username(
+            normalized_id, login_data.password
+        )
         if not user:
             log_auth_event(
                 "login",
@@ -561,7 +553,7 @@ async def logout(request: Request):
         try:
             from app.services.file_search_service import FileSearchService
             file_search_service = FileSearchService()
-            store_name = f"user-{username}-store"
+            store_name = f"user-{user_id}-store"
             await file_search_service.delete_store_by_display_name(store_name)
         except Exception as e:
             logger.warning(f"로그아웃 시 스토어 정리 실패: {str(e)}")

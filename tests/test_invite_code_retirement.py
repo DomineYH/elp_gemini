@@ -14,7 +14,6 @@ from app.config import settings
 from app.db import Base
 from app.main import _drop_legacy_invite_codes_table_if_enabled
 from app.migrations.drop_invite_codes_table import drop_invite_codes_table
-from app.models.user_profiles import UserProfile
 from app.models.users import User
 from app.routers.qna import _session_segment_label_for_user
 from app.services.auth_service import AuthService
@@ -86,26 +85,32 @@ def test_passwordless_legacy_auth_service_method_is_removed():
 
 
 @pytest.mark.asyncio
-async def test_qna_session_segment_propagates_profile_query_errors():
-    class BrokenSession:
+async def test_qna_session_segment_for_profileless_user_returns_unprofiled():
+    """With UserProfile gone, users without legacy nicknames get 미지정."""
+
+    class EmptyResult:
+        def scalar_one_or_none(self):
+            return None
+
+    class NoopSession:
         async def execute(self, statement):
-            raise RuntimeError("profile query failed")
+            return EmptyResult()
 
     user = User(
         username="teacher_abc123",
         nickname="teacher",
-        email="teacher-segment@example.com",
         hashed_password=AuthService.hash_password("Password123"),
         is_admin=False,
     )
     user.id = 1
 
-    with pytest.raises(RuntimeError, match="profile query failed"):
-        await _session_segment_label_for_user(BrokenSession(), user)
+    label = await _session_segment_label_for_user(NoopSession(), user)
+    # nickname "teacher" maps to "교사" via legacy fallback
+    assert label == "교사"
 
 
 @pytest.mark.asyncio
-async def test_qna_session_segment_uses_profile_not_generated_username():
+async def test_qna_session_segment_unknown_nickname_returns_unprofiled():
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -120,27 +125,18 @@ async def test_qna_session_segment_uses_profile_not_generated_username():
     try:
         async with session_factory() as session:
             user = User(
-                username="preservice_teacher_abc123",
-                nickname="preservice_teacher",
-                email="preservice-segment@example.com",
+                username="randomuser123",
+                nickname="randomuser123",
                 hashed_password=AuthService.hash_password("Password123"),
                 is_admin=False,
             )
             session.add(user)
-            await session.flush()
-            session.add(
-                UserProfile(
-                    user_id=user.id,
-                    role="preservice_teacher",
-                    preservice_university_region="서울",
-                    preservice_grade=3,
-                )
-            )
             await session.commit()
             await session.refresh(user)
 
             label = await _session_segment_label_for_user(session, user)
 
-        assert label == "3학년"
+        # No profile and no legacy nickname → 미지정
+        assert label == "미지정"
     finally:
         await engine.dispose()

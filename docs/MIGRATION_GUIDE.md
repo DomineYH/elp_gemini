@@ -1,5 +1,10 @@
 # Authentication System Migration Guide
 
+> **⚠️ SUPERSEDED by #91** — The email → username/nickname migration described below
+> has itself been superseded by **id-login** (user-chosen `user_id` + password).
+> See `docs/plans/2026-06-04-issue-91-id-auth-email-removal.md` for the current system.
+> This document is kept for historical reference only.
+
 ## Overview
 The authentication system has been migrated from email/password to username/nickname authentication.
 

@@ -20,7 +20,6 @@ from app.main import app
 from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage, MessageRole
 from app.models.chat_sessions import ChatSession
-from app.models.user_profiles import UserProfile
 from app.models.users import User
 
 
@@ -39,7 +38,6 @@ _admin = User(
     id=999,
     username="export_admin",
     nickname="ExportAdmin",
-    email="export_admin@test.com",
     hashed_password="hashed",
     is_admin=True,
 )
@@ -105,16 +103,8 @@ async def test_export_requires_admin(client_unauth):
 
 @pytest.mark.asyncio
 async def test_export_returns_valid_zip(client_admin, db_session, tmp_path):
-    user = User(
-        id=42, username="u42", nickname="kim",
-        email="kim@example.com",
-    )
+    user = User(id=42, username="u42", nickname="kim")
     db_session.add(user)
-    db_session.add(UserProfile(
-        user_id=42, role="teacher",
-        teacher_region="서울",
-        teacher_career_years=12,
-    ))
     report_md = tmp_path / "report.md"
     report_md.write_text("# Report\nHello", encoding="utf-8")
     db_session.add(AnalysisReport(
@@ -148,42 +138,11 @@ async def test_export_returns_valid_zip(client_admin, db_session, tmp_path):
     assert "manifest.csv" in names
     assert "users.csv" in names
     assert "README.txt" in names
-    assert any(n.startswith("reports/T-서울-12y__u00042__") for n in names)
-    assert any(n.startswith("conversations/T-서울-12y__u00042__") for n in names)
     convo = [n for n in names if n.startswith("conversations/")][0]
     lines = zf.read(convo).decode("utf-8").splitlines()
     parsed = [json.loads(l) for l in lines]
     assert len(parsed) == 2
     assert parsed[0]["role"] == "user"
-
-
-@pytest.mark.asyncio
-async def test_export_filter_role(client_admin, db_session):
-    db_session.add(User(
-        id=1, username="t", nickname="t", email="t@x.com"
-    ))
-    db_session.add(UserProfile(
-        user_id=1, role="teacher",
-        teacher_region="서울", teacher_career_years=5,
-    ))
-    db_session.add(User(
-        id=2, username="p", nickname="p", email="p@x.com"
-    ))
-    db_session.add(UserProfile(
-        user_id=2, role="preservice_teacher",
-        preservice_university_region="부산",
-        preservice_grade=3,
-    ))
-    await db_session.commit()
-
-    resp = await client_admin.get(
-        "/admin/api/exports/all.zip?role=teacher"
-    )
-    assert resp.status_code == 200
-    zf = zipfile.ZipFile(io.BytesIO(resp.content))
-    users_csv = zf.read("users.csv").decode("utf-8")
-    assert "1,t@x.com,teacher" in users_csv
-    assert "2,p@x.com" not in users_csv
 
 
 @pytest.mark.asyncio
@@ -199,13 +158,7 @@ async def test_export_missing_report_file_marks_in_manifest(
     client_admin, db_session
 ):
     """원본 보고서 .md 파일이 사라진 경우 manifest에 MISSING으로 표시."""
-    db_session.add(User(
-        id=1, username="t", nickname="t", email="t@x.com"
-    ))
-    db_session.add(UserProfile(
-        user_id=1, role="teacher",
-        teacher_region="서울", teacher_career_years=5,
-    ))
+    db_session.add(User(id=1, username="t", nickname="t"))
     db_session.add(AnalysisReport(
         user_id=1,
         lessonplan_filename="does_not_exist.pdf",
@@ -225,13 +178,7 @@ async def test_export_missing_report_file_marks_in_manifest(
 async def test_export_include_meta_only_skips_data_dirs(
     client_admin, db_session
 ):
-    db_session.add(User(
-        id=1, username="t", nickname="t", email="t@x.com"
-    ))
-    db_session.add(UserProfile(
-        user_id=1, role="teacher",
-        teacher_region="서울", teacher_career_years=5,
-    ))
+    db_session.add(User(id=1, username="t", nickname="t"))
     db_session.add(AnalysisReport(
         user_id=1,
         lessonplan_filename="1_lp.pdf",

@@ -1,3 +1,8 @@
+> **⚠️ SUPERSEDED by #91** — This plan designed the email/role/region/UserProfile
+> system which has been **removed**. The platform now uses user-chosen `user_id` +
+> password login with no email, role, region, career, or UserProfile.
+> See `docs/plans/2026-06-04-issue-91-id-auth-email-removal.md`.
+
 # 구현 계획: 일반 사용자 이메일+비밀번호 로그인/등록 전환
 
 - **GitHub Issue**: [#10](https://github.com/DomineYH/elp_gemini/issues/10)

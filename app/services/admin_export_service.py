@@ -14,19 +14,16 @@ from typing import Iterable, Iterator
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import contains_eager, joinedload, selectinload
+from sqlalchemy.orm import selectinload
 
 from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage
 from app.models.chat_sessions import ChatSession
 from app.models.lessonplan_uploads import LessonPlanUpload
-from app.models.user_profiles import UserProfile
 from app.models.users import User
 from app.schemas.admin_export import ExportFilters
 from app.utils.admin_export_naming import (
-    NormalizedProfile,
     build_filename_prefix,
-    normalize_profile_fields,
     slugify_original_name,
 )
 
@@ -37,9 +34,6 @@ STATIC_UPLOADS_DIR = "app/static/uploads"
 @dataclass(frozen=True)
 class UserContext:
     user_id: int
-    user_email: str | None
-    role: str | None
-    profile: NormalizedProfile
     filename_prefix: str
     username: str | None = None
     last_login_at: datetime | None = None
@@ -138,12 +132,6 @@ class AdminExportService:
     async def _collect_users(
         self, filters: ExportFilters
     ) -> list[UserContext]:
-        needs_join = (
-            bool(filters.role)
-            or bool(filters.region)
-            or filters.career_min is not None
-            or filters.career_max is not None
-        )
         stmt = (
             select(User)
             .where(User.is_admin.is_(False))
@@ -151,71 +139,15 @@ class AdminExportService:
         )
         if filters.user_ids:
             stmt = stmt.where(User.id.in_(filters.user_ids))
-        if needs_join:
-            stmt = stmt.join(User.profile).options(
-                contains_eager(User.profile)
-            )
-            if filters.role:
-                stmt = stmt.where(UserProfile.role == filters.role)
-            if filters.region:
-                stmt = stmt.where(
-                    (UserProfile.teacher_region == filters.region)
-                    | (
-                        UserProfile.preservice_university_region
-                        == filters.region
-                    )
-                )
-            if filters.career_min is not None:
-                stmt = stmt.where(
-                    (
-                        (UserProfile.role == "teacher")
-                        & (
-                            UserProfile.teacher_career_years
-                            >= filters.career_min
-                        )
-                    )
-                    | (
-                        (UserProfile.role == "preservice_teacher")
-                        & (
-                            UserProfile.preservice_grade
-                            >= filters.career_min
-                        )
-                    )
-                )
-            if filters.career_max is not None:
-                stmt = stmt.where(
-                    (
-                        (UserProfile.role == "teacher")
-                        & (
-                            UserProfile.teacher_career_years
-                            <= filters.career_max
-                        )
-                    )
-                    | (
-                        (UserProfile.role == "preservice_teacher")
-                        & (
-                            UserProfile.preservice_grade
-                            <= filters.career_max
-                        )
-                    )
-                )
-        else:
-            stmt = stmt.options(joinedload(User.profile))
         result = await self.db.execute(stmt)
         users = result.unique().scalars().all()
 
         out: list[UserContext] = []
         for u in users:
-            profile = u.profile
-            role = profile.role if profile else None
-            norm = normalize_profile_fields(role, profile, u.email)
             out.append(
                 UserContext(
                     user_id=u.id,
-                    user_email=u.email,
-                    role=role,
-                    profile=norm,
-                    filename_prefix=build_filename_prefix(u.id, norm),
+                    filename_prefix=build_filename_prefix(user_id=u.id),
                     username=u.username,
                     last_login_at=None,
                     created_at=u.created_at,
@@ -281,8 +213,8 @@ class AdminExportService:
         """원본 지도안 파일을 파일시스템에서 열거하고 보고서 참조도 보강.
 
         스토리지 컨벤션:
-        - dashboard: app/static/uploads/{username}_{timestamp}_{원본명}
-        - legacy: data/lessonplan/{username}_{원본명}
+        - per-user: data/lessonplan/{user_id}/{original_filename}
+        - dashboard: app/static/uploads/{user_id}/{saved_filename}
         """
         if "lessonplans" not in filters.include:
             return []
@@ -310,10 +242,10 @@ class AdminExportService:
 
         if base.exists():
             for ctx in users:
-                if not ctx.username:
+                user_dir = base / str(ctx.user_id)
+                if not user_dir.is_dir():
                     continue
-                prefix = f"{ctx.username}_"
-                files = sorted(base.glob(f"{prefix}*"))
+                files = sorted(user_dir.glob("*"))
                 for ordinal, fpath in enumerate(files, start=1):
                     if not fpath.is_file():
                         continue
@@ -326,7 +258,7 @@ class AdminExportService:
                         continue
                     if upper_bound and mtime >= upper_bound:
                         continue
-                    original = fpath.name[len(prefix):]
+                    original = fpath.name
                     archive_name = (
                         f"{ctx.filename_prefix}__lessonplan_{ordinal}__"
                         f"{slugify_original_name(original)}"
@@ -375,6 +307,7 @@ class AdminExportService:
             original = r.lessonplan_original_name or r.lessonplan_filename
             source_path = self._resolve_lessonplan_source_path(
                 r.lessonplan_filename,
+                user_id=r.user_id,
                 upload_id=r.upload_id,
             )
             archive_name = (
@@ -427,6 +360,7 @@ class AdminExportService:
             original = upload.original_filename or upload.filename
             source_path = self._resolve_lessonplan_source_path(
                 upload.filename,
+                user_id=upload.user_id,
                 upload_id=upload.id,
             )
             archive_name = (
@@ -454,13 +388,20 @@ class AdminExportService:
     def _resolve_lessonplan_source_path(
         self,
         filename: str,
+        user_id: int,
         upload_id: int | None,
     ) -> Path:
         safe_name = Path(filename).name
-        upload_path = Path(self._static_uploads_dir) / safe_name
-        if upload_path.is_file():
-            return upload_path
-        return Path(self._lessonplan_base_dir) / safe_name
+        candidates = [
+            Path(self._static_uploads_dir) / str(user_id) / safe_name,
+            Path(self._lessonplan_base_dir) / str(user_id) / safe_name,
+            Path(self._static_uploads_dir) / safe_name,
+            Path(self._lessonplan_base_dir) / safe_name,
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return candidates[0]
 
     async def _collect_sessions(
         self, user_ids, ctx_by_id, filters
@@ -621,11 +562,6 @@ def _serialize_session_jsonl(
 _MANIFEST_COLUMNS = [
     "kind",
     "user_id",
-    "user_email",
-    "role",
-    "region",
-    "tenure",
-    "tenure_kind",
     "resource_id",
     "session_id",
     "created_at",
@@ -638,11 +574,6 @@ _MANIFEST_COLUMNS = [
 
 _USERS_COLUMNS = [
     "user_id",
-    "user_email",
-    "role",
-    "region",
-    "tenure",
-    "tenure_kind",
     "created_at",
     "last_login_at",
     "n_reports",
@@ -668,20 +599,13 @@ def build_manifest_csv(plan: ExportPlan) -> bytes:
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=_MANIFEST_COLUMNS)
     w.writeheader()
-    ctx_by_id = {u.user_id: u for u in plan.users}
     iter_entries: Iterable = (
         list(plan.reports) + list(plan.sessions) + list(plan.lessonplans)
     )
     for e in iter_entries:
-        ctx = ctx_by_id[e.user_id]
         w.writerow({
             "kind": e.kind,
             "user_id": e.user_id,
-            "user_email": _csv_safe(ctx.user_email),
-            "role": ctx.role or "",
-            "region": ctx.profile.region_slug,
-            "tenure": ctx.profile.tenure,
-            "tenure_kind": ctx.profile.tenure_kind,
             "resource_id": e.resource_id,
             "session_id": e.session_id or "",
             "created_at": (
@@ -713,11 +637,6 @@ def build_users_csv(plan: ExportPlan) -> bytes:
     for u in plan.users:
         w.writerow({
             "user_id": u.user_id,
-            "user_email": _csv_safe(u.user_email),
-            "role": u.role or "",
-            "region": u.profile.region_slug,
-            "tenure": u.profile.tenure,
-            "tenure_kind": u.profile.tenure_kind,
             "created_at": (
                 u.created_at.isoformat() if u.created_at else ""
             ),
@@ -741,10 +660,6 @@ def build_readme(plan: ExportPlan) -> bytes:
         f"  date_from={plan.filters.date_from}",
         f"  date_to={plan.filters.date_to}",
         f"  user_ids={plan.filters.user_ids}",
-        f"  role={plan.filters.role}",
-        f"  region={plan.filters.region}",
-        f"  career_min={plan.filters.career_min}",
-        f"  career_max={plan.filters.career_max}",
         f"  include={sorted(plan.filters.include)}",
         "",
         "Counts:",
@@ -761,7 +676,7 @@ def build_readme(plan: ExportPlan) -> bytes:
         "  lessonplans/      원본 수업 지도안",
         "",
         "파일명 규칙:",
-        "  {role-region-tenure}__u{user_id}__{email_slug}__"
-        "{resource_kind}_{resource_id}__{original_name}.{ext}",
+        "  u{user_id}__{resource_kind}_{resource_id}"
+        "__{original_name}.{ext}",
     ]
     return ("\n".join(lines) + "\n").encode("utf-8")

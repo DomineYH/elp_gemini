@@ -8,10 +8,6 @@ from sqlalchemy.sql import func
 
 from app.db import Base
 
-# 직접 app.models.users를 import하는 기존 경로에서도 User.profile의
-# relationship 대상이 SQLAlchemy class registry에 등록되도록 한다.
-from app.models.user_profiles import UserProfile  # noqa: F401
-
 
 class User(Base):
     """사용자 모델"""
@@ -25,9 +21,6 @@ class User(Base):
         String(255), unique=True, nullable=False, index=True
     )
     nickname = Column(String(255), nullable=False)
-    email = Column(
-        String(255), unique=True, nullable=True, index=True
-    )
     hashed_password = Column(String(255), nullable=True)
     is_admin = Column(Boolean, nullable=False, default=False)
     failed_login_count = Column(
@@ -58,12 +51,6 @@ class User(Base):
         "AnalysisReport",
         back_populates="user",
         cascade="all, delete-orphan"
-    )
-    profile = relationship(
-        "UserProfile",
-        back_populates="user",
-        cascade="all, delete-orphan",
-        uselist=False,
     )
     lessonplan_uploads = relationship(
         "LessonPlanUpload",

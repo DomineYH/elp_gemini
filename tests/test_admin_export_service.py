@@ -17,7 +17,6 @@ from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage, MessageRole
 from app.models.chat_sessions import ChatSession
 from app.models.lessonplan_uploads import LessonPlanUpload
-from app.models.user_profiles import UserProfile
 from app.models.users import User
 from app.schemas.admin_export import ExportFilters
 from app.services.admin_export_service import (
@@ -28,7 +27,6 @@ from app.services.admin_export_service import (
     build_readme,
     build_users_csv,
 )
-from app.utils.admin_export_naming import NormalizedProfile
 
 
 @pytest.fixture
@@ -46,73 +44,87 @@ async def db_session():
     await engine.dispose()
 
 
-async def _seed_user(session, *, user_id, email, role,
-                     region=None, tenure=None):
+async def _seed_user(session, *, user_id):
+    """Seed a bare user — no email, no profile."""
     user = User(
         id=user_id,
         username=f"u{user_id}",
         nickname=f"n{user_id}",
-        email=email,
     )
     session.add(user)
-    await session.flush()
-    if role == "teacher":
-        profile = UserProfile(
-            user_id=user_id,
-            role=role,
-            teacher_region=region,
-            teacher_career_years=tenure,
-        )
-    else:
-        profile = UserProfile(
-            user_id=user_id,
-            role=role,
-            preservice_university_region=region,
-            preservice_grade=tenure,
-        )
-    session.add(profile)
     await session.commit()
     return user
 
 
+# ---- user collection ----
+
+
 @pytest.mark.asyncio
-async def test_collect_filters_by_role(db_session):
-    await _seed_user(
-        db_session, user_id=1, email="t@x.com",
-        role="teacher", region="서울", tenure=10,
-    )
-    await _seed_user(
-        db_session, user_id=2, email="p@x.com",
-        role="preservice_teacher", region="부산", tenure=3,
-    )
+async def test_collect_filters_by_user_ids(db_session):
+    await _seed_user(db_session, user_id=1)
+    await _seed_user(db_session, user_id=2)
     svc = AdminExportService(db_session)
-    plan = await svc.collect(
-        ExportFilters(role="teacher")
+    plan = await svc.collect(ExportFilters(user_ids=[2]))
+    assert {u.user_id for u in plan.users} == {2}
+
+
+@pytest.mark.asyncio
+async def test_collect_includes_sessions_and_messages(db_session):
+    await _seed_user(db_session, user_id=1)
+    s = ChatSession(user_id=1, title="t1")
+    db_session.add(s)
+    await db_session.flush()
+    db_session.add_all([
+        ChatMessage(
+            session_id=s.id, role=MessageRole.USER, content="hi"
+        ),
+        ChatMessage(
+            session_id=s.id,
+            role=MessageRole.ASSISTANT,
+            content="hello",
+        ),
+    ])
+    await db_session.commit()
+    svc = AdminExportService(db_session)
+    plan = await svc.collect(ExportFilters())
+    assert len(plan.sessions) == 1
+    assert plan.sessions[0].message_count == 2
+
+
+@pytest.mark.asyncio
+async def test_collect_excludes_admin_users(db_session):
+    await _seed_user(db_session, user_id=1)
+    admin = User(
+        id=2, username="adm", nickname="adm", is_admin=True,
     )
+    db_session.add(admin)
+    await db_session.commit()
+
+    svc = AdminExportService(db_session)
+    plan = await svc.collect(ExportFilters())
     assert {u.user_id for u in plan.users} == {1}
 
 
 @pytest.mark.asyncio
-async def test_collect_filters_by_region(db_session):
-    await _seed_user(
-        db_session, user_id=1, email="a@x.com",
-        role="teacher", region="서울", tenure=5,
+async def test_collect_excludes_admin_even_in_user_ids(db_session):
+    await _seed_user(db_session, user_id=1)
+    admin = User(
+        id=2, username="adm", nickname="adm", is_admin=True,
     )
-    await _seed_user(
-        db_session, user_id=2, email="b@x.com",
-        role="teacher", region="부산", tenure=5,
-    )
+    db_session.add(admin)
+    await db_session.commit()
+
     svc = AdminExportService(db_session)
-    plan = await svc.collect(ExportFilters(region="서울"))
+    plan = await svc.collect(ExportFilters(user_ids=[1, 2]))
     assert {u.user_id for u in plan.users} == {1}
+
+
+# ---- date filters ----
 
 
 @pytest.mark.asyncio
 async def test_collect_filters_by_date_range(db_session):
-    await _seed_user(
-        db_session, user_id=1, email="a@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
+    await _seed_user(db_session, user_id=1)
     old = AnalysisReport(
         user_id=1,
         lessonplan_filename="1_old.pdf",
@@ -141,10 +153,7 @@ async def test_collect_filters_by_date_range(db_session):
 
 @pytest.mark.asyncio
 async def test_collect_filters_date_to_inclusive(db_session):
-    await _seed_user(
-        db_session, user_id=1, email="a@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
+    await _seed_user(db_session, user_id=1)
     edge = AnalysisReport(
         user_id=1,
         lessonplan_filename="1_edge.pdf",
@@ -162,53 +171,12 @@ async def test_collect_filters_date_to_inclusive(db_session):
     assert {r.resource_id for r in plan.reports} == {edge.id}
 
 
-@pytest.mark.asyncio
-async def test_collect_filters_by_user_ids(db_session):
-    await _seed_user(
-        db_session, user_id=1, email="a@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
-    await _seed_user(
-        db_session, user_id=2, email="b@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
-    svc = AdminExportService(db_session)
-    plan = await svc.collect(ExportFilters(user_ids=[2]))
-    assert {u.user_id for u in plan.users} == {2}
-
-
-@pytest.mark.asyncio
-async def test_collect_includes_sessions_and_messages(db_session):
-    await _seed_user(
-        db_session, user_id=1, email="a@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
-    s = ChatSession(user_id=1, title="t1")
-    db_session.add(s)
-    await db_session.flush()
-    db_session.add_all([
-        ChatMessage(
-            session_id=s.id, role=MessageRole.USER, content="hi"
-        ),
-        ChatMessage(
-            session_id=s.id,
-            role=MessageRole.ASSISTANT,
-            content="hello",
-        ),
-    ])
-    await db_session.commit()
-    svc = AdminExportService(db_session)
-    plan = await svc.collect(ExportFilters())
-    assert len(plan.sessions) == 1
-    assert plan.sessions[0].message_count == 2
+# ---- CSV shape ----
 
 
 @pytest.mark.asyncio
 async def test_manifest_csv_shape(db_session):
-    await _seed_user(
-        db_session, user_id=42, email="kim@example.com",
-        role="teacher", region="서울", tenure=12,
-    )
+    await _seed_user(db_session, user_id=42)
     db_session.add(AnalysisReport(
         user_id=42,
         lessonplan_filename="42_lp.pdf",
@@ -226,22 +194,18 @@ async def test_manifest_csv_shape(db_session):
     assert any(
         r["kind"] == "report"
         and r["user_id"] == "42"
-        and r["user_email"] == "kim@example.com"
-        and r["role"] == "teacher"
-        and r["region"] == "서울"
-        and r["tenure"] == "12"
-        and r["tenure_kind"] == "years"
-        and r["archive_path"].startswith("reports/T-서울-12y__u00042__")
+        and r["archive_path"].startswith("reports/u00042__")
         for r in rows
     )
+    # Removed columns must not appear
+    header = rows[0] if rows else {}
+    for col in ("user_email", "role", "region", "tenure", "tenure_kind"):
+        assert col not in header, f"{col} should not be in manifest CSV"
 
 
 @pytest.mark.asyncio
 async def test_users_csv_counts(db_session, tmp_path):
-    await _seed_user(
-        db_session, user_id=1, email="a@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
+    await _seed_user(db_session, user_id=1)
     db_session.add(AnalysisReport(
         user_id=1,
         lessonplan_filename="u1_a.pdf",
@@ -250,8 +214,11 @@ async def test_users_csv_counts(db_session, tmp_path):
         report_path="/tmp/a.md",
         created_at=datetime(2026, 3, 1),
     ))
-    (tmp_path / "u1_a.pdf").write_bytes(b"x")
     await db_session.commit()
+    # Seed lessonplan under new per-user layout: {user_id}/filename
+    user_dir = tmp_path / "1"
+    user_dir.mkdir()
+    (user_dir / "a.pdf").write_bytes(b"x")
     svc = AdminExportService(
         db_session, lessonplan_base_dir=str(tmp_path)
     )
@@ -261,29 +228,35 @@ async def test_users_csv_counts(db_session, tmp_path):
     assert rows[0]["user_id"] == "1"
     assert rows[0]["n_reports"] == "1"
     assert rows[0]["n_sessions"] == "0"
-    assert rows[0]["n_lessonplans"] == "1"
+    # Removed columns must not appear
+    for col in ("user_email", "role", "region", "tenure", "tenure_kind"):
+        assert col not in rows[0], f"{col} should not be in users CSV"
+
+
+# ---- readme ----
 
 
 @pytest.mark.asyncio
 async def test_readme_mentions_filters(db_session):
     svc = AdminExportService(db_session)
-    plan = await svc.collect(
-        ExportFilters(role="teacher", region="서울")
-    )
+    plan = await svc.collect(ExportFilters())
     text = build_readme(plan).decode("utf-8")
-    assert "role=teacher" in text
-    assert "region=서울" in text
     assert "manifest.csv" in text
+    # Removed filter fields must not appear
+    assert "role=" not in text
+    assert "region=" not in text
+    assert "career_min=" not in text
+    assert "career_max=" not in text
+
+
+# ---- message ordering ----
 
 
 @pytest.mark.asyncio
 async def test_session_messages_stable_order_on_tied_timestamps(
     db_session,
 ):
-    await _seed_user(
-        db_session, user_id=1, email="a@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
+    await _seed_user(db_session, user_id=1)
     s = ChatSession(user_id=1, title="t1")
     db_session.add(s)
     await db_session.flush()
@@ -308,12 +281,12 @@ async def test_session_messages_stable_order_on_tied_timestamps(
     assert ordered[1].role == MessageRole.ASSISTANT
 
 
+# ---- CSV injection defense ----
+
+
 @pytest.mark.asyncio
 async def test_manifest_csv_neutralizes_formula_filenames(db_session):
-    await _seed_user(
-        db_session, user_id=1, email="=hacker@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
+    await _seed_user(db_session, user_id=1)
     db_session.add(AnalysisReport(
         user_id=1,
         lessonplan_filename="1_evil.pdf",
@@ -331,135 +304,67 @@ async def test_manifest_csv_neutralizes_formula_filenames(db_session):
     ))
     report_row = next(r for r in rows if r["kind"] == "report")
     assert report_row["original_name"].startswith("'=")
-    assert report_row["user_email"].startswith("'=")
+
+
+# ---- lessonplan collection (per-user subdirectory) ----
 
 
 @pytest.mark.asyncio
-async def test_users_csv_neutralizes_formula_email(db_session):
-    await _seed_user(
-        db_session, user_id=1, email="+evil@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
-    await db_session.commit()
-    svc = AdminExportService(db_session)
-    plan = await svc.collect(ExportFilters())
-    rows = list(csv.DictReader(
-        io.StringIO(build_users_csv(plan).decode("utf-8"))
-    ))
-    assert rows[0]["user_email"].startswith("'+")
-
-
-@pytest.mark.asyncio
-async def test_collect_excludes_admin_users(db_session):
-    await _seed_user(
-        db_session, user_id=1, email="t@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
-    admin = User(
-        id=2, username="adm", nickname="adm",
-        email="adm@x.com", is_admin=True,
-    )
-    db_session.add(admin)
-    await db_session.commit()
-
-    svc = AdminExportService(db_session)
-    plan = await svc.collect(ExportFilters())
-    assert {u.user_id for u in plan.users} == {1}
-
-
-@pytest.mark.asyncio
-async def test_collect_excludes_admin_even_in_user_ids(db_session):
-    await _seed_user(
-        db_session, user_id=1, email="t@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
-    admin = User(
-        id=2, username="adm", nickname="adm",
-        email="adm@x.com", is_admin=True,
-    )
-    db_session.add(admin)
-    await db_session.commit()
-
-    svc = AdminExportService(db_session)
-    plan = await svc.collect(ExportFilters(user_ids=[1, 2]))
-    assert {u.user_id for u in plan.users} == {1}
-
-
-@pytest.mark.asyncio
-async def test_collect_career_filter_teacher(db_session):
-    await _seed_user(
-        db_session, user_id=1, email="a@x.com",
-        role="teacher", region="서울", tenure=3,
-    )
-    await _seed_user(
-        db_session, user_id=2, email="b@x.com",
-        role="teacher", region="서울", tenure=10,
-    )
-    await _seed_user(
-        db_session, user_id=3, email="c@x.com",
-        role="teacher", region="서울", tenure=20,
-    )
-    svc = AdminExportService(db_session)
-    plan = await svc.collect(
-        ExportFilters(career_min=5, career_max=15)
-    )
-    assert {u.user_id for u in plan.users} == {2}
-
-
-@pytest.mark.asyncio
-async def test_collect_career_filter_preservice(db_session):
-    await _seed_user(
-        db_session, user_id=1, email="a@x.com",
-        role="preservice_teacher", region="부산", tenure=1,
-    )
-    await _seed_user(
-        db_session, user_id=2, email="b@x.com",
-        role="preservice_teacher", region="부산", tenure=3,
-    )
-    svc = AdminExportService(db_session)
-    plan = await svc.collect(ExportFilters(career_min=2))
-    assert {u.user_id for u in plan.users} == {2}
-
-
-@pytest.mark.asyncio
-async def test_collect_career_filter_unions_both_roles(db_session):
-    await _seed_user(
-        db_session, user_id=1, email="t@x.com",
-        role="teacher", region="서울", tenure=4,
-    )
-    await _seed_user(
-        db_session, user_id=2, email="p@x.com",
-        role="preservice_teacher", region="부산", tenure=4,
-    )
-    await _seed_user(
-        db_session, user_id=3, email="t2@x.com",
-        role="teacher", region="서울", tenure=15,
-    )
-    svc = AdminExportService(db_session)
-    plan = await svc.collect(
-        ExportFilters(career_min=3, career_max=5)
-    )
-    assert {u.user_id for u in plan.users} == {1, 2}
-
-
-@pytest.mark.asyncio
-async def test_collect_lessonplans_includes_orphan_uploads(
+async def test_collect_lessonplans_per_user_subdirectory(
     db_session, tmp_path
 ):
-    """보고서가 없는 사용자도 업로드한 지도안 파일이 ZIP에 포함되어야 한다."""
-    await _seed_user(
-        db_session, user_id=7, email="solo@x.com",
-        role="teacher", region="서울", tenure=3,
-    )
+    """Lessonplans live under data/lessonplan/{user_id}/* now."""
+    await _seed_user(db_session, user_id=7)
     await db_session.commit()
-    (tmp_path / "u7_orphan_지도안.pdf").write_bytes(b"data")
-    (tmp_path / "u7_another.pdf").write_bytes(b"more")
+    user_dir = tmp_path / "7"
+    user_dir.mkdir()
+    (user_dir / "orphan_지도안.pdf").write_bytes(b"data")
+    (user_dir / "another.pdf").write_bytes(b"more")
     svc = AdminExportService(
         db_session, lessonplan_base_dir=str(tmp_path)
     )
     plan = await svc.collect(ExportFilters())
     originals = {entry.original_name for entry in plan.lessonplans}
     assert originals == {"orphan_지도안.pdf", "another.pdf"}
+
+
+@pytest.mark.asyncio
+async def test_collect_lessonplans_per_user_isolation(
+    db_session, tmp_path
+):
+    """User 1's files must not appear under user 2."""
+    await _seed_user(db_session, user_id=1)
+    await _seed_user(db_session, user_id=2)
+    await db_session.commit()
+    (tmp_path / "1").mkdir()
+    (tmp_path / "1" / "mine.pdf").write_bytes(b"x")
+    (tmp_path / "2").mkdir()
+    (tmp_path / "2" / "yours.pdf").write_bytes(b"y")
+    svc = AdminExportService(
+        db_session, lessonplan_base_dir=str(tmp_path)
+    )
+    plan = await svc.collect(ExportFilters(user_ids=[1]))
+    assert {
+        entry.original_name for entry in plan.lessonplans
+    } == {"mine.pdf"}
+
+
+@pytest.mark.asyncio
+async def test_collect_lessonplans_skipped_when_excluded(
+    db_session, tmp_path
+):
+    await _seed_user(db_session, user_id=1)
+    await db_session.commit()
+    user_dir = tmp_path / "1"
+    user_dir.mkdir()
+    (user_dir / "x.pdf").write_bytes(b"x")
+    svc = AdminExportService(
+        db_session, lessonplan_base_dir=str(tmp_path)
+    )
+    plan = await svc.collect(
+        ExportFilters(include=frozenset({"reports", "meta"}))
+    )
+    assert plan.lessonplans == []
 
 
 @pytest.mark.asyncio
@@ -485,24 +390,15 @@ async def test_collect_lessonplans_marks_deleted_report_source_missing(
 
     user = UserContext(
         user_id=1,
-        user_email="a@x.com",
-        role="teacher",
-        profile=NormalizedProfile(
-            role_code="T",
-            region_slug="서울",
-            tenure="5",
-            tenure_kind="years",
-            email_slug="a_at_x_com",
-        ),
-        filename_prefix="T-서울-5y__u00001__a_at_x_com",
+        filename_prefix="u00001",
         username="u1",
     )
     report = AnalysisReport(
         id=10,
         user_id=1,
-        lessonplan_filename="u1_deleted.pdf",
+        lessonplan_filename="deleted.pdf",
         lessonplan_original_name="deleted.pdf",
-        report_filename="u1_deleted_reports.md",
+        report_filename="deleted_reports.md",
         report_path="/tmp/deleted_report.md",
         created_at=datetime(2026, 3, 1),
     )
@@ -528,14 +424,12 @@ async def test_collect_lessonplans_marks_deleted_report_source_missing(
 async def test_collect_lessonplans_resolves_dashboard_upload_source(
     db_session, tmp_path, monkeypatch
 ):
-    await _seed_user(
-        db_session, user_id=1, email="a@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
+    await _seed_user(db_session, user_id=1)
     upload_dir = tmp_path / "app" / "static" / "uploads"
-    upload_dir.mkdir(parents=True)
+    user_upload_dir = upload_dir / "1"
+    user_upload_dir.mkdir(parents=True)
     filename = "u1_20260101000000_plan.pdf"
-    upload_file = upload_dir / filename
+    upload_file = user_upload_dir / filename
     upload_file.write_bytes(b"%PDF-1.4\n")
     monkeypatch.chdir(tmp_path)
 
@@ -575,16 +469,14 @@ async def test_collect_lessonplans_resolves_dashboard_upload_source(
 async def test_collect_lessonplans_resolves_synthetic_upload_legacy_source(
     db_session, tmp_path
 ):
-    await _seed_user(
-        db_session, user_id=1, email="a@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
+    await _seed_user(db_session, user_id=1)
     legacy_dir = tmp_path / "data" / "lessonplan"
-    legacy_dir.mkdir(parents=True)
+    user_legacy_dir = legacy_dir / "1"
+    user_legacy_dir.mkdir(parents=True)
     static_uploads_dir = tmp_path / "app" / "static" / "uploads"
     static_uploads_dir.mkdir(parents=True)
     filename = "u1_20260101000000_legacy.pdf"
-    legacy_file = legacy_dir / filename
+    legacy_file = user_legacy_dir / filename
     legacy_file.write_bytes(b"%PDF-1.4\n")
     assert not (static_uploads_dir / filename).exists()
 
@@ -652,16 +544,7 @@ async def test_collect_lessonplans_includes_upload_without_report(
 
     user = UserContext(
         user_id=1,
-        user_email="a@x.com",
-        role="teacher",
-        profile=NormalizedProfile(
-            role_code="T",
-            region_slug="서울",
-            tenure="5",
-            tenure_kind="years",
-            email_slug="a_at_x_com",
-        ),
-        filename_prefix="T-서울-5y__u00001__a_at_x_com",
+        filename_prefix="u00001",
         username="u1",
     )
     upload_dir = tmp_path / "static-uploads"
@@ -692,58 +575,3 @@ async def test_collect_lessonplans_includes_upload_without_report(
     lessonplan = matches[0]
     assert Path(lessonplan.source_path).resolve() == upload_file
     assert lessonplan.source_status == "OK"
-
-
-@pytest.mark.asyncio
-async def test_collect_lessonplans_respects_username_prefix(
-    db_session, tmp_path
-):
-    """다른 사용자의 파일은 포함되지 않아야 한다."""
-    await _seed_user(
-        db_session, user_id=1, email="a@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
-    await _seed_user(
-        db_session, user_id=2, email="b@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
-    await db_session.commit()
-    (tmp_path / "u1_mine.pdf").write_bytes(b"x")
-    (tmp_path / "u2_yours.pdf").write_bytes(b"y")
-    svc = AdminExportService(
-        db_session, lessonplan_base_dir=str(tmp_path)
-    )
-    plan = await svc.collect(ExportFilters(user_ids=[1]))
-    assert {
-        entry.original_name for entry in plan.lessonplans
-    } == {"mine.pdf"}
-
-
-@pytest.mark.asyncio
-async def test_collect_lessonplans_skipped_when_excluded(
-    db_session, tmp_path
-):
-    await _seed_user(
-        db_session, user_id=1, email="a@x.com",
-        role="teacher", region="서울", tenure=5,
-    )
-    await db_session.commit()
-    (tmp_path / "u1_x.pdf").write_bytes(b"x")
-    svc = AdminExportService(
-        db_session, lessonplan_base_dir=str(tmp_path)
-    )
-    plan = await svc.collect(
-        ExportFilters(include=frozenset({"reports", "meta"}))
-    )
-    assert plan.lessonplans == []
-
-
-@pytest.mark.asyncio
-async def test_readme_mentions_career_filters(db_session):
-    svc = AdminExportService(db_session)
-    plan = await svc.collect(
-        ExportFilters(career_min=3, career_max=10)
-    )
-    text = build_readme(plan).decode("utf-8")
-    assert "career_min=3" in text
-    assert "career_max=10" in text

@@ -41,18 +41,16 @@ class EvaluationService:
 
     async def run_evaluation(
         self,
-        username: str,
-        lessonplan_filename: str,
         user_id: int,
+        lessonplan_filename: str,
         evaluation_type: str = "general",
     ) -> Dict[str, Any]:
         """
         문서 평가 실행 (파일 기반)
 
         Args:
-            username: 사용자 이름
+            user_id: 사용자 ID (User.id)
             lessonplan_filename: 지도안 파일명
-            user_id: 사용자 ID
             evaluation_type: 평가 유형
 
         Returns:
@@ -125,7 +123,7 @@ class EvaluationService:
 
             # 분석 결과 저장
             save_result = self.analysis_storage.save_analysis(
-                username=username,
+                user_id=user_id,
                 lessonplan_filename=lessonplan_filename,
                 analysis_content=markdown_content,
                 evaluation_type=evaluation_type,
@@ -240,13 +238,13 @@ class EvaluationService:
         return markdown
 
     def get_analysis(
-        self, username: str, lessonplan_filename: str
+        self, user_id: int, lessonplan_filename: str
     ) -> Dict[str, Any]:
         """
         저장된 분석 결과 조회
 
         Args:
-            username: 사용자 이름
+            user_id: 사용자 ID (User.id)
             lessonplan_filename: 지도안 파일명
 
         Returns:
@@ -255,40 +253,42 @@ class EvaluationService:
             - file_path: 파일 경로
         """
         return self.analysis_storage.get_analysis(
-            username=username,
+            user_id=user_id,
             lessonplan_filename=lessonplan_filename,
         )
 
     def list_analyses(
-        self, username: Optional[str] = None
+        self, user_id: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
         분석 결과 목록 조회
 
         Args:
-            username: 사용자 이름 (선택)
+            user_id: 사용자 ID (선택)
 
         Returns:
             분석 결과 목록
         """
+        if user_id is None:
+            return []
         return self.analysis_storage.list_analyses(
-            username=username
+            user_id=user_id
         )
 
     def delete_analysis(
-        self, username: str, lessonplan_filename: str
+        self, user_id: int, lessonplan_filename: str
     ) -> bool:
         """
         분석 결과 삭제
 
         Args:
-            username: 사용자 이름
+            user_id: 사용자 ID (User.id)
             lessonplan_filename: 지도안 파일명
 
         Returns:
             삭제 성공 여부
         """
         return self.analysis_storage.delete_analysis(
-            username=username,
+            user_id=user_id,
             lessonplan_filename=lessonplan_filename,
         )

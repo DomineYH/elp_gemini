@@ -23,12 +23,13 @@ from app.db import engine
 from app.middleware import AuthMiddleware
 from app.migrations import (
     drop_invite_codes_table,
+    drop_user_profiles,
+    drop_users_email_column,
     ensure_app_state_table,
     ensure_criteria_display_alias_column,
     ensure_criteria_file_path_column,
     ensure_criteria_stable_id_column,
     ensure_lessonplan_uploads_table,
-    ensure_user_profiles_table,
     ensure_users_lockout_columns,
     rename_chat_session_in_service_teacher_label,
     rename_preservice_university_regions,
@@ -267,11 +268,13 @@ async def startup_event():
             "users 테이블 lockout 컬럼이 자동 복구되었습니다."
         )
 
-    profiles_patched = await ensure_user_profiles_table(engine)
-    if profiles_patched:
-        logger.info(
-            "user_profiles 테이블이 자동 생성되었습니다."
-        )
+    profiles_dropped = await drop_user_profiles(engine)
+    if profiles_dropped:
+        logger.info("user_profiles 테이블이 자동 제거되었습니다.")
+
+    email_dropped = await drop_users_email_column(engine)
+    if email_dropped:
+        logger.info("users.email 컬럼이 자동 제거되었습니다.")
 
     uploads_patched = await ensure_lessonplan_uploads_table(engine)
     if uploads_patched:

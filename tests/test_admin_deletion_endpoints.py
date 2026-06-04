@@ -22,7 +22,6 @@ _admin = User(
     id=999,
     username="admin",
     nickname="A",
-    email="a@t.com",
     hashed_password="h",
     is_admin=True,
 )
@@ -64,21 +63,18 @@ async def seeded(db_tables, tmp_path, monkeypatch):
             id=_admin.id,
             username=_admin.username,
             nickname=_admin.nickname,
-            email=_admin.email,
             hashed_password="h",
             is_admin=True,
         )
         user = User(
             username="stu1",
             nickname="S1",
-            email="s1@t.com",
             hashed_password="h",
             is_admin=False,
         )
         another_admin = User(
             username="admin2",
             nickname="A2",
-            email="a2@t.com",
             hashed_password="h",
             is_admin=True,
         )
@@ -230,6 +226,88 @@ async def test_delete_report_happy_removes_file(seeded):
 
 
 @pytest.mark.asyncio
+async def test_delete_report_keeps_other_users_same_basename_upload(
+    db_tables, tmp_path, monkeypatch
+):
+    lessonplan_base = tmp_path / "data" / "lessonplan"
+    lessonplan_base.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.LESSONPLAN_BASE_DIR",
+        str(lessonplan_base),
+    )
+    static_uploads_dir = tmp_path / "app" / "static" / "uploads"
+    static_uploads_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.STATIC_UPLOADS_DIR",
+        str(static_uploads_dir),
+        raising=False,
+    )
+
+    async with TestingSessionLocal() as db:
+        db.add(User(
+            id=_admin.id,
+            username=_admin.username,
+            nickname=_admin.nickname,
+            hashed_password="h",
+            is_admin=True,
+        ))
+        user_a = User(
+            id=101,
+            username="stu-a",
+            nickname="A",
+            hashed_password="h",
+            is_admin=False,
+        )
+        user_b = User(
+            id=202,
+            username="stu-b",
+            nickname="B",
+            hashed_password="h",
+            is_admin=False,
+        )
+        db.add_all([user_a, user_b])
+        await db.flush()
+
+        filename = "same-name.pdf"
+        user_a_dir = lessonplan_base / str(user_a.id)
+        user_b_dir = static_uploads_dir / str(user_b.id)
+        user_a_dir.mkdir()
+        user_b_dir.mkdir()
+        user_a_file = user_a_dir / filename
+        user_b_file = user_b_dir / filename
+        user_a_file.write_bytes(b"user-a")
+        user_b_file.write_bytes(b"user-b")
+
+        report_file = tmp_path / "report-a.md"
+        report_file.write_text("report", encoding="utf-8")
+        report = AnalysisReport(
+            user_id=user_a.id,
+            lessonplan_filename=filename,
+            lessonplan_original_name=filename,
+            report_filename=report_file.name,
+            report_path=str(report_file),
+            latency_ms=1,
+        )
+        db.add(report)
+        await db.commit()
+        await db.refresh(report)
+        report_id = report.id
+
+    with TestClient(app) as client:
+        token = _get_token(client)
+        resp = client.delete(
+            f"/admin/api/reports/{report_id}",
+            headers={ADMIN_CSRF_HEADER: token},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 1
+    assert not report_file.exists()
+    assert not user_a_file.exists()
+    assert user_b_file.read_bytes() == b"user-b"
+
+
+@pytest.mark.asyncio
 async def test_delete_report_not_found(seeded):
     with TestClient(app) as client:
         token = _get_token(client)
@@ -269,7 +347,6 @@ async def test_bulk_delete_sessions_rejects_cross_user(seeded):
         other = User(
             username="stuX",
             nickname="X",
-            email="x@t.com",
             hashed_password="h",
             is_admin=False,
         )

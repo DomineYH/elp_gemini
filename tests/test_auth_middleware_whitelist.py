@@ -69,7 +69,6 @@ async def normal_user(session_factory) -> User:
         user = User(
             username="testuser",
             nickname="testuser",
-            email="test@example.com",
             hashed_password=hashed,
             is_admin=False,
         )

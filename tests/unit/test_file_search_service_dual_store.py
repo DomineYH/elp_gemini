@@ -36,7 +36,7 @@ class TestGetDualStoreIds:
                 )
 
                 # When
-                result = service.get_dual_store_ids(user_id=123)
+                result = service.get_dual_store_ids(user_key=123)
 
                 # Then
                 assert len(result) == 2
@@ -62,7 +62,7 @@ class TestGetDualStoreIds:
 
                 # When & Then
                 with pytest.raises(ValueError) as exc_info:
-                    service.get_dual_store_ids(user_id=123)
+                    service.get_dual_store_ids(user_key=123)
 
                 assert "rubricstore" in str(exc_info.value)
 
@@ -91,7 +91,7 @@ class TestGetDualStoreIds:
                 )
 
                 # When
-                result = service.get_dual_store_ids(user_id=999)
+                result = service.get_dual_store_ids(user_key=999)
 
                 # Then
                 assert len(result) == 2
@@ -121,15 +121,18 @@ class TestGetDualStoreIds:
                 )
 
                 # When
-                result1 = service.get_dual_store_ids(user_id=123)
-                result2 = service.get_dual_store_ids(user_id=123)
+                result1 = service.get_dual_store_ids(user_key=123)
+                calls_after_first = (
+                    service.client.file_search_stores.list.call_count
+                )
+                result2 = service.get_dual_store_ids(user_key=123)
 
                 # Then
                 assert result1 == result2
-                # list() 한 번만 호출 (캐시 히트)
+                # 두 번째 호출은 캐시 히트 → list() 추가 호출 없음
                 assert (
                     service.client.file_search_stores.list.call_count
-                    == 1
+                    == calls_after_first
                 )
 
     @pytest.mark.asyncio

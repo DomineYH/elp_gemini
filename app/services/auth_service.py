@@ -16,7 +16,6 @@ from app.config import settings
 from app.models.users import User
 from app.schemas.users import (
     UserCreate,
-    normalize_email_address,
     normalize_user_id,
     validate_password_strength,
     validate_user_id,
@@ -307,32 +306,6 @@ class AuthService:
         return result.scalar_one_or_none()
 
     @staticmethod
-    def normalize_email(email: str) -> str:
-        """이메일 저장/조회용 정규화."""
-        return normalize_email_address(email)
-
-    async def get_user_by_email(
-        self, email: str
-    ) -> Optional[User]:
-        """
-        이메일로 사용자 조회
-
-        Args:
-            email: 이메일 주소
-
-        Returns:
-            User 객체 또는 None
-        """
-        normalized_email = self.normalize_email(email)
-        if not normalized_email:
-            return None
-
-        result = await self.db.execute(
-            select(User).where(User.email == normalized_email)
-        )
-        return result.scalar_one_or_none()
-
-    @staticmethod
     def _has_valid_custom_id(user: User) -> bool:
         try:
             validate_user_id(user.username)
@@ -342,18 +315,7 @@ class AuthService:
 
     @staticmethod
     def _is_login_capable(user: User) -> bool:
-        return user.email is not None or AuthService._has_valid_custom_id(user)
-
-    async def get_regular_legacy_email_user(
-        self, email: str
-    ) -> Optional[User]:
-        """이메일만 로그인 식별자로 가진 레거시 일반 사용자를 조회한다."""
-        user = await self.get_user_by_email(email)
-        if not user or user.is_admin:
-            return None
-        if self._has_valid_custom_id(user):
-            return None
-        return user
+        return AuthService._has_valid_custom_id(user)
 
     async def get_user_by_id(self, user_id: int) -> Optional[User]:
         """
@@ -387,7 +349,6 @@ class AuthService:
         user = User(
             username=user_data.username,
             nickname=user_data.nickname,
-            email=user_data.email,
             hashed_password=hashed_password,
             is_admin=user_data.is_admin,
         )
@@ -437,7 +398,6 @@ class AuthService:
         user_data = UserCreate(
             username=normalized_id,
             nickname=normalized_id,
-            email=None,
             password=password,
             is_admin=False,
         )
@@ -461,20 +421,6 @@ class AuthService:
         user = await self.get_regular_user_by_username(user_id)
         if not user or not user.hashed_password:
             # 미존재 id 도 dummy verify 로 bcrypt 비용 보정 (타이밍 완화)
-            self._dummy_password_verify(password)
-            return None
-
-        if not self.verify_password(password, user.hashed_password):
-            return None
-
-        return user
-
-    async def authenticate_regular_user_by_legacy_email(
-        self, email: str, password: str
-    ) -> Optional[User]:
-        """레거시 이메일 식별자 일반 사용자 인증."""
-        user = await self.get_regular_legacy_email_user(email)
-        if not user or not user.hashed_password:
             self._dummy_password_verify(password)
             return None
 

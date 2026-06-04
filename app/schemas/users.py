@@ -5,7 +5,7 @@ API 요청/응답 모델
 import re
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 # 사용자 지정 id 정책 (Issue #90)
 # - 영문 + 숫자만, 9자 이하(10자 미만)
@@ -22,13 +22,6 @@ RESERVED_USER_IDS = frozenset(
         "preservice_teacher",
     }
 )
-
-
-def normalize_email_address(value: str) -> str:
-    """이메일 비교/저장용 정규화: 공백 제거 + 소문자화."""
-    if value is None:
-        return ""
-    return str(value).strip().lower()
 
 
 def normalize_user_id(value: str | None) -> str:
@@ -72,7 +65,6 @@ class UserResponse(BaseModel):
     id: int
     username: str
     nickname: str
-    email: EmailStr | None = None
     is_admin: bool
     created_at: datetime
     updated_at: datetime
@@ -92,21 +84,12 @@ class UserCreate(BaseModel):
 
     username: str = Field(..., description="사용자 ID")
     nickname: str = Field(..., description="닉네임")
-    email: EmailStr | None = Field(None, description="이메일 주소")
     password: str | None = Field(
         None,
         min_length=8,
         description="비밀번호 (최소 8자, 대소문자 및 숫자 포함)",
     )
     is_admin: bool = Field(default=False, description="관리자 여부")
-
-    @field_validator("email", mode="before")
-    @classmethod
-    def normalize_email(cls, value: str | None) -> str | None:
-        """저장 전 이메일 정규화."""
-        if value is None:
-            return None
-        return normalize_email_address(value)
 
     @field_validator("password")
     @classmethod

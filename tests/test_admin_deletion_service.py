@@ -937,6 +937,7 @@ async def test_delete_analysis_report_removes_synthetic_upload_legacy_file(
         )
         resolved = service._resolve_lessonplan_path(
             legacy_file.name,
+            user_id=seeded["user_id"],
             upload_id=upload_id,
         )
 
@@ -972,6 +973,7 @@ def test_resolve_lessonplan_path_prefers_dashboard_upload(
 
     assert service._resolve_lessonplan_path(
         filename,
+        user_id=1,
         upload_id=1,
     ) == upload_file
 
