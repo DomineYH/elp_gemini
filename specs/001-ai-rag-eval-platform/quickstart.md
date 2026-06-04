@@ -141,20 +141,20 @@ from app.models.users import User
 @pytest.mark.asyncio
 async def test_authenticate_user_with_valid_credentials():
     """
-    Test: User can authenticate with correct email and password
+    Test: User can authenticate with correct user_id and password
     Expected: Returns user object
     """
     # Arrange
-    email = "test@example.com"
+    user_id = "testuser"
     password = "SecurePass123"
     auth_service = AuthService()
 
     # Act
-    user = await auth_service.authenticate(email, password)
+    user = await auth_service.authenticate(user_id, password)
 
     # Assert
     assert user is not None
-    assert user.email == email
+    assert user.username == user_id
     assert user.is_admin is False
 ```
 
@@ -175,9 +175,9 @@ from app.db import get_db
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class AuthService:
-    async def authenticate(self, email: str, password: str):
+    async def authenticate(self, user_id: str, password: str):
         db = next(get_db())
-        user = db.query(User).filter(User.email == email).first()
+        user = db.query(User).filter(User.username == user_id).first()
 
         if not user:
             return None
@@ -210,19 +210,19 @@ class AuthService:
         self.db = db
 
     async def authenticate(
-        self, email: str, password: str
+        self, user_id: str, password: str
     ) -> Optional[User]:
-        """Authenticate user with email and password"""
-        user = self._get_user_by_email(email)
+        """Authenticate user with user_id and password"""
+        user = self._get_user_by_username(user_id)
 
         if not user or not self._verify_password(password, user):
             return None
 
         return user
 
-    def _get_user_by_email(self, email: str) -> Optional[User]:
+    def _get_user_by_username(self, user_id: str) -> Optional[User]:
         return self.db.query(User).filter(
-            User.email == email
+            User.username == user_id
         ).first()
 
     def _verify_password(
@@ -276,7 +276,7 @@ curl http://localhost:8000/
 # Login endpoint
 curl -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email": "admin@example.com", "password": "admin_password"}'
+  -d '{"user_id": "admin", "password": "admin1234"}'
 ```
 
 ---
@@ -323,7 +323,7 @@ async def test_login_endpoint_contract():
         response = await client.post(
             "/auth/login",
             json={
-                "email": "test@example.com",
+                "user_id": "testuser",
                 "password": "password123"
             }
         )

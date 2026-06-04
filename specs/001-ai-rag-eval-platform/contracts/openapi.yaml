@@ -37,12 +37,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, password]
+              required: [user_id, password]
               properties:
-                email:
+                user_id:
                   type: string
-                  format: email
-                  example: user@example.com
+                  example: my_id
                 password:
                   type: string
                   format: password
@@ -698,10 +697,9 @@ components:
         id:
           type: integer
           example: 1
-        email:
+        username:
           type: string
-          format: email
-          example: user@example.com
+          example: my_id
         is_admin:
           type: boolean
           example: false
@@ -869,7 +867,7 @@ components:
       properties:
         id:
           type: integer
-        email:
+        username:
           type: string
         is_admin:
           type: boolean

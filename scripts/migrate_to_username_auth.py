@@ -1,4 +1,8 @@
 """
+⚠️ DANGER / OBSOLETE — this script wipes the database; do NOT run.
+The username/nickname auth system it migrated to has itself been superseded
+by id-login (issue #91). Kept for historical reference only.
+
 데이터베이스 마이그레이션: email/password 인증 → username/nickname 인증
 기존 데이터를 백업하고 새 스키마로 데이터베이스를 재생성합니다.
 """

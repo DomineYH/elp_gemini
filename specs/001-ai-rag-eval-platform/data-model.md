@@ -30,14 +30,14 @@ This document defines the database schema, entity relationships, and data valida
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | INTEGER | PRIMARY KEY, AUTOINCREMENT | Unique user identifier |
-| email | VARCHAR(255) | UNIQUE, NOT NULL, INDEX | User email for login |
+| username | VARCHAR(255) | UNIQUE, NOT NULL, INDEX | User-chosen ID for login |
 | hashed_password | VARCHAR(255) | NOT NULL | bcrypt hashed password |
 | is_admin | BOOLEAN | NOT NULL, DEFAULT FALSE | Admin role flag |
 | created_at | DATETIME | NOT NULL, DEFAULT CURRENT_TIMESTAMP | Registration timestamp |
 | updated_at | DATETIME | NOT NULL, DEFAULT CURRENT_TIMESTAMP | Last update timestamp |
 
 **Indexes**:
-- `idx_users_email` on `email` (for login queries)
+- `idx_users_username` on `username` (for login queries)
 
 **Relationships**:
 - One-to-Many with `documents` (user owns multiple documents)
@@ -45,9 +45,9 @@ This document defines the database schema, entity relationships, and data valida
 - One-to-Many with `evaluation_runs` (user generates multiple evaluations)
 
 **Validation Rules**:
-- Email: Valid email format, max 255 characters
+- Username: 3-30 characters, alphanumeric + underscore, unique
 - Password: Min 8 characters, at least one uppercase, one lowercase, one digit
-- Email uniqueness enforced at database level
+- Username uniqueness enforced at database level
 
 **SQLAlchemy Model** (app/models/users.py):
 ```python
@@ -59,7 +59,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    email = Column(String(255), unique=True, nullable=False, index=True)
+    username = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     is_admin = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
@@ -453,7 +453,7 @@ class QALog(Base):
 │     User        │
 ├─────────────────┤
 │ id (PK)         │
-│ email           │◄─────────┐
+│ username        │◄─────────┐
 │ hashed_password │          │
 │ is_admin        │          │
 └─────────────────┘          │
@@ -574,8 +574,8 @@ def init_db():
 
     # Create default admin
     admin = User(
-        email="admin@example.com",
-        hashed_password=pwd_context.hash("admin_password"),
+        username="admin",
+        hashed_password=pwd_context.hash("admin1234"),
         is_admin=True
     )
     db.add(admin)

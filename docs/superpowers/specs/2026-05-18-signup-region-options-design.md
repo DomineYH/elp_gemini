@@ -1,3 +1,8 @@
+> **⚠️ SUPERSEDED by #91** — This spec designed the role/region/career signup
+> options which have been **removed**. The platform now uses user-chosen `user_id` +
+> password login with no role, region, or career fields.
+> See `docs/plans/2026-06-04-issue-91-id-auth-email-removal.md`.
+
 # 가입 폼 교사/예비교사 지역 옵션 정비
 
 - 작성일: 2026-05-18
