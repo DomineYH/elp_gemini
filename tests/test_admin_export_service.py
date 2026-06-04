@@ -426,9 +426,10 @@ async def test_collect_lessonplans_resolves_dashboard_upload_source(
 ):
     await _seed_user(db_session, user_id=1)
     upload_dir = tmp_path / "app" / "static" / "uploads"
-    upload_dir.mkdir(parents=True)
+    user_upload_dir = upload_dir / "1"
+    user_upload_dir.mkdir(parents=True)
     filename = "u1_20260101000000_plan.pdf"
-    upload_file = upload_dir / filename
+    upload_file = user_upload_dir / filename
     upload_file.write_bytes(b"%PDF-1.4\n")
     monkeypatch.chdir(tmp_path)
 
@@ -470,11 +471,12 @@ async def test_collect_lessonplans_resolves_synthetic_upload_legacy_source(
 ):
     await _seed_user(db_session, user_id=1)
     legacy_dir = tmp_path / "data" / "lessonplan"
-    legacy_dir.mkdir(parents=True)
+    user_legacy_dir = legacy_dir / "1"
+    user_legacy_dir.mkdir(parents=True)
     static_uploads_dir = tmp_path / "app" / "static" / "uploads"
     static_uploads_dir.mkdir(parents=True)
     filename = "u1_20260101000000_legacy.pdf"
-    legacy_file = legacy_dir / filename
+    legacy_file = user_legacy_dir / filename
     legacy_file.write_bytes(b"%PDF-1.4\n")
     assert not (static_uploads_dir / filename).exists()
 

@@ -304,36 +304,46 @@ class AdminDeletionService:
         self, reports: list[AnalysisReport]
     ) -> int:
         """DB에서 더 이상 참조하지 않는 lessonplan 파일을 삭제한다."""
-        upload_ids_by_filename: dict[str, int | None] = {}
+        upload_ids_by_file: dict[tuple[int, str], int | None] = {}
         for report in reports:
             if not report.lessonplan_filename:
                 continue
+            key = (report.user_id, report.lessonplan_filename)
             if (
-                report.lessonplan_filename not in upload_ids_by_filename
+                key not in upload_ids_by_file
                 or report.upload_id is None
             ):
-                upload_ids_by_filename[
-                    report.lessonplan_filename
-                ] = report.upload_id
-        if not upload_ids_by_filename:
+                upload_ids_by_file[key] = report.upload_id
+        if not upload_ids_by_file:
             return 0
 
         removed = 0
-        for name, upload_id in sorted(upload_ids_by_filename.items()):
-            result = await self.db.execute(
-                text(
-                    "SELECT count(1) FROM analysis_reports "
-                    "WHERE lessonplan_filename = :name"
-                ),
-                {"name": name},
+        for (user_id, name), upload_id in sorted(upload_ids_by_file.items()):
+            path = self._resolve_lessonplan_path(
+                name,
+                user_id=user_id,
+                upload_id=upload_id,
             )
+            if self._is_user_scoped_lessonplan_path(path, user_id):
+                result = await self.db.execute(
+                    text(
+                        "SELECT count(1) FROM analysis_reports "
+                        "WHERE user_id = :user_id "
+                        "AND lessonplan_filename = :name"
+                    ),
+                    {"user_id": user_id, "name": name},
+                )
+            else:
+                result = await self.db.execute(
+                    text(
+                        "SELECT count(1) FROM analysis_reports "
+                        "WHERE lessonplan_filename = :name"
+                    ),
+                    {"name": name},
+                )
             if result.scalar_one() != 0:
                 continue
 
-            path = self._resolve_lessonplan_path(
-                name,
-                upload_id=upload_id,
-            )
             if not path.is_file() or path.is_symlink():
                 continue
             try:
@@ -348,27 +358,31 @@ class AdminDeletionService:
     def _resolve_lessonplan_path(
         self,
         filename: str,
+        user_id: int,
         upload_id: int | None = None,
     ) -> Path:
         safe_name = Path(filename).name
-        # Check legacy flat path first
-        upload_path = Path(STATIC_UPLOADS_DIR) / safe_name
-        if upload_path.is_file():
-            return upload_path
-        lessonplan_path = Path(LESSONPLAN_BASE_DIR) / safe_name
-        if lessonplan_path.is_file():
-            return lessonplan_path
-        # Check user subdirs (new structure) — scan all user_id dirs
-        for base in [Path(STATIC_UPLOADS_DIR), Path(LESSONPLAN_BASE_DIR)]:
-            try:
-                for child in base.iterdir():
-                    if child.is_dir():
-                        candidate = child / safe_name
-                        if candidate.is_file():
-                            return candidate
-            except OSError:
-                continue
-        return Path(STATIC_UPLOADS_DIR) / safe_name
+        candidates = [
+            Path(STATIC_UPLOADS_DIR) / str(user_id) / safe_name,
+            Path(LESSONPLAN_BASE_DIR) / str(user_id) / safe_name,
+            Path(STATIC_UPLOADS_DIR) / safe_name,
+            Path(LESSONPLAN_BASE_DIR) / safe_name,
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return candidates[0]
+
+    def _is_user_scoped_lessonplan_path(
+        self,
+        path: Path,
+        user_id: int,
+    ) -> bool:
+        user_dir = str(user_id)
+        return path.parent in {
+            Path(STATIC_UPLOADS_DIR) / user_dir,
+            Path(LESSONPLAN_BASE_DIR) / user_dir,
+        }
 
     async def _remove_user_upload_files(
         self,

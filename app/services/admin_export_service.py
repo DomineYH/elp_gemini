@@ -214,7 +214,7 @@ class AdminExportService:
 
         스토리지 컨벤션:
         - per-user: data/lessonplan/{user_id}/{original_filename}
-        - dashboard: app/static/uploads/{username}_{timestamp}_{원본명}
+        - dashboard: app/static/uploads/{user_id}/{saved_filename}
         """
         if "lessonplans" not in filters.include:
             return []
@@ -307,6 +307,7 @@ class AdminExportService:
             original = r.lessonplan_original_name or r.lessonplan_filename
             source_path = self._resolve_lessonplan_source_path(
                 r.lessonplan_filename,
+                user_id=r.user_id,
                 upload_id=r.upload_id,
             )
             archive_name = (
@@ -359,6 +360,7 @@ class AdminExportService:
             original = upload.original_filename or upload.filename
             source_path = self._resolve_lessonplan_source_path(
                 upload.filename,
+                user_id=upload.user_id,
                 upload_id=upload.id,
             )
             archive_name = (
@@ -386,13 +388,20 @@ class AdminExportService:
     def _resolve_lessonplan_source_path(
         self,
         filename: str,
+        user_id: int,
         upload_id: int | None,
     ) -> Path:
         safe_name = Path(filename).name
-        upload_path = Path(self._static_uploads_dir) / safe_name
-        if upload_path.is_file():
-            return upload_path
-        return Path(self._lessonplan_base_dir) / safe_name
+        candidates = [
+            Path(self._static_uploads_dir) / str(user_id) / safe_name,
+            Path(self._lessonplan_base_dir) / str(user_id) / safe_name,
+            Path(self._static_uploads_dir) / safe_name,
+            Path(self._lessonplan_base_dir) / safe_name,
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return candidates[0]
 
     async def _collect_sessions(
         self, user_ids, ctx_by_id, filters

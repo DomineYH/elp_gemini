@@ -1,7 +1,7 @@
 """Issue #91 §3+§5: UserProfile table & User.email column removal tests."""
 
 import pytest
-from sqlalchemy import inspect, text
+from sqlalchemy import event, inspect, text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -156,6 +156,13 @@ async def test_rebuild_path_preserves_data_and_child_fks():
     )
 
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    @event.listens_for(eng.sync_engine, "connect")
+    def _enable_foreign_keys(dbapi_conn, _connection_record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     try:
         # --- Set up production-like schema with indexes & data ---
         async with eng.begin() as conn:
@@ -219,6 +226,9 @@ async def test_rebuild_path_preserves_data_and_child_fks():
 
         # --- Verify ---
         async with eng.begin() as conn:
+            fk_enabled = await conn.execute(text("PRAGMA foreign_keys"))
+            assert fk_enabled.scalar_one() == 1
+
             cols = await conn.run_sync(
                 lambda c: [
                     col["name"] for col in inspect(c).get_columns("users")
@@ -255,8 +265,18 @@ async def test_rebuild_path_preserves_data_and_child_fks():
             )
             assert fk_violations.fetchall() == [], "FK violations found"
 
-        # Idempotent: running the rebuild again on an email-less table
-        # should not fail (the top-level function returns False)
+        # Idempotent: running the rebuild helper again on an email-less table
+        # should be a no-op and should preserve existing rows.
+        await _rebuild_users_without_email(eng)
+        async with eng.begin() as conn:
+            users_count = await conn.execute(text("SELECT count(1) FROM users"))
+            assert users_count.scalar_one() == 1
+            sessions_count = await conn.execute(
+                text("SELECT count(1) FROM chat_sessions")
+            )
+            assert sessions_count.scalar_one() == 1
+
+        # The top-level function should also remain idempotent.
         from app.migrations.drop_users_email_column import (
             drop_users_email_column,
         )
