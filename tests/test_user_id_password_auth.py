@@ -10,6 +10,7 @@ Task 2 — 로그인 식별자를 email → 사용자 지정 id 로 전환.
 from __future__ import annotations
 
 import base64
+import inspect
 import json
 from datetime import datetime
 from pathlib import Path
@@ -166,6 +167,22 @@ async def _register(
     )
 
 
+def _register_route_request():
+    return auth_router.Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/auth/register",
+            "headers": [],
+            "query_string": b"",
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "client": ("testclient", 50000),
+            "session": {},
+        }
+    )
+
+
 def _assert_form_error(response):
     assert response.status_code in {200, 400, 409, 422}
     if response.status_code == 200:
@@ -202,6 +219,15 @@ async def test_register_page_collects_id_password_only(client):
 
     for label in ["사용자 유형", "지역", "경력", "학년"]:
         assert label not in body, label
+
+
+def test_register_password_confirm_form_field_is_required():
+    param = inspect.signature(
+        auth_router.register_user
+    ).parameters["password_confirm"]
+
+    assert param.annotation is str
+    assert param.default.is_required()
 
 
 @pytest.mark.asyncio
@@ -363,7 +389,57 @@ async def test_register_password_mismatch_rejected(client, session_factory):
         client, user_id="mismatch", password_confirm="DifferentPass123"
     )
     _assert_form_error(response)
+    assert "비밀번호 확인이 일치하지 않습니다." in response.text
     assert await _fetch_user_by_username(session_factory, "mismatch") is None
+
+
+@pytest.mark.asyncio
+async def test_register_password_mismatch_returns_error_directly():
+    response = await auth_router.register_user(
+        _register_route_request(),
+        user_id="mismatch",
+        password=USER_PASSWORD,
+        password_confirm="DifferentPass123",
+        db=object(),
+    )
+
+    assert response.status_code == 400
+    assert response.context["error"] == "비밀번호 확인이 일치하지 않습니다."
+
+
+@pytest.mark.asyncio
+async def test_register_matching_password_confirm_succeeds_directly(
+    monkeypatch,
+):
+    request = _register_route_request()
+    user = SimpleNamespace(
+        id=77,
+        username="matchok",
+        nickname="matchok",
+        is_admin=False,
+    )
+
+    async def register_regular_user(self, user_id, password):
+        assert user_id == "matchok"
+        assert password == USER_PASSWORD
+        return user
+
+    monkeypatch.setattr(
+        AuthService, "register_regular_user", register_regular_user
+    )
+
+    response = await auth_router.register_user(
+        request,
+        user_id="matchok",
+        password=USER_PASSWORD,
+        password_confirm=USER_PASSWORD,
+        db=object(),
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/"
+    assert request.session["user_id"] == user.id
+    assert request.session["username"] == user.username
 
 
 @pytest.mark.asyncio

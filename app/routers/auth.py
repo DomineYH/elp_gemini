@@ -267,7 +267,7 @@ async def register_user(
     request: Request,
     user_id: str = Form(...),
     password: str = Form(...),
-    password_confirm: str | None = Form(None),
+    password_confirm: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
     """일반 사용자 등록 후 자동 로그인 (사용자 지정 id + 비밀번호)."""
@@ -283,7 +283,7 @@ async def register_user(
             status_code=status_code,
         )
 
-    if password != (password_confirm or ""):
+    if password != password_confirm:
         return render_error("비밀번호 확인이 일치하지 않습니다.")
 
     try:
