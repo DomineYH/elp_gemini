@@ -93,6 +93,7 @@
                 <option value="3학년">3학년</option>
                 <option value="4학년">4학년</option>
                 <option value="교사">교사</option>
+                <option value="미지정">미지정</option>
             </select>
             <button onclick="loadSessions(1)" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
                 필터 적용
@@ -106,7 +107,7 @@
             <div>
                 <h2 class="text-lg font-semibold text-gray-900">사용자 계정 목록</h2>
                 <p class="text-sm text-gray-500 mt-1">
-                    이메일, 프로필 역할/지역/경력/학년을 확인하고 일반 사용자 비밀번호를 변경합니다.
+                    이메일/ID, 프로필 역할/지역/경력/학년을 확인하고 일반 사용자 비밀번호를 변경합니다.
                 </p>
             </div>
             <div class="flex gap-2">
@@ -126,7 +127,7 @@
                 <thead class="bg-gray-50">
                     <tr>
                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">ID</th>
-                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">이메일</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">식별자</th>
                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">역할</th>
                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">지역/대학교지역</th>
                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">경력/학년</th>
@@ -151,7 +152,7 @@
             <thead class="bg-gray-50">
                 <tr>
                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">세션 유형</th>
-                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">이메일</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">식별자</th>
                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">프로필</th>
                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">접속일시</th>
                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">세션ID</th>
@@ -316,6 +317,9 @@ async function loadAccounts(page = 1) {
 
         tbody.innerHTML = data.accounts.map((account) => {
             const profile = account.profile || {};
+            const accountIdentifier = (
+                account.user_identifier || account.email || account.username
+            );
             const passwordAction = account.can_change_password ? `
                 <div class="flex min-w-[240px] gap-2">
                     <input
@@ -337,12 +341,12 @@ async function loadAccounts(page = 1) {
 
             const deleteAction = (account.is_admin || account.user_id === CURRENT_ADMIN_ID)
                 ? '<span class="text-xs text-gray-400">불가</span>'
-                : `<button type="button" class="delete-user-btn bg-red-600 text-white px-3 py-1 rounded-md text-sm hover:bg-red-700" data-user-id="${account.user_id}" data-user-label="${escapeHtml(account.email || account.username || '')}">삭제</button>`;
+                : `<button type="button" class="delete-user-btn bg-red-600 text-white px-3 py-1 rounded-md text-sm hover:bg-red-700" data-user-id="${account.user_id}" data-user-label="${escapeHtml(accountIdentifier || '')}">삭제</button>`;
 
             return `
                 <tr class="hover:bg-gray-50">
                     <td class="px-3 py-3 text-sm font-mono text-gray-600 whitespace-nowrap">${account.user_id}</td>
-                    <td class="px-3 py-3 text-sm text-gray-900 whitespace-nowrap">${escapeHtml(account.email)}</td>
+                    <td class="px-3 py-3 text-sm text-gray-900 whitespace-nowrap">${escapeHtml(accountIdentifier)}</td>
                     <td class="px-3 py-3 text-sm whitespace-nowrap">
                         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getBadgeClass(profile.role || profile.role_label)} whitespace-nowrap">
                             ${escapeHtml(getProfileRole(profile))}
@@ -467,7 +471,7 @@ async function loadSessions(page = 1) {
                         ${escapeHtml(s.user_type || '미지정')}
                     </span>
                 </td>
-                <td class="px-3 py-3 text-sm text-gray-600 whitespace-nowrap">${escapeHtml(s.user_email)}</td>
+                <td class="px-3 py-3 text-sm text-gray-600 whitespace-nowrap">${escapeHtml(s.user_identifier || s.user_email || s.username)}</td>
                 <td class="px-3 py-3 text-sm text-gray-600 whitespace-nowrap">${escapeHtml(s.profile_summary)}</td>
                 <td class="px-3 py-3 text-sm text-gray-500 whitespace-nowrap">${formatDate(s.created_at)}</td>
                 <td class="px-3 py-3 text-sm font-mono text-gray-600 whitespace-nowrap">${s.session_id}</td>

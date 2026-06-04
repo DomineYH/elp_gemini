@@ -3,23 +3,23 @@
 사용자 인증 및 비밀번호 관리
 """
 import logging
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
 from passlib.context import CryptContext
-from sqlalchemy import case, select, update
+from sqlalchemy import case, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.users import User
 from app.schemas.users import (
-    PreserviceTeacherRegistration,
-    TeacherRegistration,
     UserCreate,
     normalize_email_address,
+    normalize_user_id,
     validate_password_strength,
+    validate_user_id,
 )
 from app.utils.logging import log_auth_event
 
@@ -332,25 +332,28 @@ class AuthService:
         )
         return result.scalar_one_or_none()
 
-    async def get_regular_user_by_email(
+    @staticmethod
+    def _has_valid_custom_id(user: User) -> bool:
+        try:
+            validate_user_id(user.username)
+        except ValueError:
+            return False
+        return True
+
+    @staticmethod
+    def _is_login_capable(user: User) -> bool:
+        return user.email is not None or AuthService._has_valid_custom_id(user)
+
+    async def get_regular_legacy_email_user(
         self, email: str
     ) -> Optional[User]:
-        """
-        일반 사용자 이메일 조회
-
-        관리자 계정은 일반 사용자 로그인/등록 흐름에서 제외한다.
-        """
-        normalized_email = self.normalize_email(email)
-        if not normalized_email:
+        """이메일만 로그인 식별자로 가진 레거시 일반 사용자를 조회한다."""
+        user = await self.get_user_by_email(email)
+        if not user or user.is_admin:
             return None
-
-        result = await self.db.execute(
-            select(User).where(
-                User.email == normalized_email,
-                User.is_admin.is_(False),
-            )
-        )
-        return result.scalar_one_or_none()
+        if self._has_valid_custom_id(user):
+            return None
+        return user
 
     async def get_user_by_id(self, user_id: int) -> Optional[User]:
         """
@@ -395,157 +398,84 @@ class AuthService:
 
         return user
 
-    @staticmethod
-    def _generate_regular_username(role: str) -> str:
-        """이메일/실명 정보를 담지 않는 내부 사용자명 생성."""
-        return f"{role}_{uuid.uuid4().hex[:12]}"
+    async def get_regular_user_by_username(
+        self, user_id: str
+    ) -> Optional[User]:
+        """사용자 지정 id(=username)로 일반 사용자를 조회한다.
 
-    @staticmethod
-    def _load_user_profile_model():
-        """Lane A의 UserProfile 모델을 지연 로드한다."""
-        try:
-            from app.models.user_profiles import UserProfile
-        except ModuleNotFoundError as exc:
-            if exc.name == "app.models.user_profiles":
-                raise RuntimeError(
-                    "UserProfile model is required for regular "
-                    "user registration."
-                ) from exc
-            raise
-        return UserProfile
+        관리자 계정은 일반 사용자 로그인 흐름에서 제외한다.
+        """
+        normalized = normalize_user_id(user_id)
+        if not normalized:
+            return None
 
-    async def _create_regular_user(
-        self,
-        email: str,
-        password: str,
-        role: str,
+        result = await self.db.execute(
+            select(User).where(
+                func.lower(User.username) == normalized,
+                User.is_admin.is_(False),
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def register_regular_user(
+        self, user_id: str, password: str
     ) -> User:
-        """공통 일반 사용자 생성 로직."""
-        normalized_email = self.normalize_email(email)
-        if await self.get_user_by_email(normalized_email):
-            raise ValueError("이미 등록된 이메일입니다.")
+        """일반 사용자 등록 (Issue #90, id+비밀번호).
+
+        - id 는 영문/숫자 9자 이하, 대소문자 무시 고유, 예약어 금지
+        - username/nickname 모두 정규화된 id 로 저장하며 email 은 사용하지 않음
+        """
+        normalized_id = validate_user_id(user_id)
+
+        # 관리자 계정을 포함한 전체 username 네임스페이스에서 중복 확인
+        result = await self.db.execute(
+            select(User).where(func.lower(User.username) == normalized_id)
+        )
+        if result.scalar_one_or_none():
+            raise ValueError("이미 사용 중인 아이디입니다.")
 
         user_data = UserCreate(
-            username=self._generate_regular_username(role),
-            nickname=role,
-            email=normalized_email,
+            username=normalized_id,
+            nickname=normalized_id,
+            email=None,
             password=password,
             is_admin=False,
         )
-        return await self.create_user(user_data)
-
-    async def register_teacher(
-        self,
-        email: str | TeacherRegistration,
-        password: str | None = None,
-        teacher_region: str | None = None,
-        teacher_career_years: int | None = None,
-        *,
-        region: str | None = None,
-        career_years: int | None = None,
-    ) -> User:
-        """현직 교사 일반 사용자 등록."""
-        if isinstance(email, TeacherRegistration):
-            registration = email
-        else:
-            registration = TeacherRegistration(
-                email=email,
-                password=password or "",
-                teacher_region=teacher_region or region,
-                teacher_career_years=(
-                    teacher_career_years
-                    if teacher_career_years is not None
-                    else career_years
-                ),
-            )
-
-        user_profile_model = self._load_user_profile_model()
-
         try:
-            user = await self._create_regular_user(
-                email=str(registration.email),
-                password=registration.password,
-                role=registration.role,
-            )
-            profile = user_profile_model(
-                user_id=user.id,
-                role=registration.role,
-                teacher_region=registration.teacher_region,
-                teacher_career_years=registration.teacher_career_years,
-                preservice_university_region=None,
-                preservice_grade=None,
-            )
-            self.db.add(profile)
+            user = await self.create_user(user_data)
             await self.db.commit()
             await self.db.refresh(user)
             return user
+        except IntegrityError as exc:
+            # 사전 확인을 통과한 동시 등록(레이스/더블 제출)도 친절한 409로 처리
+            await self.db.rollback()
+            raise ValueError("이미 사용 중인 아이디입니다.") from exc
         except Exception:
             await self.db.rollback()
             raise
 
-    async def register_preservice_teacher(
-        self,
-        email: str | PreserviceTeacherRegistration,
-        password: str | None = None,
-        preservice_university_region: str | None = None,
-        preservice_grade: int | None = None,
-        *,
-        university_region: str | None = None,
-        grade: int | None = None,
-    ) -> User:
-        """예비교사 일반 사용자 등록."""
-        if isinstance(email, PreserviceTeacherRegistration):
-            registration = email
-        else:
-            registration = PreserviceTeacherRegistration(
-                email=email,
-                password=password or "",
-                preservice_university_region=(
-                    preservice_university_region
-                    or university_region
-                ),
-                preservice_grade=(
-                    preservice_grade
-                    if preservice_grade is not None
-                    else grade
-                ),
-            )
-
-        user_profile_model = self._load_user_profile_model()
-
-        try:
-            user = await self._create_regular_user(
-                email=str(registration.email),
-                password=registration.password,
-                role=registration.role,
-            )
-            profile = user_profile_model(
-                user_id=user.id,
-                role=registration.role,
-                teacher_region=None,
-                teacher_career_years=None,
-                preservice_university_region=(
-                    registration.preservice_university_region
-                ),
-                preservice_grade=registration.preservice_grade,
-            )
-            self.db.add(profile)
-            await self.db.commit()
-            await self.db.refresh(user)
-            return user
-        except Exception:
-            await self.db.rollback()
-            raise
-
-    async def authenticate_regular_user(
-        self, email: str, password: str
+    async def authenticate_regular_user_by_username(
+        self, user_id: str, password: str
     ) -> Optional[User]:
-        """일반 사용자 이메일+비밀번호 인증."""
-        if not password:
+        """일반 사용자 id+비밀번호 인증."""
+        user = await self.get_regular_user_by_username(user_id)
+        if not user or not user.hashed_password:
+            # 미존재 id 도 dummy verify 로 bcrypt 비용 보정 (타이밍 완화)
+            self._dummy_password_verify(password)
             return None
 
-        user = await self.get_regular_user_by_email(email)
+        if not self.verify_password(password, user.hashed_password):
+            return None
+
+        return user
+
+    async def authenticate_regular_user_by_legacy_email(
+        self, email: str, password: str
+    ) -> Optional[User]:
+        """레거시 이메일 식별자 일반 사용자 인증."""
+        user = await self.get_regular_legacy_email_user(email)
         if not user or not user.hashed_password:
+            self._dummy_password_verify(password)
             return None
 
         if not self.verify_password(password, user.hashed_password):
@@ -571,9 +501,10 @@ class AuthService:
             raise ValueError(
                 "관리자 계정 비밀번호는 이 기능으로 변경할 수 없습니다."
             )
-        if not user.email:
+        if not self._is_login_capable(user):
             raise ValueError(
-                "이메일 기반 일반 사용자만 비밀번호를 변경할 수 있습니다."
+                "로그인 가능한 식별자가 없는 사용자는 "
+                "비밀번호를 변경할 수 없습니다."
             )
 
         user.hashed_password = self.hash_password(validated_password)

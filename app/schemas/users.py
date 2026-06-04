@@ -2,14 +2,25 @@
 사용자 스키마
 API 요청/응답 모델
 """
+import re
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from app.constants import (
-    PRESERVICE_UNIVERSITY_REGIONS,
-    TEACHER_REGIONS,
+# 사용자 지정 id 정책 (Issue #90)
+# - 영문 + 숫자만, 9자 이하(10자 미만)
+# - 대소문자 무시 고유(소문자 정규화하여 저장/비교)
+# - 예약어 금지
+USER_ID_PATTERN = re.compile(r"^[a-z0-9]{1,9}$")
+RESERVED_USER_IDS = frozenset(
+    {
+        "admin",
+        "administrator",
+        "root",
+        "system",
+        "teacher",
+        "preservice_teacher",
+    }
 )
 
 
@@ -18,6 +29,28 @@ def normalize_email_address(value: str) -> str:
     if value is None:
         return ""
     return str(value).strip().lower()
+
+
+def normalize_user_id(value: str | None) -> str:
+    """사용자 지정 id 정규화: 공백 제거 + 소문자화."""
+    if value is None:
+        return ""
+    return str(value).strip().lower()
+
+
+def validate_user_id(value: str | None) -> str:
+    """사용자 지정 id 정책 검증 후 정규화된 값을 반환.
+
+    영문/숫자 9자 이하만 허용하며 예약어는 거부한다.
+    """
+    normalized = normalize_user_id(value)
+    if not USER_ID_PATTERN.fullmatch(normalized):
+        raise ValueError(
+            "아이디는 영문/숫자 9자 이하로 입력해주세요."
+        )
+    if normalized in RESERVED_USER_IDS:
+        raise ValueError("사용할 수 없는 아이디입니다.")
+    return normalized
 
 
 def validate_password_strength(password: str) -> str:
@@ -84,109 +117,40 @@ class UserCreate(BaseModel):
         return validate_password_strength(value)
 
 
-class EmailPasswordLogin(BaseModel):
-    """일반 사용자 이메일+비밀번호 로그인 요청 모델"""
+class IdPasswordLogin(BaseModel):
+    """일반 사용자 id+비밀번호 로그인 요청 모델 (Issue #90)"""
 
-    email: EmailStr = Field(..., description="이메일 주소")
+    user_id: str = Field(..., description="사용자 지정 아이디")
     password: str = Field(..., min_length=1, description="비밀번호")
 
-    @field_validator("email", mode="before")
+    @field_validator("user_id", mode="before")
     @classmethod
-    def normalize_email(cls, value: str) -> str:
-        """로그인 식별용 이메일 정규화."""
-        return normalize_email_address(value)
+    def normalize_id(cls, value: str) -> str:
+        """로그인 식별용 id 정규화(대소문자 무시)."""
+        return normalize_user_id(value)
 
 
-class TeacherRegistration(BaseModel):
-    """현직 교사 등록 요청 모델"""
+class RegularUserRegistration(BaseModel):
+    """일반 사용자 등록 요청 모델 (Issue #90, id+비밀번호)"""
 
-    email: EmailStr = Field(..., description="이메일 주소")
-    role: Literal["teacher"] = Field(
-        default="teacher",
-        description="사용자 인증 역할",
-    )
-    teacher_region: str = Field(..., description="교사 지역")
-    teacher_career_years: int = Field(
-        ...,
-        ge=0,
-        description="교직 경력 연수",
-    )
+    user_id: str = Field(..., description="사용자 지정 아이디")
     password: str = Field(
         ...,
         min_length=8,
         description="비밀번호 (최소 8자, 문자 및 숫자 포함)",
     )
 
-    @field_validator("email", mode="before")
+    @field_validator("user_id", mode="before")
     @classmethod
-    def normalize_email(cls, value: str) -> str:
-        """저장 전 이메일 정규화."""
-        return normalize_email_address(value)
+    def normalize_id(cls, value: str) -> str:
+        """저장 전 id 정규화."""
+        return normalize_user_id(value)
 
-    @field_validator("teacher_region", mode="before")
+    @field_validator("user_id")
     @classmethod
-    def normalize_teacher_region(cls, value: str) -> str:
-        """지역 입력 주변 공백 제거."""
-        return str(value).strip()
-
-    @field_validator("teacher_region")
-    @classmethod
-    def validate_teacher_region(cls, value: str) -> str:
-        """허용된 교사 지역만 받는다."""
-        if value not in TEACHER_REGIONS:
-            raise ValueError("허용되지 않는 교사 지역입니다.")
-        return value
-
-    @field_validator("password")
-    @classmethod
-    def validate_password(cls, value: str) -> str:
-        """공통 비밀번호 정책을 적용한다."""
-        return validate_password_strength(value)
-
-
-class PreserviceTeacherRegistration(BaseModel):
-    """예비교사 등록 요청 모델"""
-
-    email: EmailStr = Field(..., description="이메일 주소")
-    role: Literal["preservice_teacher"] = Field(
-        default="preservice_teacher",
-        description="사용자 인증 역할",
-    )
-    preservice_university_region: str = Field(
-        ...,
-        description="대학교 지역",
-    )
-    preservice_grade: int = Field(
-        ...,
-        ge=1,
-        le=4,
-        description="학년",
-    )
-    password: str = Field(
-        ...,
-        min_length=8,
-        description="비밀번호 (최소 8자, 문자 및 숫자 포함)",
-    )
-
-    @field_validator("email", mode="before")
-    @classmethod
-    def normalize_email(cls, value: str) -> str:
-        """저장 전 이메일 정규화."""
-        return normalize_email_address(value)
-
-    @field_validator("preservice_university_region", mode="before")
-    @classmethod
-    def normalize_university_region(cls, value: str) -> str:
-        """대학교 지역 입력 주변 공백 제거."""
-        return str(value).strip()
-
-    @field_validator("preservice_university_region")
-    @classmethod
-    def validate_university_region(cls, value: str) -> str:
-        """허용된 예비교사 대학교 지역만 받는다."""
-        if value not in PRESERVICE_UNIVERSITY_REGIONS:
-            raise ValueError("허용되지 않는 대학교 지역입니다.")
-        return value
+    def check_user_id(cls, value: str) -> str:
+        """id 형식/예약어 정책을 적용한다."""
+        return validate_user_id(value)
 
     @field_validator("password")
     @classmethod

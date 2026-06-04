@@ -4,6 +4,7 @@
 """
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
@@ -11,6 +12,7 @@ from fastapi import HTTPException, status as http_status
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.constants import USER_TYPES
 from app.db import Base, get_db
 from app.dependencies import get_current_admin
 from app.models.users import User
@@ -20,6 +22,7 @@ from app.models.chat_messages import (
     MessageRole,
 )
 from app.models.analysis_reports import AnalysisReport
+from app.routers.admin import users as admin_users_router
 from tests.conftest import (
     TestingSessionLocal,
     override_get_db,
@@ -36,6 +39,181 @@ _admin = User(
     hashed_password="hashed",
     is_admin=True,
 )
+
+
+def test_admin_stats_user_types_include_unprofiled_segment():
+    assert "미지정" in USER_TYPES
+
+
+class _ScalarList:
+    def __init__(self, values):
+        self.values = values
+
+    def all(self):
+        return self.values
+
+
+class _ExecuteResult:
+    def __init__(self, *, scalar_value=None, scalars=None, rows=None):
+        self.scalar_value = scalar_value
+        self.scalars_value = scalars or []
+        self.rows = rows or []
+
+    def scalar(self):
+        return self.scalar_value
+
+    def scalars(self):
+        return _ScalarList(self.scalars_value)
+
+    def __iter__(self):
+        return iter(self.rows)
+
+
+class _FakeDb:
+    def __init__(self, *results):
+        self.results = list(results)
+
+    async def execute(self, statement):
+        if not self.results:
+            raise AssertionError("unexpected query")
+        return self.results.pop(0)
+
+    async def rollback(self):
+        raise AssertionError("rollback should not run")
+
+
+@pytest.mark.asyncio
+async def test_accounts_response_uses_username_identifier_when_email_missing():
+    now = datetime(2026, 6, 4, 9, 0, 0)
+    id_only_user = SimpleNamespace(
+        id=1,
+        username="idonly1",
+        nickname="idonly1",
+        email=None,
+        is_admin=False,
+        created_at=now,
+    )
+    email_user = SimpleNamespace(
+        id=2,
+        username="teacher_abc123",
+        nickname="teacher",
+        email="teacher@example.com",
+        is_admin=False,
+        created_at=now,
+    )
+    db = _FakeDb(
+        _ExecuteResult(scalar_value=2),
+        _ExecuteResult(scalars=[id_only_user, email_user]),
+        _ExecuteResult(rows=[]),
+        _ExecuteResult(rows=[]),
+        _ExecuteResult(scalars=[]),
+    )
+
+    body = await admin_users_router.get_user_accounts(
+        page=1,
+        page_size=20,
+        q=None,
+        include_admins=False,
+        current_admin=_admin,
+        db=db,
+    )
+
+    assert body["accounts"][0]["email"] is None
+    assert body["accounts"][0]["username"] == "idonly1"
+    assert body["accounts"][0]["user_identifier"] == "idonly1"
+    assert body["accounts"][1]["user_identifier"] == "teacher@example.com"
+
+
+@pytest.mark.asyncio
+async def test_accounts_response_disables_password_change_without_login_id():
+    now = datetime(2026, 6, 4, 9, 0, 0)
+    blocked_user = SimpleNamespace(
+        id=1,
+        username="legacy-invite-code",
+        nickname="legacy",
+        email=None,
+        is_admin=False,
+        created_at=now,
+    )
+    email_user = SimpleNamespace(
+        id=2,
+        username="legacy-invite-code-2",
+        nickname="legacy-email",
+        email="legacy@example.com",
+        is_admin=False,
+        created_at=now,
+    )
+    id_user = SimpleNamespace(
+        id=3,
+        username="validid1",
+        nickname="validid1",
+        email=None,
+        is_admin=False,
+        created_at=now,
+    )
+    db = _FakeDb(
+        _ExecuteResult(scalar_value=3),
+        _ExecuteResult(scalars=[blocked_user, email_user, id_user]),
+        _ExecuteResult(rows=[]),
+        _ExecuteResult(rows=[]),
+        _ExecuteResult(scalars=[]),
+    )
+
+    body = await admin_users_router.get_user_accounts(
+        page=1,
+        page_size=20,
+        q=None,
+        include_admins=False,
+        current_admin=_admin,
+        db=db,
+    )
+
+    can_change_by_username = {
+        account["username"]: account["can_change_password"]
+        for account in body["accounts"]
+    }
+    assert can_change_by_username["legacy-invite-code"] is False
+    assert can_change_by_username["legacy-invite-code-2"] is True
+    assert can_change_by_username["validid1"] is True
+
+
+@pytest.mark.asyncio
+async def test_sessions_response_uses_username_identifier_when_email_missing():
+    now = datetime(2026, 6, 4, 9, 0, 0)
+    id_only_user = SimpleNamespace(
+        id=1,
+        username="idonly1",
+        nickname="idonly1",
+        email=None,
+    )
+    session = SimpleNamespace(
+        id=10,
+        user_id=1,
+        user_type="미지정",
+        title="세션",
+        created_at=now,
+        updated_at=now,
+        messages=[],
+        user=id_only_user,
+    )
+    db = _FakeDb(
+        _ExecuteResult(scalar_value=1),
+        _ExecuteResult(scalars=[session]),
+        _ExecuteResult(rows=[]),
+        _ExecuteResult(scalars=[]),
+    )
+
+    body = await admin_users_router.get_user_sessions(
+        page=1,
+        page_size=20,
+        user_type=None,
+        current_admin=_admin,
+        db=db,
+    )
+
+    assert body["sessions"][0]["user_email"] is None
+    assert body["sessions"][0]["username"] == "idonly1"
+    assert body["sessions"][0]["user_identifier"] == "idonly1"
 
 
 @pytest.fixture(autouse=True)
@@ -150,7 +328,14 @@ async def test_stats_returns_counts(seed_data):
     data = resp.json()
     assert "stats" in data
     assert "totals" in data
-    assert len(data["stats"]) == 5
+    assert {s["user_type"] for s in data["stats"]} >= {
+        "1학년",
+        "2학년",
+        "3학년",
+        "4학년",
+        "교사",
+        "미지정",
+    }
 
     grade1 = next(
         s for s in data["stats"]
@@ -161,6 +346,71 @@ async def test_stats_returns_counts(seed_data):
 
     totals = data["totals"]
     assert totals["session_count"] >= 2
+
+
+@pytest.mark.asyncio
+async def test_stats_includes_unprofiled_segment(db_tables):
+    """stats API가 UserProfile 없는 신규 사용자 세그먼트도 집계"""
+    async with TestingSessionLocal() as db:
+        user = User(
+            username="idonly1",
+            nickname="idonly1",
+            email=None,
+            hashed_password="h",
+            is_admin=False,
+        )
+        db.add(user)
+        await db.flush()
+
+        now = datetime.now()
+        session = ChatSession(
+            user_id=user.id,
+            user_type="미지정",
+            title="신규사용자세션",
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(session)
+        await db.flush()
+
+        db.add(
+            ChatMessage(
+                session_id=session.id,
+                role=MessageRole.USER,
+                content="질문입니다",
+                created_at=now,
+            )
+        )
+        db.add(
+            AnalysisReport(
+                user_id=user.id,
+                lessonplan_filename="idonly.pdf",
+                lessonplan_original_name="원본.pdf",
+                report_filename="idonly.md",
+                report_path="/reports/idonly.md",
+                latency_ms=1000,
+                created_at=now,
+            )
+        )
+        await db.commit()
+
+    with TestClient(app) as client:
+        resp = client.get("/admin/api/users/stats")
+    assert resp.status_code == 200
+
+    data = resp.json()
+    unprofiled = next(
+        s for s in data["stats"]
+        if s["user_type"] == "미지정"
+    )
+    assert unprofiled["session_count"] == 1
+    assert unprofiled["qna_count"] == 1
+    assert unprofiled["report_count"] == 1
+    assert unprofiled["today_count"] == 1
+    assert data["totals"]["session_count"] == 1
+    assert data["totals"]["qna_count"] == 1
+    assert data["totals"]["report_count"] == 1
+    assert data["totals"]["today_count"] == 1
 
 
 @pytest.mark.asyncio
@@ -511,8 +761,32 @@ def test_admin_users_delete_button_uses_data_attributes():
     )
     assert 'data-user-id="${account.user_id}"' in source
     assert (
-        'data-user-label="${escapeHtml(account.email || account.username || \'\')}"'
+        'data-user-label="${escapeHtml(accountIdentifier || \'\')}"'
+        in source
+    )
+    assert (
+        "account.user_identifier || account.email || account.username"
+        in source
+    )
+    assert (
+        "s.user_identifier || s.user_email || s.username"
         in source
     )
     assert "btn.addEventListener('click'" in source
     assert "deleteUser(userId, userLabel);" in source
+
+
+def test_admin_users_session_filter_includes_unprofiled_segment():
+    source = Path("app/templates/admin/admin_users.html").read_text(
+        encoding="utf-8"
+    )
+    filter_start = source.index('<select id="userTypeFilter"')
+    filter_end = source.index("</select>", filter_start)
+    filter_source = source[filter_start:filter_end]
+
+    assert '<option value="미지정">미지정</option>' in filter_source
+    assert filter_source.index(
+        '<option value="교사">교사</option>'
+    ) < filter_source.index(
+        '<option value="미지정">미지정</option>'
+    )

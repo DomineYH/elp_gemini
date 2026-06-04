@@ -183,11 +183,11 @@ async def test_authed_user_accesses_auth_me(
     http_client, normal_user, disable_rate_limit
 ):
     """유효한 세션으로 GET /auth/me 시 200."""
-    # /auth/login/user 는 이메일+비밀번호 기반 세션 설정 (issue #10 이후)
+    # /auth/login/user 는 사용자 지정 id + 비밀번호 기반 세션 설정 (issue #90)
     resp = await http_client.post(
         "/auth/login/user",
         data={
-            "email": "test@example.com",
+            "user_id": "testuser",
             "password": USER_PASSWORD,
         },
         follow_redirects=False,

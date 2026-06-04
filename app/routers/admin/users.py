@@ -63,6 +63,22 @@ def _value_str(value: Any) -> str | None:
     return value.value if hasattr(value, "value") else str(value)
 
 
+def _user_identifier(user: Any) -> str | None:
+    """관리자 화면용 사용자 식별자: email 우선, 없으면 username."""
+    if user is None:
+        return None
+    return getattr(user, "email", None) or getattr(user, "username", None)
+
+
+def _user_can_login(user: Any) -> bool:
+    """비밀번호 재설정 후 실제 로그인 가능한 계정인지 확인한다."""
+    if user is None:
+        return False
+    if getattr(user, "email", None) is not None:
+        return True
+    return AuthService._has_valid_custom_id(user)
+
+
 def _serialize_profile(profile: Any) -> dict[str, Any]:
     """프로필 객체를 관리자 화면/API 표시용으로 직렬화한다."""
     if profile is None:
@@ -424,6 +440,7 @@ async def get_user_sessions(
                 "user_email": (
                     user.email if user is not None else None
                 ),
+                "user_identifier": _user_identifier(user),
                 "username": (
                     user.username if user is not None else None
                 ),
@@ -524,6 +541,7 @@ async def get_user_accounts(
                 "username": account.username,
                 "nickname": account.nickname,
                 "email": account.email,
+                "user_identifier": _user_identifier(account),
                 "is_admin": account.is_admin,
                 "created_at": (
                     account.created_at.isoformat()
@@ -535,8 +553,9 @@ async def get_user_accounts(
                 "profile_summary": profile["summary"],
                 "session_count": session_counts.get(account.id, 0),
                 "report_count": report_counts.get(account.id, 0),
+                # Issue #90: 재설정 후 실제 로그인 가능한 계정만 허용한다.
                 "can_change_password": (
-                    not account.is_admin and bool(account.email)
+                    not account.is_admin and _user_can_login(account)
                 ),
             })
 
