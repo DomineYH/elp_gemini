@@ -151,3 +151,23 @@ def test_report_no_collision_between_same_original_name(tmp_path):
     assert Path(r1["file_path"]).exists()
     assert Path(r2["file_path"]).exists()
     assert r1["file_path"] != r2["file_path"]
+
+
+# ── Path traversal protection ──────────────────────────────────────
+
+
+def test_lessonplan_traversal_stays_under_user_dir(tmp_path):
+    """A filename like '../other_user/x.pdf' must be normalized to stay
+    inside the user's own subdirectory."""
+    svc = LessonPlanStorageService(base_dir=str(tmp_path))
+    res = svc.save_lessonplan(
+        user_id=5, original_filename="../evil.pdf", file_content=b"x"
+    )
+    saved = Path(res["file_path"])
+    # Must resolve to tmp_path/5/evil.pdf, NOT escape the user dir
+    assert saved == tmp_path / "5" / "evil.pdf"
+    assert saved.exists()
+
+    # get and delete also work with the traversal-safe name
+    assert svc.get_lessonplan_path(user_id=5, original_filename="../evil.pdf") is not None
+    assert svc.delete_lessonplan(user_id=5, original_filename="../evil.pdf") is True

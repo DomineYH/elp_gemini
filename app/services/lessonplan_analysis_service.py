@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.analysis_reports import AnalysisReport
 from app.models.lessonplan_uploads import LessonPlanUpload
-from app.models.users import User
 from app.repositories.app_state_repository import (
     KEY_SYNC_ERROR,
     KEY_SYNC_STATE,

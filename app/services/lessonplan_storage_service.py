@@ -54,7 +54,8 @@ class LessonPlanStorageService:
             user_dir = self.base_dir / str(user_id)
             user_dir.mkdir(parents=True, exist_ok=True)
 
-            file_path = user_dir / original_filename
+            safe_name = Path(original_filename).name
+            file_path = user_dir / safe_name
 
             with open(file_path, "wb") as f:
                 f.write(file_content)
@@ -89,7 +90,7 @@ class LessonPlanStorageService:
         Returns:
             파일 경로 (존재하지 않으면 None)
         """
-        file_path = self.base_dir / str(user_id) / original_filename
+        file_path = self.base_dir / str(user_id) / Path(original_filename).name
 
         if file_path.exists():
             logger.debug(f"지도안 경로 조회: {file_path}")
@@ -163,7 +164,7 @@ class LessonPlanStorageService:
             삭제 성공 여부
         """
         try:
-            file_path = self.base_dir / str(user_id) / original_filename
+            file_path = self.base_dir / str(user_id) / Path(original_filename).name
 
             if not file_path.exists():
                 logger.warning(
