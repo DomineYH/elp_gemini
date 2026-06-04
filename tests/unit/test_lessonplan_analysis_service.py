@@ -18,7 +18,13 @@ class TestLessonPlanAnalysisService:
     @pytest.fixture
     def mock_db(self):
         """Mock AsyncSession"""
-        return AsyncMock()
+        db = AsyncMock()
+        # Configure db.execute() to return a mock result whose
+        # scalar_one_or_none() returns None by default (no rows).
+        mock_result = Mock()
+        mock_result.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(return_value=mock_result)
+        return db
 
     @pytest.fixture
     def service(self, mock_db):

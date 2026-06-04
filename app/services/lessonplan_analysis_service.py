@@ -113,16 +113,13 @@ class LessonPlanAnalysisService:
         self,
         session_id: int,
         user_id: int,
-        username: str,
     ) -> Dict[str, Any]:
         """
         수업 지도안 체계적 평가
 
         Args:
             session_id: 채팅 세션 ID
-            session_id: 채팅 세션 ID
-            user_id: 사용자 ID (로깅용)
-            username: 사용자 이름 (Store ID 조회용)
+            user_id: 사용자 ID (User.id)
 
         Returns:
             {
@@ -142,7 +139,7 @@ class LessonPlanAnalysisService:
                 # 즉시 ALREADY_ANALYZED 반환 (Gemini 호출 안 함)
                 latest_upload, existing_report = (
                     await self._find_existing_report_for_latest_upload(
-                        username
+                        user_id
                     )
                 )
                 if existing_report is not None:
@@ -181,10 +178,10 @@ class LessonPlanAnalysisService:
                 legacy_lessonplans = []
                 if latest_upload is None:
                     legacy_lessonplans = (
-                        self.lessonplan_storage.list_lessonplans(username)
+                        self.lessonplan_storage.list_lessonplans(user_id)
                     )
                     has_file_search_documents = (
-                        self._user_file_search_store_has_documents(username)
+                        self._user_file_search_store_has_documents(user_id)
                     )
                     if (
                         not legacy_lessonplans
@@ -199,7 +196,7 @@ class LessonPlanAnalysisService:
                         }
 
                 # 1. File Search Store ID 조회 (Phase 1 활용)
-                store_ids = await self._get_store_ids(username)
+                store_ids = await self._get_store_ids(user_id)
                 if not store_ids:
                     return {
                         "success": False,
@@ -328,7 +325,7 @@ class LessonPlanAnalysisService:
                                 await self.db.rollback()
                                 latest_upload, existing_report = await (
                                     self._find_existing_report_for_latest_upload(
-                                        username
+                                        user_id
                                     )
                                 )
                                 if existing_report is not None:
@@ -366,7 +363,7 @@ class LessonPlanAnalysisService:
 
                         # 보고서 파일 저장
                         saved_report = self.report_storage.save_report(
-                            username=username,
+                            user_id=user_id,
                             original_filename=original_filename,
                             report_content=report,
                         )
@@ -483,21 +480,21 @@ class LessonPlanAnalysisService:
             logger.error(f"분석 실패: {e}", exc_info=True)
             return {"success": False, "error": "분석 중 오류 발생"}
 
-    async def _get_store_ids(self, username: str) -> list[str]:
+    async def _get_store_ids(self, user_id: int) -> list[str]:
         """
         File Search Store ID 조회 (Phase 1 공통 유틸 사용)
 
         Args:
-            username: 사용자 이름
+            user_id: 사용자 ID (User.id)
 
         Returns:
-            Store ID 리스트 [user-{username}-store, rubricstore]
+            Store ID 리스트 [user-{user_id}-store, rubricstore]
             (실제 반환 순서: 사용자 문서, 평가기준 문서)
         """
         try:
             # Phase 1의 get_dual_store_ids() 사용
             store_ids = self.file_search_service.get_dual_store_ids(
-                username
+                user_id
             )
             logger.info(f"✅ Store ID 조회 완료: {len(store_ids)}개")
             return store_ids
@@ -508,8 +505,8 @@ class LessonPlanAnalysisService:
             logger.error(f"❌ 예상치 못한 오류: {e}")
             return []
 
-    def _user_file_search_store_has_documents(self, username: str) -> bool:
-        store_name = f"user-{username}-store"
+    def _user_file_search_store_has_documents(self, user_id: int) -> bool:
+        store_name = f"user-{user_id}-store"
         safe_store_name = _sanitize_display_name(store_name)
         try:
             file_search_stores = (
@@ -529,7 +526,7 @@ class LessonPlanAnalysisService:
         return False
 
     async def _find_existing_report_for_latest_upload(
-        self, username: str
+        self, user_id: int
     ):
         """
         사용자의 최신 업로드 이벤트와 그에 연결된 기존 보고서를 함께 조회.
@@ -540,18 +537,9 @@ class LessonPlanAnalysisService:
             - (upload, None): 최신 업로드는 있으나 분석 보고서는 아직 없음
             - (upload, report): 이미 분석 완료 → 차단해야 함
         """
-        result = await self.db.execute(
-            select(User)
-            .where(User.username == username)
-            .limit(1)
-        )
-        user = result.scalar_one_or_none()
-        if user is None:
-            return (None, None)
-
         upload_result = await self.db.execute(
             select(LessonPlanUpload)
-            .where(LessonPlanUpload.user_id == user.id)
+            .where(LessonPlanUpload.user_id == user_id)
             .order_by(
                 LessonPlanUpload.created_at.desc(),
                 LessonPlanUpload.id.desc(),

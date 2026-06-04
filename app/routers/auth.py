@@ -561,7 +561,7 @@ async def logout(request: Request):
         try:
             from app.services.file_search_service import FileSearchService
             file_search_service = FileSearchService()
-            store_name = f"user-{username}-store"
+            store_name = f"user-{user_id}-store"
             await file_search_service.delete_store_by_display_name(store_name)
         except Exception as e:
             logger.warning(f"로그아웃 시 스토어 정리 실패: {str(e)}")

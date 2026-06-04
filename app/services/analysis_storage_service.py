@@ -1,8 +1,7 @@
 """
 분석 결과 마크다운 파일 저장 서비스
-data/analys/ 디렉토리에 사용자별 분석 결과 관리
+data/analys/{user_id}/ 디렉토리에 사용자별 분석 결과 관리
 """
-import os
 import logging
 from pathlib import Path
 from typing import List, Optional, Dict
@@ -35,7 +34,7 @@ class AnalysisStorageService:
 
     def _generate_markdown_header(
         self,
-        username: str,
+        user_id: int,
         lessonplan_filename: str,
         evaluation_type: str = "general",
     ) -> str:
@@ -43,7 +42,7 @@ class AnalysisStorageService:
         마크다운 헤더 자동 생성
 
         Args:
-            username: 사용자 이름
+            user_id: 사용자 ID
             lessonplan_filename: 지도안 파일명
             evaluation_type: 평가 유형
 
@@ -54,7 +53,7 @@ class AnalysisStorageService:
         header = f"""# 수업 지도안 분석 결과
 
 ## 메타데이터
-- **사용자**: {username}
+- **사용자 ID**: {user_id}
 - **지도안 파일**: {lessonplan_filename}
 - **평가 유형**: {evaluation_type}
 - **분석 일시**: {timestamp}
@@ -66,7 +65,7 @@ class AnalysisStorageService:
 
     def save_analysis(
         self,
-        username: str,
+        user_id: int,
         lessonplan_filename: str,
         analysis_content: str,
         evaluation_type: str = "general",
@@ -75,7 +74,7 @@ class AnalysisStorageService:
         분석 결과 저장
 
         Args:
-            username: 사용자 이름
+            user_id: 사용자 ID
             lessonplan_filename: 지도안 파일명
             analysis_content: 분석 내용
             evaluation_type: 평가 유형
@@ -87,15 +86,16 @@ class AnalysisStorageService:
             - timestamp: 저장 시간
         """
         try:
-            # 파일명 생성: {username}_{지도안파일명}.md
-            # 지도안 파일명에서 확장자 제거
+            user_dir = self.base_dir / str(user_id)
+            user_dir.mkdir(parents=True, exist_ok=True)
+
             base_name = Path(lessonplan_filename).stem
-            filename = f"{username}_{base_name}.md"
-            file_path = self.base_dir / filename
+            filename = f"{base_name}.md"
+            file_path = user_dir / filename
 
             # 마크다운 헤더 생성
             header = self._generate_markdown_header(
-                username, lessonplan_filename, evaluation_type
+                user_id, lessonplan_filename, evaluation_type
             )
 
             # 전체 내용 구성
@@ -105,7 +105,9 @@ class AnalysisStorageService:
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(full_content)
 
-            logger.info(f"분석 결과 저장 완료: {filename}")
+            logger.info(
+                f"분석 결과 저장 완료: user_id={user_id}, {filename}"
+            )
 
             return {
                 "file_path": str(file_path),
@@ -117,44 +119,48 @@ class AnalysisStorageService:
             raise
 
     def get_analysis(
-        self, username: str, lessonplan_filename: str
+        self, user_id: int, lessonplan_filename: str
     ) -> Optional[str]:
         """
         분석 결과 읽기
 
         Args:
-            username: 사용자 이름
+            user_id: 사용자 ID
             lessonplan_filename: 지도안 파일명
 
         Returns:
             분석 결과 내용 (존재하지 않으면 None)
         """
         try:
-            # 파일명 생성
             base_name = Path(lessonplan_filename).stem
-            filename = f"{username}_{base_name}.md"
-            file_path = self.base_dir / filename
+            filename = f"{base_name}.md"
+            file_path = self.base_dir / str(user_id) / filename
 
             if not file_path.exists():
-                logger.warning(f"분석 결과 파일 없음: {filename}")
+                logger.warning(
+                    f"분석 결과 파일 없음: user_id={user_id}, "
+                    f"{filename}"
+                )
                 return None
 
             # 파일 읽기
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            logger.debug(f"분석 결과 조회: {filename}")
+            logger.debug(
+                f"분석 결과 조회: user_id={user_id}, {filename}"
+            )
             return content
         except Exception as e:
             logger.error(f"분석 결과 조회 실패: {str(e)}")
             raise
 
-    def list_analyses(self, username: str) -> List[Dict[str, str]]:
+    def list_analyses(self, user_id: int) -> List[Dict[str, str]]:
         """
         사용자별 분석 결과 목록 조회
 
         Args:
-            username: 사용자 이름
+            user_id: 사용자 ID
 
         Returns:
             분석 결과 파일 정보 리스트
@@ -165,17 +171,16 @@ class AnalysisStorageService:
             - created_at: 생성 시간
         """
         try:
-            pattern = f"{username}_*.md"
-            files = list(self.base_dir.glob(pattern))
+            user_dir = self.base_dir / str(user_id)
+            if not user_dir.is_dir():
+                return []
+
+            files = list(user_dir.glob("*.md"))
 
             analyses = []
             for file_path in files:
-                # 지도안 파일명 추출
-                # {username}_{lessonplan}.md → {lessonplan}
-                name_without_ext = file_path.stem
-                lessonplan = name_without_ext.replace(
-                    f"{username}_", "", 1
-                )
+                # 지도안 파일명 추출 (.md 제거)
+                lessonplan = file_path.stem
 
                 # 파일 정보 수집
                 stat = file_path.stat()
@@ -192,7 +197,7 @@ class AnalysisStorageService:
                 )
 
             logger.info(
-                f"분석 결과 목록 조회: {username}, "
+                f"분석 결과 목록 조회: user_id={user_id}, "
                 f"{len(analyses)}개"
             )
             return analyses
@@ -201,30 +206,33 @@ class AnalysisStorageService:
             raise
 
     def delete_analysis(
-        self, username: str, lessonplan_filename: str
+        self, user_id: int, lessonplan_filename: str
     ) -> bool:
         """
         분석 결과 삭제
 
         Args:
-            username: 사용자 이름
+            user_id: 사용자 ID
             lessonplan_filename: 지도안 파일명
 
         Returns:
             삭제 성공 여부
         """
         try:
-            # 파일명 생성
             base_name = Path(lessonplan_filename).stem
-            filename = f"{username}_{base_name}.md"
-            file_path = self.base_dir / filename
+            filename = f"{base_name}.md"
+            file_path = self.base_dir / str(user_id) / filename
 
             if not file_path.exists():
-                logger.warning(f"삭제할 파일 없음: {filename}")
+                logger.warning(
+                    f"삭제할 파일 없음: user_id={user_id}, {filename}"
+                )
                 return False
 
             file_path.unlink()
-            logger.info(f"분석 결과 삭제 완료: {filename}")
+            logger.info(
+                f"분석 결과 삭제 완료: user_id={user_id}, {filename}"
+            )
             return True
         except Exception as e:
             logger.error(f"분석 결과 삭제 실패: {str(e)}")
@@ -240,7 +248,7 @@ class AnalysisStorageService:
             - total_size: 전체 크기 (bytes)
         """
         try:
-            files = list(self.base_dir.glob("*.md"))
+            files = list(self.base_dir.rglob("*.md"))
             total_size = sum(f.stat().st_size for f in files)
 
             return {
