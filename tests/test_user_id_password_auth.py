@@ -429,6 +429,32 @@ async def test_login_id_is_case_insensitive(client, session_factory):
 
 
 @pytest.mark.asyncio
+async def test_regular_user_login_lookup_query_is_case_insensitive():
+    class EmptyResult:
+        def scalar_one_or_none(self):
+            return None
+
+    class RecordingDb:
+        def __init__(self):
+            self.sql = []
+
+        async def execute(self, statement):
+            compiled = str(
+                statement.compile(compile_kwargs={"literal_binds": True})
+            )
+            self.sql.append(compiled)
+            return EmptyResult()
+
+    db = RecordingDb()
+    service = AuthService(db)
+
+    assert await service.get_regular_user_by_username("Teacher5") is None
+
+    assert any("lower(" in sql.lower() for sql in db.sql)
+    assert any("is_admin IS false" in sql for sql in db.sql)
+
+
+@pytest.mark.asyncio
 async def test_login_wrong_password_no_session(client, session_factory):
     await _create_user(
         session_factory, username=USER_ID, password=USER_PASSWORD
@@ -522,6 +548,39 @@ async def test_qna_session_segment_for_id_only_user_is_neutral():
     label = await _session_segment_label_for_user(EmptyProfileSession(), user)
 
     assert label == "미지정"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("nickname", "expected_label"),
+    [
+        ("teacher", "교사"),
+        ("preservice_teacher", "미지정"),
+    ],
+)
+async def test_qna_session_segment_keeps_legacy_profileless_role_nicknames(
+    nickname, expected_label
+):
+    class EmptyProfileResult:
+        def scalar_one_or_none(self):
+            return None
+
+    class EmptyProfileSession:
+        async def execute(self, statement):
+            return EmptyProfileResult()
+
+    user = User(
+        username=f"{nickname}_abc123",
+        nickname=nickname,
+        email=f"{nickname}@example.test",
+        hashed_password="hashed",
+        is_admin=False,
+    )
+    user.id = 1
+
+    label = await _session_segment_label_for_user(EmptyProfileSession(), user)
+
+    assert label == expected_label
 
 
 def test_user_nav_templates_fall_back_to_id_when_email_missing():

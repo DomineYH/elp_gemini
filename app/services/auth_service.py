@@ -388,7 +388,7 @@ class AuthService:
 
         result = await self.db.execute(
             select(User).where(
-                User.username == normalized,
+                func.lower(User.username) == normalized,
                 User.is_admin.is_(False),
             )
         )

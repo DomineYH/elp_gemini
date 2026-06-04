@@ -97,6 +97,11 @@ async def _session_segment_label_for_user(
                 return f"{preservice_grade}학년"
             return "미지정"
 
+    nickname = _model_optional_str(current_user.nickname) or ""
+    if nickname == "teacher":
+        return "교사"
+    if nickname == "preservice_teacher":
+        return "미지정"
     return "미지정"
 
 
