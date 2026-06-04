@@ -83,7 +83,7 @@ class _FakeDb:
 
 
 @pytest.mark.asyncio
-async def test_accounts_response_uses_username_identifier_when_email_missing():
+async def test_accounts_response_uses_username_identifier():
     now = datetime(2026, 6, 4, 9, 0, 0)
     id_only_user = SimpleNamespace(
         id=1,
@@ -95,7 +95,7 @@ async def test_accounts_response_uses_username_identifier_when_email_missing():
     )
     email_user = SimpleNamespace(
         id=2,
-        username="teacher_abc123",
+        username="teacher1",
         nickname="teacher",
         email="teacher@example.com",
         is_admin=False,
@@ -106,7 +106,6 @@ async def test_accounts_response_uses_username_identifier_when_email_missing():
         _ExecuteResult(scalars=[id_only_user, email_user]),
         _ExecuteResult(rows=[]),
         _ExecuteResult(rows=[]),
-        _ExecuteResult(scalars=[]),
     )
 
     body = await admin_users_router.get_user_accounts(
@@ -118,14 +117,20 @@ async def test_accounts_response_uses_username_identifier_when_email_missing():
         db=db,
     )
 
-    assert body["accounts"][0]["email"] is None
+    # email/profile/profile_role/profile_summary must NOT appear
+    for acct in body["accounts"]:
+        assert "email" not in acct
+        assert "profile" not in acct
+        assert "profile_role" not in acct
+        assert "profile_summary" not in acct
+    # user_identifier always equals username
     assert body["accounts"][0]["username"] == "idonly1"
     assert body["accounts"][0]["user_identifier"] == "idonly1"
-    assert body["accounts"][1]["user_identifier"] == "teacher@example.com"
+    assert body["accounts"][1]["user_identifier"] == "teacher1"
 
 
 @pytest.mark.asyncio
-async def test_accounts_response_disables_password_change_without_login_id():
+async def test_accounts_can_change_password_gated_by_id_login_capability():
     now = datetime(2026, 6, 4, 9, 0, 0)
     blocked_user = SimpleNamespace(
         id=1,
@@ -135,7 +140,7 @@ async def test_accounts_response_disables_password_change_without_login_id():
         is_admin=False,
         created_at=now,
     )
-    email_user = SimpleNamespace(
+    legacy_email_user = SimpleNamespace(
         id=2,
         username="legacy-invite-code-2",
         nickname="legacy-email",
@@ -153,10 +158,10 @@ async def test_accounts_response_disables_password_change_without_login_id():
     )
     db = _FakeDb(
         _ExecuteResult(scalar_value=3),
-        _ExecuteResult(scalars=[blocked_user, email_user, id_user]),
+        _ExecuteResult(scalars=[blocked_user, legacy_email_user, id_user],
+                       ),
         _ExecuteResult(rows=[]),
         _ExecuteResult(rows=[]),
-        _ExecuteResult(scalars=[]),
     )
 
     body = await admin_users_router.get_user_accounts(
@@ -172,13 +177,15 @@ async def test_accounts_response_disables_password_change_without_login_id():
         account["username"]: account["can_change_password"]
         for account in body["accounts"]
     }
+    # Both legacy usernames with dashes fail validate_user_id → False
     assert can_change_by_username["legacy-invite-code"] is False
-    assert can_change_by_username["legacy-invite-code-2"] is True
+    assert can_change_by_username["legacy-invite-code-2"] is False
+    # Valid custom id → can change password
     assert can_change_by_username["validid1"] is True
 
 
 @pytest.mark.asyncio
-async def test_sessions_response_uses_username_identifier_when_email_missing():
+async def test_sessions_response_uses_username_identifier():
     now = datetime(2026, 6, 4, 9, 0, 0)
     id_only_user = SimpleNamespace(
         id=1,
@@ -200,7 +207,6 @@ async def test_sessions_response_uses_username_identifier_when_email_missing():
         _ExecuteResult(scalar_value=1),
         _ExecuteResult(scalars=[session]),
         _ExecuteResult(rows=[]),
-        _ExecuteResult(scalars=[]),
     )
 
     body = await admin_users_router.get_user_sessions(
@@ -211,9 +217,14 @@ async def test_sessions_response_uses_username_identifier_when_email_missing():
         db=db,
     )
 
-    assert body["sessions"][0]["user_email"] is None
-    assert body["sessions"][0]["username"] == "idonly1"
-    assert body["sessions"][0]["user_identifier"] == "idonly1"
+    # email/profile/profile_role/profile_summary must NOT appear
+    sess = body["sessions"][0]
+    assert "user_email" not in sess
+    assert "profile" not in sess
+    assert "profile_role" not in sess
+    assert "profile_summary" not in sess
+    assert sess["username"] == "idonly1"
+    assert sess["user_identifier"] == "idonly1"
 
 
 @pytest.fixture(autouse=True)
@@ -346,6 +357,8 @@ async def test_stats_returns_counts(seed_data):
 
     totals = data["totals"]
     assert totals["session_count"] >= 2
+    # profile_totals removed; only session/report counts remain
+    assert "profile_totals" not in data
 
 
 @pytest.mark.asyncio
@@ -692,13 +705,12 @@ async def test_admin_user_profile_returns_identity_and_counts(seed_data):
     assert resp.status_code == 200
     body = resp.json()
     assert body["user_id"] == target_user_id
-    assert body["email"] == "stu1@test.com"
+    assert "email" not in body
     assert body["username"] == "stu1"
     assert body["is_admin"] is False
     assert body["session_count"] == 2
     assert "report_count" in body
-    assert "profile" in body
-    assert "summary" in body["profile"]
+    assert "profile" not in body
 
 
 @pytest.mark.asyncio
