@@ -124,8 +124,8 @@ async function loadProfile() {
         return;
     }
     const data = await resp.json();
-    document.getElementById('userEmail').textContent = data.email || data.username;
-    const meta = [data.username, data.profile && data.profile.summary].filter(Boolean).join(' · ');
+    document.getElementById('userEmail').textContent = data.username;
+    const meta = data.created_at ? formatDate(data.created_at) : '';
     document.getElementById('userMeta').textContent = meta;
     document.getElementById('sessionTotal').textContent = data.session_count;
     document.getElementById('reportTotal').textContent = data.report_count;

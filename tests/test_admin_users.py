@@ -773,28 +773,13 @@ def test_admin_users_delete_button_uses_data_attributes():
         in source
     )
     assert (
-        "account.user_identifier || account.email || account.username"
+        "account.user_identifier || account.username"
         in source
     )
     assert (
-        "s.user_identifier || s.user_email || s.username"
+        "s.user_identifier || s.username"
         in source
     )
     assert "btn.addEventListener('click'" in source
     assert "deleteUser(userId, userLabel);" in source
 
-
-def test_admin_users_session_filter_includes_unprofiled_segment():
-    source = Path("app/templates/admin/admin_users.html").read_text(
-        encoding="utf-8"
-    )
-    filter_start = source.index('<select id="userTypeFilter"')
-    filter_end = source.index("</select>", filter_start)
-    filter_source = source[filter_start:filter_end]
-
-    assert '<option value="미지정">미지정</option>' in filter_source
-    assert filter_source.index(
-        '<option value="교사">교사</option>'
-    ) < filter_source.index(
-        '<option value="미지정">미지정</option>'
-    )
