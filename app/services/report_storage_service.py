@@ -1,6 +1,6 @@
 """
 분석 보고서 파일 저장 서비스
-app/static/reports/ 디렉토리에 분석 보고서 파일 관리
+app/static/reports/{user_id}/ 디렉토리에 분석 보고서 파일 관리
 """
 import logging
 import uuid
@@ -35,7 +35,7 @@ class ReportStorageService:
 
     def save_report(
         self,
-        username: str,
+        user_id: int,
         original_filename: str,
         report_content: str,
     ) -> Dict[str, str]:
@@ -43,10 +43,12 @@ class ReportStorageService:
         보고서 파일 저장
 
         파일명 형식:
-        {username}_{년월일시간}_{업로드파일명}_{unique8}_reports.md
+        {년월일시간}_{업로드파일명}_{unique8}_reports.md
+
+        저장 위치: {base_dir}/{user_id}/
 
         Args:
-            username: 사용자 이름 (로그인 ID)
+            user_id: 사용자 ID
             original_filename: 원본 지도안 파일명
             report_content: 보고서 내용 (Markdown)
 
@@ -57,6 +59,9 @@ class ReportStorageService:
             - timestamp: 저장 시간
         """
         try:
+            user_dir = self.base_dir / str(user_id)
+            user_dir.mkdir(parents=True, exist_ok=True)
+
             # 타임스탬프 생성 (년월일시분초)
             timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
@@ -66,17 +71,19 @@ class ReportStorageService:
             unique8 = uuid.uuid4().hex[:8]
 
             # 파일명 생성:
-            # {username}_{년월일시간}_{업로드파일명}_{unique8}_reports.md
+            # {년월일시간}_{업로드파일명}_{unique8}_reports.md
             filename = (
-                f"{username}_{timestamp}_{base_filename}_"
+                f"{timestamp}_{base_filename}_"
                 f"{unique8}_reports.md"
             )
-            file_path = self.base_dir / filename
+            file_path = user_dir / filename
 
             # 파일 저장
             file_path.write_text(report_content, encoding="utf-8")
 
-            logger.info(f"보고서 저장 완료: {filename}")
+            logger.info(
+                f"보고서 저장 완료: user_id={user_id}, {filename}"
+            )
 
             return {
                 "filename": filename,
@@ -89,35 +96,42 @@ class ReportStorageService:
 
     def get_report_path(
         self,
-        username: str,
+        user_id: int,
         filename: str
     ) -> Optional[str]:
         """
         보고서 파일 경로 반환
 
         Args:
-            username: 사용자 이름 (로그인 ID)
+            user_id: 사용자 ID
             filename: 파일명
 
         Returns:
-            파일 경로 (존재하지 않으면 None)
+            파일 경로 (존재하지 않거나 권한 없으면 None)
         """
-        file_path = self.base_dir / filename
+        user_dir = self.base_dir / str(user_id)
+        file_path = (user_dir / filename).resolve()
 
-        # 파일명이 해당 사용자의 것인지 확인
-        if file_path.exists() and filename.startswith(f"{username}_"):
+        # 경로가 사용자 디렉토리 내에 있는지 확인
+        try:
+            file_path.relative_to(user_dir.resolve())
+        except ValueError:
+            logger.warning(f"경로 탈출 차단: {filename}")
+            return None
+
+        if file_path.exists():
             logger.debug(f"보고서 경로 조회: {file_path}")
             return str(file_path)
 
-        logger.warning(f"보고서 파일 없음 또는 권한 없음: {filename}")
+        logger.warning(f"보고서 파일 없음: user_id={user_id}, {filename}")
         return None
 
-    def list_reports(self, username: str) -> List[Dict[str, str]]:
+    def list_reports(self, user_id: int) -> List[Dict[str, str]]:
         """
         사용자별 보고서 목록 조회
 
         Args:
-            username: 사용자 이름 (로그인 ID)
+            user_id: 사용자 ID
 
         Returns:
             보고서 파일 정보 리스트
@@ -127,8 +141,11 @@ class ReportStorageService:
             - created_at: 생성 시간
         """
         try:
-            pattern = f"{username}_*_reports.md"
-            files = list(self.base_dir.glob(pattern))
+            user_dir = self.base_dir / str(user_id)
+            if not user_dir.is_dir():
+                return []
+
+            files = list(user_dir.glob("*_reports.md"))
 
             reports = []
             for file_path in files:
@@ -146,7 +163,7 @@ class ReportStorageService:
             reports.sort(key=lambda x: x["created_at"], reverse=True)
 
             logger.info(
-                f"보고서 목록 조회: username={username}, "
+                f"보고서 목록 조회: user_id={user_id}, "
                 f"{len(reports)}개"
             )
             return reports
@@ -156,33 +173,40 @@ class ReportStorageService:
 
     def delete_report(
         self,
-        username: str,
+        user_id: int,
         filename: str
     ) -> bool:
         """
         보고서 파일 삭제
 
         Args:
-            username: 사용자 이름 (로그인 ID)
+            user_id: 사용자 ID
             filename: 파일명
 
         Returns:
             삭제 성공 여부
         """
         try:
-            file_path = self.base_dir / filename
+            user_dir = self.base_dir / str(user_id)
+            file_path = (user_dir / filename).resolve()
 
-            # 파일명이 해당 사용자의 것인지 확인
-            if not filename.startswith(f"{username}_"):
-                logger.warning(f"삭제 권한 없음: {filename}")
+            # 경로가 사용자 디렉토리 내에 있는지 확인
+            try:
+                file_path.relative_to(user_dir.resolve())
+            except ValueError:
+                logger.warning(f"삭제 권한 없음 (경로 탈출): {filename}")
                 return False
 
             if not file_path.exists():
-                logger.warning(f"삭제할 파일 없음: {filename}")
+                logger.warning(
+                    f"삭제할 파일 없음: user_id={user_id}, {filename}"
+                )
                 return False
 
             file_path.unlink()
-            logger.info(f"보고서 삭제 완료: {filename}")
+            logger.info(
+                f"보고서 삭제 완료: user_id={user_id}, {filename}"
+            )
             return True
         except Exception as e:
             logger.error(f"보고서 삭제 실패: {str(e)}")
@@ -198,7 +222,7 @@ class ReportStorageService:
             - total_size: 전체 크기 (bytes)
         """
         try:
-            files = list(self.base_dir.glob("*_reports.md"))
+            files = list(self.base_dir.rglob("*_reports.md"))
             total_size = sum(f.stat().st_size for f in files)
 
             return {

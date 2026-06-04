@@ -126,14 +126,15 @@ async def upload_document(
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     # 파일명 안전하게 처리 (ASCII 변환으로 Google API 호환성 보장)
-    safe_username = _sanitize_display_name(current_user.username)
     safe_original = _sanitize_display_name(file.filename)
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    saved_filename = f"{safe_username}_{timestamp}_{safe_original}"
-    file_path = upload_dir / saved_filename
+    user_upload_dir = upload_dir / str(current_user.id)
+    user_upload_dir.mkdir(parents=True, exist_ok=True)
+    saved_filename = f"{timestamp}_{safe_original}"
+    file_path = user_upload_dir / saved_filename
 
     # 웹 접근 URL
-    file_url = f"/static/uploads/{saved_filename}"
+    file_url = f"/static/uploads/{current_user.id}/{saved_filename}"
 
     try:
         hasher = hashlib.sha256()
@@ -176,12 +177,12 @@ async def upload_document(
         file_search_service = FileSearchService()
 
         # 기존 스토어 정리 (새 문서 업로드 시 이전 스토어 삭제)
-        store_name = f"user-{current_user.username}-store"
+        store_name = f"user-{current_user.id}-store"
         await file_search_service.delete_store_by_display_name(store_name)
 
         # 메타데이터 설정
         metadata = {
-            "user_id": current_user.username,
+            "user_id": str(current_user.id),
             "original_filename": file.filename,
             "uploaded_at": datetime.now().isoformat(),
             "type": "user_document"
@@ -267,7 +268,7 @@ async def cleanup_dashboard(
     """
     try:
         file_search_service = FileSearchService()
-        store_name = f"user-{current_user.username}-store"
+        store_name = f"user-{current_user.id}-store"
 
         # 사용자 스토어 삭제
         await file_search_service.delete_store_by_display_name(store_name)

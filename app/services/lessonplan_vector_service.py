@@ -25,7 +25,7 @@ class LessonPlanVectorService:
         self,
         file_path: str,
         display_name: str,
-        user_key: str,
+        user_id: int,
         session_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, str]:
@@ -36,7 +36,7 @@ class LessonPlanVectorService:
         Args:
             file_path: 지도안 파일 경로
             display_name: 표시 이름
-            user_key: 사용자 식별키 (username)
+            user_id: 사용자 ID (User.id)
             session_id: 세션 ID (선택)
             metadata: 추가 메타데이터 (선택)
 
@@ -47,7 +47,7 @@ class LessonPlanVectorService:
             # 메타데이터 설정
             upload_metadata = metadata or {}
             upload_metadata["type"] = "lessonplan"
-            upload_metadata["user_id"] = user_key  # user_id 키에 username 저장
+            upload_metadata["user_id"] = str(user_id)
             upload_metadata["uploaded_at"] = (
                 datetime.now().isoformat()
             )
@@ -65,7 +65,7 @@ class LessonPlanVectorService:
 
             logger.info(
                 f"지도안 임시 업로드 완료: {display_name}\n"
-                f"  - User Key: {user_key}\n"
+                f"  - User ID: {user_id}\n"
                 f"  - Session ID: {session_id}\n"
                 f"  - Document ID: {result['document_id']}\n"
                 f"  - Store ID: {result['store_id']}"
@@ -76,21 +76,21 @@ class LessonPlanVectorService:
             logger.error(f"지도안 임시 업로드 실패: {str(e)}")
             raise
 
-    async def delete_on_logout(self, user_key: str) -> bool:
+    async def delete_on_logout(self, user_id: int) -> bool:
         """
         로그아웃 시 사용자의 임시 지도안 삭제
         (사용자별 Store 삭제)
 
         Args:
-            user_key: 사용자 식별키 (username)
+            user_id: 사용자 ID (User.id)
 
         Returns:
             삭제 성공 여부
         """
         try:
-            await self._delete_user_store(user_key)
+            await self._delete_user_store(user_id)
             logger.info(
-                f"로그아웃 시 임시 지도안 삭제 완료: user_key={user_key}"
+                f"로그아웃 시 임시 지도안 삭제 완료: user_id={user_id}"
             )
             return True
         except Exception as e:
@@ -131,21 +131,21 @@ class LessonPlanVectorService:
             )
             raise
 
-    async def delete_user_documents(self, user_key: str) -> bool:
+    async def delete_user_documents(self, user_id: int) -> bool:
         """
         특정 사용자의 모든 임시 지도안 삭제
         (사용자별 Store 삭제)
 
         Args:
-            user_key: 사용자 식별키 (username)
+            user_id: 사용자 ID (User.id)
 
         Returns:
             삭제 성공 여부
         """
         try:
-            await self._delete_user_store(user_key)
+            await self._delete_user_store(user_id)
             logger.info(
-                f"사용자 임시 지도안 삭제 완료: user_key={user_key}"
+                f"사용자 임시 지도안 삭제 완료: user_id={user_id}"
             )
             return True
         except Exception as e:
@@ -154,15 +154,15 @@ class LessonPlanVectorService:
             )
             raise
 
-    async def _delete_user_store(self, user_key: str) -> None:
+    async def _delete_user_store(self, user_id: int) -> None:
         """
         사용자별 Store 삭제 (내부 메서드)
 
         Args:
-            user_key: 사용자 식별키 (username)
+            user_id: 사용자 ID (User.id)
         """
         try:
-            store_name = f"user-{user_key}-store"
+            store_name = f"user-{user_id}-store"
             await self._delete_store(store_name)
             logger.info(
                 f"사용자 Store 삭제 완료: {store_name}"
@@ -264,13 +264,13 @@ class LessonPlanVectorService:
             raise
 
     async def list_user_documents(
-        self, user_key: str
+        self, user_id: int
     ) -> List[Dict[str, str]]:
         """
         특정 사용자의 임시 지도안 목록 조회
 
         Args:
-            user_key: 사용자 식별키 (username)
+            user_id: 사용자 ID (User.id)
 
         Returns:
             문서 정보 리스트
@@ -279,7 +279,7 @@ class LessonPlanVectorService:
         """
         try:
             client = self.file_search_service.client
-            store_name = f"user-{user_key}-store"
+            store_name = f"user-{user_id}-store"
             store = None
 
             # Store 찾기
@@ -311,7 +311,7 @@ class LessonPlanVectorService:
 
             logger.info(
                 f"사용자 임시 지도안 목록 조회: "
-                f"{len(documents)}개 (user_key={user_key})"
+                f"{len(documents)}개 (user_id={user_id})"
             )
             return documents
         except Exception as e:

@@ -190,12 +190,12 @@ class FileSearchService:
             logger.error(f"스토어 처리 실패: {str(e)}")
             raise
 
-    def get_dual_store_ids(self, user_key: str) -> list[str]:
+    def get_dual_store_ids(self, user_key: str | int) -> list[str]:
         """
         rubricstore와 사용자 스토어 ID 조회/생성
 
         Args:
-            user_key: 사용자 식별키 (username)
+            user_key: 사용자 ID (User.id, int 또는 str)
 
         Returns:
             [user_store_id, rubricstore_id]  # 사용자 문서 우선 검색
@@ -285,12 +285,12 @@ class FileSearchService:
         )
         return store_ids
 
-    def get_user_store_id(self, user_key: str) -> str:
+    def get_user_store_id(self, user_key: str | int) -> str:
         """
         사용자 스토어 ID만 조회/생성
 
         Args:
-            user_key: 사용자 식별키 (username)
+            user_key: 사용자 ID (User.id, int 또는 str)
 
         Returns:
             user_store_id
@@ -374,7 +374,7 @@ class FileSearchService:
                 store_name = self.rubric_store_name
             elif isinstance(metadata, dict):
                 # 메인 스토어 대신 사용자별 스토어 사용
-                user_key = metadata.get("user_id")  # user_id 키에 username 저장됨
+                user_key = metadata.get("user_id")  # user_id 키에 User.id 저장됨
                 if user_key:
                     store_name = f"user-{user_key}-store"
                 else:

@@ -58,22 +58,20 @@ async def run_evaluation(
 
         # 평가 실행
         result = await eval_service.run_evaluation(
-            username=current_user.username,
-            lessonplan_filename=request.lessonplan_filename,
             user_id=current_user.id,
+            lessonplan_filename=request.lessonplan_filename,
             evaluation_type=request.evaluation_type,
         )
 
         logger.info(
             f"평가 실행 완료: "
-            f"user={current_user.username}, "
+            f"user_id={current_user.id}, "
             f"file={request.lessonplan_filename}, "
             f"type={request.evaluation_type}"
         )
 
         # 결과 파일명 생성
         analysis_filename = (
-            f"{current_user.username}_"
             f"{request.lessonplan_filename}.md"
         )
 
@@ -133,8 +131,8 @@ async def get_evaluation(
 
         # 파일 읽기
         content = storage_service.get_analysis(
-            username=current_user.username,
-            filename=filename,
+            user_id=current_user.id,
+            lessonplan_filename=filename,
         )
 
         if not content:
