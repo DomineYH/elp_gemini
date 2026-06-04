@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Optional
 
 from passlib.context import CryptContext
-from sqlalchemy import case, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -405,7 +405,10 @@ class AuthService:
         normalized_id = validate_user_id(user_id)
 
         # 관리자 계정을 포함한 전체 username 네임스페이스에서 중복 확인
-        if await self.get_user_by_username(normalized_id):
+        result = await self.db.execute(
+            select(User).where(func.lower(User.username) == normalized_id)
+        )
+        if result.scalar_one_or_none():
             raise ValueError("이미 사용 중인 아이디입니다.")
 
         user_data = UserCreate(

@@ -11,12 +11,16 @@ from __future__ import annotations
 
 import base64
 import json
+from datetime import datetime
+from pathlib import Path
+from types import SimpleNamespace
 from typing import AsyncIterator
 
 import itsdangerous
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -30,6 +34,7 @@ from app.db import Base, get_db
 from app.main import app
 from app.models.users import User
 from app.rate_limit import limiter
+from app.routers.qna import _session_segment_label_for_user
 from app.services.auth_service import AuthService
 
 USER_ID = "teacher01"
@@ -37,6 +42,7 @@ USER_PASSWORD = "TeacherPass123"
 ADMIN_PASSWORD = "AdminPass123"
 NEW_ADMIN_SET_PASSWORD = "ChangedPass123"
 ADMIN_CSRF_TOKEN = "test-admin-csrf-token"
+TEMPLATE_DIR = Path("app/templates")
 
 
 def _user_profile_exists_check():
@@ -288,30 +294,64 @@ async def test_register_rejects_existing_admin_username(
 ):
     """사용자 지정 id 는 기존 관리자 username 과도 충돌하면 안 된다.
 
-    예약어가 아니지만 id 패턴에 부합하는 관리자 username('teacher5')을
+    예약어가 아니지만 id 패턴에 부합하는 관리자 username('Teacher5')을
     누군가 점유하려는 시도를 전체 네임스페이스 중복검사가 막아야 한다.
     """
     await _create_user(
         session_factory,
-        username="teacher5",
+        username="Teacher5",
         password=ADMIN_PASSWORD,
         email="owner@example.com",
         is_admin=True,
     )
 
-    response = await _register(client, user_id="Teacher5")  # 대소문자 무시
+    response = await _register(client, user_id="teacher5")  # 대소문자 무시
 
     assert response.status_code in {400, 409}
     assert settings.SESSION_COOKIE_NAME not in response.cookies
 
     # 'teacher5' 행은 관리자 하나만 존재하고 변경되지 않아야 함
     async with session_factory() as session:
-        result = await session.execute(
-            select(User).where(User.username == "teacher5")
-        )
-        rows = result.scalars().all()
+        result = await session.execute(select(User))
+        rows = [
+            user for user in result.scalars().all()
+            if user.username.lower() == "teacher5"
+        ]
     assert len(rows) == 1
     assert rows[0].is_admin is True
+    assert rows[0].username == "Teacher5"
+
+
+@pytest.mark.asyncio
+async def test_register_duplicate_id_query_is_case_insensitive():
+    class ExistingUserResult:
+        def scalar_one_or_none(self):
+            return User(username="Teacher5")
+
+    class EmptyResult:
+        def scalar_one_or_none(self):
+            return None
+
+    class RecordingDb:
+        def __init__(self):
+            self.sql = []
+
+        async def execute(self, statement):
+            compiled = str(
+                statement.compile(compile_kwargs={"literal_binds": True})
+            )
+            self.sql.append(compiled)
+            if "lower(" in compiled.lower():
+                return ExistingUserResult()
+            return EmptyResult()
+
+    db = RecordingDb()
+    service = AuthService(db)
+
+    with pytest.raises(ValueError, match="이미 사용 중인 아이디"):
+        await service.register_regular_user("teacher5", USER_PASSWORD)
+
+    assert any("lower(" in sql.lower() for sql in db.sql)
 
 
 @pytest.mark.asyncio
@@ -455,6 +495,73 @@ async def test_legacy_username_login_no_longer_creates_session(
     assert (
         await _fetch_user_by_username(session_factory, "legacy_user") is None
     )
+
+
+# ===== id-only 사용자 표시/분석 세그먼트 =====
+
+
+@pytest.mark.asyncio
+async def test_qna_session_segment_for_id_only_user_is_neutral():
+    class EmptyProfileResult:
+        def scalar_one_or_none(self):
+            return None
+
+    class EmptyProfileSession:
+        async def execute(self, statement):
+            return EmptyProfileResult()
+
+    user = User(
+        username=USER_ID,
+        nickname=USER_ID,
+        email=None,
+        hashed_password="hashed",
+        is_admin=False,
+    )
+    user.id = 1
+
+    label = await _session_segment_label_for_user(EmptyProfileSession(), user)
+
+    assert label == "미지정"
+
+
+def test_user_nav_templates_fall_back_to_id_when_email_missing():
+    env = Environment(
+        loader=FileSystemLoader(TEMPLATE_DIR),
+        autoescape=select_autoescape(["html"]),
+    )
+    user = SimpleNamespace(email=None, nickname=USER_ID)
+    document = SimpleNamespace(
+        id=1,
+        title="lesson.pdf",
+        file_size=1024,
+        uploaded_at=datetime(2026, 1, 2, 3, 4),
+        status="ready",
+    )
+    contexts = {
+        "user/dashboard.html": {
+            "user": user,
+            "criteria_documents": [],
+        },
+        "user/viewer.html": {
+            "user": user,
+            "document": document,
+        },
+        "user/doc_detail.html": {
+            "user": user,
+            "document": document,
+            "extracted_text": "",
+        },
+        "user/eval_report.html": {
+            "user": user,
+            "document_id": 1,
+        },
+    }
+
+    for template_name, context in contexts.items():
+        rendered = env.get_template(template_name).render(**context)
+
+        assert f">{USER_ID}<" in rendered, template_name
+        assert ">None<" not in rendered, template_name
 
 
 # ===== 관리자 비밀번호 재설정 (email 제거 영향) =====

@@ -232,7 +232,7 @@
 {% endblock %}
 
 {% block nav_links %}
-<span class="text-gray-600">{{ user.email }}</span>
+<span class="text-gray-600">{{ user.email or user.nickname }}</span>
 <form method="POST" action="/auth/logout" class="inline">
     <button type="submit" class="text-gray-600 hover:text-red-600">
         로그아웃
