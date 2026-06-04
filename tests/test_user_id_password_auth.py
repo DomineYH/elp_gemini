@@ -393,6 +393,17 @@ async def test_login_page_uses_id_not_email(client):
     assert "초대 코드" not in response.text
 
 
+def test_login_template_allows_legacy_email_identifier_submission():
+    source = (TEMPLATE_DIR / "user/login.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'name="user_id"' in source
+    assert 'type="email"' not in source
+    assert 'maxlength="9"' not in source
+    assert 'pattern="[A-Za-z0-9]{1,9}"' not in source
+
+
 @pytest.mark.asyncio
 async def test_login_with_id_sets_session(client, session_factory):
     user = await _create_user(
