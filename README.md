@@ -67,8 +67,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - Health Check: http://localhost:8000/health
 
 기본 관리자 계정:
-- Email: admin@example.com
-- Password: admin_password
+- ID: admin
+- Password: admin1234
 ```
 
 ## 프로젝트 구조
@@ -97,7 +97,7 @@ elp_gemini/
 
 ### 일반 사용자
 
-1. **로그인**: 이메일/비밀번호로 로그인
+1. **로그인**: 사용자 ID와 비밀번호로 로그인
 2. **문서 업로드**: PDF 파일 업로드 (최대 50MB)
 3. **질문하기**: 업로드한 문서에 대해 질문
 4. **평가 요청**: 관리자가 설정한 루브릭으로 문서 평가
