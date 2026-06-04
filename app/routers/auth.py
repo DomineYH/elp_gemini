@@ -18,13 +18,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.datastructures import URL
 
 from app.config import settings
-from app.constants import (
-    PRESERVICE_UNIVERSITY_REGIONS,
-    TEACHER_REGIONS,
-)
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models.users import User
@@ -34,11 +29,9 @@ from app.rate_limit import (
     limiter,
 )
 from app.schemas.users import (
-    EmailPasswordLogin,
-    PreserviceTeacherRegistration,
-    TeacherRegistration,
+    IdPasswordLogin,
+    RegularUserRegistration,
     UserResponse,
-    normalize_email_address,
 )
 from app.services.auth_service import AuthService
 from app.utils.logging import log_auth_event
@@ -58,56 +51,36 @@ async def _equalize_admin_failure_response(started_at: float) -> None:
         await asyncio.sleep(remaining)
 
 
-USER_ROLE_LABELS = {
-    "teacher": "교사",
-    "preservice_teacher": "예비교사",
-}
 INVALID_USER_CREDENTIALS_MESSAGE = (
-    "이메일 또는 비밀번호가 올바르지 않습니다."
+    "아이디 또는 비밀번호가 올바르지 않습니다."
 )
 
 
 def _register_context(
     request: Request,
     *,
-    email: str = "",
-    selected_role: str = "teacher",
+    user_id: str = "",
     error: str | None = None,
-    teacher_region: str = "",
-    teacher_career_years: str = "",
-    preservice_university_region: str = "",
-    preservice_grade: str = "",
 ) -> dict:
     """Build template context for the regular-user registration form."""
     return {
         "request": request,
         "error": error,
-        "email": normalize_email_address(email),
-        "selected_role": selected_role,
-        "teacher_regions": TEACHER_REGIONS,
-        "teacher_region": teacher_region,
-        "teacher_career_years": teacher_career_years,
-        "preservice_university_regions": (
-            PRESERVICE_UNIVERSITY_REGIONS
-        ),
-        "preservice_university_region": (
-            preservice_university_region
-        ),
-        "preservice_grade": preservice_grade,
+        "user_id": user_id,
     }
 
 
 def _login_context(
     request: Request,
     *,
-    email: str = "",
+    user_id: str = "",
     error: str | None = None,
 ) -> dict:
     """Build template context for the regular-user login form."""
     return {
         "request": request,
         "error": error,
-        "email": normalize_email_address(email),
+        "user_id": user_id,
     }
 
 
@@ -120,56 +93,6 @@ def _set_user_session(request: Request, user: User) -> None:
     request.session["nickname"] = user.nickname
 
 
-async def _get_regular_user_by_email(
-    auth_service: AuthService,
-    email: str,
-) -> User | None:
-    """Use Lane B regular-user lookup when present, else safe fallback."""
-    if hasattr(auth_service, "get_regular_user_by_email"):
-        return await auth_service.get_regular_user_by_email(email)
-
-    user = await auth_service.get_user_by_email(email)
-    if user and user.is_admin:
-        return None
-    return user
-
-
-async def _authenticate_regular_user(
-    auth_service: AuthService,
-    email: str,
-    password: str,
-) -> User | None:
-    """Use Lane B password auth when present, else verify directly."""
-    if hasattr(auth_service, "authenticate_regular_user"):
-        return await auth_service.authenticate_regular_user(
-            email, password
-        )
-
-    user = await _get_regular_user_by_email(auth_service, email)
-    if not user or not user.hashed_password:
-        return None
-    if not auth_service.verify_password(password, user.hashed_password):
-        return None
-    return user
-
-
-def _validate_login_form(email: str, password: str) -> tuple[str, str]:
-    """Normalize and validate login form data."""
-    if EmailPasswordLogin is not None:
-        login_data = EmailPasswordLogin(
-            email=email,
-            password=password,
-        )
-        return str(login_data.email), login_data.password
-
-    normalized_email = normalize_email_address(email)
-    if not normalized_email or "@" not in normalized_email:
-        raise ValueError("유효한 이메일 주소를 입력해주세요.")
-    if not password:
-        raise ValueError("비밀번호를 입력해주세요.")
-    return normalized_email, password
-
-
 def _validation_error_message(exc: Exception) -> str:
     """Convert schema/form validation exceptions into a safe message."""
     if isinstance(exc, ValidationError):
@@ -179,105 +102,28 @@ def _validation_error_message(exc: Exception) -> str:
     return str(exc) or "입력값을 확인해주세요."
 
 
-def _redirect_to_register(email: str) -> RedirectResponse:
-    """Redirect unregistered regular users into the registration flow."""
-    url = str(URL("/register").include_query_params(email=email))
-    return RedirectResponse(
-        url=url,
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
-
-
-async def _register_teacher(
-    auth_service: AuthService,
-    *,
-    email: str,
-    password: str,
-    teacher_region: str | None,
-    teacher_career_years: str | None,
-) -> User:
-    """Validate teacher form data and delegate creation to AuthService."""
-    try:
-        career_years = int(teacher_career_years or "")
-    except ValueError as exc:
-        raise ValueError("경력 연수는 숫자로 입력해주세요.") from exc
-
-    payload = {
-        "email": email,
-        "role": "teacher",
-        "teacher_region": teacher_region or "",
-        "teacher_career_years": career_years,
-        "password": password,
-    }
-    registration = TeacherRegistration(**payload)
-    payload = registration.model_dump()
-
-    return await auth_service.register_teacher(
-        email=payload["email"],
-        password=payload["password"],
-        teacher_region=payload["teacher_region"],
-        teacher_career_years=payload["teacher_career_years"],
-    )
-
-
-async def _register_preservice_teacher(
-    auth_service: AuthService,
-    *,
-    email: str,
-    password: str,
-    preservice_university_region: str | None,
-    preservice_grade: str | None,
-) -> User:
-    """Validate preservice form data and delegate creation to AuthService."""
-    try:
-        grade = int(preservice_grade or "")
-    except ValueError as exc:
-        raise ValueError("학년은 숫자로 입력해주세요.") from exc
-
-    payload = {
-        "email": email,
-        "role": "preservice_teacher",
-        "preservice_university_region": (
-            preservice_university_region or ""
-        ),
-        "preservice_grade": grade,
-        "password": password,
-    }
-    registration = PreserviceTeacherRegistration(**payload)
-    payload = registration.model_dump()
-
-    return await auth_service.register_preservice_teacher(
-        email=payload["email"],
-        password=payload["password"],
-        preservice_university_region=(
-            payload["preservice_university_region"]
-        ),
-        preservice_grade=payload["preservice_grade"],
-    )
-
-
 # T030: GET /login - 로그인 페이지 렌더링
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, email: str = ""):
+async def login_page(request: Request):
     """로그인 페이지"""
     # 이미 로그인한 경우 대시보드로 리다이렉트
     if request.session.get("user_id"):
         return RedirectResponse(url="/", status_code=302)
 
     return templates.TemplateResponse(
-        "user/login.html", _login_context(request, email=email)
+        "user/login.html", _login_context(request)
     )
 
 
 @router.get("/register", response_class=HTMLResponse)
-async def register_page(request: Request, email: str = ""):
+async def register_page(request: Request):
     """일반 사용자 등록 페이지"""
     if request.session.get("user_id"):
         return RedirectResponse(url="/", status_code=302)
 
     return templates.TemplateResponse(
         "user/register.html",
-        _register_context(request, email=email),
+        _register_context(request),
     )
 
 
@@ -302,51 +148,45 @@ async def login_admin_page(request: Request):
     )
 
 
-# 사용자 로그인 (이메일 + 비밀번호 기반)
+# 사용자 로그인 (id + 비밀번호 기반)
 @router.post("/auth/login/user")
 @limiter.limit(settings.USER_LOGIN_RATE_LIMIT)
 async def login_user(
     request: Request,
-    email: str = Form(...),
+    user_id: str = Form(...),
     password: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    일반 사용자 로그인 (이메일 + 비밀번호 기반).
+    일반 사용자 로그인 (사용자 지정 id + 비밀번호 기반).
 
-    등록되지 않은 이메일은 등록 화면으로 이동한다. 레거시
+    미등록 id 는 자격 증명 오류로 처리한다(id 열거 방지). 레거시
     /auth/login 하위 호환 차단 라우트는 삭제하지 않는다.
     """
     try:
-        normalized_email, password = _validate_login_form(
-            email, password
-        )
-    except (ValueError, ValidationError) as exc:
+        login_data = IdPasswordLogin(user_id=user_id, password=password)
+    except ValidationError as exc:
         return templates.TemplateResponse(
             "user/login.html",
             _login_context(
                 request,
-                email=email,
+                user_id=user_id,
                 error=_validation_error_message(exc),
             ),
             status_code=400,
         )
 
+    normalized_id = login_data.user_id
+
     try:
         auth_service = AuthService(db)
-        existing_user = await _get_regular_user_by_email(
-            auth_service, normalized_email
-        )
-        if not existing_user:
-            return _redirect_to_register(normalized_email)
-
-        user = await _authenticate_regular_user(
-            auth_service, normalized_email, password
+        user = await auth_service.authenticate_regular_user_by_username(
+            normalized_id, login_data.password
         )
         if not user:
             log_auth_event(
                 "login",
-                username=normalized_email,
+                username=normalized_id,
                 success=False,
                 reason="Invalid regular-user credentials",
             )
@@ -354,7 +194,7 @@ async def login_user(
                 "user/login.html",
                 _login_context(
                     request,
-                    email=normalized_email,
+                    user_id=normalized_id,
                     error=INVALID_USER_CREDENTIALS_MESSAGE,
                 ),
                 status_code=401,
@@ -364,32 +204,21 @@ async def login_user(
         log_auth_event(
             "login",
             user_id=user.id,
-            username=normalized_email,
+            username=normalized_id,
             success=True,
         )
         logger.info(
-            f"사용자 로그인 성공: "
-            f"user_id={user.id}, email={normalized_email}"
+            f"사용자 로그인 성공: user_id={user.id}, id={normalized_id}"
         )
 
         return RedirectResponse(
             url="/", status_code=status.HTTP_302_FOUND
         )
 
-    except ValueError as e:
-        return templates.TemplateResponse(
-            "user/login.html",
-            _login_context(
-                request,
-                email=normalized_email,
-                error=str(e),
-            ),
-            status_code=400,
-        )
     except Exception as e:
         log_auth_event(
             "login",
-            username=normalized_email,
+            username=normalized_id,
             success=False,
             reason=str(e),
         )
@@ -398,7 +227,7 @@ async def login_user(
             "user/login.html",
             _login_context(
                 request,
-                email=normalized_email,
+                user_id=normalized_id,
                 error="로그인 처리 중 오류가 발생했습니다. "
                 "다시 시도해주세요.",
             ),
@@ -409,96 +238,63 @@ async def login_user(
 @router.post("/auth/register")
 async def register_user(
     request: Request,
-    email: str = Form(...),
+    user_id: str = Form(...),
     password: str = Form(...),
     password_confirm: str | None = Form(None),
-    role: str = Form(...),
-    teacher_region: str | None = Form(None),
-    teacher_career_years: str | None = Form(None),
-    preservice_university_region: str | None = Form(None),
-    preservice_grade: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """일반 사용자 등록 후 자동 로그인."""
-    normalized_email = normalize_email_address(email)
-    selected_role = role if role in USER_ROLE_LABELS else "teacher"
+    """일반 사용자 등록 후 자동 로그인 (사용자 지정 id + 비밀번호)."""
 
     def render_error(message: str, status_code: int = 400):
         return templates.TemplateResponse(
             "user/register.html",
             _register_context(
                 request,
-                email=normalized_email,
-                selected_role=selected_role,
+                user_id=user_id,
                 error=message,
-                teacher_region=teacher_region or "",
-                teacher_career_years=teacher_career_years or "",
-                preservice_university_region=(
-                    preservice_university_region or ""
-                ),
-                preservice_grade=preservice_grade or "",
             ),
             status_code=status_code,
         )
 
-    if password_confirm is not None and password != password_confirm:
+    if password != (password_confirm or ""):
         return render_error("비밀번호 확인이 일치하지 않습니다.")
 
-    if role not in USER_ROLE_LABELS:
-        return render_error("유효하지 않은 사용자 유형입니다.")
+    try:
+        registration = RegularUserRegistration(
+            user_id=user_id, password=password
+        )
+    except ValidationError as exc:
+        return render_error(_validation_error_message(exc))
 
     try:
         auth_service = AuthService(db)
-        existing_user = await _get_regular_user_by_email(
-            auth_service, normalized_email
+        user = await auth_service.register_regular_user(
+            user_id=registration.user_id,
+            password=registration.password,
         )
-        if existing_user:
-            return render_error(
-                "이미 등록된 이메일입니다. 로그인해주세요.",
-                status_code=409,
-            )
-
-        if role == "teacher":
-            user = await _register_teacher(
-                auth_service,
-                email=normalized_email,
-                password=password,
-                teacher_region=teacher_region,
-                teacher_career_years=teacher_career_years,
-            )
-        else:
-            user = await _register_preservice_teacher(
-                auth_service,
-                email=normalized_email,
-                password=password,
-                preservice_university_region=(
-                    preservice_university_region
-                ),
-                preservice_grade=preservice_grade,
-            )
 
         _set_user_session(request, user)
         log_auth_event(
             "register",
             user_id=user.id,
-            username=normalized_email,
+            username=user.username,
             success=True,
         )
         logger.info(
-            f"사용자 등록 성공: "
-            f"user_id={user.id}, role={role}, email={normalized_email}"
+            f"사용자 등록 성공: user_id={user.id}, id={user.username}"
         )
 
         return RedirectResponse(
             url="/", status_code=status.HTTP_302_FOUND
         )
 
-    except (ValueError, ValidationError) as exc:
-        return render_error(_validation_error_message(exc))
+    except ValueError as exc:
+        # 중복 아이디 등 도메인 검증 실패
+        return render_error(str(exc), status_code=409)
     except Exception as exc:
         log_auth_event(
             "register",
-            username=normalized_email,
+            username=user_id,
             success=False,
             reason=str(exc),
         )
@@ -689,9 +485,9 @@ async def login(
     """
     기존 username/nickname 로그인 엔드포인트.
 
-    Issue #10 이후 일반 사용자 인증은 이메일+비밀번호 흐름만
-    허용한다. 이 레거시 엔드포인트는 임의의 passwordless 세션
-    생성을 막기 위해 더 이상 인증을 수행하지 않는다.
+    Issue #90 이후 일반 사용자 인증은 사용자 지정 id+비밀번호
+    흐름만 허용한다. 이 레거시 엔드포인트는 임의의 passwordless
+    세션 생성을 막기 위해 더 이상 인증을 수행하지 않는다.
     """
     log_auth_event(
         "legacy_login_blocked",
@@ -703,7 +499,7 @@ async def login(
         "user/login.html",
         _login_context(
             request,
-            error="이메일과 비밀번호로 로그인해주세요.",
+            error="아이디와 비밀번호로 로그인해주세요.",
         ),
         status_code=status.HTTP_410_GONE,
     )

@@ -535,9 +535,9 @@ async def get_user_accounts(
                 "profile_summary": profile["summary"],
                 "session_count": session_counts.get(account.id, 0),
                 "report_count": report_counts.get(account.id, 0),
-                "can_change_password": (
-                    not account.is_admin and bool(account.email)
-                ),
+                # Issue #90: 일반 사용자는 email 없이 id 로 식별되므로
+                # 비밀번호 재설정 가능 여부는 is_admin 만으로 판단한다.
+                "can_change_password": not account.is_admin,
             })
 
         logger.info(
