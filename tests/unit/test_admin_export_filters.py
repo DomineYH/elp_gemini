@@ -17,8 +17,6 @@ def test_parse_filters_defaults():
     assert f.date_from is None
     assert f.date_to is None
     assert f.user_ids is None
-    assert f.role is None
-    assert f.region is None
     assert f.include == INCLUDE_KINDS
 
 
@@ -27,15 +25,11 @@ def test_parse_filters_full():
         date_from="2026-01-01",
         date_to="2026-03-31",
         user_ids="1,2,42",
-        role="teacher",
-        region="서울",
         include="reports,meta",
     )
     assert f.date_from == date(2026, 1, 1)
     assert f.date_to == date(2026, 3, 31)
     assert f.user_ids == [1, 2, 42]
-    assert f.role == "teacher"
-    assert f.region == "서울"
     assert f.include == frozenset({"reports", "meta"})
 
 
@@ -60,12 +54,6 @@ def test_parse_filters_invalid_user_ids():
     assert "user_ids" in exc.value.detail
 
 
-def test_parse_filters_invalid_role():
-    with pytest.raises(HTTPException) as exc:
-        parse_filters(role="ghost")
-    assert exc.value.status_code == 400
-
-
 def test_parse_filters_unknown_include_token():
     with pytest.raises(HTTPException) as exc:
         parse_filters(include="reports,evil")
@@ -78,34 +66,24 @@ def test_parse_filters_empty_user_ids_becomes_none():
     assert f.user_ids is None
 
 
-def test_parse_filters_career_range():
-    f = parse_filters(career_min="3", career_max="10")
-    assert f.career_min == 3
-    assert f.career_max == 10
+def test_export_filters_has_no_role_region_career():
+    """role, region, career_min, career_max must not exist on ExportFilters."""
+    f = ExportFilters()
+    for field in ("role", "region", "career_min", "career_max"):
+        assert not hasattr(f, field), f"ExportFilters should not have {field}"
 
 
-def test_parse_filters_career_min_only():
-    f = parse_filters(career_min="5")
-    assert f.career_min == 5
-    assert f.career_max is None
+def test_parse_filters_ignores_role_kwarg():
+    """parse_filters must not accept role — calling with it should error."""
+    with pytest.raises(TypeError):
+        parse_filters(role="teacher")
 
 
-def test_parse_filters_invalid_career():
-    with pytest.raises(HTTPException) as exc:
-        parse_filters(career_min="abc")
-    assert exc.value.status_code == 400
-    assert "career_min" in exc.value.detail
+def test_parse_filters_ignores_region_kwarg():
+    with pytest.raises(TypeError):
+        parse_filters(region="서울")
 
 
-def test_parse_filters_negative_career():
-    with pytest.raises(HTTPException) as exc:
-        parse_filters(career_min="-1")
-    assert exc.value.status_code == 400
-    assert "career_min" in exc.value.detail
-
-
-def test_parse_filters_inverted_career_range():
-    with pytest.raises(HTTPException) as exc:
-        parse_filters(career_min="10", career_max="5")
-    assert exc.value.status_code == 400
-    assert "career_min must be <= career_max" in exc.value.detail
+def test_parse_filters_ignores_career_kwarg():
+    with pytest.raises(TypeError):
+        parse_filters(career_min="3")
