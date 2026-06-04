@@ -813,6 +813,105 @@ def test_user_nav_templates_fall_back_to_id_when_email_missing():
 # ===== 관리자 비밀번호 재설정 (email 제거 영향) =====
 
 
+class _PasswordChangeResult:
+    def __init__(self, user):
+        self.user = user
+
+    def scalar_one_or_none(self):
+        return self.user
+
+
+class _PasswordChangeDb:
+    def __init__(self, user):
+        self.user = user
+        self.committed = False
+        self.refreshed_user = None
+
+    async def execute(self, statement):
+        return _PasswordChangeResult(self.user)
+
+    async def commit(self):
+        self.committed = True
+
+    async def refresh(self, user):
+        self.refreshed_user = user
+
+
+@pytest.mark.asyncio
+async def test_admin_rejects_password_change_for_non_login_capable_user(
+    monkeypatch,
+):
+    """로그인 식별자가 없는 레거시 계정은 재설정 성공처럼 보이면 안 된다."""
+    user = SimpleNamespace(
+        id=91,
+        username="legacy-invite-code",
+        nickname="legacy",
+        email=None,
+        is_admin=False,
+        hashed_password="old-hash",
+        failed_login_count=2,
+        locked_until=datetime(2026, 6, 4, 9, 0, 0),
+        last_failed_login_at=datetime(2026, 6, 4, 8, 0, 0),
+    )
+    db = _PasswordChangeDb(user)
+    monkeypatch.setattr(
+        AuthService,
+        "hash_password",
+        staticmethod(lambda password: "new-hash"),
+    )
+
+    with pytest.raises(ValueError, match="로그인 가능한"):
+        await AuthService(db).admin_set_user_password(
+            user.id, NEW_ADMIN_SET_PASSWORD
+        )
+
+    assert db.committed is False
+    assert db.refreshed_user is None
+    assert user.hashed_password == "old-hash"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("username", "email"),
+    [
+        ("legacy-invite-code", "legacy@example.com"),
+        ("validid1", None),
+    ],
+)
+async def test_admin_can_change_password_for_login_capable_users(
+    monkeypatch, username, email
+):
+    user = SimpleNamespace(
+        id=92,
+        username=username,
+        nickname=username,
+        email=email,
+        is_admin=False,
+        hashed_password="old-hash",
+        failed_login_count=2,
+        locked_until=datetime(2026, 6, 4, 9, 0, 0),
+        last_failed_login_at=datetime(2026, 6, 4, 8, 0, 0),
+    )
+    db = _PasswordChangeDb(user)
+    monkeypatch.setattr(
+        AuthService,
+        "hash_password",
+        staticmethod(lambda password: "new-hash"),
+    )
+
+    changed = await AuthService(db).admin_set_user_password(
+        user.id, NEW_ADMIN_SET_PASSWORD
+    )
+
+    assert changed is user
+    assert db.committed is True
+    assert db.refreshed_user is user
+    assert user.hashed_password == "new-hash"
+    assert user.failed_login_count == 0
+    assert user.locked_until is None
+    assert user.last_failed_login_at is None
+
+
 @pytest.mark.asyncio
 async def test_admin_can_change_id_only_user_password(
     client, session_factory

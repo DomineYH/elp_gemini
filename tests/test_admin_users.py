@@ -125,6 +125,59 @@ async def test_accounts_response_uses_username_identifier_when_email_missing():
 
 
 @pytest.mark.asyncio
+async def test_accounts_response_disables_password_change_without_login_id():
+    now = datetime(2026, 6, 4, 9, 0, 0)
+    blocked_user = SimpleNamespace(
+        id=1,
+        username="legacy-invite-code",
+        nickname="legacy",
+        email=None,
+        is_admin=False,
+        created_at=now,
+    )
+    email_user = SimpleNamespace(
+        id=2,
+        username="legacy-invite-code-2",
+        nickname="legacy-email",
+        email="legacy@example.com",
+        is_admin=False,
+        created_at=now,
+    )
+    id_user = SimpleNamespace(
+        id=3,
+        username="validid1",
+        nickname="validid1",
+        email=None,
+        is_admin=False,
+        created_at=now,
+    )
+    db = _FakeDb(
+        _ExecuteResult(scalar_value=3),
+        _ExecuteResult(scalars=[blocked_user, email_user, id_user]),
+        _ExecuteResult(rows=[]),
+        _ExecuteResult(rows=[]),
+        _ExecuteResult(scalars=[]),
+    )
+
+    body = await admin_users_router.get_user_accounts(
+        page=1,
+        page_size=20,
+        q=None,
+        include_admins=False,
+        current_admin=_admin,
+        db=db,
+    )
+
+    can_change_by_username = {
+        account["username"]: account["can_change_password"]
+        for account in body["accounts"]
+    }
+    assert can_change_by_username["legacy-invite-code"] is False
+    assert can_change_by_username["legacy-invite-code-2"] is True
+    assert can_change_by_username["validid1"] is True
+
+
+@pytest.mark.asyncio
 async def test_sessions_response_uses_username_identifier_when_email_missing():
     now = datetime(2026, 6, 4, 9, 0, 0)
     id_only_user = SimpleNamespace(

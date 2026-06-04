@@ -340,6 +340,10 @@ class AuthService:
             return False
         return True
 
+    @staticmethod
+    def _is_login_capable(user: User) -> bool:
+        return user.email is not None or AuthService._has_valid_custom_id(user)
+
     async def get_regular_legacy_email_user(
         self, email: str
     ) -> Optional[User]:
@@ -496,6 +500,11 @@ class AuthService:
         if user.is_admin:
             raise ValueError(
                 "관리자 계정 비밀번호는 이 기능으로 변경할 수 없습니다."
+            )
+        if not self._is_login_capable(user):
+            raise ValueError(
+                "로그인 가능한 식별자가 없는 사용자는 "
+                "비밀번호를 변경할 수 없습니다."
             )
 
         user.hashed_password = self.hash_password(validated_password)
