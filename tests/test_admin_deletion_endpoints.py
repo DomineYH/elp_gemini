@@ -22,7 +22,6 @@ _admin = User(
     id=999,
     username="admin",
     nickname="A",
-    email="a@t.com",
     hashed_password="h",
     is_admin=True,
 )
@@ -64,21 +63,18 @@ async def seeded(db_tables, tmp_path, monkeypatch):
             id=_admin.id,
             username=_admin.username,
             nickname=_admin.nickname,
-            email=_admin.email,
             hashed_password="h",
             is_admin=True,
         )
         user = User(
             username="stu1",
             nickname="S1",
-            email="s1@t.com",
             hashed_password="h",
             is_admin=False,
         )
         another_admin = User(
             username="admin2",
             nickname="A2",
-            email="a2@t.com",
             hashed_password="h",
             is_admin=True,
         )
@@ -269,7 +265,6 @@ async def test_bulk_delete_sessions_rejects_cross_user(seeded):
         other = User(
             username="stuX",
             nickname="X",
-            email="x@t.com",
             hashed_password="h",
             is_admin=False,
         )
