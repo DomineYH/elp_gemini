@@ -63,7 +63,7 @@ class QnAService:
             session_id: 채팅 세션 ID
             question: 질문
             user_id: 사용자 ID
-            username: 사용자 이름 (Store 조회용)
+            username: 사용자 이름 (로깅용)
             store_id: 검색할 File Search Store ID (없으면 기본값 사용)
 
         Returns:
@@ -179,7 +179,7 @@ class QnAService:
             try:
                 if criteria_notice or not is_evaluation:
                     user_store_id = self.file_search_service.get_user_store_id(
-                        user_key=username
+                        user_key=user_id
                     )
                     rubric_store_id = None
                     store_ids = [user_store_id]
@@ -196,7 +196,7 @@ class QnAService:
                 else:
                     # 사용자 스토어와 평가기준 스토어 모두 가져오기
                     store_ids = self.file_search_service.get_dual_store_ids(
-                        user_key=username
+                        user_key=user_id
                     )
                     logger.info(f"🎯 Store 조회 완료: {store_ids}")
 
