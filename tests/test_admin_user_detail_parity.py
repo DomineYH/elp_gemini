@@ -1,7 +1,6 @@
 """
 Parity invariant: a user's dashboard endpoints and the admin per-user endpoints
 must return the same set of sessions and reports when looking at the same user.
-Also confirms that User.email is the identity key (same email → same user_id).
 """
 from datetime import datetime, timedelta
 
@@ -28,7 +27,6 @@ _admin = User(
     id=999,
     username="parity_admin",
     nickname="ParityAdmin",
-    email="parity_admin@test.com",
     hashed_password="hashed",
     is_admin=True,
 )
@@ -50,7 +48,6 @@ async def parity_setup():
         owner = User(
             username="parity_user",
             nickname="Parity",
-            email="parity_user@test.com",
             hashed_password="h",
             is_admin=False,
         )
@@ -154,18 +151,3 @@ async def test_user_dashboard_and_admin_view_return_same_reports(parity_setup):
         assert user_ids == admin_ids
     finally:
         app.dependency_overrides.clear()
-
-
-@pytest.mark.asyncio
-async def test_same_email_resolves_to_same_user_id(parity_setup):
-    """이메일 정규화로 같은 이메일은 같은 user_id를 가리킨다."""
-    from app.services.auth_service import AuthService
-    owner_id = parity_setup["owner_id"]
-    async with TestingSessionLocal() as db:
-        svc = AuthService(db)
-        found_lower = await svc.get_user_by_email("parity_user@test.com")
-        found_upper = await svc.get_user_by_email("PARITY_USER@TEST.COM")
-    assert found_lower is not None
-    assert found_upper is not None
-    assert found_lower.id == owner_id
-    assert found_upper.id == owner_id

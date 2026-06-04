@@ -17,12 +17,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.constants import SESSION_USER_TYPE_LABELS
+from app.constants import SESSION_USER_TYPE_LABELS, UNPROFILED_USER_TYPE
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models.chat_messages import ChatMessage
 from app.models.chat_sessions import ChatSession
-from app.models.user_profiles import UserProfile
 from app.models.users import User
 from app.schemas.sessions import (
     AskQuestionRequest,
@@ -77,33 +76,16 @@ async def _session_segment_label_for_user(
     Store an analytics segment label, not an internal username, in
     ChatSession.user_type.
 
-    Legacy invite-code sessions used grade/teacher labels in this column. New
-    email/password users should continue that reporting contract through
-    UserProfile metadata so admin filters do not depend on generated usernames.
+    Legacy invite-code sessions used grade/teacher labels in this column.
+    New id/password users default to UNPROFILED_USER_TYPE ("미지정").
+    The legacy nickname→label fallback is preserved for invite-code users.
     """
-    result = await db.execute(
-        select(UserProfile).where(
-            UserProfile.user_id == _model_int(current_user.id)
-        )
-    )
-    profile = result.scalar_one_or_none()
-
-    if profile:
-        profile_role = _model_optional_str(profile.role)
-        if profile_role == "teacher":
-            return "교사"
-        if profile_role == "preservice_teacher":
-            preservice_grade = cast(Optional[int], profile.preservice_grade)
-            if preservice_grade:
-                return f"{preservice_grade}학년"
-            return "미지정"
-
     nickname = _model_optional_str(current_user.nickname) or ""
     if nickname == "teacher":
         return "교사"
     if nickname in SESSION_USER_TYPE_LABELS:
         return nickname
-    return "미지정"
+    return UNPROFILED_USER_TYPE
 
 
 @router.post(

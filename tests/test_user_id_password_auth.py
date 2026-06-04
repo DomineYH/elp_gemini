@@ -119,14 +119,12 @@ async def _create_user(
     *,
     username: str,
     password: str,
-    email: str | None = None,
     is_admin: bool = False,
 ) -> User:
     async with session_factory() as session:
         user = User(
             username=username,
             nickname=username,
-            email=email,
             hashed_password=AuthService.hash_password(password),
             is_admin=is_admin,
         )
@@ -243,7 +241,6 @@ async def test_register_creates_id_user_without_profile(
     assert user is not None
     assert user.username == USER_ID
     assert user.nickname == USER_ID  # nickname = id
-    assert user.email is None  # email 완전 제거
     assert not user.is_admin
     assert user.hashed_password != USER_PASSWORD
     assert AuthService.verify_password(USER_PASSWORD, user.hashed_password)
@@ -330,7 +327,6 @@ async def test_register_rejects_existing_admin_username(
         session_factory,
         username="Teacher5",
         password=ADMIN_PASSWORD,
-        email="owner@example.com",
         is_admin=True,
     )
 
@@ -503,118 +499,6 @@ async def test_login_with_id_sets_session(client, session_factory):
 
 
 @pytest.mark.asyncio
-async def test_legacy_email_user_can_login_when_username_has_no_valid_id(
-    client, session_factory
-):
-    legacy_username = "teacher_550e8400e29b41d4a716446655440000"
-    user = await _create_user(
-        session_factory,
-        username=legacy_username,
-        password=USER_PASSWORD,
-        email="legacy.user@example.com",
-    )
-
-    response = await client.post(
-        "/auth/login/user",
-        data={
-            "user_id": "Legacy.User@Example.COM",
-            "password": USER_PASSWORD,
-        },
-        follow_redirects=False,
-    )
-
-    assert response.status_code in {302, 303}
-    assert response.headers["location"] == "/"
-    cookie = response.cookies.get(settings.SESSION_COOKIE_NAME)
-    assert cookie is not None
-    session = _decode_session_cookie(cookie)
-    assert session["user_id"] == user.id
-    assert session["is_admin"] is False
-    assert session["username"] == legacy_username
-
-
-@pytest.mark.asyncio
-async def test_legacy_email_login_fallback_reaches_auth_service(monkeypatch):
-    legacy_username = "teacher_550e8400e29b41d4a716446655440000"
-    user = User(
-        username=legacy_username,
-        nickname="teacher",
-        email="legacy.user@example.com",
-        hashed_password="hashed",
-        is_admin=False,
-    )
-    user.id = 123
-    request = auth_router.Request(
-        {
-            "type": "http",
-            "method": "POST",
-            "path": "/auth/login/user",
-            "headers": [],
-            "query_string": b"",
-            "scheme": "http",
-            "server": ("testserver", 80),
-            "client": ("testclient", 50000),
-            "session": {},
-        }
-    )
-
-    async def authenticate_by_email(self, email, password):
-        assert email == "legacy.user@example.com"
-        assert password == USER_PASSWORD
-        return user
-
-    async def fail_if_username_lookup_runs(self, user_id, password):
-        raise AssertionError("email fallback must not use username lookup")
-
-    monkeypatch.setattr(
-        AuthService,
-        "authenticate_regular_user_by_legacy_email",
-        authenticate_by_email,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        AuthService,
-        "authenticate_regular_user_by_username",
-        fail_if_username_lookup_runs,
-    )
-
-    response = await auth_router.login_user(
-        request,
-        user_id="Legacy.User@Example.COM",
-        password=USER_PASSWORD,
-        db=object(),
-    )
-
-    assert response.status_code in {302, 303}
-    assert request.session["user_id"] == user.id
-    assert request.session["username"] == legacy_username
-
-
-@pytest.mark.asyncio
-async def test_email_login_fallback_rejects_users_with_valid_custom_id(
-    client, session_factory
-):
-    await _create_user(
-        session_factory,
-        username="validid1",
-        password=USER_PASSWORD,
-        email="valid-custom-id@example.com",
-    )
-
-    response = await client.post(
-        "/auth/login/user",
-        data={
-            "user_id": "valid-custom-id@example.com",
-            "password": USER_PASSWORD,
-        },
-        follow_redirects=False,
-    )
-
-    assert response.status_code in {400, 401}
-    assert settings.SESSION_COOKIE_NAME not in response.cookies
-
-
-@pytest.mark.asyncio
 async def test_login_id_is_case_insensitive(client, session_factory):
     await _create_user(
         session_factory, username="caseuser", password=USER_PASSWORD
@@ -750,7 +634,6 @@ async def test_admin_cannot_authenticate_via_user_route(
         session_factory,
         username="admin",
         password=ADMIN_PASSWORD,
-        email="admin@example.com",
         is_admin=True,
     )
 
@@ -797,7 +680,6 @@ async def test_qna_session_segment_for_id_only_user_is_neutral():
     user = User(
         username=USER_ID,
         nickname=USER_ID,
-        email=None,
         hashed_password="hashed",
         is_admin=False,
     )
@@ -835,7 +717,6 @@ async def test_qna_session_segment_keeps_legacy_profileless_segment_nicknames(
     user = User(
         username=f"{nickname}_abc123",
         nickname=nickname,
-        email=f"{nickname}@example.test",
         hashed_password="hashed",
         is_admin=False,
     )
@@ -851,7 +732,7 @@ def test_user_nav_templates_fall_back_to_id_when_email_missing():
         loader=FileSystemLoader(TEMPLATE_DIR),
         autoescape=select_autoescape(["html"]),
     )
-    user = SimpleNamespace(email=None, nickname=USER_ID)
+    user = SimpleNamespace(nickname=USER_ID)
     document = SimpleNamespace(
         id=1,
         title="lesson.pdf",
@@ -922,7 +803,6 @@ async def test_admin_rejects_password_change_for_non_login_capable_user(
         id=91,
         username="legacy-invite-code",
         nickname="legacy",
-        email=None,
         is_admin=False,
         hashed_password="old-hash",
         failed_login_count=2,
@@ -948,20 +828,18 @@ async def test_admin_rejects_password_change_for_non_login_capable_user(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("username", "email"),
+    "username",
     [
-        ("legacy-invite-code", "legacy@example.com"),
-        ("validid1", None),
+        "validid1",
     ],
 )
 async def test_admin_can_change_password_for_login_capable_users(
-    monkeypatch, username, email
+    monkeypatch, username
 ):
     user = SimpleNamespace(
         id=92,
         username=username,
         nickname=username,
-        email=email,
         is_admin=False,
         hashed_password="old-hash",
         failed_login_count=2,
@@ -997,7 +875,6 @@ async def test_admin_can_change_id_only_user_password(
         session_factory,
         username="adminmgr",
         password=ADMIN_PASSWORD,
-        email="admin@example.com",
         is_admin=True,
     )
     regular = await _create_user(
@@ -1044,7 +921,6 @@ async def test_admin_password_change_requires_csrf_token(
         session_factory,
         username="admincsrf",
         password=ADMIN_PASSWORD,
-        email="admin-csrf@example.com",
         is_admin=True,
     )
     regular = await _create_user(
@@ -1082,7 +958,6 @@ async def test_admin_password_change_uses_shared_password_policy(
         session_factory,
         username="adminpol",
         password=ADMIN_PASSWORD,
-        email="admin-policy@example.com",
         is_admin=True,
     )
     regular = await _create_user(
