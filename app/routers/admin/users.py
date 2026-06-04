@@ -63,6 +63,13 @@ def _value_str(value: Any) -> str | None:
     return value.value if hasattr(value, "value") else str(value)
 
 
+def _user_identifier(user: Any) -> str | None:
+    """관리자 화면용 사용자 식별자: email 우선, 없으면 username."""
+    if user is None:
+        return None
+    return getattr(user, "email", None) or getattr(user, "username", None)
+
+
 def _serialize_profile(profile: Any) -> dict[str, Any]:
     """프로필 객체를 관리자 화면/API 표시용으로 직렬화한다."""
     if profile is None:
@@ -424,6 +431,7 @@ async def get_user_sessions(
                 "user_email": (
                     user.email if user is not None else None
                 ),
+                "user_identifier": _user_identifier(user),
                 "username": (
                     user.username if user is not None else None
                 ),
@@ -524,6 +532,7 @@ async def get_user_accounts(
                 "username": account.username,
                 "nickname": account.nickname,
                 "email": account.email,
+                "user_identifier": _user_identifier(account),
                 "is_admin": account.is_admin,
                 "created_at": (
                     account.created_at.isoformat()

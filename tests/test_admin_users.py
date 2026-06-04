@@ -4,6 +4,7 @@
 """
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
@@ -21,6 +22,7 @@ from app.models.chat_messages import (
     MessageRole,
 )
 from app.models.analysis_reports import AnalysisReport
+from app.routers.admin import users as admin_users_router
 from tests.conftest import (
     TestingSessionLocal,
     override_get_db,
@@ -41,6 +43,124 @@ _admin = User(
 
 def test_admin_stats_user_types_include_unprofiled_segment():
     assert "미지정" in USER_TYPES
+
+
+class _ScalarList:
+    def __init__(self, values):
+        self.values = values
+
+    def all(self):
+        return self.values
+
+
+class _ExecuteResult:
+    def __init__(self, *, scalar_value=None, scalars=None, rows=None):
+        self.scalar_value = scalar_value
+        self.scalars_value = scalars or []
+        self.rows = rows or []
+
+    def scalar(self):
+        return self.scalar_value
+
+    def scalars(self):
+        return _ScalarList(self.scalars_value)
+
+    def __iter__(self):
+        return iter(self.rows)
+
+
+class _FakeDb:
+    def __init__(self, *results):
+        self.results = list(results)
+
+    async def execute(self, statement):
+        if not self.results:
+            raise AssertionError("unexpected query")
+        return self.results.pop(0)
+
+    async def rollback(self):
+        raise AssertionError("rollback should not run")
+
+
+@pytest.mark.asyncio
+async def test_accounts_response_uses_username_identifier_when_email_missing():
+    now = datetime(2026, 6, 4, 9, 0, 0)
+    id_only_user = SimpleNamespace(
+        id=1,
+        username="idonly1",
+        nickname="idonly1",
+        email=None,
+        is_admin=False,
+        created_at=now,
+    )
+    email_user = SimpleNamespace(
+        id=2,
+        username="teacher_abc123",
+        nickname="teacher",
+        email="teacher@example.com",
+        is_admin=False,
+        created_at=now,
+    )
+    db = _FakeDb(
+        _ExecuteResult(scalar_value=2),
+        _ExecuteResult(scalars=[id_only_user, email_user]),
+        _ExecuteResult(rows=[]),
+        _ExecuteResult(rows=[]),
+        _ExecuteResult(scalars=[]),
+    )
+
+    body = await admin_users_router.get_user_accounts(
+        page=1,
+        page_size=20,
+        q=None,
+        include_admins=False,
+        current_admin=_admin,
+        db=db,
+    )
+
+    assert body["accounts"][0]["email"] is None
+    assert body["accounts"][0]["username"] == "idonly1"
+    assert body["accounts"][0]["user_identifier"] == "idonly1"
+    assert body["accounts"][1]["user_identifier"] == "teacher@example.com"
+
+
+@pytest.mark.asyncio
+async def test_sessions_response_uses_username_identifier_when_email_missing():
+    now = datetime(2026, 6, 4, 9, 0, 0)
+    id_only_user = SimpleNamespace(
+        id=1,
+        username="idonly1",
+        nickname="idonly1",
+        email=None,
+    )
+    session = SimpleNamespace(
+        id=10,
+        user_id=1,
+        user_type="미지정",
+        title="세션",
+        created_at=now,
+        updated_at=now,
+        messages=[],
+        user=id_only_user,
+    )
+    db = _FakeDb(
+        _ExecuteResult(scalar_value=1),
+        _ExecuteResult(scalars=[session]),
+        _ExecuteResult(rows=[]),
+        _ExecuteResult(scalars=[]),
+    )
+
+    body = await admin_users_router.get_user_sessions(
+        page=1,
+        page_size=20,
+        user_type=None,
+        current_admin=_admin,
+        db=db,
+    )
+
+    assert body["sessions"][0]["user_email"] is None
+    assert body["sessions"][0]["username"] == "idonly1"
+    assert body["sessions"][0]["user_identifier"] == "idonly1"
 
 
 @pytest.fixture(autouse=True)
@@ -588,7 +708,15 @@ def test_admin_users_delete_button_uses_data_attributes():
     )
     assert 'data-user-id="${account.user_id}"' in source
     assert (
-        'data-user-label="${escapeHtml(account.email || account.username || \'\')}"'
+        'data-user-label="${escapeHtml(accountIdentifier || \'\')}"'
+        in source
+    )
+    assert (
+        "account.user_identifier || account.email || account.username"
+        in source
+    )
+    assert (
+        "s.user_identifier || s.user_email || s.username"
         in source
     )
     assert "btn.addEventListener('click'" in source
