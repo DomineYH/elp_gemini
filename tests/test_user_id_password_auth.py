@@ -416,6 +416,118 @@ async def test_login_with_id_sets_session(client, session_factory):
 
 
 @pytest.mark.asyncio
+async def test_legacy_email_user_can_login_when_username_has_no_valid_id(
+    client, session_factory
+):
+    legacy_username = "teacher_550e8400e29b41d4a716446655440000"
+    user = await _create_user(
+        session_factory,
+        username=legacy_username,
+        password=USER_PASSWORD,
+        email="legacy.user@example.com",
+    )
+
+    response = await client.post(
+        "/auth/login/user",
+        data={
+            "user_id": "Legacy.User@Example.COM",
+            "password": USER_PASSWORD,
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code in {302, 303}
+    assert response.headers["location"] == "/"
+    cookie = response.cookies.get(settings.SESSION_COOKIE_NAME)
+    assert cookie is not None
+    session = _decode_session_cookie(cookie)
+    assert session["user_id"] == user.id
+    assert session["is_admin"] is False
+    assert session["username"] == legacy_username
+
+
+@pytest.mark.asyncio
+async def test_legacy_email_login_fallback_reaches_auth_service(monkeypatch):
+    legacy_username = "teacher_550e8400e29b41d4a716446655440000"
+    user = User(
+        username=legacy_username,
+        nickname="teacher",
+        email="legacy.user@example.com",
+        hashed_password="hashed",
+        is_admin=False,
+    )
+    user.id = 123
+    request = auth_router.Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/auth/login/user",
+            "headers": [],
+            "query_string": b"",
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "client": ("testclient", 50000),
+            "session": {},
+        }
+    )
+
+    async def authenticate_by_email(self, email, password):
+        assert email == "legacy.user@example.com"
+        assert password == USER_PASSWORD
+        return user
+
+    async def fail_if_username_lookup_runs(self, user_id, password):
+        raise AssertionError("email fallback must not use username lookup")
+
+    monkeypatch.setattr(
+        AuthService,
+        "authenticate_regular_user_by_legacy_email",
+        authenticate_by_email,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        AuthService,
+        "authenticate_regular_user_by_username",
+        fail_if_username_lookup_runs,
+    )
+
+    response = await auth_router.login_user(
+        request,
+        user_id="Legacy.User@Example.COM",
+        password=USER_PASSWORD,
+        db=object(),
+    )
+
+    assert response.status_code in {302, 303}
+    assert request.session["user_id"] == user.id
+    assert request.session["username"] == legacy_username
+
+
+@pytest.mark.asyncio
+async def test_email_login_fallback_rejects_users_with_valid_custom_id(
+    client, session_factory
+):
+    await _create_user(
+        session_factory,
+        username="validid1",
+        password=USER_PASSWORD,
+        email="valid-custom-id@example.com",
+    )
+
+    response = await client.post(
+        "/auth/login/user",
+        data={
+            "user_id": "valid-custom-id@example.com",
+            "password": USER_PASSWORD,
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code in {400, 401}
+    assert settings.SESSION_COOKIE_NAME not in response.cookies
+
+
+@pytest.mark.asyncio
 async def test_login_id_is_case_insensitive(client, session_factory):
     await _create_user(
         session_factory, username="caseuser", password=USER_PASSWORD

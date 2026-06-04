@@ -11,6 +11,7 @@ from fastapi import HTTPException, status as http_status
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.constants import USER_TYPES
 from app.db import Base, get_db
 from app.dependencies import get_current_admin
 from app.models.users import User
@@ -36,6 +37,10 @@ _admin = User(
     hashed_password="hashed",
     is_admin=True,
 )
+
+
+def test_admin_stats_user_types_include_unprofiled_segment():
+    assert "미지정" in USER_TYPES
 
 
 @pytest.fixture(autouse=True)
@@ -150,7 +155,14 @@ async def test_stats_returns_counts(seed_data):
     data = resp.json()
     assert "stats" in data
     assert "totals" in data
-    assert len(data["stats"]) == 5
+    assert {s["user_type"] for s in data["stats"]} >= {
+        "1학년",
+        "2학년",
+        "3학년",
+        "4학년",
+        "교사",
+        "미지정",
+    }
 
     grade1 = next(
         s for s in data["stats"]
@@ -161,6 +173,71 @@ async def test_stats_returns_counts(seed_data):
 
     totals = data["totals"]
     assert totals["session_count"] >= 2
+
+
+@pytest.mark.asyncio
+async def test_stats_includes_unprofiled_segment(db_tables):
+    """stats API가 UserProfile 없는 신규 사용자 세그먼트도 집계"""
+    async with TestingSessionLocal() as db:
+        user = User(
+            username="idonly1",
+            nickname="idonly1",
+            email=None,
+            hashed_password="h",
+            is_admin=False,
+        )
+        db.add(user)
+        await db.flush()
+
+        now = datetime.now()
+        session = ChatSession(
+            user_id=user.id,
+            user_type="미지정",
+            title="신규사용자세션",
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(session)
+        await db.flush()
+
+        db.add(
+            ChatMessage(
+                session_id=session.id,
+                role=MessageRole.USER,
+                content="질문입니다",
+                created_at=now,
+            )
+        )
+        db.add(
+            AnalysisReport(
+                user_id=user.id,
+                lessonplan_filename="idonly.pdf",
+                lessonplan_original_name="원본.pdf",
+                report_filename="idonly.md",
+                report_path="/reports/idonly.md",
+                latency_ms=1000,
+                created_at=now,
+            )
+        )
+        await db.commit()
+
+    with TestClient(app) as client:
+        resp = client.get("/admin/api/users/stats")
+    assert resp.status_code == 200
+
+    data = resp.json()
+    unprofiled = next(
+        s for s in data["stats"]
+        if s["user_type"] == "미지정"
+    )
+    assert unprofiled["session_count"] == 1
+    assert unprofiled["qna_count"] == 1
+    assert unprofiled["report_count"] == 1
+    assert unprofiled["today_count"] == 1
+    assert data["totals"]["session_count"] == 1
+    assert data["totals"]["qna_count"] == 1
+    assert data["totals"]["report_count"] == 1
+    assert data["totals"]["today_count"] == 1
 
 
 @pytest.mark.asyncio
