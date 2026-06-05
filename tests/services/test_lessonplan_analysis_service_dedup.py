@@ -1,6 +1,6 @@
 """LessonPlanAnalysisService 중복 분석 차단 동작 테스트."""
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -169,8 +169,8 @@ async def test_analyze_returns_upload_required_when_no_upload_or_legacy_file(
         "success": False,
         "error": "분석할 문서가 없습니다. 수업 지도안을 먼저 업로드해주세요.",
     }
-    mock_existing.assert_called_once_with("fresh")
-    mock_lessonplans.assert_called_once_with("fresh")
+    mock_existing.assert_called_once_with(1)
+    mock_lessonplans.assert_called_once_with(1)
     assert mock_stores.call_count == 0
     assert mock_gemini.call_count == 0
     db.add.assert_not_called()
@@ -188,7 +188,7 @@ async def test_analyze_allows_premigration_file_search_upload_without_row(
     svc.lessonplan_storage.base_dir = lessonplan_dir
 
     store = MagicMock()
-    store.display_name = "user-premigration-store"
+    store.display_name = "user-1-store"
     store.name = "fileSearchStores/user-store"
     doc = MagicMock()
     doc.name = "fileSearchStores/user-store/documents/doc1"
@@ -218,6 +218,11 @@ async def test_analyze_allows_premigration_file_search_upload_without_row(
     ) as mock_stores, patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service.asyncio.to_thread",
         return_value=fake_response,
     ) as mock_to_thread:
@@ -227,7 +232,7 @@ async def test_analyze_allows_premigration_file_search_upload_without_row(
 
     assert result["success"] is True
     assert "upload" not in result.get("error", "").lower()
-    mock_stores.assert_called_once_with("premigration")
+    mock_stores.assert_called_once_with(1)
     assert mock_to_thread.call_count == 1
 
 
