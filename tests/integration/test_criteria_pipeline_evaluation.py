@@ -48,7 +48,6 @@ async def test_user():
         user = User(
             username="test_user",
             nickname="Test User",
-            email="test@example.com",
             hashed_password="hashed",
             is_admin=False
         )

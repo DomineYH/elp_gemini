@@ -55,7 +55,7 @@ async def client(session_factory, tmp_path, monkeypatch):
         async with session_factory() as s:
             u = User(
                 username="alice", nickname="alice",
-                email="a@a.com", hashed_password="x",
+                hashed_password="x",
             )
             s.add(u)
             await s.commit()

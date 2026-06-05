@@ -14,7 +14,7 @@ from app.models.users import User
 async def client(tmp_path):
     """get_current_user와 get_db를 오버라이드한 테스트 클라이언트"""
     test_user = User(
-        id=1, username="tester", email="t@t.com", hashed_password="x"
+        id=1, username="tester", hashed_password="x"
     )
 
     async def override_get_user():

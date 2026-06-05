@@ -11,7 +11,7 @@ from app.db import get_db
 # Mock User
 @pytest.fixture
 def mock_user():
-    return User(id=1, username="testuser", nickname="Test User", email="test@example.com")
+    return User(id=1, username="testuser", nickname="Test User")
 
 # Mock DB Session
 @pytest.fixture

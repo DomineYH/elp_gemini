@@ -16,7 +16,6 @@ def mock_current_user():
         id=1,
         username="testuser",
         nickname="Test User",
-        email="test@example.com",
         is_admin=False
     )
     return user

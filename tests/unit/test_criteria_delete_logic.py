@@ -49,7 +49,7 @@ async def test_delete_with_document_id_sequential():
     # Arrange
     mock_db = AsyncMock()
     mock_user = User(
-        id=1, email="admin@example.com", is_admin=True
+        id=1, is_admin=True
     )
 
     mock_repo = AsyncMock()
@@ -126,7 +126,7 @@ async def test_delete_without_document_id_legacy():
     # Arrange
     mock_db = AsyncMock()
     mock_user = User(
-        id=1, email="admin@example.com", is_admin=True
+        id=1, is_admin=True
     )
 
     mock_repo = AsyncMock()
@@ -184,7 +184,7 @@ async def test_delete_all_criteria_sequential():
     # Arrange
     mock_db = AsyncMock()
     mock_user = User(
-        id=1, email="admin@example.com", is_admin=True
+        id=1, is_admin=True
     )
 
     mock_repo = AsyncMock()

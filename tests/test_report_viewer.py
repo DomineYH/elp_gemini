@@ -14,7 +14,7 @@ client = TestClient(app)
 def mock_current_user():
     return User(
         id=1, username="testuser", nickname="Test",
-        email="t@example.com", is_admin=False,
+        is_admin=False,
     )
 
 

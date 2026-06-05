@@ -77,7 +77,6 @@ async def admin_user(session_factory) -> User:
         user = User(
             username=ADMIN_USERNAME,
             nickname="bf_admin",
-            email=None,
             hashed_password=hashed,
             is_admin=True,
         )

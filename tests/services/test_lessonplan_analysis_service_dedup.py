@@ -42,7 +42,7 @@ async def session(tmp_path):
 async def _seed_user_and_upload(s):
     u = User(
         username="alice", nickname="alice",
-        email="a@a.com", hashed_password="x",
+        hashed_password="x",
     )
     s.add(u)
     await s.flush()
@@ -307,7 +307,7 @@ async def test_analyze_falls_through_when_existing_report_file_missing(
 async def test_analyze_uses_upload_row_for_report_metadata(session, tmp_path):
     u = User(
         username="alice", nickname="alice",
-        email="a@a.com", hashed_password="x",
+        hashed_password="x",
     )
     session.add(u)
     await session.flush()
@@ -658,7 +658,7 @@ async def test_analyze_creates_synthetic_upload_for_legacy_user(
     dedup invariant."""
     u = User(
         username="alice", nickname="alice",
-        email="a@a.com", hashed_password="x",
+        hashed_password="x",
     )
     session.add(u)
     await session.flush()
@@ -742,7 +742,7 @@ async def test_legacy_concurrent_analyze_does_not_create_duplicate_reports(
 ):
     u = User(
         username="alice", nickname="alice",
-        email="a@a.com", hashed_password="x",
+        hashed_password="x",
     )
     session.add(u)
     await session.flush()
@@ -841,7 +841,7 @@ async def test_analyze_race_fallback_uses_captured_upload_id_not_latest(
     attempted (upload_a), not by the latest upload (upload_b)."""
     u = User(
         username="alice", nickname="alice",
-        email="a@a.com", hashed_password="x",
+        hashed_password="x",
     )
     session.add(u)
     await session.flush()
