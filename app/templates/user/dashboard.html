@@ -115,7 +115,7 @@
     padding: 0;
 }
 
-/* 인쇄용 스타일 */
+/* PDF 저장(인쇄)용 스타일 */
 @media print {
     /* body 설정 */
     body {
@@ -447,7 +447,7 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                 </svg>
-                인쇄
+                인쇄&저장
             </button>
             <button onclick="closeAnalysisModal()"
                 class="bg-gray-600 text-white px-6 py-2 rounded hover:bg-gray-700 transition-colors">
@@ -1199,14 +1199,27 @@
     }
 
     function printAnalysisReport() {
-        // 인쇄 전 모달이 열려있는지 확인
+        // 인쇄&저장 전 모달이 열려있는지 확인
         const modal = document.getElementById('analysisModal');
         if (modal.classList.contains('hidden')) {
             alert('인쇄할 보고서가 없습니다.');
             return;
         }
 
-        // 인쇄 실행
+        // "PDF로 저장" 시 제안 파일명이 의미 있도록 document.title을 임시 변경
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const prevTitle = document.title;
+        document.title = `수업지도안_분석보고서_${yyyy}-${mm}-${dd}`;
+
+        // 인쇄 대화상자 종료 후 원래 제목 복원 (1회성)
+        window.addEventListener('afterprint', () => {
+            document.title = prevTitle;
+        }, { once: true });
+
+        // 인쇄&저장 실행 (대상에서 "PDF로 저장" 선택 가능)
         window.print();
     }
 
