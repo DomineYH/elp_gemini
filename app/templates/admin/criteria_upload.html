@@ -95,7 +95,7 @@
                             또는 드래그하여 업로드
                         </div>
                         <p class="text-sm text-gray-500">
-                            PDF 파일 (최대 10MB)
+                            PDF 파일 (최대 {{ (max_upload_size / 1024 / 1024) | round | int }}MB)
                         </p>
                     </div>
                     <input
@@ -172,5 +172,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script>window.MAX_UPLOAD_SIZE = {{ max_upload_size }};</script>
 <script src="/static/js/criteria_upload.js"></script>
 {% endblock %}

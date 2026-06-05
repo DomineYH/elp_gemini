@@ -20,3 +20,25 @@ def test_file_validator_explicit_override_still_works():
 def test_dashboard_max_upload_size_uses_settings():
     from app.routers import views
     assert views.DASHBOARD_MAX_UPLOAD_SIZE == settings.MAX_UPLOAD_SIZE
+
+
+def test_criteria_upload_page_injects_max_upload_size(monkeypatch):
+    """criteria_upload_page 가 컨텍스트에 max_upload_size 를 주입하는지 검증."""
+    import asyncio
+    from types import SimpleNamespace
+    import app.routers.admin.criteria_views as cv
+
+    captured = {}
+
+    class _FakeTemplates:
+        def TemplateResponse(self, name, context):
+            captured["name"] = name
+            captured["context"] = context
+            return context
+
+    monkeypatch.setattr(cv, "templates", _FakeTemplates())
+
+    admin = SimpleNamespace(username="admin")
+    asyncio.run(cv.criteria_upload_page(request=object(), current_admin=admin))
+
+    assert captured["context"]["max_upload_size"] == settings.MAX_UPLOAD_SIZE
