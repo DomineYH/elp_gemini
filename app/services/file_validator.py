@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 from fastapi import UploadFile, HTTPException
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,9 +24,6 @@ class FileValidator:
 
     # PDF 헤더 시그니처
     PDF_HEADER_PATTERN = rb"^%PDF-\d\.\d"
-
-    # 최대 파일 크기 (10MB)
-    MAX_FILE_SIZE = 10 * 1024 * 1024
 
     # 의심스러운 PDF 내용 패턴
     SUSPICIOUS_PATTERNS = [
@@ -47,7 +46,7 @@ class FileValidator:
         if max_size_mb:
             self.max_file_size = max_size_mb * 1024 * 1024
         else:
-            self.max_file_size = self.MAX_FILE_SIZE
+            self.max_file_size = settings.MAX_UPLOAD_SIZE
 
     async def validate_file(
         self, file: UploadFile

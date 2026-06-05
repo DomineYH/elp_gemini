@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
+from app.config import settings
 from app.db import get_db
 from app.dependencies import get_current_admin
 from app.models.users import User
@@ -142,6 +143,7 @@ async def criteria_upload_page(
         {
             "request": request,
             "user": current_admin,
+            "max_upload_size": settings.MAX_UPLOAD_SIZE,
         }
     )
 

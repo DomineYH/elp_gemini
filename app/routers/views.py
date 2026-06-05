@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 from pypdf import PdfReader
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models.lessonplan_uploads import LessonPlanUpload
@@ -23,13 +24,12 @@ from app.services.file_search_service import (
     _sanitize_display_name,
 )
 from app.services.criteria_freshness import ensure_criteria_cache_fresh
-from app.services.file_validator import FileValidator
 
 router = APIRouter(tags=["뷰"])
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
 DASHBOARD_UPLOAD_CHUNK_SIZE = 1024 * 1024
-DASHBOARD_MAX_UPLOAD_SIZE = FileValidator.MAX_FILE_SIZE
+DASHBOARD_MAX_UPLOAD_SIZE = settings.MAX_UPLOAD_SIZE
 
 
 def _format_upload_size_limit(limit: int) -> str:

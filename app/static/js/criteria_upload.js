@@ -65,11 +65,12 @@ function handleFiles() {
             return;
         }
 
-        // 파일 크기 검증 (10MB)
-        const maxSize = 10 * 1024 * 1024;
+        // 파일 크기 검증 (백엔드 settings.MAX_UPLOAD_SIZE 주입값)
+        const maxSize = window.MAX_UPLOAD_SIZE || 50 * 1024 * 1024;
         if (file.size > maxSize) {
+            const maxMB = (maxSize / 1024 / 1024).toFixed(0);
             alert(
-                '파일 크기가 10MB를 초과합니다. ' +
+                `파일 크기가 ${maxMB}MB를 초과합니다. ` +
                 '더 작은 파일을 선택해주세요.'
             );
             fileInput.value = '';
