@@ -9,7 +9,6 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from pypdf import PdfReader
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,11 +22,11 @@ from app.services.file_search_service import (
     FileSearchService,
     _sanitize_display_name,
 )
+from app.templating import templates
 from app.services.criteria_freshness import ensure_criteria_cache_fresh
 
 router = APIRouter(tags=["뷰"])
 logger = logging.getLogger(__name__)
-templates = Jinja2Templates(directory="app/templates")
 DASHBOARD_UPLOAD_CHUNK_SIZE = 1024 * 1024
 DASHBOARD_MAX_UPLOAD_SIZE = settings.MAX_UPLOAD_SIZE
 

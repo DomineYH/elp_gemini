@@ -4,7 +4,6 @@
 """
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
@@ -22,13 +21,13 @@ from app.repositories.criteria_repository import (
     CriteriaRepository
 )
 from app.services.criteria_freshness import ensure_criteria_cache_fresh
+from app.templating import templates
 
 router = APIRouter(
     prefix="/admin/criteria",
     tags=["관리자-평가기준-뷰"]
 )
 logger = logging.getLogger(__name__)
-templates = Jinja2Templates(directory="app/templates")
 
 
 async def _fetch_sync_metadata(db: AsyncSession) -> dict:

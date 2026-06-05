@@ -10,7 +10,6 @@ from fastapi import (
     HTTPException,
 )
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 import logging
 
 from app.dependencies import get_current_admin
@@ -22,13 +21,13 @@ from app.schemas.prompts import (
 from app.services.prompt_loader_service import (
     PromptLoaderService,
 )
+from app.templating import templates
 
 router = APIRouter(
     prefix="/admin",
     tags=["관리자-프롬프트"]
 )
 logger = logging.getLogger(__name__)
-templates = Jinja2Templates(directory="app/templates")
 
 _prompt_loader = None
 

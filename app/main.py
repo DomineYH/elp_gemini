@@ -12,7 +12,6 @@ from fastapi.responses import (
     RedirectResponse,
 )
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.cors import CORSMiddleware
@@ -35,6 +34,7 @@ from app.migrations import (
     rename_preservice_university_regions,
 )
 from app.rate_limit import limiter
+from app.templating import templates
 from app.utils.logging import setup_logging
 
 # 로깅 설정
@@ -91,9 +91,6 @@ app.mount(
 )
 # Note: /files 정적 마운트 제거 (보안 강화)
 # 파일 다운로드는 /docs/{document_id}/download 엔드포인트 사용
-templates = Jinja2Templates(directory="app/templates")
-
-
 # 커스텀 예외 핸들러 (T015)
 @app.exception_handler(HTTPException)
 async def http_exception_handler(

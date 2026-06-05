@@ -15,7 +15,6 @@ from fastapi import (
     status,
 )
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,10 +34,10 @@ from app.schemas.users import (
     validate_user_id,
 )
 from app.services.auth_service import AuthService
+from app.templating import templates
 from app.utils.logging import log_auth_event
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
 
 
