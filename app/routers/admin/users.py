@@ -16,7 +16,6 @@ from fastapi import (
     status,
 )
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
@@ -37,10 +36,10 @@ from app.utils.admin_csrf import (
     ensure_admin_csrf_token,
     require_admin_csrf_token,
 )
+from app.templating import templates
 from app.utils.logging import log_auth_event, log_user_action
 
 router = APIRouter(tags=["관리자-사용자관리"])
-templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
 
 

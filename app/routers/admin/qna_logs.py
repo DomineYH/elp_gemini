@@ -4,7 +4,6 @@
 """
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -15,10 +14,10 @@ from app.dependencies import get_current_admin
 from app.models.users import User
 from app.models.chat_sessions import ChatSession
 from app.models.chat_messages import ChatMessage
+from app.templating import templates
 from app.utils.admin_csrf import ensure_admin_csrf_token
 
 router = APIRouter(tags=["관리자-QnA로그"])
-templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
 
 
