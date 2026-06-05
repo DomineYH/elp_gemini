@@ -1,6 +1,8 @@
 """App version footer: _app_version() helper and base.html rendering."""
 
+import os
 import re
+import shutil
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -11,6 +13,32 @@ from httpx import ASGITransport, AsyncClient
 # ------------------------------------------------------------------ 1 & 2
 def test_app_version_happy_path_format():
     """_app_version() returns a string like 'v2.323'."""
+    from app.templating import _app_version
+
+    result = _app_version()
+    assert re.match(r"^v2\.\d+$", result), f"unexpected format: {result!r}"
+
+
+def test_app_version_env_override(monkeypatch):
+    """APP_VERSION overrides git-derived version."""
+    monkeypatch.setenv("APP_VERSION", "v9.999")
+
+    from app.templating import _app_version
+
+    assert _app_version() == "v9.999"
+
+
+def test_app_version_with_restricted_path(monkeypatch, tmp_path):
+    """_app_version() finds git even when inherited PATH has no git."""
+    augmented_path = os.pathsep.join(
+        [str(tmp_path), "/usr/bin", "/usr/local/bin", "/bin"]
+    )
+    if shutil.which("git", path=augmented_path) is None:
+        pytest.skip("git is not installed in standard system paths")
+
+    monkeypatch.delenv("APP_VERSION", raising=False)
+    monkeypatch.setenv("PATH", str(tmp_path))
+
     from app.templating import _app_version
 
     result = _app_version()
