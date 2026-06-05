@@ -10,7 +10,7 @@ async def verify_upload():
 
     # Mock dependencies
     mock_request = MagicMock()
-    mock_user = User(username="testuser", email="test@example.com", hashed_password="pw")
+    mock_user = User(username="testuser", hashed_password="pw")
     
     # Create a dummy PDF file
     with open("test.pdf", "wb") as f:

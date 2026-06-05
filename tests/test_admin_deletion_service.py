@@ -63,14 +63,12 @@ async def seeded(db_tables, tmp_path, monkeypatch):
         admin = User(
             username="admin1",
             nickname="Admin",
-            email="admin@test.com",
             hashed_password="h",
             is_admin=True,
         )
         user = User(
             username="stu1",
             nickname="Student",
-            email="stu1@test.com",
             hashed_password="h",
             is_admin=False,
         )
@@ -205,21 +203,18 @@ async def test_delete_user_keeps_lessonplan_referenced_by_other_user(
         admin = User(
             username="admin1",
             nickname="Admin",
-            email="admin@test.com",
             hashed_password="h",
             is_admin=True,
         )
         user1 = User(
             username="stu1",
             nickname="Student One",
-            email="stu1@test.com",
             hashed_password="h",
             is_admin=False,
         )
         user2 = User(
             username="stu2",
             nickname="Student Two",
-            email="stu2@test.com",
             hashed_password="h",
             is_admin=False,
         )
@@ -320,14 +315,12 @@ async def test_delete_user_sanitizes_file_search_store_name(
         admin = User(
             username="admin1",
             nickname="Admin",
-            email="admin@test.com",
             hashed_password="h",
             is_admin=True,
         )
         user = User(
             username="한글유저",
             nickname="Student",
-            email="hangul@test.com",
             hashed_password="h",
             is_admin=False,
         )
@@ -381,7 +374,6 @@ async def test_delete_user_skips_file_search_store_on_sanitized_collision(
         admin = User(
             username="admin1",
             nickname="A",
-            email="a@t.com",
             hashed_password="h",
             is_admin=True,
         )
@@ -389,14 +381,12 @@ async def test_delete_user_skips_file_search_store_on_sanitized_collision(
         user_a = User(
             username="Jose",
             nickname="J",
-            email="jose@t.com",
             hashed_password="h",
             is_admin=False,
         )
         user_b = User(
             username="José",
             nickname="J2",
-            email="josew@t.com",
             hashed_password="h",
             is_admin=False,
         )
@@ -455,14 +445,12 @@ async def test_delete_user_skips_static_uploads_for_nondeterministic_username(
         admin = User(
             username="admin1",
             nickname="Admin",
-            email="admin@test.com",
             hashed_password="h",
             is_admin=True,
         )
         user = User(
             username="한글유저",
             nickname="Student",
-            email="hangul2@test.com",
             hashed_password="h",
             is_admin=False,
         )
@@ -515,21 +503,18 @@ async def test_delete_user_skips_static_uploads_on_sanitized_collision(
         admin = User(
             username="admin1",
             nickname="Admin",
-            email="admin@test.com",
             hashed_password="h",
             is_admin=True,
         )
         jose = User(
             username="Jose",
             nickname="Jose",
-            email="jose@test.com",
             hashed_password="h",
             is_admin=False,
         )
         jose_accented = User(
             username="José",
             nickname="Jose Accented",
-            email="jose-accented@test.com",
             hashed_password="h",
             is_admin=False,
         )
@@ -566,7 +551,6 @@ async def test_delete_user_removes_orphaned_upload(seeded):
         user = User(
             username="orphan1",
             nickname="Orphan",
-            email="orphan1@test.com",
             hashed_password="h",
             is_admin=False,
         )
@@ -611,14 +595,12 @@ async def test_delete_user_removes_lessonplan_orphan_without_report(
         admin = User(
             username="admin1",
             nickname="Admin",
-            email="admin@test.com",
             hashed_password="h",
             is_admin=True,
         )
         user = User(
             username="lonely1",
             nickname="Lonely",
-            email="lonely1@test.com",
             hashed_password="h",
             is_admin=False,
         )
@@ -662,21 +644,18 @@ async def test_delete_user_skips_other_user_files(
         admin = User(
             username="admin1",
             nickname="Admin",
-            email="admin@test.com",
             hashed_password="h",
             is_admin=True,
         )
         kim = User(
             username="kim",
             nickname="Kim",
-            email="kim@test.com",
             hashed_password="h",
             is_admin=False,
         )
         kim_teacher = User(
             username="kim_teacher",
             nickname="Kim Teacher",
-            email="kim_teacher@test.com",
             hashed_password="h",
             is_admin=False,
         )
@@ -749,7 +728,6 @@ async def test_delete_user_blocks_admin_target(seeded):
         target_admin = User(
             username="admin_target",
             nickname="AdminTarget",
-            email="admin_target@test.com",
             hashed_password="h",
             is_admin=True,
         )
@@ -988,7 +966,6 @@ async def test_bulk_delete_sessions_requires_ownership(seeded):
         other = User(
             username="stu2",
             nickname="S2",
-            email="s2@test.com",
             hashed_password="h",
             is_admin=False,
         )

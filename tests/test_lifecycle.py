@@ -28,7 +28,7 @@ def mock_db_session():
 
 @pytest.fixture
 def mock_user():
-    return User(id=1, username="testuser", nickname="Test User", email="test@example.com")
+    return User(id=1, username="testuser", nickname="Test User")
 
 @pytest.mark.asyncio
 async def test_upload_enforces_single_document_policy(

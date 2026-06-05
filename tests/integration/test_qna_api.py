@@ -69,7 +69,6 @@ async def create_test_data():
         test_user = User(
             username="test_user",
             nickname="Test User",
-            email="test@example.com",
             hashed_password="hashed_pw",
             is_admin=False
         )

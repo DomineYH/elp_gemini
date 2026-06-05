@@ -29,7 +29,7 @@ async def test_upload_row_can_be_inserted_and_linked_to_report(engine):
     async with async_session() as s:
         user = User(
             username="alice", nickname="alice",
-            email="a@a.com", hashed_password="x",
+            hashed_password="x",
         )
         s.add(user)
         await s.flush()

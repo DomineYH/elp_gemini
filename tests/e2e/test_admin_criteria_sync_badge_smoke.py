@@ -33,7 +33,7 @@ async def admin_client(tmp_path):
             yield session
 
     async def override_get_admin():
-        return User(id=1, username="admin", email="a@b.c", is_admin=True)
+        return User(id=1, username="admin", is_admin=True)
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_admin] = override_get_admin

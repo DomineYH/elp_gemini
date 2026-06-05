@@ -66,14 +66,12 @@ async def seeded_history(db_tables):
         user_a = User(
             username="history_user_a",
             nickname="History User A",
-            email="history-a@example.com",
             hashed_password="hashed-a",
             is_admin=False,
         )
         user_b = User(
             username="history_user_b",
             nickname="History User B",
-            email="history-b@example.com",
             hashed_password="hashed-b",
             is_admin=False,
         )
