@@ -10,7 +10,37 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-06-qna-chat-markdown-rendering-design.md` · **Issue:** #110
 
-**테스트 전략 노트:** 본 변경은 Jinja 템플릿 내 인라인 JS이며 프로젝트에 JS 단위 테스트 하니스가 없다(파이썬/pytest 전용). JS 테스트 프레임워크 신규 도입은 YAGNI·외과적 변경 원칙에 위배되므로, 검증은 (a) 정적 grep 어서션과 (b) 런타임 Playwright 행동 검증(프로젝트의 기존 UI 검증 방식)으로 수행한다.
+**테스트 전략 노트:** 본 변경은 Jinja 템플릿 내 인라인 JS이며 프로젝트에 JS 단위 테스트 하니스가 없다(파이썬/pytest 전용). JS 테스트 프레임워크 신규 도입은 YAGNI·외과적 변경 원칙에 위배되므로, 검증은 (a) 정적 grep 어서션과 (b) 런타임 Playwright 행동/시각 검증(프로젝트의 기존 UI 검증 방식)으로 수행한다.
+
+**검증 중 발견된 추가 변경(Task 0):** base.html이 Tailwind를 typography 플러그인 없이 로드해 `prose`가 무효화된다. Playwright 하니스 비교 결과, 이를 활성화하지 않으면 목록 불릿·헤더 강조가 사라져 "가독성" 목표를 달성하지 못한다. 따라서 base.html에 `?plugins=typography`를 추가한다(사용자 승인 완료).
+
+---
+
+### Task 0: `base.html` — Tailwind typography 플러그인 활성화
+
+**Files:**
+- Modify: `app/templates/base.html` (L14, Tailwind CDN script)
+
+- [ ] **Step 1: 현재 라인 확인**
+
+Run: `grep -n "cdn.tailwindcss.com" app/templates/base.html`
+Expected: 1개 매칭 (L14, `?plugins=` 없음)
+
+- [ ] **Step 2: typography 플러그인 활성화**
+
+old_string:
+```html
+    <script src="https://cdn.tailwindcss.com"></script>
+```
+new_string:
+```html
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+```
+
+- [ ] **Step 3: 검증 (정적)**
+
+Run: `grep -n "plugins=typography" app/templates/base.html`
+Expected: 1개 매칭 (L14).
 
 ---
 

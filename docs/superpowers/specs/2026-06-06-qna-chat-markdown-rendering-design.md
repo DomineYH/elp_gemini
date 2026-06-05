@@ -45,7 +45,28 @@
 
 ## 상세 설계
 
-대상 파일: **`app/templates/user/dashboard.html` 단일 파일**
+대상 파일: **`app/templates/base.html`** (Tailwind typography 활성화) +
+**`app/templates/user/dashboard.html`** (실시간 대화 렌더링)
+
+> **검증 중 발견(2026-06-06):** base.html이 Tailwind Play CDN을 typography
+> 플러그인 없이 로드하여 `prose` 클래스가 무효화되고, Preflight 리셋이 목록
+> 불릿·헤더 크기를 제거한다. 따라서 dashboard.html만 고치면 마크다운이 HTML로
+> 파싱은 되지만 목록 기호가 사라지고 헤더가 본문과 동일하게 보여 "가독성" 목표를
+> 달성하지 못한다(Playwright 하니스로 before/after 비교 확인). `?plugins=typography`
+> 활성화 시 헤더/불릿/번호/blockquote가 정상 렌더링된다. 기존 history(L1118)·분석
+> 보고서(L435)의 `prose` 사용처도 함께 정상화된다(잠재 버그 수정).
+
+### 0. `app/templates/base.html` — Tailwind typography 활성화
+
+```html
+<!-- 변경 전 -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- 변경 후 -->
+<script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+```
+
+동일 CDN의 내장 플러그인 활성화이므로 **신규 의존성이 아니다**. typography CSS는
+`.prose` 컨테이너에만 적용되므로 비-prose 요소에는 영향이 없다.
 
 ### 1. `addMessage(text, type)` (약 L703–726)
 
@@ -85,7 +106,8 @@ POST /api/qna/{docId} 응답 → updateMessage(loadingId, data.answer,'ai')
 
 ## 성공 기준 (검증)
 
-1. 실시간 챗봇 AI 답변에서 헤더/굵게/목록/코드 블록이 **서식 적용**되어 출력된다.
+1. 실시간 챗봇 AI 답변에서 헤더(크기·굵기)·굵게·목록(불릿/번호+들여쓰기)·코드·
+   blockquote가 **서식 적용**되어 출력된다.
 2. 사용자 말풍선은 평문 그대로 유지(회귀 없음), 대화 히스토리도 정상 동작.
 3. `<script>`·이벤트 핸들러·`javascript:` URL 등이 포함된 답변에서도
    스크립트가 실행되지 않는다(sanitize 동작 확인).
