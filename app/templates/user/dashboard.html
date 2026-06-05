@@ -711,7 +711,7 @@
         if (type === 'user') {
             classes += "bg-blue-100 text-blue-800 ml-auto text-right";
         } else if (type === 'ai') {
-            classes += "bg-white border border-gray-200 text-gray-800 mr-auto whitespace-pre-wrap";
+            classes += "bg-white border border-gray-200 text-gray-800 mr-auto";
         } else if (type === 'system') {
             classes += "bg-gray-100 text-gray-500 text-center text-xs mx-auto";
         } else { // error
@@ -719,7 +719,14 @@
         }
 
         div.className = classes;
-        div.textContent = text;
+        if (type === 'ai') {
+            div.innerHTML =
+                '<div class="prose prose-sm max-w-none">'
+                + renderSafeMarkdown(text)
+                + '</div>';
+        } else {
+            div.textContent = text;
+        }
         history.appendChild(div);
         history.scrollTop = history.scrollHeight;
         return id;
@@ -730,12 +737,19 @@
         if (div) {
             let classes = "p-3 rounded-lg max-w-[80%] text-sm ";
             if (type === 'ai') {
-                classes += "bg-white border border-gray-200 text-gray-800 mr-auto whitespace-pre-wrap";
+                classes += "bg-white border border-gray-200 text-gray-800 mr-auto";
             } else if (type === 'error') {
                 classes += "bg-red-100 text-red-800 text-center text-sm mx-auto";
             }
             div.className = classes;
-            div.textContent = text;
+            if (type === 'ai') {
+                div.innerHTML =
+                    '<div class="prose prose-sm max-w-none">'
+                    + renderSafeMarkdown(text)
+                    + '</div>';
+            } else {
+                div.textContent = text;
+            }
 
             const history = document.getElementById('chatHistory');
             history.scrollTop = history.scrollHeight;
