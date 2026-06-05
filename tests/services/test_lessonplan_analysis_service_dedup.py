@@ -1,6 +1,6 @@
 """LessonPlanAnalysisService 중복 분석 차단 동작 테스트."""
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -84,7 +84,7 @@ async def test_analyze_blocks_when_upload_already_analyzed(session, tmp_path):
         "_call_gemini_with_file_search"
     ) as mock_gemini:
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is False
@@ -108,6 +108,11 @@ async def test_analyze_proceeds_when_no_existing_report(session):
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -123,7 +128,7 @@ async def test_analyze_proceeds_when_no_existing_report(session):
         return_value={"filename": "r.md", "file_path": "/tmp/r.md"},
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is True
@@ -162,15 +167,15 @@ async def test_analyze_returns_upload_required_when_no_upload_or_legacy_file(
         "_call_gemini_with_file_search"
     ) as mock_gemini:
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=1, username="fresh",
+            session_id=1, user_id=1,
         )
 
     assert result == {
         "success": False,
         "error": "분석할 문서가 없습니다. 수업 지도안을 먼저 업로드해주세요.",
     }
-    mock_existing.assert_called_once_with("fresh")
-    mock_lessonplans.assert_called_once_with("fresh")
+    mock_existing.assert_called_once_with(1)
+    mock_lessonplans.assert_called_once_with(1)
     assert mock_stores.call_count == 0
     assert mock_gemini.call_count == 0
     db.add.assert_not_called()
@@ -188,7 +193,7 @@ async def test_analyze_allows_premigration_file_search_upload_without_row(
     svc.lessonplan_storage.base_dir = lessonplan_dir
 
     store = MagicMock()
-    store.display_name = "user-premigration-store"
+    store.display_name = "user-1-store"
     store.name = "fileSearchStores/user-store"
     doc = MagicMock()
     doc.name = "fileSearchStores/user-store/documents/doc1"
@@ -218,16 +223,21 @@ async def test_analyze_allows_premigration_file_search_upload_without_row(
     ) as mock_stores, patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service.asyncio.to_thread",
         return_value=fake_response,
     ) as mock_to_thread:
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=1, username="premigration",
+            session_id=1, user_id=1,
         )
 
     assert result["success"] is True
     assert "upload" not in result.get("error", "").lower()
-    mock_stores.assert_called_once_with("premigration")
+    mock_stores.assert_called_once_with(1)
     assert mock_to_thread.call_count == 1
 
 
@@ -271,6 +281,11 @@ async def test_analyze_falls_through_when_existing_report_file_missing(
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -278,7 +293,7 @@ async def test_analyze_falls_through_when_existing_report_file_missing(
         svc.report_storage, "save_report", side_effect=save_report,
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is True
@@ -335,6 +350,11 @@ async def test_analyze_uses_upload_row_for_report_metadata(session, tmp_path):
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -343,7 +363,7 @@ async def test_analyze_uses_upload_row_for_report_metadata(session, tmp_path):
         return_value={"filename": "r.md", "file_path": "/tmp/r.md"},
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is True
@@ -403,6 +423,11 @@ async def test_analyze_race_fallback_on_integrity_error(session):
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -418,7 +443,7 @@ async def test_analyze_race_fallback_on_integrity_error(session):
         return_value={"filename": "r.md", "file_path": "/tmp/r.md"},
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is False
@@ -470,6 +495,11 @@ async def test_analyze_race_fallback_does_not_delete_winner_when_paths_collide(
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -489,7 +519,7 @@ async def test_analyze_race_fallback_does_not_delete_winner_when_paths_collide(
         },
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is False
@@ -552,6 +582,11 @@ async def test_analyze_race_loser_does_not_overwrite_winner_file(
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -567,7 +602,7 @@ async def test_analyze_race_loser_does_not_overwrite_winner_file(
         FixedDatetime,
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is False
@@ -626,6 +661,11 @@ async def test_analyze_race_fallback_cleans_up_orphan_report(
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -640,7 +680,7 @@ async def test_analyze_race_fallback_cleans_up_orphan_report(
         svc.report_storage, "save_report", side_effect=save_orphan_report,
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is False
@@ -665,8 +705,9 @@ async def test_analyze_creates_synthetic_upload_for_legacy_user(
     await session.commit()
 
     lessonplan_dir = tmp_path / "lessonplans"
-    lessonplan_dir.mkdir()
-    lessonplan_path = lessonplan_dir / "alice_legacy_plan.pdf"
+    user_lp_dir = lessonplan_dir / str(u.id)
+    user_lp_dir.mkdir(parents=True)
+    lessonplan_path = user_lp_dir / "alice_legacy_plan.pdf"
     lessonplan_path.write_bytes(b"legacy lesson plan")
 
     report_path = tmp_path / "reports" / "r.md"
@@ -691,6 +732,11 @@ async def test_analyze_creates_synthetic_upload_for_legacy_user(
     ) as mock_stores, patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -698,7 +744,7 @@ async def test_analyze_creates_synthetic_upload_for_legacy_user(
         svc.report_storage, "save_report", side_effect=save_report,
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is True
@@ -712,7 +758,7 @@ async def test_analyze_creates_synthetic_upload_for_legacy_user(
         )
     ).scalar_one()
     assert upload.filename == lessonplan_path.name
-    assert upload.original_filename == "legacy_plan.pdf"
+    assert upload.original_filename == "alice_legacy_plan.pdf"
     assert upload.file_hash is None
 
     # Report is linked to the synthetic upload
@@ -727,7 +773,7 @@ async def test_analyze_creates_synthetic_upload_for_legacy_user(
 
     # Second call is blocked by dedup
     second = await svc.analyze_lesson_plan(
-        session_id=1, user_id=u.id, username=u.username,
+        session_id=1, user_id=u.id,
     )
     assert second["success"] is False
     assert second["error_code"] == "ALREADY_ANALYZED"
@@ -747,10 +793,10 @@ async def test_legacy_concurrent_analyze_does_not_create_duplicate_reports(
     session.add(u)
     await session.flush()
     await session.commit()
-
     lessonplan_dir = tmp_path / "lessonplans"
-    lessonplan_dir.mkdir()
-    lessonplan_path = lessonplan_dir / "alice_legacy_plan.pdf"
+    user_lp_dir = lessonplan_dir / str(u.id)
+    user_lp_dir.mkdir(parents=True)
+    lessonplan_path = user_lp_dir / "alice_legacy_plan.pdf"
     lessonplan_path.write_bytes(b"legacy lesson plan")
 
     reports_dir = tmp_path / "reports"
@@ -780,6 +826,11 @@ async def test_legacy_concurrent_analyze_does_not_create_duplicate_reports(
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -787,7 +838,7 @@ async def test_legacy_concurrent_analyze_does_not_create_duplicate_reports(
         svc.report_storage, "save_report", side_effect=save_report,
     ):
         first = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
         await session.commit()
 
@@ -806,8 +857,9 @@ async def test_legacy_concurrent_analyze_does_not_create_duplicate_reports(
             side_effect=stale_preflight,
         ):
             second = await svc.analyze_lesson_plan(
-                session_id=1, user_id=u.id, username=u.username,
+                session_id=1, user_id=u.id,
             )
+    await session.refresh(u)
 
     assert first["success"] is True
     assert second["success"] is False
@@ -898,6 +950,11 @@ async def test_analyze_race_fallback_uses_captured_upload_id_not_latest(
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -907,7 +964,7 @@ async def test_analyze_race_fallback_uses_captured_upload_id_not_latest(
         return_value={"filename": "loser.md", "file_path": "/tmp/loser.md"},
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is False
