@@ -4,6 +4,7 @@ FastAPI 애플리케이션 메인 엔트리포인트
 """
 import asyncio
 import logging
+import subprocess
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import (
@@ -92,6 +93,20 @@ app.mount(
 # Note: /files 정적 마운트 제거 (보안 강화)
 # 파일 다운로드는 /docs/{document_id}/download 엔드포인트 사용
 templates = Jinja2Templates(directory="app/templates")
+
+
+def _app_version() -> str:
+    try:
+        count = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        return f"v2.{count}"
+    except Exception:
+        return "v2"
+
+
+templates.env.globals["app_version"] = _app_version()
 
 
 # 커스텀 예외 핸들러 (T015)
