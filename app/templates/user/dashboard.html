@@ -1228,7 +1228,7 @@
         const content = document.getElementById('analysisContent');
 
         // Parse Markdown
-        content.innerHTML = marked.parse(markdownReport);
+        content.innerHTML = renderSafeMarkdown(markdownReport);
 
         modal.classList.remove('hidden');
     }
