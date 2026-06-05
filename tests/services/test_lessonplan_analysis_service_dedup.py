@@ -84,7 +84,7 @@ async def test_analyze_blocks_when_upload_already_analyzed(session, tmp_path):
         "_call_gemini_with_file_search"
     ) as mock_gemini:
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is False
@@ -123,7 +123,7 @@ async def test_analyze_proceeds_when_no_existing_report(session):
         return_value={"filename": "r.md", "file_path": "/tmp/r.md"},
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is True
@@ -162,7 +162,7 @@ async def test_analyze_returns_upload_required_when_no_upload_or_legacy_file(
         "_call_gemini_with_file_search"
     ) as mock_gemini:
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=1, username="fresh",
+            session_id=1, user_id=1,
         )
 
     assert result == {
@@ -222,7 +222,7 @@ async def test_analyze_allows_premigration_file_search_upload_without_row(
         return_value=fake_response,
     ) as mock_to_thread:
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=1, username="premigration",
+            session_id=1, user_id=1,
         )
 
     assert result["success"] is True
@@ -278,7 +278,7 @@ async def test_analyze_falls_through_when_existing_report_file_missing(
         svc.report_storage, "save_report", side_effect=save_report,
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is True
@@ -343,7 +343,7 @@ async def test_analyze_uses_upload_row_for_report_metadata(session, tmp_path):
         return_value={"filename": "r.md", "file_path": "/tmp/r.md"},
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is True
@@ -418,7 +418,7 @@ async def test_analyze_race_fallback_on_integrity_error(session):
         return_value={"filename": "r.md", "file_path": "/tmp/r.md"},
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is False
@@ -489,7 +489,7 @@ async def test_analyze_race_fallback_does_not_delete_winner_when_paths_collide(
         },
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is False
@@ -567,7 +567,7 @@ async def test_analyze_race_loser_does_not_overwrite_winner_file(
         FixedDatetime,
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is False
@@ -640,7 +640,7 @@ async def test_analyze_race_fallback_cleans_up_orphan_report(
         svc.report_storage, "save_report", side_effect=save_orphan_report,
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is False
@@ -698,7 +698,7 @@ async def test_analyze_creates_synthetic_upload_for_legacy_user(
         svc.report_storage, "save_report", side_effect=save_report,
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is True
@@ -727,7 +727,7 @@ async def test_analyze_creates_synthetic_upload_for_legacy_user(
 
     # Second call is blocked by dedup
     second = await svc.analyze_lesson_plan(
-        session_id=1, user_id=u.id, username=u.username,
+        session_id=1, user_id=u.id,
     )
     assert second["success"] is False
     assert second["error_code"] == "ALREADY_ANALYZED"
@@ -787,7 +787,7 @@ async def test_legacy_concurrent_analyze_does_not_create_duplicate_reports(
         svc.report_storage, "save_report", side_effect=save_report,
     ):
         first = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
         await session.commit()
 
@@ -806,7 +806,7 @@ async def test_legacy_concurrent_analyze_does_not_create_duplicate_reports(
             side_effect=stale_preflight,
         ):
             second = await svc.analyze_lesson_plan(
-                session_id=1, user_id=u.id, username=u.username,
+                session_id=1, user_id=u.id,
             )
 
     assert first["success"] is True
@@ -907,7 +907,7 @@ async def test_analyze_race_fallback_uses_captured_upload_id_not_latest(
         return_value={"filename": "loser.md", "file_path": "/tmp/loser.md"},
     ):
         result = await svc.analyze_lesson_plan(
-            session_id=1, user_id=u.id, username=u.username,
+            session_id=1, user_id=u.id,
         )
 
     assert result["success"] is False

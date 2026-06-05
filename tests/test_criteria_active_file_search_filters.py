@@ -159,7 +159,6 @@ async def test_lessonplan_analysis_skips_gemini_when_no_active_criteria():
         result = await service.analyze_lesson_plan(
             session_id=1,
             user_id=7,
-            username="teacher",
         )
 
     assert result["success"] is False
@@ -223,7 +222,6 @@ async def test_lessonplan_analysis_continues_without_filter_when_active_filter_f
             result = await service.analyze_lesson_plan(
                 session_id=1,
                 user_id=7,
-                username="teacher",
             )
 
     assert result["success"] is True

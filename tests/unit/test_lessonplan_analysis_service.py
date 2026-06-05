@@ -1013,7 +1013,6 @@ class TestLessonPlanAnalysisService:
             result = await service.analyze_lesson_plan(
                 session_id=1,
                 user_id=123,
-                username="alice",
             )
 
         assert result["success"] is True
