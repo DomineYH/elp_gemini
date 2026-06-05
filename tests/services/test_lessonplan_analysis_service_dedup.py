@@ -108,6 +108,11 @@ async def test_analyze_proceeds_when_no_existing_report(session):
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -276,6 +281,11 @@ async def test_analyze_falls_through_when_existing_report_file_missing(
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -339,6 +349,11 @@ async def test_analyze_uses_upload_row_for_report_metadata(session, tmp_path):
         svc, "_get_store_ids", return_value=["user-store", "rubric-store"]
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
+    ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
     ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
@@ -408,6 +423,11 @@ async def test_analyze_race_fallback_on_integrity_error(session):
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -474,6 +494,11 @@ async def test_analyze_race_fallback_does_not_delete_winner_when_paths_collide(
         svc, "_get_store_ids", return_value=["u", "r"]
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
+    ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
     ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
@@ -557,6 +582,11 @@ async def test_analyze_race_loser_does_not_overwrite_winner_file(
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -631,6 +661,11 @@ async def test_analyze_race_fallback_cleans_up_orphan_report(
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -670,8 +705,9 @@ async def test_analyze_creates_synthetic_upload_for_legacy_user(
     await session.commit()
 
     lessonplan_dir = tmp_path / "lessonplans"
-    lessonplan_dir.mkdir()
-    lessonplan_path = lessonplan_dir / "alice_legacy_plan.pdf"
+    user_lp_dir = lessonplan_dir / str(u.id)
+    user_lp_dir.mkdir(parents=True)
+    lessonplan_path = user_lp_dir / "alice_legacy_plan.pdf"
     lessonplan_path.write_bytes(b"legacy lesson plan")
 
     report_path = tmp_path / "reports" / "r.md"
@@ -696,6 +732,11 @@ async def test_analyze_creates_synthetic_upload_for_legacy_user(
     ) as mock_stores, patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -717,7 +758,7 @@ async def test_analyze_creates_synthetic_upload_for_legacy_user(
         )
     ).scalar_one()
     assert upload.filename == lessonplan_path.name
-    assert upload.original_filename == "legacy_plan.pdf"
+    assert upload.original_filename == "alice_legacy_plan.pdf"
     assert upload.file_hash is None
 
     # Report is linked to the synthetic upload
@@ -752,10 +793,10 @@ async def test_legacy_concurrent_analyze_does_not_create_duplicate_reports(
     session.add(u)
     await session.flush()
     await session.commit()
-
     lessonplan_dir = tmp_path / "lessonplans"
-    lessonplan_dir.mkdir()
-    lessonplan_path = lessonplan_dir / "alice_legacy_plan.pdf"
+    user_lp_dir = lessonplan_dir / str(u.id)
+    user_lp_dir.mkdir(parents=True)
+    lessonplan_path = user_lp_dir / "alice_legacy_plan.pdf"
     lessonplan_path.write_bytes(b"legacy lesson plan")
 
     reports_dir = tmp_path / "reports"
@@ -785,6 +826,11 @@ async def test_legacy_concurrent_analyze_does_not_create_duplicate_reports(
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
     ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
+    ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
         return_value=fake_response,
@@ -813,6 +859,7 @@ async def test_legacy_concurrent_analyze_does_not_create_duplicate_reports(
             second = await svc.analyze_lesson_plan(
                 session_id=1, user_id=u.id,
             )
+    await session.refresh(u)
 
     assert first["success"] is True
     assert second["success"] is False
@@ -902,6 +949,11 @@ async def test_analyze_race_fallback_uses_captured_upload_id_not_latest(
         svc, "_get_store_ids", return_value=["u", "r"]
     ), patch.object(
         svc.prompt_loader, "get_prompt", return_value="SYS"
+    ), patch(
+        "app.services.criteria_vector_service."
+        "CriteriaVectorService.active_stable_id_filter",
+        new=AsyncMock(return_value='stable_id="active"'),
+        create=True,
     ), patch(
         "app.services.lessonplan_analysis_service."
         "_call_gemini_with_file_search",
