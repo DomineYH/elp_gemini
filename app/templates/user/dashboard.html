@@ -1229,6 +1229,25 @@
         document.getElementById('analysisModal').classList.add('hidden');
     }
 
+    function openSurveyModal() {
+        document.getElementById('surveyModal').classList.remove('hidden');
+    }
+
+    function closeSurveyModal() {
+        document.getElementById('surveyModal').classList.add('hidden');
+    }
+
+    function participateSurvey() {
+        window.open('https://forms.gle/PmnzRSGqUMURr7mJ7', '_blank', 'noopener');
+        closeSurveyModal();
+        closeAnalysisModal();
+    }
+
+    function completeSurvey() {
+        closeSurveyModal();
+        closeAnalysisModal();
+    }
+
     function printAnalysisReport() {
         // 인쇄&저장 전 모달이 열려있는지 확인
         const modal = document.getElementById('analysisModal');
