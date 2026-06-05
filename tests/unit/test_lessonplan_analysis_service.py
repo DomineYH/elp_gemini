@@ -210,11 +210,32 @@ class TestLessonPlanAnalysisService:
             return_value=mock_response
         )
 
-        # When
-        result = await service.analyze_lesson_plan(
-            session_id=1,
-            user_id=123
+        # 문서 존재 가정 + 중복 보고서 없음 (no-document 조기 반환 회피)
+        service._find_existing_report_for_latest_upload = AsyncMock(
+            return_value=(None, None)
         )
+        service._user_file_search_store_has_documents = Mock(
+            return_value=True
+        )
+        service.lessonplan_storage.list_lessonplans = Mock(return_value=[])
+        # 보고서 저장 모킹 — 파일 시스템 회피
+        service.report_storage.save_report = Mock(
+            return_value={
+                "filename": "report.md",
+                "file_path": "/tmp/report.md",
+            }
+        )
+
+        # When: 활성 평가기준 필터 패치 (NO_ACTIVE_CRITERIA 조기 반환 회피)
+        with patch(
+            "app.services.criteria_vector_service"
+            ".CriteriaVectorService.active_stable_id_filter",
+            new=AsyncMock(return_value='stable_id="X"'),
+        ):
+            result = await service.analyze_lesson_plan(
+                session_id=1,
+                user_id=123
+            )
 
         # Then
         assert result["success"] is True
@@ -254,19 +275,35 @@ class TestLessonPlanAnalysisService:
     ):
         """
         타임아웃 발생 시 에러 반환
+
+        실제 await 지점(_get_store_ids)이 asyncio.timeout 마감보다
+        오래 걸리면 '시간 초과' 에러를 반환한다. 단위 테스트가 180초를
+        실제로 기다리지 않도록 모듈의 asyncio.timeout 마감만 짧게 압축해
+        실제 타임아웃 경로를 그대로 검증한다.
         """
-        # Mock _get_store_ids - 긴 시간 소요
+        # 최신 업로드 존재 가정 → no-document 조기 반환을 건너뛰고
+        # _get_store_ids(실제 await 지점)까지 제어가 도달하도록 한다.
+        service._find_existing_report_for_latest_upload = AsyncMock(
+            return_value=(Mock(), None)
+        )
+
+        # _get_store_ids - 마감을 초과하는 지연
         async def slow_store_ids(*args, **kwargs):
-            await asyncio.sleep(200)  # 180초 초과
+            await asyncio.sleep(5)
             return []
 
         service._get_store_ids = slow_store_ids
 
-        # When
-        result = await service.analyze_lesson_plan(
-            session_id=1,
-            user_id=123
-        )
+        # When: 180초 마감을 50ms로 압축 (실제 asyncio.timeout 경로 검증)
+        real_timeout = asyncio.timeout
+        with patch(
+            "app.services.lessonplan_analysis_service.asyncio.timeout",
+            side_effect=lambda _seconds: real_timeout(0.05),
+        ):
+            result = await service.analyze_lesson_plan(
+                session_id=1,
+                user_id=123
+            )
 
         # Then
         assert result["success"] is False
