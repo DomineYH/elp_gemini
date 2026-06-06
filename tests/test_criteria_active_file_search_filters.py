@@ -83,33 +83,58 @@ async def test_active_stable_id_filter_returns_none_when_only_legacy_is_active()
     assert metadata_filter is None
 
 
-def test_lessonplan_file_search_filters_only_rubric_store():
+def test_lessonplan_two_pass_retrieves_user_then_filters_only_rubric_store():
+    """#118: 긴 평가 프롬프트는 나쁜 File Search retrieval 쿼리이므로 두 패스로
+    분리한다.
+
+    - 1패스: 사용자 스토어만 대상으로 지도안 원문을 검색(내용 지향 질의).
+    - 2패스: 1패스에서 받은 원문을 평가 프롬프트에 주입하고, rubric 스토어
+      (활성 stable_id 필터 적용)만으로 평가 보고서를 생성한다.
+
+    이로써 평가 시 사용자 지도안이 실제로 grounding 되어 '현재 지도안(A)'
+    인용이 빈 값('해당 서술 없음')으로 떨어지지 않는다.
+    """
     from app.services.lessonplan_analysis_service import (
         _call_gemini_with_file_search,
     )
 
     client = MagicMock()
-    response = SimpleNamespace(text="report", candidates=[])
-    client.models.generate_content.return_value = response
+    pass1 = SimpleNamespace(
+        text="제목: 미래 인구 예측 / 학습목표: ...", candidates=[]
+    )
+    pass2 = SimpleNamespace(text="report", candidates=[])
+    client.models.generate_content.side_effect = [pass1, pass2]
 
     result = _call_gemini_with_file_search(
         client,
         "gemini-eval",
-        "contents",
+        "EVAL_PROMPT_BODY",
         "fileSearchStores/rubric",
         "fileSearchStores/user",
         'stable_id="01HACTIVE"',
     )
 
-    assert result is response
-    config = client.models.generate_content.call_args.kwargs["config"]
-    rubric_search = _file_search_for_store(config, "fileSearchStores/rubric")
-    user_search = _file_search_for_store(config, "fileSearchStores/user")
+    assert result is pass2
+    assert client.models.generate_content.call_count == 2
 
+    # 1패스: 사용자 스토어만, rubric 없음
+    c1 = client.models.generate_content.call_args_list[0].kwargs["config"]
+    assert _file_search_for_store(c1, "fileSearchStores/user") is not None
+    assert _file_search_for_store(c1, "fileSearchStores/rubric") is None
+
+    # 2패스: rubric 스토어만(활성 필터 적용), 사용자 스토어 없음
+    c2 = client.models.generate_content.call_args_list[1].kwargs["config"]
+    rubric_search = _file_search_for_store(c2, "fileSearchStores/rubric")
     assert rubric_search is not None
     assert rubric_search.metadata_filter == 'stable_id="01HACTIVE"'
-    assert user_search is not None
-    assert getattr(user_search, "metadata_filter", None) is None
+    assert _file_search_for_store(c2, "fileSearchStores/user") is None
+
+    # 1패스에서 검색한 지도안 원문이 2패스 평가 프롬프트에 주입됨
+    pass2_contents = (
+        client.models.generate_content.call_args_list[1].kwargs["contents"]
+    )
+    assert "EVAL_PROMPT_BODY" in pass2_contents
+    assert "미래 인구 예측" in pass2_contents
 
 
 @pytest.mark.asyncio
