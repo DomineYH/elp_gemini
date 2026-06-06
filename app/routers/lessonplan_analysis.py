@@ -71,6 +71,16 @@ async def analyze_lesson_plan(
                     detail=result.get("error", "잠시 후 다시 시도해주세요."),
                     headers={"Retry-After": "30"},
                 )
+            if result.get("error_code") == "MODEL_OVERLOADED":
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=result.get(
+                        "error",
+                        "AI 모델이 일시적으로 혼잡합니다. "
+                        "잠시 후 다시 시도해주세요.",
+                    ),
+                    headers={"Retry-After": "30"},
+                )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=result.get("error", "분석 중 오류 발생"),
