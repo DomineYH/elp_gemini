@@ -33,6 +33,7 @@ from app.services.prompt_loader_service import PromptLoaderService
 from app.services.report_storage_service import ReportStorageService
 from app.utils.gemini_retry import (
     GeminiQuotaExhausted,
+    GeminiServerOverloaded,
     retry_on_resource_exhausted,
 )
 
@@ -514,6 +515,17 @@ class LessonPlanAnalysisService:
                     "잠시 후 다시 시도해주세요."
                 ),
                 "error_code": "RESOURCE_EXHAUSTED",
+            }
+
+        except GeminiServerOverloaded as e:
+            logger.error(f"Gemini 서버 혼잡 (재시도 후 실패): {e}")
+            return {
+                "success": False,
+                "error": (
+                    "AI 모델이 일시적으로 혼잡합니다. "
+                    "잠시 후 다시 시도해주세요."
+                ),
+                "error_code": "MODEL_OVERLOADED",
             }
 
         except exceptions.GoogleAPIError as e:
