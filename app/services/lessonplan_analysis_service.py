@@ -50,6 +50,41 @@ async def _mark_criteria_filter_needs_resync(
         logger.warning("평가기준 동기화 필요 상태 표시 실패", exc_info=True)
 
 
+# Issue #118: 긴 평가 지시 프롬프트는 File Search retrieval 쿼리로서 품질이
+# 낮다(지시문 임베딩이 지도안 실제 내용과 의미적으로 불일치). 그 결과 사용자
+# 문서를 한 청크도 검색하지 못해, 보고서의 '현재 지도안'/'수업지도안' 인용이
+# 모두 '해당 서술 없음'으로 떨어졌다. 평가 전에 내용 지향 질의로 지도안 원문을
+# 먼저 검색(1패스)한 뒤 평가 프롬프트에 주입(2패스)한다.
+_LESSONPLAN_RETRIEVE_QUERY = (
+    "업로드된 수업 지도안 문서에서 다음 항목을 문서에 적힌 문장 그대로 "
+    "빠짐없이 인용·발췌하라: 제목, 학습 목표, 성취기준, 차시별 교수·학습 "
+    "활동, 평가 계획, 사용 자료. 요약하지 말고 원문을 직접 인용하라."
+)
+
+
+def _retrieve_lessonplan_text(client, model, user_store_id) -> str:
+    """1패스: 사용자 스토어에서 지도안 원문을 검색해 텍스트로 반환한다.
+
+    내용 지향 질의를 사용해야 File Search 가 업로드 문서를 안정적으로
+    grounding 한다 (issue #118). 응답이 없으면 빈 문자열을 반환한다.
+    """
+    response = client.models.generate_content(
+        model=model,
+        contents=_LESSONPLAN_RETRIEVE_QUERY,
+        config=types.GenerateContentConfig(
+            tools=[
+                types.Tool(
+                    file_search=types.FileSearch(
+                        file_search_store_names=[user_store_id]
+                    )
+                ),
+            ],
+            temperature=0.2,
+        ),
+    )
+    return response.text or ""
+
+
 @retry_on_resource_exhausted(max_attempts=3, initial_wait=2.0, max_wait=16.0)
 def _call_gemini_with_file_search(
     client,
@@ -59,25 +94,35 @@ def _call_gemini_with_file_search(
     user_store_id,
     rubric_metadata_filter,
 ):
+    """두 패스 grounded 평가 (issue #118).
+
+    1패스(_retrieve_lessonplan_text): 사용자 스토어에서 지도안 원문을 검색.
+    2패스: 검색한 원문을 평가 프롬프트에 주입하고 rubric 스토어(활성 필터
+    적용)만으로 평가 보고서를 생성한다. 사용자 문서는 이미 본문에 주입되어
+    있으므로 2패스에서는 사용자 스토어 도구를 두지 않는다 — 이중 File Search
+    도구 조합이 사용자 문서 retrieval 을 저해하던 issue #86 도 함께 회피된다.
+    """
+    lesson_text = _retrieve_lessonplan_text(client, model, user_store_id)
+    if lesson_text.strip():
+        contents = (
+            f"{contents}\n\n"
+            "**평가 대상 수업 지도안 원문 (아래 내용만을 근거로 평가하고, "
+            "'현재 지도안'과 '수업지도안' 인용은 반드시 이 원문에서 "
+            "발췌하세요):**\n"
+            f"---\n{lesson_text}\n---"
+        )
+
     rubric_search_config = {
         "file_search_store_names": [rubric_store_id],
     }
     if rubric_metadata_filter:
         rubric_search_config["metadata_filter"] = rubric_metadata_filter
 
-    # Tool ordering matters: user store tool MUST come first so the model
-    # grounds answers in the uploaded lesson plan. Putting rubric first
-    # caused the model to ignore the user document (issue #86).
     return client.models.generate_content(
         model=model,
         contents=contents,
         config=types.GenerateContentConfig(
             tools=[
-                types.Tool(
-                    file_search=types.FileSearch(
-                        file_search_store_names=[user_store_id]
-                    )
-                ),
                 types.Tool(
                     file_search=types.FileSearch(**rubric_search_config)
                 ),
