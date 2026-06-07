@@ -336,6 +336,7 @@ from app.routers import (  # noqa: E402
     evaluations,
     lessonplan_analysis,
     qna,
+    survey,
     views,
 )
 from app.routers.admin import exports as admin_exports  # noqa: E402
@@ -376,6 +377,7 @@ app.include_router(auth.router, tags=["인증"])
 app.include_router(qna.router)
 app.include_router(evaluations.router)
 app.include_router(lessonplan_analysis.router)
+app.include_router(survey.router)
 app.include_router(views.router)
 app.include_router(admin_router)
 app.include_router(admin_exports.router)
