@@ -30,6 +30,7 @@ from app.migrations import (
     ensure_criteria_stable_id_column,
     ensure_lessonplan_uploads_table,
     ensure_users_lockout_columns,
+    ensure_users_survey_completed_column,
     rename_chat_session_in_service_teacher_label,
     rename_preservice_university_regions,
 )
@@ -263,6 +264,12 @@ async def startup_event():
     if lockout_patched:
         logger.info(
             "users 테이블 lockout 컬럼이 자동 복구되었습니다."
+        )
+
+    survey_col_patched = await ensure_users_survey_completed_column(engine)
+    if survey_col_patched:
+        logger.info(
+            "users.survey_completed_at 컬럼이 자동 추가되었습니다."
         )
 
     profiles_dropped = await drop_user_profiles(engine)

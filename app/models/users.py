@@ -31,6 +31,7 @@ class User(Base):
     )
     locked_until = Column(DateTime, nullable=True)
     last_failed_login_at = Column(DateTime, nullable=True)
+    survey_completed_at = Column(DateTime, nullable=True)
     created_at = Column(
         DateTime, nullable=False, server_default=func.now()
     )
