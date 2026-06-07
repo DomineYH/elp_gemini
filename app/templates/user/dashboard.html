@@ -1251,9 +1251,22 @@
         const prevTitle = document.title;
         document.title = `수업지도안_분석보고서_${yyyy}-${mm}-${dd}`;
 
-        // 인쇄 대화상자 종료 후 원래 제목 복원 (1회성)
+        // Chrome 버그 우회: 페이지에 <embed type="application/pdf">(PDFium 플러그인)가
+        // 있으면 window.print()가 빈 미리보기/무반응이 됨 (issue #127). 인쇄 직전
+        // 임베드를 분리하고 afterprint에서 복원한다. (Firefox는 영향 없음)
+        const pdfEmbed = document.querySelector('embed[type="application/pdf"]');
+        const embedParent = pdfEmbed ? pdfEmbed.parentNode : null;
+        const embedNext = pdfEmbed ? pdfEmbed.nextSibling : null;
+        if (pdfEmbed) {
+            pdfEmbed.remove();
+        }
+
+        // 인쇄 대화상자 종료 후 원래 제목/임베드 복원 (1회성)
         window.addEventListener('afterprint', () => {
             document.title = prevTitle;
+            if (pdfEmbed && embedParent) {
+                embedParent.insertBefore(pdfEmbed, embedNext);
+            }
         }, { once: true });
 
         // 인쇄&저장 실행 (대상에서 "PDF로 저장" 선택 가능)
