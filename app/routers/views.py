@@ -311,5 +311,6 @@ async def view_analysis_report(
             "request": request,
             "user": current_user,
             "report_id": report_id,
+            "survey_completed": current_user.survey_completed_at is not None,
         },
     )
