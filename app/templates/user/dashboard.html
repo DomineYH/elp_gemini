@@ -1131,7 +1131,15 @@
         closeAnalysisModal();
     }
 
-    function completeSurvey() {
+    async function completeSurvey() {
+        try {
+            await fetch('/api/survey/complete', {
+                method: 'POST',
+                credentials: 'same-origin',
+            });
+        } catch (e) {
+            /* best-effort */
+        }
         closeSurveyModal();
         closeAnalysisModal();
     }
