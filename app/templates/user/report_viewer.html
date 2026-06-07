@@ -38,6 +38,7 @@
         <a href="/dashboard" class="text-blue-600 hover:underline text-sm">
             ← 대시보드로 돌아가기
         </a>
+        {% if survey_completed %}
         <div class="flex items-center gap-3">
             <a id="downloadLink"
                href="/api/lessonplan/reports/{{ report_id }}/download"
@@ -49,9 +50,13 @@
                 인쇄 / PDF 저장
             </button>
         </div>
+        {% endif %}
     </div>
+    {% if survey_completed %}
     <p class="text-xs text-gray-400 mb-4 no-print">인쇄가 안 되면 브라우저 메뉴 → 인쇄, 또는 '원본(.md) 다운로드'를 이용하세요.</p>
+    {% endif %}
 
+    {% if survey_completed %}
     <header class="bg-white shadow-sm rounded-lg p-6 mb-4">
         <h1 id="reportTitle" class="text-2xl font-bold text-gray-900 break-all">
             보고서 불러오는 중...
@@ -64,6 +69,25 @@
             <p class="text-gray-500 text-center py-8">보고서를 불러오는 중...</p>
         </article>
     </section>
+    {% else %}
+    <section class="bg-white shadow-sm rounded-lg p-8 text-center no-print">
+        <h1 class="text-xl font-bold text-gray-900 mb-3">설문 참여가 필요합니다</h1>
+        <p class="text-gray-600 mb-6">
+            보고서 열람·인쇄·저장은 참여 설문을 완료하신 후 이용할 수 있습니다.<br>
+            아래 '설문 참여하기'로 설문을 마친 뒤 '설문참여 완료'를 눌러주세요.
+        </p>
+        <div class="flex items-center justify-center gap-3">
+            <button type="button" id="surveyGateParticipate"
+                    class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700">
+                설문 참여하기
+            </button>
+            <button type="button" id="surveyGateComplete"
+                    class="bg-gray-600 text-white px-6 py-2 rounded hover:bg-gray-700">
+                설문참여 완료
+            </button>
+        </div>
+    </section>
+    {% endif %}
 </div>
 {% endblock %}
 
@@ -168,10 +192,37 @@
         }
     }
 
-    loadReport().then(() => {
-        if (new URLSearchParams(location.search).get('print') === '1') {
-            window.print();
+    const SURVEY_COMPLETED = {{ 'true' if survey_completed else 'false' }};
+    const SURVEY_FORM_URL = 'https://forms.gle/PmnzRSGqUMURr7mJ7';
+
+    if (SURVEY_COMPLETED) {
+        loadReport().then(() => {
+            if (new URLSearchParams(location.search).get('print') === '1') {
+                window.print();
+            }
+        });
+    } else {
+        const participateBtn = document.getElementById('surveyGateParticipate');
+        const completeBtn = document.getElementById('surveyGateComplete');
+        if (participateBtn) {
+            participateBtn.addEventListener('click', () => {
+                window.open(SURVEY_FORM_URL, '_blank', 'noopener');
+            });
         }
-    });
+        if (completeBtn) {
+            completeBtn.addEventListener('click', async () => {
+                completeBtn.disabled = true;
+                try {
+                    await fetch('/api/survey/complete', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                    });
+                } catch (e) {
+                    /* best-effort: 실패해도 reload로 재시도 가능 */
+                }
+                location.reload();
+            });
+        }
+    }
 </script>
 {% endblock %}
