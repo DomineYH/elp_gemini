@@ -24,6 +24,15 @@ from app.services.lessonplan_analysis_service import LessonPlanAnalysisService
 router = APIRouter(prefix="/api/lessonplan", tags=["lessonplan"])
 
 
+def _require_survey_completed(user: User) -> None:
+    """설문 미완료면 403. 보고서 영구 획득 경로 보호."""
+    if user.survey_completed_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="설문 참여 후 보고서를 열람할 수 있습니다.",
+        )
+
+
 @router.post("/analyze", response_model=LessonPlanAnalysisResponse)
 async def analyze_lesson_plan(
     request: LessonPlanAnalysisRequest,
@@ -143,6 +152,7 @@ async def get_analysis_report(
 
     특정 분석 보고서의 내용을 조회합니다.
     """
+    _require_survey_completed(current_user)
     try:
         result = await db.execute(
             select(AnalysisReport)
@@ -199,6 +209,7 @@ async def download_analysis_report(
 
     분석 보고서 파일을 다운로드합니다.
     """
+    _require_survey_completed(current_user)
     try:
         result = await db.execute(
             select(AnalysisReport)
