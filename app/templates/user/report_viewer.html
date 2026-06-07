@@ -17,21 +17,40 @@
     .prose table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
     .prose th, .prose td { border: 1px solid #e5e7eb; padding: 0.5rem 0.75rem; text-align: left; }
     .prose th { background: #f9fafb; font-weight: 600; }
+
+    @media print {
+        .no-print { display: none !important; }
+        body > nav,
+        body > footer { display: none !important; }
+        body { background: white !important; }
+        #reportContent { background: white !important; }
+        h1, h2 { page-break-before: auto; page-break-after: avoid; }
+        h3, h4 { page-break-after: avoid; }
+        ul, ol, p, pre, blockquote { page-break-inside: avoid; }
+        a[href]:after { content: none !important; }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="max-w-4xl mx-auto">
-    <div class="mb-4 flex items-center justify-between gap-4 flex-wrap">
+    <div class="mb-4 flex items-center justify-between gap-4 flex-wrap no-print">
         <a href="/dashboard" class="text-blue-600 hover:underline text-sm">
             ← 대시보드로 돌아가기
         </a>
-        <a id="downloadLink"
-           href="/api/lessonplan/reports/{{ report_id }}/download"
-           class="text-sm text-gray-600 hover:text-blue-600 underline">
-            원본(.md) 다운로드
-        </a>
+        <div class="flex items-center gap-3">
+            <a id="downloadLink"
+               href="/api/lessonplan/reports/{{ report_id }}/download"
+               class="text-sm text-gray-600 hover:text-blue-600 underline">
+                원본(.md) 다운로드
+            </a>
+            <button type="button" onclick="window.print()"
+                    class="text-sm bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">
+                인쇄 / PDF 저장
+            </button>
+        </div>
     </div>
+    <p class="text-xs text-gray-400 mb-4 no-print">인쇄가 안 되면 브라우저 메뉴 → 인쇄, 또는 '원본(.md) 다운로드'를 이용하세요.</p>
 
     <header class="bg-white shadow-sm rounded-lg p-6 mb-4">
         <h1 id="reportTitle" class="text-2xl font-bold text-gray-900 break-all">
@@ -149,6 +168,10 @@
         }
     }
 
-    loadReport();
+    loadReport().then(() => {
+        if (new URLSearchParams(location.search).get('print') === '1') {
+            window.print();
+        }
+    });
 </script>
 {% endblock %}

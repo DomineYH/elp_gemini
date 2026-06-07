@@ -31,6 +31,7 @@ class LessonPlanAnalysisResponse(BaseModel):
         None,
         description="저장된 보고서 파일 정보"
     )
+    report_id: Optional[int] = Field(None, description="저장된 분석 보고서 ID")
 
     class Config:
         json_schema_extra = {

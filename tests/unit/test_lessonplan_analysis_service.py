@@ -1058,3 +1058,27 @@ class TestLessonPlanAnalysisService:
         assert "secret-internal-model" not in report
         assert "**분석 모델**" not in report
         assert "임의 항목" not in report
+
+
+class TestReportIdInResponse:
+    """report_id 필드 직렬화 검증 (Issue #124)"""
+
+    def test_schema_preserves_report_id(self):
+        from app.schemas.lessonplan_analysis import LessonPlanAnalysisResponse
+
+        resp = LessonPlanAnalysisResponse(
+            success=True,
+            report="# test",
+            report_id=42,
+        )
+        assert resp.report_id == 42
+        dumped = resp.model_dump()
+        assert dumped["report_id"] == 42
+
+    def test_schema_defaults_report_id_none(self):
+        from app.schemas.lessonplan_analysis import LessonPlanAnalysisResponse
+
+        resp = LessonPlanAnalysisResponse(success=True, report="# test")
+        assert resp.report_id is None
+        dumped = resp.model_dump()
+        assert dumped["report_id"] is None

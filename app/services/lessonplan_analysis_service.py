@@ -331,6 +331,7 @@ class LessonPlanAnalysisService:
 
                 # 보고서 파일 저장 및 DB 기록
                 saved_report = None
+                success_report_id = None
                 if report:
                     try:
                         if latest_upload is not None:
@@ -486,6 +487,7 @@ class LessonPlanAnalysisService:
                             f"id={analysis_record.id}, "
                             f"upload_id={analysis_record.upload_id}"
                         )
+                        success_report_id = analysis_record.id
 
                     except Exception as save_error:
                         logger.warning(
@@ -499,7 +501,8 @@ class LessonPlanAnalysisService:
                     "citations": citations,
                     "latency_ms": latency_ms,
                     "criteria_notice": criteria_notice,
-                    "saved_report": saved_report
+                    "saved_report": saved_report,
+                    "report_id": success_report_id,
                 }
 
         except asyncio.TimeoutError:

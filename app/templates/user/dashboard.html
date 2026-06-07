@@ -115,119 +115,6 @@
     padding: 0;
 }
 
-/* PDF 저장(인쇄)용 스타일 */
-@media print {
-    /* body 설정 */
-    body {
-        background: white !important;
-        height: auto !important;
-        overflow: visible !important;
-    }
-
-    /* nav, footer 숨김 (main은 표시 유지) */
-    body > nav,
-    body > footer {
-        display: none !important;
-    }
-
-    /* main 태그는 표시하되 패딩/마진 제거 */
-    body > main {
-        display: block !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        width: 100% !important;
-    }
-
-    /* main 내부에서 모달 관련 요소만 표시 */
-    body > main > .max-w-6xl,
-    body > main > .fixed:not(#analysisModal),
-    #chatbotModal,
-    #loadingOverlay {
-        display: none !important;
-    }
-
-    /* 모달 컨테이너 설정 */
-    #analysisModal {
-        display: block !important;
-        position: static !important;
-        width: 100% !important;
-        height: auto !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        overflow: visible !important;
-        background: white !important;
-        z-index: 9999 !important;
-        box-shadow: none !important;
-    }
-
-    /* 모달 오버레이 배경 제거 */
-    #analysisModal.bg-black {
-        background: white !important;
-    }
-
-    /* 모달 내부 레이아웃 재정의 */
-    #analysisModal > div {
-        width: 100% !important;
-        max-width: none !important;
-        height: auto !important;
-        margin: 0 !important;
-        box-shadow: none !important;
-        border: none !important;
-        border-radius: 0 !important;
-    }
-
-    /* 헤더 스타일 조정: 배경색 제거 및 텍스트 검정 */
-    #analysisModal > div > div:first-child {
-        background: none !important;
-        color: black !important;
-        border-bottom: 2px solid #000 !important;
-        padding: 0 0 1rem 0 !important;
-        margin-bottom: 2rem !important;
-    }
-
-    /* 헤더 제목 색상 */
-    #analysisModal > div > div:first-child h3 {
-        color: black !important;
-    }
-
-    /* 닫기 버튼 등 헤더 아이콘 숨김 */
-    #analysisModal > div > div:first-child button {
-        display: none !important;
-    }
-
-    /* 하단 버튼 영역 숨김 */
-    #analysisModal > div > div:last-child {
-        display: none !important;
-    }
-
-    /* 컨텐츠 영역 확장 */
-    #analysisContent {
-        height: auto !important;
-        overflow: visible !important;
-        max-height: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
-    }
-
-    /* 페이지 나누기 설정 */
-    h1, h2 {
-        page-break-before: auto;
-        page-break-after: avoid;
-    }
-
-    h3, h4 {
-        page-break-after: avoid;
-    }
-
-    ul, ol, p, pre, blockquote {
-        page-break-inside: avoid;
-    }
-
-    /* 링크 URL 출력 방지 */
-    a[href]:after {
-        content: none !important;
-    }
-}
 </style>
 {% endblock %}
 
@@ -415,13 +302,14 @@
             <!-- Markdown content will be rendered here -->
         </div>
         <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3 rounded-b-lg">
-            <button onclick="printAnalysisReport()"
-                class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 transition-colors flex items-center">
+            <a id="printReportLink" href="#" target="_blank" rel="noopener"
+                class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 transition-colors flex items-center pointer-events-none opacity-50"
+                aria-disabled="true">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                 </svg>
                 인쇄&저장
-            </button>
+            </a>
             <button onclick="openSurveyModal()"
                 class="bg-gray-600 text-white px-6 py-2 rounded hover:bg-gray-700 transition-colors">
                 닫기
@@ -1173,7 +1061,7 @@
                     );
                     if (r.ok) {
                         const report = await r.json();
-                        showAnalysisResult(report.content);
+                        showAnalysisResult(report.content, reportId);
                     }
                 }
                 return;
@@ -1187,7 +1075,7 @@
             const data = await response.json();
 
             if (data.success) {
-                showAnalysisResult(data.report);
+                showAnalysisResult(data.report, data.report_id);
             } else {
                 throw new Error(data.error || '분석 실패');
             }
@@ -1202,12 +1090,25 @@
         }
     }
 
-    function showAnalysisResult(markdownReport) {
+    function showAnalysisResult(markdownReport, reportId) {
         const modal = document.getElementById('analysisModal');
         const content = document.getElementById('analysisContent');
 
         // Parse Markdown
         content.innerHTML = renderSafeMarkdown(markdownReport);
+
+        const printLink = document.getElementById('printReportLink');
+        if (printLink) {
+            if (reportId) {
+                printLink.href = '/reports/view/' + reportId + '?print=1';
+                printLink.classList.remove('pointer-events-none', 'opacity-50');
+                printLink.removeAttribute('aria-disabled');
+            } else {
+                printLink.href = '#';
+                printLink.classList.add('pointer-events-none', 'opacity-50');
+                printLink.setAttribute('aria-disabled', 'true');
+            }
+        }
 
         modal.classList.remove('hidden');
     }
@@ -1233,31 +1134,6 @@
     function completeSurvey() {
         closeSurveyModal();
         closeAnalysisModal();
-    }
-
-    function printAnalysisReport() {
-        // 인쇄&저장 전 모달이 열려있는지 확인
-        const modal = document.getElementById('analysisModal');
-        if (modal.classList.contains('hidden')) {
-            alert('인쇄할 보고서가 없습니다.');
-            return;
-        }
-
-        // "PDF로 저장" 시 제안 파일명이 의미 있도록 document.title을 임시 변경
-        const now = new Date();
-        const yyyy = now.getFullYear();
-        const mm = String(now.getMonth() + 1).padStart(2, '0');
-        const dd = String(now.getDate()).padStart(2, '0');
-        const prevTitle = document.title;
-        document.title = `수업지도안_분석보고서_${yyyy}-${mm}-${dd}`;
-
-        // 인쇄 대화상자 종료 후 원래 제목 복원 (1회성)
-        window.addEventListener('afterprint', () => {
-            document.title = prevTitle;
-        }, { once: true });
-
-        // 인쇄&저장 실행 (대상에서 "PDF로 저장" 선택 가능)
-        window.print();
     }
 
     // --- Cleanup Logic ---
