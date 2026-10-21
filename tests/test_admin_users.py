@@ -105,6 +105,7 @@ async def test_accounts_response_uses_username_identifier():
         _ExecuteResult(scalars=[id_only_user, email_user]),
         _ExecuteResult(rows=[]),
         _ExecuteResult(rows=[]),
+        _ExecuteResult(rows=[]),  # 시뮬레이션 수 (#188)
     )
 
     body = await admin_users_router.get_user_accounts(
@@ -161,6 +162,7 @@ async def test_accounts_can_change_password_gated_by_id_login_capability():
                        ),
         _ExecuteResult(rows=[]),
         _ExecuteResult(rows=[]),
+        _ExecuteResult(rows=[]),  # 시뮬레이션 수 (#188)
     )
 
     body = await admin_users_router.get_user_accounts(

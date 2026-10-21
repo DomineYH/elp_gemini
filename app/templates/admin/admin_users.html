@@ -274,7 +274,7 @@ async function loadAccounts(page = 1) {
                     <td class="px-3 py-3 text-sm font-mono text-gray-600 whitespace-nowrap">${account.user_id}</td>
                     <td class="px-3 py-3 text-sm text-gray-900 whitespace-nowrap">${escapeHtml(accountIdentifier)}</td>
                     <td class="px-3 py-3 text-sm text-gray-600 whitespace-nowrap">
-                        세션 ${account.session_count} · 보고서 ${account.report_count}
+                        세션 ${account.session_count} · 보고서 ${account.report_count} · 시뮬레이션 ${account.simulation_count}
                     </td>
                     <td class="px-3 py-3 text-sm text-gray-500 whitespace-nowrap">${formatDate(account.created_at)}</td>
                     <td class="px-3 py-3 text-sm whitespace-nowrap">

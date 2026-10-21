@@ -29,6 +29,7 @@ from app.models.chat_messages import (
     MessageRole,
 )
 from app.models.chat_sessions import ChatSession
+from app.models.simulation_session import SimulationSession
 from app.models.users import User
 from app.services.admin_deletion_service import AdminDeletionService
 from app.services.auth_service import AuthService
@@ -87,6 +88,21 @@ async def _count_reports_by_user(
         select(AnalysisReport.user_id, func.count(AnalysisReport.id))
         .where(AnalysisReport.user_id.in_(user_ids))
         .group_by(AnalysisReport.user_id)
+    )
+    return {user_id: count for user_id, count in rows}
+
+
+async def _count_simulations_by_user(
+    db: AsyncSession,
+    user_ids: set[int],
+) -> dict[int, int]:
+    """사용자별 시뮬레이션 세션 수 (#188). QnA 세션 수와 따로 센다."""
+    if not user_ids:
+        return {}
+    rows = await db.execute(
+        select(SimulationSession.user_id, func.count(SimulationSession.id))
+        .where(SimulationSession.user_id.in_(user_ids))
+        .group_by(SimulationSession.user_id)
     )
     return {user_id: count for user_id, count in rows}
 
@@ -352,6 +368,7 @@ async def get_user_accounts(
         user_ids = {user.id for user in users}
         session_counts = await _count_sessions_by_user(db, user_ids)
         report_counts = await _count_reports_by_user(db, user_ids)
+        simulation_counts = await _count_simulations_by_user(db, user_ids)
 
         accounts = []
         for account in users:
@@ -368,6 +385,7 @@ async def get_user_accounts(
                 ),
                 "session_count": session_counts.get(account.id, 0),
                 "report_count": report_counts.get(account.id, 0),
+                "simulation_count": simulation_counts.get(account.id, 0),
                 # Issue #91: 재설정 후 실제 로그인 가능한 계정만 허용한다.
                 "can_change_password": (
                     not account.is_admin and _user_can_login(account)
@@ -632,6 +650,7 @@ async def get_user_profile_for_admin(
 
     session_counts = await _count_sessions_by_user(db, {target.id})
     report_counts = await _count_reports_by_user(db, {target.id})
+    simulation_counts = await _count_simulations_by_user(db, {target.id})
 
     return {
         "user_id": target.id,
@@ -643,6 +662,7 @@ async def get_user_profile_for_admin(
         ),
         "session_count": session_counts.get(target.id, 0),
         "report_count": report_counts.get(target.id, 0),
+        "simulation_count": simulation_counts.get(target.id, 0),
     }
 
 

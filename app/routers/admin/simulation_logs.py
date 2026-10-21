@@ -24,11 +24,20 @@ router = APIRouter(tags=["관리자-시뮬레이션로그"])
 async def list_simulation_sessions(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    user_id: int | None = Query(None),
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """전체 사용자의 시뮬레이션 세션 목록 (최신순)"""
-    total = await db.scalar(select(func.count(SimulationSession.id))) or 0
+    """시뮬레이션 세션 목록 (최신순). user_id로 한 사용자만 (#188)"""
+    filters = (
+        [SimulationSession.user_id == user_id] if user_id is not None else []
+    )
+    total = (
+        await db.scalar(
+            select(func.count(SimulationSession.id)).where(*filters)
+        )
+        or 0
+    )
     counts = (
         select(
             SimulationUtterance.session_id,
@@ -41,6 +50,7 @@ async def list_simulation_sessions(
         select(SimulationSession, User.username, counts.c.n)
         .join(User, User.id == SimulationSession.user_id)
         .outerjoin(counts, counts.c.session_id == SimulationSession.id)
+        .where(*filters)
         .order_by(
             SimulationSession.created_at.desc(), SimulationSession.id.desc()
         )

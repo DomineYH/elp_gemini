@@ -48,6 +48,7 @@
         <div class="mt-3 flex gap-4 text-sm text-gray-700">
             <span>세션 <strong id="sessionTotal">-</strong></span>
             <span>보고서 <strong id="reportTotal">-</strong></span>
+            <a href="/admin/simulation/logs?user_id={{ target_user_id }}" class="hover:underline">시뮬레이션 <strong id="simulationTotal">-</strong></a>
         </div>
     </section>
 
@@ -130,6 +131,7 @@ async function loadProfile() {
     document.getElementById('userMeta').textContent = meta;
     document.getElementById('sessionTotal').textContent = data.session_count;
     document.getElementById('reportTotal').textContent = data.report_count;
+    document.getElementById('simulationTotal').textContent = data.simulation_count;
 }
 
 function renderSessions(totalCount, hasMore) {
