@@ -13,8 +13,10 @@ def _row(
     display_alias: str | None = None,
     status: str = "uploaded",
     document_id: str | None = None,
+    id: int = 1,
 ):
     return SimpleNamespace(
+        id=id,
         stable_id=stable_id,
         title=title,
         display_alias=display_alias,
@@ -40,6 +42,7 @@ def test_context_uses_criteria_items_list():
     assert isinstance(items, list)
     assert len(items) == 1
     item = items[0]
+    assert item["id"] == 1  # 상세 링크용 PK (#186)
     assert item["stable_id"] == "01HSTABLE100"
     assert item["title"] == "orig.pdf"
     assert item["display_alias"] == "my-alias"
@@ -75,6 +78,7 @@ def test_criteria_items_marks_legacy_surrogate_rows():
     """legacy_ prefix를 가진 stable_id 행은 is_legacy=True로 표시되어야 한다."""
     rows = [
         SimpleNamespace(
+            id=1,
             stable_id="legacy_abcdef0123456789",
             title="old.pdf",
             display_alias=None,
@@ -83,6 +87,7 @@ def test_criteria_items_marks_legacy_surrogate_rows():
             document_id="docs/old",
         ),
         SimpleNamespace(
+            id=2,
             stable_id="01HV2REAL",
             title="new.pdf",
             display_alias=None,

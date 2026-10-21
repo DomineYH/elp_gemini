@@ -47,6 +47,7 @@ def _criteria_items_from_rows(all_criteria) -> list[dict]:
     )
     return [
         {
+            "id": c.id,
             "stable_id": c.stable_id,
             "title": c.title,
             "display_alias": c.display_alias,

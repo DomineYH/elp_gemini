@@ -16,8 +16,10 @@ def _item(
     display_alias: str | None = "my-alias",
     status: str = "uploaded",
     is_legacy: bool = False,
+    id: int = 7,
 ):
     return SimpleNamespace(
+        id=id,
         stable_id=stable_id,
         title=title,
         display_alias=display_alias,
@@ -114,3 +116,11 @@ def test_non_legacy_row_has_no_replace_button():
         ]
     )
     assert 'data-action="replace"' not in text
+
+
+def test_title_links_to_detail_page():
+    """목록 제목에서 상세 화면으로 이동할 수 있다 (#186)."""
+    text = _render([_item(id=42, title="rubric.pdf")])
+
+    assert '<a href="/admin/criteria/42"' in text
+    assert "rubric.pdf</a>" in text

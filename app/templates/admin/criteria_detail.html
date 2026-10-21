@@ -89,139 +89,48 @@
         {% endif %}
     </div>
 
-    <!-- 기본 정보 -->
+    <!-- 기본 정보: 실제 criteria 컬럼만 표시 (#186) -->
+    {% macro field(label, value, mono=False) -%}
+    <div>
+        <dt class="text-sm font-medium text-gray-500">{{ label }}</dt>
+        <dd class="mt-1 text-sm text-gray-900{% if mono %} font-mono break-all{% endif %}">{{ value }}</dd>
+    </div>
+    {%- endmacro %}
+    {% macro dt(value) -%}
+    {{ value.strftime('%Y-%m-%d %H:%M:%S') if value else '-' }}
+    {%- endmacro %}
     <div class="bg-white shadow-md rounded-lg p-6 mb-6">
         <h2 class="text-xl font-bold text-gray-800 mb-4">
             기본 정보
         </h2>
         <dl class="space-y-4">
-            <div>
-                <dt
-                    class="text-sm font-medium text-gray-500"
-                >
-                    문서 ID
-                </dt>
-                <dd class="mt-1 text-sm text-gray-900">
-                    {{ criteria.id }}
-                </dd>
-            </div>
-            <div>
-                <dt
-                    class="text-sm font-medium text-gray-500"
-                >
-                    제목
-                </dt>
-                <dd class="mt-1 text-sm text-gray-900">
-                    {{ criteria.title }}
-                </dd>
-            </div>
-            <div>
-                <dt
-                    class="text-sm font-medium text-gray-500"
-                >
-                    파일 경로
-                </dt>
-                <dd
-                    class="mt-1 text-sm text-gray-900
-                    font-mono"
-                >
-                    {{ criteria.file_path }}
-                </dd>
-            </div>
-            <div>
-                <dt
-                    class="text-sm font-medium text-gray-500"
-                >
-                    MIME 타입
-                </dt>
-                <dd class="mt-1 text-sm text-gray-900">
-                    {{ criteria.mime_type }}
-                </dd>
-            </div>
-            <div>
-                <dt
-                    class="text-sm font-medium text-gray-500"
-                >
-                    파일 크기
-                </dt>
-                <dd class="mt-1 text-sm text-gray-900">
-                    {{ "%.2f"|format(
-                        criteria.file_size / 1024 / 1024
-                    ) }} MB
-                    ({{ "{:,}".format(criteria.file_size) }}
-                    bytes)
-                </dd>
-            </div>
-            <div>
-                <dt
-                    class="text-sm font-medium text-gray-500"
-                >
-                    생성일
-                </dt>
-                <dd class="mt-1 text-sm text-gray-900">
-                    {{ criteria.created_at.strftime(
-                        '%Y-%m-%d %H:%M:%S'
-                    ) }}
-                </dd>
-            </div>
-        </dl>
-    </div>
-
-    <!-- 벡터 스토어 정보 -->
-    <div class="bg-white shadow-md rounded-lg p-6 mb-6">
-        <h2 class="text-xl font-bold text-gray-800 mb-4">
-            벡터 스토어 정보
-        </h2>
-        <dl class="space-y-4">
-            <div>
-                <dt
-                    class="text-sm font-medium text-gray-500"
-                >
-                    Vector Store ID
-                </dt>
-                <dd
-                    class="mt-1 text-sm text-gray-900
-                    font-mono bg-gray-50 p-2 rounded"
-                >
-                    {{ criteria.vector_store_id }}
-                </dd>
-            </div>
-        </dl>
-    </div>
-
-    <!-- 활성화 정보 -->
-    {% if criteria.activated_at %}
-    <div class="bg-white shadow-md rounded-lg p-6 mb-6">
-        <h2 class="text-xl font-bold text-gray-800 mb-4">
-            활성화 정보
-        </h2>
-        <dl class="space-y-4">
-            <div>
-                <dt
-                    class="text-sm font-medium text-gray-500"
-                >
-                    활성화 시각
-                </dt>
-                <dd class="mt-1 text-sm text-gray-900">
-                    {{ criteria.activated_at.strftime(
-                        '%Y-%m-%d %H:%M:%S'
-                    ) }}
-                </dd>
-            </div>
-            {% if criteria.activated_by %}
-            <div>
-                <dt
-                    class="text-sm font-medium text-gray-500"
-                >
-                    활성화한 관리자 ID
-                </dt>
-                <dd class="mt-1 text-sm text-gray-900">
-                    {{ criteria.activated_by }}
-                </dd>
-            </div>
+            {{ field("DB ID", criteria.id) }}
+            {{ field("Stable ID", criteria.stable_id or '-', mono=True) }}
+            {{ field("제목", criteria.title) }}
+            {{ field("업로드한 관리자", criteria.uploaded_by or '-') }}
+            {{ field("생성일", dt(criteria.created_at)) }}
+            {% if criteria.file_path %}
+            {{ field("파일 경로", criteria.file_path, mono=True) }}
+            {% endif %}
+            {% if criteria.file_size %}
+            {{ field("파일 크기",
+                "%.2f MB (%s bytes)"|format(
+                    criteria.file_size / 1024 / 1024,
+                    "{:,}".format(criteria.file_size))) }}
             {% endif %}
         </dl>
     </div>
-    {% endif %}
+
+    <!-- File Search 정보 -->
+    <div class="bg-white shadow-md rounded-lg p-6 mb-6">
+        <h2 class="text-xl font-bold text-gray-800 mb-4">
+            File Search 정보
+        </h2>
+        <dl class="space-y-4">
+            {{ field("File Search 문서 ID", criteria.document_id or '-', mono=True) }}
+            {{ field("마지막 동기화", dt(criteria.synced_at)) }}
+            {{ field("활성화 시각", dt(criteria.activated_at)) }}
+        </dl>
+    </div>
 </div>
 {% endblock %}
