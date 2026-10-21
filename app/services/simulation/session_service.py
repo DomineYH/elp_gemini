@@ -416,6 +416,8 @@ async def say(
     target = body.target_persona_id
     if target is not None and target not in {p.id for p in personas}:
         raise SimulationError("UNKNOWN_PERSONA")
+    if await _teacher_turns_used(db, sid) >= settings.SIM_MAX_TEACHER_TURNS:
+        raise SimulationError("TURN_LIMIT")
 
     teacher = SimulationUtterance(
         session_id=sid,
@@ -523,3 +525,49 @@ async def finish(db: AsyncSession, session: SimulationSession) -> dict:
     _finish_now(session)
     await _commit_or_conflict(db)
     return {"status": "finished"}
+
+
+async def regenerate(
+    db: AsyncSession, session: SimulationSession, persona_id: int
+) -> dict:
+    """현재 국면에서 파싱 실패한 마지막 반응을 같은 맥락으로 다시 만든다.
+
+    그 행을 그대로 고친다(seq 유지, 교사 발화 없음, 발화 수 미포함).
+    """
+    if session.status == "finished":
+        raise SimulationError("SESSION_FINISHED")
+    sid, idx = session.id, session.current_phase_idx
+    stored = await _utterances(db, sid, idx)
+    mine = [u for u in stored if u.persona_id == persona_id]
+    if not mine or mine[-1].structured is not None:
+        raise SimulationError("NOTHING_TO_REGENERATE")
+    row = mine[-1]
+    # 원래 호출의 맥락 = 그 반응을 부른 교사 발화까지
+    asked = max(
+        u.seq for u in stored if u.speaker_type == "teacher" and u.seq < row.seq
+    )
+    personas = await _personas(db, sid)
+    names = {p.id: p.display_name for p in personas}
+    transcript = [
+        _transcript_line(u, names)
+        for u in stored
+        if u.speaker_type != "system" and u.seq <= asked
+    ]
+    persona = next(p for p in personas if p.id == persona_id)
+    phase = (await _phases(db, sid))[idx]
+    [result] = await gemini.call_many(
+        [student_call(persona, phase, transcript)]
+    )
+
+    fresh = student_utterance(sid, idx, row.seq, persona, result)
+    for field in (
+        "content",
+        "structured",
+        "model_name",
+        "temperature",
+        "latency_ms",
+    ):
+        setattr(row, field, getattr(fresh, field))
+    await db.commit()
+    await db.refresh(row)
+    return await _turn_result(db, sid, [row])

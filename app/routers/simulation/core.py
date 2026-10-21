@@ -21,6 +21,7 @@ from app.schemas.simulation import (
     CreateSessionRequest,
     FinishResult,
     Level,
+    RegenerateRequest,
     SayRequest,
     SessionState,
     TurnResult,
@@ -211,6 +212,24 @@ async def finish(
             db, sid, current_user.id
         )
         return await session_service.finish(db, session)
+    except SimulationError as e:
+        raise e.to_http() from e
+
+
+@router.post(
+    "/api/simulation/sessions/{sid}/regenerate", response_model=TurnResult
+)
+async def regenerate(
+    sid: int,
+    body: RegenerateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        session = await session_service.get_owned_session(
+            db, sid, current_user.id
+        )
+        return await session_service.regenerate(db, session, body.persona_id)
     except SimulationError as e:
         raise e.to_http() from e
 

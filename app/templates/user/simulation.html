@@ -84,6 +84,10 @@
 
 <!-- 교사 입력 (하단 고정) -->
 <div class="fixed left-0 right-0 z-40" style="bottom:0;padding:0 max(16px,env(safe-area-inset-left,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-right,0px))">
+    <div id="retryBox" class="hidden container mx-auto max-w-3xl mb-2 flex items-center justify-end gap-2" role="alert">
+        <span class="note">AI 응답을 받지 못했습니다.</span>
+        <button type="button" id="retryBtn" class="text-sm font-semibold px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white shrink-0">다시 시도</button>
+    </div>
     <form id="tForm" class="container mx-auto max-w-3xl bg-white border rounded-2xl shadow-lg p-2 flex items-end gap-2">
         <span class="hidden sm:inline text-xs px-2 py-2 rounded-lg bg-gray-100 text-gray-600 shrink-0 whitespace-nowrap" title="학생 개인에게는 좌석을 클릭해 말하기">전체에게</span>
         <label for="tInput" class="sr-only">교사 발화</label>
@@ -94,6 +98,7 @@
         <button type="submit" id="tSend" disabled
             class="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-lg shrink-0">말하기</button>
     </form>
+    <p id="turnNote" class="container mx-auto max-w-3xl note mt-1 text-center" role="status"></p>
 </div>
 {% endblock %}
 
@@ -129,7 +134,11 @@
         const res = await fetch(url, init);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-            throw new Error((data.detail && data.detail.message) || "요청을 처리하지 못했습니다.");
+            const err = new Error((data.detail && data.detail.message) || "요청을 처리하지 못했습니다.");
+            if (res.status === 429 || res.status === 503) {
+                err.retryAfter = Number(res.headers.get("Retry-After")) || 0;
+            }
+            throw err;
         }
         return data;
     }
@@ -152,10 +161,17 @@
         return u.target_persona_id ? "(" + personaName(u.target_persona_id) + "에게) " + u.content : u.content;
     }
 
-    function bubble(persona, u) {
+    function bubble(persona, u, regen) {
         const box = el("div", "bubble " + persona.color_key + " in");
         if (u.failed) {
             box.append(el("p", "note", "반응을 읽지 못했습니다."));
+            if (regen) {
+                const btn = el("button", "mt-1 text-xs px-2 py-1 rounded border bg-white text-gray-700 hover:bg-gray-50", "다시 생성");
+                btn.type = "button";
+                btn.disabled = busy;
+                btn.addEventListener("click", e => { e.stopPropagation(); regenerate(persona); });
+                box.append(btn);
+            }
             return box;
         }
         if (u.structured && u.structured.action) {
@@ -227,11 +243,17 @@
         const running = state && state.session.status === "running";
         const entered = running && phaseUtterances().length > 0;
         const canAct = running && !busy;
-        tInput.disabled = !(entered && !busy);
-        dmInput.disabled = !(entered && !busy);
-        $("tSend").disabled = !(entered && !busy);
-        dmModal.querySelector("button[type=submit]").disabled = !(entered && !busy);
-        $("hintBtn").disabled = !running;
+        const left = state ? state.session.teacher_turns_max - state.session.teacher_turns_used : 1;
+        const canSay = entered && !busy && left > 0;
+        tInput.disabled = !canSay;
+        dmInput.disabled = !canSay;
+        $("tSend").disabled = !canSay;
+        dmModal.querySelector("button[type=submit]").disabled = !canSay;
+        $("hintBtn").disabled = !running || left <= 0;
+        // 상한 5회 전부터 남은 횟수, 상한이면 안내 (전이·종료 버튼은 그대로)
+        $("turnNote").textContent = !running ? "" :
+            left <= 0 ? "상한에 도달했습니다. 수업을 종료하고 피드백을 받으세요." :
+            left <= 5 ? "남은 발화 " + left + "회" : "";
         $("skipBtn").disabled = !canAct;
         $("endBtn").disabled = !canAct;
         const all = canAct && entered && state.agreement.all_agreed;
@@ -274,6 +296,7 @@
             seat.title = "클릭하면 " + p.display_name + "에게 1:1로 말할 수 있어요";
             seat.addEventListener("click", () => openSeat(p));
             seat.addEventListener("keydown", e => {
+                if (e.target !== seat) return;
                 if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openSeat(p); }
             });
             const head = el("div", "flex items-center justify-between gap-2");
@@ -286,8 +309,10 @@
             const ok = agreed.has(p.id);
             head.append(who, el("span", "agree" + (ok ? " yes" : ""), ok ? "✓ 다음 단계 OK" : "대기"));
             const feed = el("div", "flex flex-col gap-2 min-h-[4.5rem]");
-            seatUtterances(utts, p).forEach(u =>
-                feed.append(u.speaker_type === "teacher" ? teacherBubble(u) : bubble(p, u)));
+            const mine = seatUtterances(utts, p);
+            const last = mine.filter(u => u.speaker_type === "student").pop();
+            mine.forEach(u =>
+                feed.append(u.speaker_type === "teacher" ? teacherBubble(u) : bubble(p, u, u === last)));
             if (pending.has(p.id)) feed.append(typing(p));
             seat.append(head, feed);
             if (p.adapted_profile.behavior_summary) {
@@ -307,20 +332,49 @@
     }
 
     function merge(turn) {
-        const known = new Set(state.utterances.map(u => u.id));
-        state.utterances.push(...turn.utterances.filter(u => !known.has(u.id)));
+        // 다시 생성은 같은 id의 행을 고쳐 돌려준다
+        const fresh = new Set(turn.utterances.map(u => u.id));
+        state.utterances = state.utterances.filter(u => !fresh.has(u.id))
+            .concat(turn.utterances).sort((a, b) => a.seq - b.seq);
         state.agreement = turn.agreement;
         state.session.teacher_turns_used = turn.teacher_turns_used;
+    }
+
+    let retryTimer = null;
+
+    function hideRetry() {
+        clearInterval(retryTimer);
+        $("retryBox").classList.add("hidden");
+    }
+
+    // 한도·과부하(429/503): Retry-After 동안 기다렸다가 같은 요청을 다시 보낸다
+    function showRetry(retry, seconds) {
+        const btn = $("retryBtn");
+        let left = seconds;
+        const tick = () => {
+            btn.disabled = left > 0;
+            btn.textContent = left > 0 ? "다시 시도 (" + left + "초)" : "다시 시도";
+            if (left-- <= 0) clearInterval(retryTimer);
+        };
+        clearInterval(retryTimer);
+        tick();
+        retryTimer = setInterval(tick, 1000);
+        btn.onclick = retry;
+        $("retryBox").classList.remove("hidden");
     }
 
     async function run(pending, action) {
         busy = true;
         status.textContent = "";
+        hideRetry();
         render(pending);
         try {
             await action();
         } catch (err) {
             status.textContent = err.message;
+            if (err.retryAfter !== undefined) {
+                showRetry(() => run(pending, action), err.retryAfter);
+            }
         } finally {
             busy = false;
             render(new Set());
@@ -338,6 +392,12 @@
         const pending = new Set(state.personas.filter(p => targetId === null || p.id === targetId).map(p => p.id));
         return run(pending, async () => {
             merge(await api("POST", API + "/say", { content, target_persona_id: targetId }));
+        });
+    }
+
+    function regenerate(persona) {
+        return run(new Set([persona.id]), async () => {
+            merge(await api("POST", API + "/regenerate", { persona_id: persona.id }));
         });
     }
 

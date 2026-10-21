@@ -152,6 +152,10 @@ class SayRequest(BaseModel):
     target_persona_id: int | None = None
 
 
+class RegenerateRequest(BaseModel):
+    persona_id: int
+
+
 class AdvanceRequest(BaseModel):
     mode: Literal["agree", "skip"]
 
