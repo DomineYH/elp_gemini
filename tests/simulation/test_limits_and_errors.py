@@ -5,7 +5,7 @@ import sqlite3
 import pytest
 
 from app.config import settings
-from app.services.simulation import gemini
+from app.services.simulation import gemini, session_service
 
 
 def _create(client, n_phases=2):
@@ -288,6 +288,61 @@ def test_enter_rechecks_session_after_gemini_and_persists_nothing(
     assert _code(r) == code
     utts = ready.get(_api(sid)).json()["utterances"]
     assert [u["seq"] for u in utts] == ([900] if "end" in sql else [])
+
+
+def _at_next_seq(monkeypatch, db_path, sql):
+    """재확인 뒤 seq를 잡는 순간에 다른 탭이 커밋을 시도한다.
+
+    돌려주는 목록에 그 시도의 결과(성공이면 None, 실패면 오류 문구)가 담긴다.
+    """
+    original, outcomes = session_service.next_seq, []
+
+    async def wrapped(db, sid):
+        if not outcomes:
+            conn = sqlite3.connect(db_path, timeout=0.2)
+            try:
+                with conn:
+                    conn.executescript(sql)
+                outcomes.append(None)
+            except sqlite3.OperationalError as e:
+                outcomes.append(str(e))
+            finally:
+                conn.close()
+        return await original(db, sid)
+
+    monkeypatch.setattr(session_service, "next_seq", wrapped)
+    return outcomes
+
+
+def test_enter_holds_lock_so_other_tab_cannot_add_second_batch(
+    ready, fake_gemini, monkeypatch, tmp_path
+):
+    sid = _create(ready)[0]["session"]["id"]
+    outcomes = _at_next_seq(monkeypatch, tmp_path / "sim.db", OTHER_TAB_ENTER)
+    r = ready.post(_api(sid, "/phases/0/enter"))
+    assert r.status_code == 200
+    assert outcomes == ["database is locked"]
+    utts = ready.get(_api(sid)).json()["utterances"]
+    enters = [u for u in utts if u["speaker_type"] == "system"]
+    assert len(enters) == 1
+    assert len(utts) == 2 + 4
+
+
+def test_say_holds_lock_so_finish_cannot_end_before_its_rows(
+    ready, fake_gemini, monkeypatch, tmp_path
+):
+    state, _ = _create(ready)
+    sid = state["session"]["id"]
+    ready.post(_api(sid, "/phases/0/enter"))
+    outcomes = _at_next_seq(monkeypatch, tmp_path / "sim.db", OTHER_TAB_FINISH)
+    r = ready.post(_api(sid, "/say"), json={"content": "질문"})
+    assert r.status_code == 200
+    assert outcomes == ["database is locked"]
+    after = ready.get(_api(sid)).json()
+    assert after["session"]["status"] == "running"
+    assert not [
+        u for u in after["utterances"] if u["speaker_type"] == "system"
+    ][1:]
 
 
 def test_regenerate_foreign_persona_is_422(ready, fake_gemini):

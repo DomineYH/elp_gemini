@@ -8,7 +8,7 @@ import json
 import random
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -323,10 +323,12 @@ async def enter_phase(
     results = await gemini.call_many(
         [student_call(p, phase, transcript) for p in personas]
     )
-    await _still_current(db, session, idx, moved="PHASE_NOT_CURRENT")
+    await _lock_running(db, session, idx, moved="PHASE_NOT_CURRENT")
     stored = await _utterances(db, session.id, idx)
     if stored:
-        return await _turn_result(db, session.id, stored)
+        result = await _turn_result(db, session.id, stored)
+        await db.rollback()  # 잠금만 풀고 아무것도 쓰지 않는다
+        return result
 
     seq = await next_seq(db, session.id)
     rows = [
@@ -420,15 +422,31 @@ async def _commit_or_conflict(db) -> None:
         raise SimulationError("CONFLICT_RETRY")
 
 
-async def _still_current(
+async def _lock_running(
     db, session: SimulationSession, idx: int, moved="CONFLICT_RETRY"
 ) -> None:
-    """Gemini 호출 중 다른 요청이 종료·전이했으면 아무것도 쓰지 않는다."""
+    """쓰기 잠금을 잡은 채 진행 중·같은 국면인지 확인한다.
+
+    잠금은 이 요청의 커밋·롤백까지 유지되므로 그 사이 다른 요청의 종료·전이·
+    발화가 끼어들 수 없다. 이미 바뀌었으면 아무것도 쓰지 않는다.
+    """
+    locked = await db.execute(
+        update(SimulationSession)
+        .where(
+            SimulationSession.id == session.id,
+            SimulationSession.status == "running",
+            SimulationSession.current_phase_idx == idx,
+        )
+        .values(current_phase_idx=SimulationSession.current_phase_idx)
+        .execution_options(synchronize_session=False)
+    )
+    if locked.rowcount:
+        return
+    await db.rollback()
     await db.refresh(session)
     if session.status == "finished":
         raise SimulationError("SESSION_FINISHED")
-    if session.current_phase_idx != idx:
-        raise SimulationError(moved)
+    raise SimulationError(moved)
 
 
 async def say(
@@ -467,8 +485,9 @@ async def say(
     results = await gemini.call_many(
         [student_call(p, phase, transcript) for p in responders]
     )
-    await _still_current(db, session, idx)
+    await _lock_running(db, session, idx)
     if await _teacher_turns_used(db, sid) >= settings.SIM_MAX_TEACHER_TURNS:
+        await db.rollback()
         raise SimulationError("TURN_LIMIT")
 
     seq = await next_seq(db, sid)
@@ -504,6 +523,7 @@ async def advance(db: AsyncSession, session: SimulationSession, mode) -> dict:
     """agree(전원 동의일 때만) / skip(항상). 마지막 국면이면 종료."""
     if session.status == "finished":
         raise SimulationError("SESSION_FINISHED")
+    await _lock_running(db, session, session.current_phase_idx)
     if mode == "agree" and not (await _agreement(db, session.id))["all_agreed"]:
         raise SimulationError("NOT_ALL_AGREED")
     phases = await _phases(db, session.id)
@@ -550,6 +570,7 @@ async def finish(db: AsyncSession, session: SimulationSession) -> dict:
     """수업 종료 버튼: 시스템 end(finish) + finished."""
     if session.status == "finished":
         raise SimulationError("SESSION_FINISHED")
+    await _lock_running(db, session, session.current_phase_idx)
     seq = await next_seq(db, session.id)
     db.add(
         _system(session, seq, "수업 종료", {"type": "end", "reason": "finish"})
@@ -592,7 +613,7 @@ async def regenerate(
     [result] = await gemini.call_many(
         [student_call(persona, phase, transcript)]
     )
-    await _still_current(db, session, idx)
+    await _lock_running(db, session, idx)
 
     fresh = student_utterance(sid, idx, row.seq, persona, result)
     for field in (
