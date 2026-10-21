@@ -10,9 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.simulation_session import SimulationSession
-from app.services.prompt_loader_service import PromptLoaderService
 from app.services.report_storage_service import ReportStorageService
-from app.services.simulation import gemini, lessonplan_source, session_service
+from app.services.simulation import (
+    gemini,
+    guidelines,
+    lessonplan_source,
+    session_service,
+)
 from app.services.simulation.errors import SimulationError
 from app.services.simulation.llm_schemas import FeedbackResult
 from app.utils.text_sanitizer import strip_emojis
@@ -156,19 +160,14 @@ def render_markdown(
     return "\n".join(out) + "\n"
 
 
-async def generate(db: AsyncSession, session: SimulationSession) -> dict:
-    """envelope + cached. 미종료 → SESSION_NOT_FINISHED."""
-    if session.status != "finished":
-        raise SimulationError("SESSION_NOT_FINISHED")
-    if session.feedback_json is not None:
-        return {**session.feedback_json, "cached": True}
-
+async def call_model(db: AsyncSession, session: SimulationSession, system: str):
+    """피드백 1회 호출(저장 없음). 파싱 실패 → FEEDBACK_PARSE_FAILED."""
     user = await build_inputs(db, session)
     [result] = await gemini.call_many(
         [
             {
                 "kind": "feedback",
-                "system": PromptLoaderService().get_prompt("sim_feedback"),
+                "system": system,
                 "user": user,
                 "schema": FeedbackResult,
             }
@@ -176,12 +175,28 @@ async def generate(db: AsyncSession, session: SimulationSession) -> dict:
     )
     if result.parsed is None:
         raise SimulationError("FEEDBACK_PARSE_FAILED")
+    return result
+
+
+async def generate(db: AsyncSession, session: SimulationSession) -> dict:
+    """envelope + cached. 미종료 → SESSION_NOT_FINISHED."""
+    if session.status != "finished":
+        raise SimulationError("SESSION_NOT_FINISHED")
+    if session.feedback_json is not None:
+        return {**session.feedback_json, "cached": True}
+
+    guideline = await guidelines.current(db)
+    # 지침이 꺼져 있으면 기본값(null)으로 기록한다
+    version = guideline.version if guideline and guideline.enabled else None
+    result = await call_model(
+        db, session, await guidelines.system_prompt(db, guideline)
+    )
 
     envelope = {
         "feedback": result.parsed.model_dump(),
         "model_name": result.model,
         "latency_ms": result.latency_ms,
-        "guideline_version": None,
+        "guideline_version": version,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     phases = await session_service._phases(db, session.id)
@@ -190,6 +205,7 @@ async def generate(db: AsyncSession, session: SimulationSession) -> dict:
         session.user_id, f"simulation_{session.id}.md", md
     )
     session.feedback_json = envelope
+    session.feedback_guideline_version = version
     session.feedback_report_path = saved["file_path"]
     await db.commit()
     return {**envelope, "cached": False}
