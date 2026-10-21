@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+
+{% block title %}시뮬레이션 피드백 - 수업 시뮬레이션{% endblock %}
+
+{% block head %}{% include "user/_sim_style.html" %}{% endblock %}
+
+{% block content %}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+    <div class="min-w-0">
+        <p class="eyebrow">4 / 4 · AI 지도안 피드백</p>
+        <h1 class="text-2xl font-bold mt-1">시뮬레이션으로 드러난 지도안의 잠재적 취약점</h1>
+        <p class="note mt-1">{{ disclaimer }}</p>
+    </div>
+    <span class="phase-pill hidden" id="fbMeta"></span>
+</div>
+
+<div id="fbStatusBox" class="card p-4 mb-5 text-sm">
+    <p id="fbStatus" role="status">피드백을 불러오는 중입니다. 처음 생성할 때는 시간이 걸릴 수 있습니다.</p>
+    <button type="button" id="retryBtn" class="hidden mt-3 px-4 py-2 rounded-lg border">다시 시도</button>
+</div>
+
+<div id="fbBody" class="hidden">
+    <h2 class="eyebrow mb-2">위험 시나리오</h2>
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-5" id="risks"></div>
+
+    <div class="card">
+        <div class="flex border-b text-sm overflow-x-auto" role="tablist">
+            <button type="button" role="tab" class="fbtab px-4 py-3 font-medium border-b-2 whitespace-nowrap" data-fb="f1">① 교사 발화 추천</button>
+            <button type="button" role="tab" class="fbtab px-4 py-3 font-medium border-b-2 whitespace-nowrap" data-fb="f2">② 수업 활동 진행 방향</button>
+            <button type="button" role="tab" class="fbtab px-4 py-3 font-medium border-b-2 whitespace-nowrap" data-fb="f3">③ 수업 활동 변경 방향</button>
+        </div>
+        <div class="p-5 text-sm">
+            <div id="f1" class="fbpanel space-y-3" role="tabpanel"></div>
+            <ul id="f2" class="fbpanel list-disc ml-5 space-y-1" role="tabpanel"></ul>
+            <ol id="f3" class="fbpanel list-decimal ml-5 space-y-1" role="tabpanel"></ol>
+        </div>
+        <div class="border-t p-4 flex flex-wrap justify-between gap-2 text-sm">
+            <a href="/api/simulation/sessions/{{ sid }}/feedback/download" class="text-gray-600 hover:underline py-2">보고서 Markdown 저장</a>
+            <div class="flex flex-wrap gap-2">
+                <a href="/simulation/sessions/{{ sid }}/transcript" class="px-4 py-2 rounded-lg border">대화록 보기</a>
+                <a href="/dashboard" class="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold">지도안으로 돌아가기</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const SID = {{ sid }};
+    const API = "/api/simulation/sessions/" + SID;
+    const $ = id => document.getElementById(id);
+
+    function el(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+
+    async function api(method, url) {
+        const res = await fetch(url, { method, headers: { accept: "application/json" } });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error((data.detail && data.detail.message) || "요청을 처리하지 못했습니다.");
+        return data;
+    }
+
+    function showTab(id) {
+        for (const tab of document.querySelectorAll(".fbtab")) {
+            const on = tab.dataset.fb === id;
+            tab.setAttribute("aria-selected", String(on));
+            tab.classList.toggle("border-blue-600", on);
+            tab.classList.toggle("text-blue-700", on);
+            tab.classList.toggle("border-transparent", !on);
+            tab.classList.toggle("text-gray-500", !on);
+        }
+        for (const panel of document.querySelectorAll(".fbpanel")) {
+            panel.classList.toggle("hidden", panel.id !== id);
+        }
+    }
+
+    function render(envelope, phases) {
+        const fb = envelope.feedback;
+        const meta = $("fbMeta");
+        meta.textContent = envelope.model_name + " · 응답 " + (envelope.latency_ms / 1000).toFixed(1) + "s · 적용 지침 " +
+            (envelope.guideline_version ? "커스텀 v" + envelope.guideline_version : "기본값");
+        meta.classList.remove("hidden");
+
+        const risks = $("risks");
+        risks.replaceChildren();
+        fb.risk_scenarios.forEach((r, i) => {
+            const card = el("div", "card p-4 border-l-4");
+            card.style.borderLeftColor = "var(--warn)";
+            card.append(
+                el("p", "eyebrow", "R" + (i + 1) + " " + r.title),
+                el("p", "text-sm mt-1", r.scene),
+                el("p", "note mt-2", "근거: " + r.evidence_type)
+            );
+            risks.append(card);
+        });
+        if (!fb.risk_scenarios.length) risks.append(el("p", "note", "드러난 위험 시나리오가 없습니다."));
+
+        const f1 = $("f1");
+        f1.replaceChildren();
+        for (const s of fb.utterance_suggestions) {
+            const phase = (phases[s.phase_idx] || {}).name || "국면 " + (s.phase_idx + 1);
+            const actual = el("div", "rounded-lg bg-gray-50 p-3");
+            actual.append(el("p", "eyebrow", phase + " · 실제 발화"), el("p", "mt-1", s.actual));
+            const suggested = el("div", "rounded-lg p-3");
+            suggested.style.background = "var(--teacher-soft)";
+            suggested.append(el("p", "eyebrow", "추천 발화"), el("p", "mt-1", s.suggested), el("p", "note mt-2", "의도: " + s.intent));
+            const row = el("div", "grid md:grid-cols-2 gap-3");
+            row.append(actual, suggested);
+            f1.append(row);
+        }
+        if (!fb.utterance_suggestions.length) f1.append(el("p", "note", "추천 발화가 없습니다."));
+
+        $("f2").replaceChildren(...fb.progress_directions.map(d => el("li", "", d)));
+        $("f3").replaceChildren(...fb.change_directions.map(c => {
+            const li = el("li");
+            li.append(el("b", "", c.kind), " " + c.content);
+            return li;
+        }));
+
+        $("fbStatusBox").classList.add("hidden");
+        $("fbBody").classList.remove("hidden");
+        showTab("f1");
+    }
+
+    async function load() {
+        $("retryBtn").classList.add("hidden");
+        $("fbStatus").textContent = "피드백을 불러오는 중입니다. 처음 생성할 때는 시간이 걸릴 수 있습니다.";
+        try {
+            // 이미 있으면 캐시를 돌려주고 생성하지 않는다
+            const [envelope, state] = await Promise.all([api("POST", API + "/feedback"), api("GET", API)]);
+            render(envelope, state.phases);
+        } catch (err) {
+            $("fbStatus").textContent = err.message;
+            $("retryBtn").classList.remove("hidden");
+        }
+    }
+
+    for (const tab of document.querySelectorAll(".fbtab")) {
+        tab.addEventListener("click", () => showTab(tab.dataset.fb));
+    }
+    $("retryBtn").addEventListener("click", load);
+    load();
+})();
+</script>
+{% endblock %}

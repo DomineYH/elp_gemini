@@ -7,6 +7,7 @@ from fastapi import HTTPException
 # 코드: (상태, 메시지). 후속 티켓은 자기 코드 행만 추가한다.
 CODES = {
     "SESSION_NOT_FOUND": (404, "시뮬레이션 세션을 찾을 수 없습니다."),
+    "NO_FEEDBACK": (404, "아직 생성된 시뮬레이션 피드백이 없습니다."),
     "NO_UPLOAD": (404, "먼저 지도안을 업로드해 주세요."),
     "LIBRARY_NOT_FOUND": (404, "내 페르소나를 찾을 수 없습니다."),
     "PHASE_NOT_CURRENT": (409, "현재 국면이 아닙니다."),
@@ -25,6 +26,10 @@ CODES = {
         409,
         "동시에 요청이 처리되었습니다. 다시 시도해 주세요.",
     ),
+    "SESSION_NOT_FINISHED": (
+        409,
+        "수업을 종료한 뒤에 피드백을 받을 수 있습니다.",
+    ),
     "UNKNOWN_PERSONA": (422, "알 수 없는 페르소나입니다."),
     "DUPLICATE_PSEUDONYM": (
         422,
@@ -42,6 +47,10 @@ CODES = {
     "ADAPT_FAILED": (
         502,
         "페르소나 번안 결과를 읽지 못했습니다. 다시 시도해 주세요.",
+    ),
+    "FEEDBACK_PARSE_FAILED": (
+        502,
+        "피드백 결과를 읽지 못했습니다. 다시 시도해 주세요.",
     ),
 }
 RETRY_AFTER_SECONDS = "30"
