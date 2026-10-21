@@ -6,6 +6,7 @@ import sqlite3
 import pytest
 
 from app.services.simulation import feedback, gemini
+from app.services.simulation.llm_schemas import StudentReaction
 
 
 def _api(sid, path=""):
@@ -89,6 +90,31 @@ def test_finished_session_feedback_is_generated_once_then_cached(
     assert got.json()["feedback"] == body["feedback"]
     state = ready.get(_api(sid)).json()
     assert state["session"]["has_feedback"] is True
+
+
+def test_feedback_input_has_student_artifact_and_misconception(
+    ready, fake_gemini, monkeypatch
+):
+    fake_gemini.results["student"] = StudentReaction(
+        action="공책에 쓴다",
+        utterance="다 했어요",
+        artifact="3/4",
+        misconception="분모끼리 더함",
+        ready_for_next=True,
+        confidence=0.5,
+    )
+    sid = _finished(ready)
+    prompts = []
+
+    def recording(kind, **kw):
+        prompts.append((kind, kw["user"]))
+        return fake_gemini(kind, **kw)
+
+    monkeypatch.setattr(gemini, "call_structured", recording)
+    assert ready.post(_api(sid, "/feedback")).status_code == 200
+    [(kind, user)] = prompts
+    assert kind == "feedback"
+    assert "3/4" in user and "분모끼리 더함" in user
 
 
 def test_running_session_is_refused(ready, fake_gemini):

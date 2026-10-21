@@ -93,7 +93,11 @@ async def build_inputs(db: AsyncSession, session: SimulationSession) -> str:
             content = u.content
         else:
             speaker = names[u.persona_id]
-            content = u.content if u.structured else "(반응 생성 실패)"
+            content = (
+                session_service.student_evidence(u)
+                if u.structured
+                else "(반응 생성 실패)"
+            )
         lines.append(
             f"[{phase_name.get(u.phase_idx, u.phase_idx)}] {speaker}: {content}"
         )

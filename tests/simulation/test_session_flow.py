@@ -2,6 +2,7 @@
 
 import pytest
 
+from app.services.simulation import gemini
 from app.services.simulation.llm_schemas import StudentReaction
 
 
@@ -180,6 +181,39 @@ def test_targeted_say_only_target_reacts(ready, fake_gemini):
     assert [(u["speaker_type"], u["persona_id"]) for u in utts[1:]] == [
         ("student", target["id"])
     ]
+
+
+def test_next_student_call_sees_earlier_artifact_and_misconception(
+    ready, fake_gemini, monkeypatch
+):
+    fake_gemini.results["student"] = StudentReaction(
+        action="공책에 쓴다",
+        utterance="다 했어요",
+        artifact="3/4",
+        misconception="분모끼리 더함",
+        ready_for_next=True,
+        confidence=0.5,
+    )
+    prompts = []
+
+    def recording(kind, **kw):
+        prompts.append((kind, kw["user"]))
+        return fake_gemini(kind, **kw)
+
+    monkeypatch.setattr(gemini, "call_structured", recording)
+    sid = _create(ready)["session"]["id"]
+    ready.post(_api(sid, "/phases/0/enter"))
+    prompts.clear()
+
+    r = ready.post(_api(sid, "/say"), json={"content": "다시 볼까?"})
+    assert r.status_code == 200
+    student = [u for k, u in prompts if k == "student"]
+    assert student
+    assert all("3/4" in u and "분모끼리 더함" in u for u in student)
+    stored = ready.get(_api(sid)).json()["utterances"]
+    assert {u["content"] for u in stored if u["speaker_type"] == "student"} == {
+        "다 했어요"
+    }
 
 
 def test_say_guards(ready, as_user, other_teacher):

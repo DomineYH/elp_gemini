@@ -22,6 +22,9 @@ from app.utils.gemini_retry import (
     GeminiServerOverloaded,
     retry_on_resource_exhausted,
 )
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 Kind = Literal["phase_split", "adapt", "student", "feedback"]
 TEMPERATURE = 1.0
@@ -50,6 +53,25 @@ def parse_structured(schema: type[BaseModel], text: str | None):
         return schema.model_validate_json(text or "")
     except ValidationError:
         return None
+
+
+def _warn_rejected(kind, persona_key, schema, text: str) -> None:
+    """spec_dev 8: 필드 경로·메시지·길이만 남긴다(원문·프롬프트 제외)."""
+    try:
+        schema.model_validate_json(text)
+        return
+    except ValidationError as e:
+        errors = "; ".join(
+            f"{'.'.join(map(str, err['loc'])) or '<root>'}: {err['msg']}"
+            for err in e.errors(include_input=False, include_url=False)
+        )
+    logger.warning(
+        "simulation %s output rejected (persona_key=%s, len=%d): %s",
+        kind,
+        persona_key,
+        len(text),
+        errors,
+    )
 
 
 def call_structured(
@@ -90,6 +112,8 @@ def call_structured(
     parsed = response.parsed
     if not isinstance(parsed, schema):
         parsed = parse_structured(schema, text)
+        if parsed is None:
+            _warn_rejected(kind, persona_key, schema, text)
     return LLMResult(
         parsed=parsed,
         text=text,
