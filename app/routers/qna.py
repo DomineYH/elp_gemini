@@ -499,21 +499,11 @@ async def chat_with_document(
             logger.info(f"새 세션 자동 생성: {session.id} for {document_id}")
 
         # 3. 질문 처리
-        # document_id 예:
-        # fileSearchStores/user222store-j74m2v137dyv/documents/...
-        # 여기서 store_id 추출:
-        # fileSearchStores/user222store-j74m2v137dyv
-        store_id = None
-        if "fileSearchStores/" in document_id and "/documents/" in document_id:
-            parts = document_id.split("/documents/")
-            store_id = parts[0]
-
         result = await qna_service.ask_question(
             session_id=_model_int(session.id),
             question=request.question,
             user_id=_model_int(current_user.id),
             username=_model_str(current_user.username),
-            store_id=store_id,
         )
         await db.commit()
 

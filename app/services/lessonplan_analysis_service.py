@@ -291,11 +291,7 @@ class LessonPlanAnalysisService:
 
                 # 2. 프롬프트 구성 (Store 역할 명시)
                 system_prompt = self.prompt_loader.get_prompt("lesson_analysis")
-                full_prompt = self._build_analysis_prompt(
-                    system_prompt,
-                    rubric_store_id=rubric_store_id,
-                    lesson_store_id=user_store_id
-                )
+                full_prompt = self._build_analysis_prompt(system_prompt)
                 logger.info("프롬프트 구성 완료 (Store 역할 명시 포함)")
 
                 # 3. Gemini API 호출 (File Search - 평가기준 우선 순서)
@@ -615,34 +611,33 @@ class LessonPlanAnalysisService:
         existing_report = report_result.scalar_one_or_none()
         return (latest_upload, existing_report)
 
-    def _build_analysis_prompt(
-        self,
-        system_prompt: str,
-        rubric_store_id: str,
-        lesson_store_id: str
-    ) -> str:
+    def _build_analysis_prompt(self, system_prompt: str) -> str:
         """
         분석 프롬프트 구성 (Store 역할 명시 포함)
 
+        스토어 이름은 보고서에 그대로 인용되므로 역할 이름만 쓴다 (#174).
+
         Args:
             system_prompt: 시스템 프롬프트 (lesson_analysis)
-            rubric_store_id: 평가기준 문서 Store ID
-            lesson_store_id: 수업 지도안 문서 Store ID
 
         Returns:
             완전한 프롬프트
         """
         prompt_intro = (
-            f"**{rubric_store_id}의 평가기준 자료를 바탕으로 "
-            f"{lesson_store_id}에 저장된 사용자의 수업 지도안을 평가하세요.**"
+            "**평가기준 문서의 자료를 바탕으로 "
+            "사용자가 업로드한 수업 지도안을 평가하세요.**"
         )
         rubric_note = (
-            f"- **{rubric_store_id}**: 평가 기준 문서입니다. "
-            "참고 자료로만 사용하며 답변 근거로 표시하지 않습니다."
+            "- **평가기준 문서**: 참고 자료로만 사용하며 "
+            "답변 근거로 표시하지 않습니다."
         )
         lesson_note = (
-            f"- **{lesson_store_id}**: 사용자가 업로드한 수업 지도안입니다. "
-            "모든 평가 근거를 반드시 이 문서에서 찾고 인용하세요."
+            "- **사용자 수업 지도안**: 모든 평가 근거를 반드시 "
+            "이 문서에서 찾고 인용하세요."
+        )
+        id_note = (
+            "- File Search 스토어·문서 이름 등 내부 식별자는 "
+            "보고서에 쓰지 마세요."
         )
         task_intro = (
             "위 평가 기준을 바탕으로 사용자가 업로드한 수업 지도안을 "
@@ -656,6 +651,7 @@ class LessonPlanAnalysisService:
 **중요 지시사항:**
 {rubric_note}
 {lesson_note}
+{id_note}
 
 {task_intro}
 

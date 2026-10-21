@@ -66,16 +66,14 @@ class TestLessonPlanAnalysisService:
         system_prompt = "당신은 평가 전문가입니다."
 
         # When
-        result = service._build_analysis_prompt(
-            system_prompt,
-            rubric_store_id="rubric-store",
-            lesson_store_id="lesson-store",
-        )
+        result = service._build_analysis_prompt(system_prompt)
 
-        # Then
+        # Then: 스토어 이름 대신 역할 이름만 (#174)
         assert system_prompt in result
-        assert "rubric-store" in result
-        assert "lesson-store" in result
+        assert "평가기준 문서" in result
+        assert "수업 지도안" in result
+        assert "fileSearchStores/" not in result
+        assert "rubricstore" not in result
         assert "5개 항목" in result
 
     def test_extract_citations_success(self, service):

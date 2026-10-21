@@ -4,6 +4,7 @@ Gemini API를 사용한 질문답변 처리 (FileSearch RAG)
 세션 기반 대화 관리 및 ChatMessage 저장
 """
 import logging
+import re
 import time
 from typing import Any, List, Optional
 from google import genai
@@ -35,6 +36,44 @@ async def _mark_criteria_filter_needs_resync(
         logger.warning("평가기준 동기화 필요 상태 표시 실패", exc_info=True)
 
 
+# 답변에 새어 나온 File Search 내부 식별자 (#174)
+_STORE_PATH_RE = re.compile(r"fileSearchStores/[A-Za-z0-9_\-./]+")
+# 한글 조사가 바로 붙으므로 \b 대신 ASCII 경계를 쓴다
+_USER_STORE_RE = re.compile(
+    r"(?<![A-Za-z0-9])user[-_]?\d*[-_]?store(?:-[a-z0-9]+)?(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+_RUBRIC_STORE_RE = re.compile(
+    r"(?<![A-Za-z0-9])rubric[-_]?store(?:-[a-z0-9]+)?(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+_INTERNAL_ID_RE = re.compile(
+    "|".join(
+        p.pattern
+        for p in (_STORE_PATH_RE, _USER_STORE_RE, _RUBRIC_STORE_RE)
+    ),
+    re.IGNORECASE,
+)
+_PAREN_INTERNAL_ID_RE = re.compile(
+    r"\s*[(\[]\s*(?:" + _INTERNAL_ID_RE.pattern + r")\s*[)\]]",
+    re.IGNORECASE,
+)
+
+
+def strip_internal_store_ids(text: Optional[str]) -> Optional[str]:
+    """
+    답변에서 File Search 스토어·문서 이름을 지운다 (#174).
+
+    괄호 속 식별자는 괄호째 지우고, 본문 속 식별자는 역할 이름으로 바꾼다.
+    """
+    if not text:
+        return text
+    text = _PAREN_INTERNAL_ID_RE.sub("", text)
+    text = _STORE_PATH_RE.sub("업로드 문서", text)
+    text = _RUBRIC_STORE_RE.sub("평가기준 문서", text)
+    return _USER_STORE_RE.sub("업로드하신 지도안", text)
+
+
 class QnAService:
     """QnA 서비스 클래스 (세션 기반 FileSearch RAG)"""
 
@@ -54,7 +93,6 @@ class QnAService:
         question: str,
         user_id: int,
         username: str,
-        store_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """
         세션 기반 질문답변 (FileSearch RAG)
@@ -64,7 +102,6 @@ class QnAService:
             question: 질문
             user_id: 사용자 ID
             username: 사용자 이름 (로깅용)
-            store_id: 검색할 File Search Store ID (없으면 기본값 사용)
 
         Returns:
             답변 및 메타데이터 (citations 포함)
@@ -215,21 +252,29 @@ class QnAService:
                 raise
 
             # Store 역할 명시 프롬프트 구성
+            # 스토어 이름은 모델이 답변에 그대로 인용하므로 넣지 않는다 (#174)
             if is_evaluation and not criteria_notice:
-                # 평가 요청: rubricstore는 참고 자료, user store는 평가 대상
+                # 평가 요청: 평가기준 문서는 참고 자료, 지도안은 평가 대상
                 store_role_prompt = (
-                    f"\n\n**{rubric_store_id}를 참고하여 {user_store_id}의 문서에 대해서 답해주세요.**\n\n"
-                    f"**중요 지시사항:**\n"
-                    f"- {rubric_store_id}의 자료는 **답변 생성의 참고 자료**로만 사용하세요.\n"
-                    f"- {user_store_id}의 문서만 **질의 응답 대상**입니다.\n"
-                    f"- 평가기준(rubricstore) 내용은 답변 생성의 참고 자료로만 활용하고, "
-                    f"답변 근거는 반드시 사용자 문서(user store)에서 찾으세요.\n"
+                    "\n\n**평가기준 문서를 참고하여 사용자가 업로드한 "
+                    "수업 지도안에 대해서 답해주세요.**\n\n"
+                    "**중요 지시사항:**\n"
+                    "- 평가기준 문서의 자료는 **답변 생성의 참고 자료**로만 "
+                    "사용하세요.\n"
+                    "- 사용자가 업로드한 수업 지도안만 **질의 응답 대상**입니다.\n"
+                    "- 답변 근거는 반드시 지도안에서 찾으세요. 지도안의 "
+                    "표·평가 계획·활동 등을 먼저 검색하고, 찾지 못했을 때만 "
+                    "지도안에 없다고 답하세요.\n"
+                    "- File Search 스토어·문서 이름 등 내부 식별자는 답변에 "
+                    "쓰지 마세요.\n"
                 )
             else:
                 # 일반 질문: 사용자 문서만 검색
                 store_role_prompt = (
-                    f"\n\n**중요 지시사항:**\n"
-                    f"- {user_store_id}의 사용자 업로드 문서를 기반으로 답변하세요.\n"
+                    "\n\n**중요 지시사항:**\n"
+                    "- 사용자가 업로드한 수업 지도안을 기반으로 답변하세요.\n"
+                    "- File Search 스토어·문서 이름 등 내부 식별자는 답변에 "
+                    "쓰지 마세요.\n"
                 )
 
             # 대화 히스토리 구성
@@ -239,7 +284,7 @@ class QnAService:
                 for conv in conversation_history:
                     history_context += (
                         f"Q: {conv.get('question', '')}\n"
-                        f"A: {conv.get('answer', '')}\n"
+                        f"A: {strip_internal_store_ids(conv.get('answer', ''))}\n"
                     )
 
             # Contents 구성: Store 역할 명시 + 평가기준 컨텍스트 + 히스토리 + 질문
@@ -300,7 +345,7 @@ class QnAService:
                 )
             )
 
-            answer = response.text
+            answer = strip_internal_store_ids(response.text)
 
             # Citation 정보 추출
             citations = None
