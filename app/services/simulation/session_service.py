@@ -1,11 +1,12 @@
 """
-시뮬레이션 세션: 생성, 국면 진입, 상태 조회 (PLAN 2.6)
+시뮬레이션 세션: 생성, 국면 진입, 말하기, 전이, 종료, 상태 조회 (PLAN 2.6)
 
 Gemini 호출이 모두 끝난 뒤에만 DB에 쓴다(실패 시 아무것도 남기지 않음).
 """
 
 import json
 import random
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -16,10 +17,11 @@ from app.models.simulation_persona import SimulationPersona
 from app.models.simulation_phase import SimulationPhase
 from app.models.simulation_session import SimulationSession
 from app.models.simulation_utterance import SimulationUtterance
-from app.schemas.simulation import CreateSessionRequest, Persona
+from app.schemas.simulation import CreateSessionRequest, Persona, SayRequest
 from app.services.prompt_loader_service import PromptLoaderService
 from app.services.simulation import gemini, lessonplan_source, persona_pool
 from app.services.simulation.adaptation import adapt_many
+from app.services.simulation.agreement import compute_agreement
 from app.services.simulation.errors import SimulationError
 from app.services.simulation.llm_schemas import StudentReaction
 
@@ -174,6 +176,14 @@ async def _teacher_turns_used(db, sid) -> int:
     return sum(1 for s in teacher if (s or {}).get("source") == "user")
 
 
+async def _agreement(db, sid) -> dict:
+    """현재 국면의 동의 상태."""
+    idx = (await db.get(SimulationSession, sid)).current_phase_idx
+    return compute_agreement(
+        idx, await _personas(db, sid), await _utterances(db, sid, idx)
+    )
+
+
 async def _turn_result(db, sid, utterances) -> dict:
     return {
         "utterances": [_utterance_out(u) for u in utterances],
@@ -182,6 +192,7 @@ async def _turn_result(db, sid, utterances) -> dict:
             for u in utterances
             if u.speaker_type == "student" and u.structured is None
         ],
+        "agreement": await _agreement(db, sid),
         "teacher_turns_used": await _teacher_turns_used(db, sid),
     }
 
@@ -339,4 +350,144 @@ async def load_state(db: AsyncSession, session: SimulationSession) -> dict:
             for p in await _personas(db, sid)
         ],
         "utterances": [_utterance_out(u) for u in await _utterances(db, sid)],
+        "agreement": await _agreement(db, sid),
     }
+
+
+def _transcript_line(u: SimulationUtterance, names: dict) -> str:
+    if u.speaker_type == "teacher":
+        to = names.get(u.target_persona_id)
+        return f"교사({to + '에게' if to else '전체'}): {u.content}"
+    return f"{names[u.persona_id]}: {u.content}"
+
+
+async def _commit_or_conflict(db) -> None:
+    """seq 유니크 충돌 = 동시 요청 → 아무것도 남기지 않고 CONFLICT_RETRY."""
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise SimulationError("CONFLICT_RETRY")
+
+
+async def say(
+    db: AsyncSession, session: SimulationSession, body: SayRequest
+) -> dict:
+    """교사 발화(source=user) → 대상 학생(없으면 전원) 반응."""
+    if session.status == "finished":
+        raise SimulationError("SESSION_FINISHED")
+    sid, idx = session.id, session.current_phase_idx
+    stored = await _utterances(db, sid, idx)
+    if not stored:
+        raise SimulationError("PHASE_NOT_ENTERED")
+    personas = await _personas(db, sid)
+    target = body.target_persona_id
+    if target is not None and target not in {p.id for p in personas}:
+        raise SimulationError("UNKNOWN_PERSONA")
+
+    teacher = SimulationUtterance(
+        session_id=sid,
+        phase_idx=idx,
+        speaker_type="teacher",
+        target_persona_id=target,
+        content=body.content,
+        structured={"source": "user"},
+    )
+    names = {p.id: p.display_name for p in personas}
+    transcript = [
+        _transcript_line(u, names)
+        for u in stored + [teacher]
+        if u.speaker_type != "system"
+    ]
+    phase = (await _phases(db, sid))[idx]
+    responders = [p for p in personas if target in (None, p.id)]
+    results = await gemini.call_many(
+        [student_call(p, phase, transcript) for p in responders]
+    )
+
+    seq = await next_seq(db, sid)
+    teacher.seq = seq
+    db.add(teacher)
+    db.add_all(
+        student_utterance(sid, idx, seq + 1 + i, p, r)
+        for i, (p, r) in enumerate(zip(responders, results))
+    )
+    await _commit_or_conflict(db)
+    new = [u for u in await _utterances(db, sid, idx) if u.seq >= seq]
+    return await _turn_result(db, sid, new)
+
+
+def _system(session, seq, content, structured) -> SimulationUtterance:
+    return SimulationUtterance(
+        session_id=session.id,
+        phase_idx=session.current_phase_idx,
+        seq=seq,
+        speaker_type="system",
+        content=content,
+        structured=structured,
+    )
+
+
+def _finish_now(session) -> None:
+    session.status = "finished"
+    # CURRENT_TIMESTAMP(created_at)와 같은 UTC naive
+    session.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+async def advance(db: AsyncSession, session: SimulationSession, mode) -> dict:
+    """agree(전원 동의일 때만) / skip(항상). 마지막 국면이면 종료."""
+    if session.status == "finished":
+        raise SimulationError("SESSION_FINISHED")
+    if mode == "agree" and not (await _agreement(db, session.id))["all_agreed"]:
+        raise SimulationError("NOT_ALL_AGREED")
+    phases = await _phases(db, session.id)
+    phase = phases[session.current_phase_idx]
+    seq = await next_seq(db, session.id)
+    if mode == "agree":
+        rows = [
+            _system(
+                session,
+                seq,
+                f"{phase.name}: 전원 동의로 다음 국면",
+                {"type": "agree_advance"},
+            )
+        ]
+    else:
+        rows = [
+            _system(session, seq, f"{phase.name}: 건너뜀", {"type": "skip"})
+        ]
+    next_phase = None
+    if session.current_phase_idx + 1 < len(phases):
+        session.current_phase_idx += 1
+        p = phases[session.current_phase_idx]
+        next_phase = {"idx": p.idx, **{f: getattr(p, f) for f in PHASE_FIELDS}}
+    else:
+        rows.append(
+            _system(
+                session,
+                seq + 1,
+                "수업 종료 (마지막 국면)",
+                {"type": "end", "reason": "last_phase"},
+            )
+        )
+        _finish_now(session)
+    db.add_all(rows)
+    await _commit_or_conflict(db)
+    return {
+        "status": session.status,
+        "current_phase_idx": session.current_phase_idx,
+        "next_phase": next_phase,
+    }
+
+
+async def finish(db: AsyncSession, session: SimulationSession) -> dict:
+    """수업 종료 버튼: 시스템 end(finish) + finished."""
+    if session.status == "finished":
+        raise SimulationError("SESSION_FINISHED")
+    seq = await next_seq(db, session.id)
+    db.add(
+        _system(session, seq, "수업 종료", {"type": "end", "reason": "finish"})
+    )
+    _finish_now(session)
+    await _commit_or_conflict(db)
+    return {"status": "finished"}

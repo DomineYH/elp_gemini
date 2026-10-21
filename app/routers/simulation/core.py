@@ -14,9 +14,13 @@ from app.db import get_db
 from app.dependencies import get_current_user
 from app.models.users import User
 from app.schemas.simulation import (
+    AdvanceRequest,
+    AdvanceResult,
     CandidatesResponse,
     CreateSessionRequest,
+    FinishResult,
     Level,
+    SayRequest,
     SessionState,
     TurnResult,
 )
@@ -146,6 +150,57 @@ async def enter_phase(
             db, sid, current_user.id
         )
         return await session_service.enter_phase(db, session, idx)
+    except SimulationError as e:
+        raise e.to_http() from e
+
+
+@router.post("/api/simulation/sessions/{sid}/say", response_model=TurnResult)
+async def say(
+    sid: int,
+    body: SayRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        session = await session_service.get_owned_session(
+            db, sid, current_user.id
+        )
+        return await session_service.say(db, session, body)
+    except SimulationError as e:
+        raise e.to_http() from e
+
+
+@router.post(
+    "/api/simulation/sessions/{sid}/advance", response_model=AdvanceResult
+)
+async def advance(
+    sid: int,
+    body: AdvanceRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        session = await session_service.get_owned_session(
+            db, sid, current_user.id
+        )
+        return await session_service.advance(db, session, body.mode)
+    except SimulationError as e:
+        raise e.to_http() from e
+
+
+@router.post(
+    "/api/simulation/sessions/{sid}/finish", response_model=FinishResult
+)
+async def finish(
+    sid: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        session = await session_service.get_owned_session(
+            db, sid, current_user.id
+        )
+        return await session_service.finish(db, session)
     except SimulationError as e:
         raise e.to_http() from e
 
