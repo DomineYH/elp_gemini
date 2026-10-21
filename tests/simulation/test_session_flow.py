@@ -125,6 +125,23 @@ def test_agree_with_one_not_ready_is_409_skip_passes(ready, fake_gemini):
     }
 
 
+def test_failed_latest_reaction_blocks_agree(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    turn = ready.post(_api(sid, "/phases/0/enter")).json()
+    assert turn["agreement"]["all_agreed"] is True
+
+    failing = str(state["personas"][0]["source_record_id"])
+    fake_gemini.parse_fail.add(failing)
+    turn = ready.post(_api(sid, "/say"), json={"content": "하나 더"}).json()
+    assert turn["failed_persona_ids"] == [state["personas"][0]["id"]]
+    assert turn["agreement"]["count"] == 3
+
+    r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
+    assert r.status_code == 409
+    assert _code(r) == "NOT_ALL_AGREED"
+
+
 def test_support_level_guard_lifts_after_user_turn(ready):
     state = _create(ready, level="Poor")
     sid = state["session"]["id"]

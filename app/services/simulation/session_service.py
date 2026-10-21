@@ -323,6 +323,10 @@ async def enter_phase(
     results = await gemini.call_many(
         [student_call(p, phase, transcript) for p in personas]
     )
+    await _still_current(db, session, idx, moved="PHASE_NOT_CURRENT")
+    stored = await _utterances(db, session.id, idx)
+    if stored:
+        return await _turn_result(db, session.id, stored)
 
     seq = await next_seq(db, session.id)
     rows = [
@@ -405,13 +409,15 @@ async def _commit_or_conflict(db) -> None:
         raise SimulationError("CONFLICT_RETRY")
 
 
-async def _still_current(db, session: SimulationSession, idx: int) -> None:
+async def _still_current(
+    db, session: SimulationSession, idx: int, moved="CONFLICT_RETRY"
+) -> None:
     """Gemini 호출 중 다른 요청이 종료·전이했으면 아무것도 쓰지 않는다."""
     await db.refresh(session)
     if session.status == "finished":
         raise SimulationError("SESSION_FINISHED")
     if session.current_phase_idx != idx:
-        raise SimulationError("CONFLICT_RETRY")
+        raise SimulationError(moved)
 
 
 async def say(

@@ -171,13 +171,13 @@ OTHER_TAB_TURN = (
 )
 
 
-def _during_call(monkeypatch, fake_gemini, db_path, sql, params=()):
+def _during_call(monkeypatch, fake_gemini, db_path, sql):
     """Gemini 호출 중에 다른 요청이 DB를 바꾼 상황을 만든다."""
 
     def wrapped(kind, **kw):
         conn = sqlite3.connect(db_path)
         with conn:
-            conn.execute(sql, params)
+            conn.executescript(sql)
         conn.close()
         return fake_gemini(kind, **kw)
 
@@ -239,6 +239,55 @@ def test_regenerate_after_concurrent_finish_keeps_failed_row(
     assert r.status_code == 409
     assert _code(r) == "SESSION_FINISHED"
     assert ready.get(_api(sid)).json()["utterances"] == before
+
+
+# 다른 탭이 같은 국면 진입을 먼저 끝냈다 (호출마다 실행되므로 OR IGNORE)
+OTHER_TAB_ENTER = (
+    "INSERT OR IGNORE INTO simulation_utterances (session_id, phase_idx,"
+    " seq, speaker_type, content, structured) VALUES"
+    " (1, 0, 900, 'system', '다른 탭 시작', '{\"type\": \"phase_enter\"}'),"
+    " (1, 0, 901, 'teacher', '다른 탭 발문', '{\"source\": \"plan\"}');"
+)
+OTHER_TAB_FINISH = (
+    "UPDATE simulation_sessions SET status='finished';"
+    " INSERT OR IGNORE INTO simulation_utterances (session_id, phase_idx,"
+    " seq, speaker_type, content, structured) VALUES"
+    " (1, 0, 900, 'system', '수업 종료', '{\"type\": \"end\"}');"
+)
+
+
+def test_enter_returns_batch_stored_by_other_tab_during_gemini(
+    ready, fake_gemini, monkeypatch, tmp_path
+):
+    sid = _create(ready)[0]["session"]["id"]
+    _during_call(monkeypatch, fake_gemini, tmp_path / "sim.db", OTHER_TAB_ENTER)
+    r = ready.post(_api(sid, "/phases/0/enter"))
+    assert r.status_code == 200
+    assert [u["seq"] for u in r.json()["utterances"]] == [900, 901]
+    utts = ready.get(_api(sid)).json()["utterances"]
+    assert [u["seq"] for u in utts] == [900, 901]
+
+
+@pytest.mark.parametrize(
+    "sql,code",
+    [
+        (OTHER_TAB_FINISH, "SESSION_FINISHED"),
+        (
+            "UPDATE simulation_sessions SET current_phase_idx=1",
+            "PHASE_NOT_CURRENT",
+        ),
+    ],
+)
+def test_enter_rechecks_session_after_gemini_and_persists_nothing(
+    ready, fake_gemini, monkeypatch, tmp_path, sql, code
+):
+    sid = _create(ready)[0]["session"]["id"]
+    _during_call(monkeypatch, fake_gemini, tmp_path / "sim.db", sql)
+    r = ready.post(_api(sid, "/phases/0/enter"))
+    assert r.status_code == 409
+    assert _code(r) == code
+    utts = ready.get(_api(sid)).json()["utterances"]
+    assert [u["seq"] for u in utts] == ([900] if "end" in sql else [])
 
 
 def test_regenerate_foreign_persona_is_422(ready, fake_gemini):

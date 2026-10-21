@@ -47,9 +47,12 @@ def test_last_reaction_wins_and_counts():
     assert result["all_agreed"] is False
 
 
-def test_failed_reaction_is_ignored():
+def test_failed_latest_reaction_clears_consent_until_regenerated():
     personas = [_persona(1)]
     utts = [_student(1, True), _student(1, None)]
+    assert compute_agreement(0, personas, utts)["agreed_persona_ids"] == []
+    # 재생성은 실패한 행을 그 자리에서 고친다
+    utts[1].structured = {"ready_for_next": True}
     assert compute_agreement(0, personas, utts)["agreed_persona_ids"] == [1]
 
 

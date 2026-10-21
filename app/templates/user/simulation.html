@@ -307,7 +307,7 @@
                 el("span", "note truncate", p.adapted_level),
             );
             const ok = agreed.has(p.id);
-            head.append(who, el("span", "agree" + (ok ? " yes" : ""), ok ? "✓ 다음 단계 OK" : "대기"));
+            head.append(who, el("span", "agree" + (ok ? " yes" : ""), ok ? "✓ 다음 국면 동의" : "대기"));
             const feed = el("div", "flex flex-col gap-2 min-h-[4.5rem]");
             const mine = seatUtterances(utts, p);
             const last = mine.filter(u => u.speaker_type === "student").pop();
