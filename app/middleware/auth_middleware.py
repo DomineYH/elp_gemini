@@ -117,7 +117,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # DB에서 세션 유효성 검증 (Task 2.2)
         is_valid = await self._validate_session_in_db(
-            user_id, is_admin
+            user_id,
+            is_admin,
+            request.session.get("session_version"),
         )
 
         if not is_valid:
@@ -174,7 +176,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return "text/html" in accept.lower()
 
     async def _validate_session_in_db(
-        self, user_id: int, is_admin: bool
+        self, user_id: int, is_admin: bool, session_version: int = 0
     ) -> bool:
         """
         DB에서 세션 유효성 검증
@@ -185,6 +187,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         Args:
             user_id: 세션의 사용자 ID
             is_admin: 세션의 관리자 플래그
+            session_version: 세션에 저장된 session_version (#169)
 
         Returns:
             세션 유효 여부
@@ -216,6 +219,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         f"user_id={user_id} "
                         f"is_admin 불일치 "
                         f"(세션={is_admin}, DB={user.is_admin})"
+                    )
+                    return False
+
+                # 로그아웃·비밀번호 변경으로 폐기된 쿠키 (#169)
+                if (session_version or 0) != (user.session_version or 0):
+                    logger.warning(
+                        f"세션 검증 실패: "
+                        f"user_id={user_id} session_version 불일치"
                     )
                     return False
 

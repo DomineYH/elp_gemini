@@ -31,6 +31,13 @@ class User(Base):
     )
     locked_until = Column(DateTime, nullable=True)
     last_failed_login_at = Column(DateTime, nullable=True)
+    # 로그아웃·비밀번호 변경 시 +1 → 이전 서명 쿠키 무효화 (#169)
+    session_version = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
     created_at = Column(
         DateTime, nullable=False, server_default=func.now()
     )

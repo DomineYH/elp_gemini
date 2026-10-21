@@ -32,6 +32,7 @@ from app.migrations import (
     ensure_lessonplan_uploads_table,
     ensure_simulation_tables,
     ensure_users_lockout_columns,
+    ensure_users_session_version_column,
     rename_chat_session_in_service_teacher_label,
     rename_preservice_university_regions,
 )
@@ -263,6 +264,9 @@ async def startup_event():
         logger.info(
             "users 테이블 lockout 컬럼이 자동 복구되었습니다."
         )
+
+    if await ensure_users_session_version_column(engine):
+        logger.info("users.session_version 컬럼 자동 추가")
 
     profiles_dropped = await drop_user_profiles(engine)
     if profiles_dropped:

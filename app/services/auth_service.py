@@ -429,6 +429,28 @@ class AuthService:
 
         return user
 
+    @staticmethod
+    def session_version_matches(user: User, session_version) -> bool:
+        """세션에 저장된 버전이 DB 값과 같은지 (#169). 과거 쿠키는 0으로 본다."""
+        return (session_version or 0) == (user.session_version or 0)
+
+    async def revoke_sessions_if_current(
+        self, user_id: int, session_version
+    ) -> bool:
+        """
+        로그아웃 시 사용자의 session_version을 올려 이전 쿠키를 무효화한다.
+
+        이미 무효인 쿠키로 로그아웃하면 아무것도 바꾸지 않는다.
+        """
+        user = await self.get_user_by_id(user_id)
+        if not user or not self.session_version_matches(
+            user, session_version
+        ):
+            return False
+        user.session_version = (user.session_version or 0) + 1
+        await self.db.commit()
+        return True
+
     async def admin_set_user_password(
         self, user_id: int, new_password: str
     ) -> User:
@@ -457,6 +479,8 @@ class AuthService:
         user.failed_login_count = 0
         user.locked_until = None
         user.last_failed_login_at = None
+        # 기존 세션 쿠키 무효화 (#169)
+        user.session_version = (user.session_version or 0) + 1
 
         await self.db.commit()
         await self.db.refresh(user)

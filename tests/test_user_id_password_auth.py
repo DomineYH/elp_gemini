@@ -415,6 +415,7 @@ async def test_register_matching_password_confirm_succeeds_directly(
         username="matchok",
         nickname="matchok",
         is_admin=False,
+        session_version=0,
     )
 
     async def register_regular_user(self, user_id, password):
@@ -871,6 +872,7 @@ async def test_admin_can_change_password_for_login_capable_users(
         failed_login_count=2,
         locked_until=datetime(2026, 6, 4, 9, 0, 0),
         last_failed_login_at=datetime(2026, 6, 4, 8, 0, 0),
+        session_version=0,
     )
     db = _PasswordChangeDb(user)
     monkeypatch.setattr(

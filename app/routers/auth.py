@@ -91,6 +91,7 @@ def _set_user_session(request: Request, user: User) -> None:
     request.session["is_admin"] = user.is_admin
     request.session["username"] = user.username
     request.session["nickname"] = user.nickname
+    request.session["session_version"] = user.session_version or 0
 
 
 def _validation_error_message(exc: Exception) -> str:
@@ -455,6 +456,7 @@ async def login_admin(
         request.session["is_admin"] = user.is_admin
         request.session["username"] = user.username
         request.session["nickname"] = user.nickname
+        request.session["session_version"] = user.session_version or 0
 
         # 로그인 성공 로깅
         log_auth_event(
@@ -525,7 +527,7 @@ async def login(
 
 # T025: POST /auth/logout - 로그아웃 처리
 @router.post("/auth/logout")
-async def logout(request: Request):
+async def logout(request: Request, db: AsyncSession = Depends(get_db)):
     """
     사용자 로그아웃
 
@@ -547,6 +549,11 @@ async def logout(request: Request):
             success=True,
         )
         logger.info(f"로그아웃: user_id={user_id}")
+
+        # 이전에 복사된 서명 쿠키도 무효화 (#169)
+        await AuthService(db).revoke_sessions_if_current(
+            user_id, request.session.get("session_version", 0)
+        )
 
         # Vector Store 정리
         try:

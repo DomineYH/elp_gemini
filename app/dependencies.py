@@ -66,6 +66,22 @@ async def get_current_user(
             detail="사용자를 찾을 수 없습니다.",
         )
 
+    if not AuthService.session_version_matches(
+        user, request.session.get("session_version")
+    ):
+        # 로그아웃·비밀번호 변경 이후의 이전 쿠키 (#169)
+        log_auth_event(
+            "invalid_session",
+            user_id=user_id,
+            success=False,
+            reason="Session revoked",
+        )
+        request.session.clear()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="세션이 만료되었습니다. 다시 로그인해주세요.",
+        )
+
     return user
 
 

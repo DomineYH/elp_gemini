@@ -23,6 +23,7 @@ from .preservice_region_kyodae_rename import (
 )
 from .simulation_tables import ensure_simulation_tables
 from .users_lockout_columns import ensure_users_lockout_columns
+from .users_session_version import ensure_users_session_version_column
 
 __all__ = [
     "drop_invite_codes_table",
@@ -34,6 +35,7 @@ __all__ = [
     "ensure_criteria_display_alias_column",
     "ensure_criteria_stable_id_column",
     "ensure_users_lockout_columns",
+    "ensure_users_session_version_column",
     "ensure_lessonplan_uploads_table",
     "ensure_simulation_tables",
     "rename_chat_session_in_service_teacher_label",
