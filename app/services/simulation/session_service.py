@@ -359,6 +359,7 @@ async def enter_phase(
 
 async def load_state(db: AsyncSession, session: SimulationSession) -> dict:
     sid = session.id
+    latest = await lessonplan_source.get_latest_upload(db, session.user_id)
     return {
         "session": {
             "id": sid,
@@ -372,6 +373,8 @@ async def load_state(db: AsyncSession, session: SimulationSession) -> dict:
             "teacher_turns_used": await _teacher_turns_used(db, sid),
             "teacher_turns_max": settings.SIM_MAX_TEACHER_TURNS,
             "has_feedback": session.feedback_json is not None,
+            "is_latest_upload": latest is not None
+            and latest.id == session.upload_id,
         },
         "phases": [
             {"idx": p.idx, **{f: getattr(p, f) for f in PHASE_FIELDS}}
@@ -571,3 +574,37 @@ async def regenerate(
     await db.commit()
     await db.refresh(row)
     return await _turn_result(db, sid, [row])
+
+
+async def list_sessions(
+    db: AsyncSession, user_id: int, upload_id: int | None = None
+) -> list[dict]:
+    """내 세션만, 최신 먼저 (phase_split 승계와 같은 정렬)."""
+    phase_count = (
+        select(func.count(SimulationPhase.id))
+        .where(SimulationPhase.session_id == SimulationSession.id)
+        .scalar_subquery()
+    )
+    query = select(SimulationSession, phase_count).where(
+        SimulationSession.user_id == user_id
+    )
+    if upload_id is not None:
+        query = query.where(SimulationSession.upload_id == upload_id)
+    rows = await db.execute(
+        query.order_by(
+            SimulationSession.created_at.desc(), SimulationSession.id.desc()
+        )
+    )
+    return [
+        {
+            "id": s.id,
+            "created_at": s.created_at,
+            "persona_count": s.persona_count,
+            "status": s.status,
+            "has_feedback": s.feedback_json is not None,
+            "upload_id": s.upload_id,
+            "current_phase_idx": s.current_phase_idx,
+            "phase_count": count,
+        }
+        for s, count in rows
+    ]

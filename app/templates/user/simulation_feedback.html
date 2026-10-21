@@ -36,7 +36,9 @@
         </div>
         <div class="border-t p-4 flex flex-wrap justify-between gap-2 text-sm">
             <a href="/api/simulation/sessions/{{ sid }}/feedback/download" class="text-gray-600 hover:underline py-2">보고서 Markdown 저장</a>
-            <div class="flex flex-wrap gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+                <p id="rerunNote" class="note hidden">지도안이 바뀌어 이 세션은 다시 실행할 수 없습니다.</p>
+                <a href="/simulation/setup" id="rerunBtn" class="px-4 py-2 rounded-lg border">다른 학생으로 다시 실행</a>
                 <a href="/simulation/sessions/{{ sid }}/transcript" class="px-4 py-2 rounded-lg border">대화록 보기</a>
                 <a href="/dashboard" class="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold">지도안으로 돌아가기</a>
             </div>
@@ -133,6 +135,14 @@
             // 이미 있으면 캐시를 돌려주고 생성하지 않는다
             const [envelope, state] = await Promise.all([api("POST", API + "/feedback"), api("GET", API)]);
             render(envelope, state.phases);
+            // 설정 화면은 최신 지도안만 쓰므로 지도안이 바뀌었으면 막는다
+            if (!state.session.is_latest_upload) {
+                const btn = $("rerunBtn");
+                btn.removeAttribute("href");
+                btn.setAttribute("aria-disabled", "true");
+                btn.classList.add("opacity-50", "cursor-not-allowed");
+                $("rerunNote").classList.remove("hidden");
+            }
         } catch (err) {
             $("fbStatus").textContent = err.message;
             $("retryBtn").classList.remove("hidden");

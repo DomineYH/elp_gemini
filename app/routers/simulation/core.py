@@ -23,6 +23,7 @@ from app.schemas.simulation import (
     Level,
     RegenerateRequest,
     SayRequest,
+    SessionList,
     SessionState,
     TurnResult,
 )
@@ -258,3 +259,16 @@ async def simulation_run_page(
             "persona_count": session.persona_count,
         },
     )
+
+
+@router.get("/api/simulation/sessions", response_model=SessionList)
+async def list_sessions(
+    upload_id: int | None = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return {
+        "sessions": await session_service.list_sessions(
+            db, current_user.id, upload_id
+        )
+    }

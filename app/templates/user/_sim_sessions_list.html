@@ -1,0 +1,62 @@
+<!-- 지난 수업 시뮬레이션 목록 (#157): 내 세션만, 비어 있으면 숨김 -->
+<section id="simSessions" class="max-w-6xl mx-auto mt-8 hidden" aria-labelledby="simSessionsTitle">
+    <h2 id="simSessionsTitle" class="text-xl font-bold text-gray-800 mb-3">지난 수업 시뮬레이션</h2>
+    <div class="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-gray-500 text-left">
+                <tr>
+                    <th scope="col" class="px-4 py-2 font-medium">일시</th>
+                    <th scope="col" class="px-4 py-2 font-medium">인원</th>
+                    <th scope="col" class="px-4 py-2 font-medium">상태</th>
+                    <th scope="col" class="px-4 py-2 font-medium">열기</th>
+                </tr>
+            </thead>
+            <tbody id="simSessionRows" class="divide-y divide-gray-100"></tbody>
+        </table>
+    </div>
+</section>
+<script>
+(function () {
+    function cell(text) {
+        const td = document.createElement("td");
+        td.className = "px-4 py-2 whitespace-nowrap";
+        td.textContent = text;
+        return td;
+    }
+
+    function target(s) {
+        const base = "/simulation/sessions/" + s.id;
+        if (s.status !== "finished") return [base, "시뮬레이션 계속"];
+        return s.has_feedback ? [base + "/feedback", "피드백 보기"] : [base + "/transcript", "대화록 보기"];
+    }
+
+    fetch("/api/simulation/sessions", { headers: { accept: "application/json" } })
+        .then(res => (res.ok ? res.json() : { sessions: [] }))
+        .then(data => {
+            if (!data.sessions.length) return;
+            const rows = data.sessions.map(s => {
+                const [href, label] = target(s);
+                const link = document.createElement("a");
+                link.href = href;
+                link.className = "text-violet-700 hover:underline font-medium";
+                link.textContent = label;
+                const open = cell("");
+                open.append(link);
+                const status = s.status === "finished"
+                    ? "종료"
+                    : "진행 중 · 국면 " + (s.current_phase_idx + 1) + "/" + s.phase_count;
+                const tr = document.createElement("tr");
+                tr.append(
+                    cell(new Date(s.created_at + "Z").toLocaleString("ko-KR")),
+                    cell(s.persona_count + "명"),
+                    cell(status),
+                    open
+                );
+                return tr;
+            });
+            document.getElementById("simSessionRows").replaceChildren(...rows);
+            document.getElementById("simSessions").classList.remove("hidden");
+        })
+        .catch(() => {});
+})();
+</script>
