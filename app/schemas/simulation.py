@@ -120,6 +120,7 @@ class SessionInfo(BaseModel):
     teacher_turns_used: int
     teacher_turns_max: int
     has_feedback: bool
+    is_latest_upload: bool
 
 
 class Agreement(BaseModel):
@@ -168,3 +169,18 @@ class AdvanceResult(BaseModel):
 
 class FinishResult(BaseModel):
     status: Literal["finished"]
+
+
+class SessionSummary(BaseModel):
+    id: int
+    created_at: datetime
+    persona_count: int
+    status: str
+    has_feedback: bool
+    upload_id: int
+    current_phase_idx: int
+    phase_count: int
+
+
+class SessionList(BaseModel):
+    sessions: list[SessionSummary]
