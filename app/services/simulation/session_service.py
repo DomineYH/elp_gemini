@@ -18,7 +18,12 @@ from app.models.simulation_session import SimulationSession
 from app.models.simulation_utterance import SimulationUtterance
 from app.schemas.simulation import CreateSessionRequest, Persona
 from app.services.prompt_loader_service import PromptLoaderService
-from app.services.simulation import gemini, lessonplan_source, persona_pool
+from app.services.simulation import (
+    gemini,
+    lessonplan_source,
+    library,
+    persona_pool,
+)
 from app.services.simulation.adaptation import adapt_many
 from app.services.simulation.errors import SimulationError
 from app.services.simulation.llm_schemas import StudentReaction
@@ -56,7 +61,8 @@ async def create_session(
     if upload is None:
         raise SimulationError("NO_UPLOAD")
 
-    # 페르소나 결정 (#158이 custom: ref 처리를 이 블록에 넣는다)
+    # 페르소나 결정: custom:<id>는 라이브러리 번안본을 복사, 데이터셋만 번안
+    custom = {}
     if body.personas is not None:
         refs = [p.ref for p in body.personas]
         names = [p.pseudonym for p in body.personas]
@@ -64,7 +70,19 @@ async def create_session(
             n not in persona_pool.NAME_POOL for n in names
         ):
             raise SimulationError("DUPLICATE_PSEUDONYM")
-        raws = persona_pool.resolve_refs(refs)
+        custom_refs = [r for r in refs if r.startswith("custom:")]
+        ids = [r.removeprefix("custom:") for r in custom_refs]
+        # "custom:01"처럼 같은 항목을 다른 철자로 두 번 앉히지 못하게 한다
+        if not all(i.isdecimal() and str(int(i)) == i for i in ids):
+            raise SimulationError("UNKNOWN_PERSONA")
+        items = await library.snapshot_for_session(
+            db, user_id, [int(i) for i in ids]
+        )
+        custom = dict(zip(custom_refs, items))
+        dataset_refs = [r for r in refs if r not in custom]
+        by_ref = dict(
+            zip(dataset_refs, persona_pool.resolve_refs(dataset_refs))
+        )
     else:
         pick = body.random
         seed = pick.seed if pick.seed is not None else random.randrange(2**31)
@@ -73,15 +91,29 @@ async def create_session(
         )
         names = persona_pool.assign_pseudonyms(len(raws), seed)
         refs = [str(r["id"]) for r in raws]
-    adapted = await adapt_many(list(zip(refs, raws)))
-    seats = [
-        {
-            "source": "dataset",
-            "source_record_id": raw["id"],
-            "raw_profile": raw,
-        }
-        for raw in raws
-    ]
+        by_ref = dict(zip(refs, raws))
+    adapted_by_ref = dict(zip(by_ref, await adapt_many(list(by_ref.items()))))
+    seats, adapted = [], []
+    for ref in refs:
+        if ref in custom:
+            item = custom[ref]
+            seats.append(
+                {
+                    "source": "custom",
+                    "source_record_id": item.id,
+                    "raw_profile": item.raw_profile,
+                }
+            )
+            adapted.append((item.adapted_profile, item.adapted_level))
+        else:
+            seats.append(
+                {
+                    "source": "dataset",
+                    "source_record_id": by_ref[ref]["id"],
+                    "raw_profile": by_ref[ref],
+                }
+            )
+            adapted.append(adapted_by_ref[ref])
 
     session = SimulationSession(
         user_id=user_id,

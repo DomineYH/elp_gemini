@@ -1,0 +1,169 @@
+{# 내 학생 페르소나 만들기 (HACHIMI-1M 필드 순서). 저장되면 "sim:persona-saved" 이벤트(detail.ref)를 보낸다. #}
+<div id="customModal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
+    <form id="customForm" role="dialog" aria-modal="true" aria-labelledby="customTitle"
+        class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col overflow-hidden">
+        <div class="flex items-start justify-between gap-3 px-5 py-3 border-b">
+            <div>
+                <p id="customTitle" class="font-semibold">새 페르소나 만들기</p>
+                <p class="note">필드명은 HACHIMI-1M 스키마와 같습니다. 저장하면 내 라이브러리에 남고 후보 표에 추가됩니다.</p>
+            </div>
+            <button type="button" data-close class="text-gray-500 hover:text-gray-800 p-1" aria-label="닫기">
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-5 grid gap-3 sm:grid-cols-2 text-sm">
+            <label class="block"><span class="eyebrow">age</span>
+                <input name="age" type="number" min="6" max="13" value="11" required class="mt-1 w-full border rounded-lg px-2 py-1.5"></label>
+            <label class="block"><span class="eyebrow">gender</span>
+                <select name="gender" class="mt-1 w-full border rounded-lg px-2 py-1.5 bg-white">
+                    <option value="female">female</option>
+                    <option value="male">male</option>
+                </select></label>
+            <label class="block"><span class="eyebrow">grade</span>
+                <select name="grade" class="mt-1 w-full border rounded-lg px-2 py-1.5 bg-white">
+                    {% for g in range(6, 0, -1) %}<option value="{{ g }}" {% if g == 5 %}selected{% endif %}>{{ g }}</option>{% endfor %}
+                </select></label>
+            <label class="block"><span class="eyebrow">academic_level</span>
+                <select name="academic_level" class="mt-1 w-full border rounded-lg px-2 py-1.5 bg-white">
+                    {% for key, label in level_labels.items() %}<option value="{{ key }}" {% if key == "Average" %}selected{% endif %}>{{ key }} → {{ label }}</option>{% endfor %}
+                </select></label>
+            <div class="sm:col-span-2 rounded-lg bg-gray-50 p-3 grid gap-2 sm:grid-cols-3">
+                <p class="eyebrow sm:col-span-3">development_stage</p>
+                <label class="block"><span class="note">piaget_cognitive_stage</span>
+                    <input name="piaget_cognitive_stage" list="cfPiaget" value="Concrete Operational Stage" class="mt-1 w-full border rounded-lg px-2 py-1.5"></label>
+                <label class="block"><span class="note">erikson_psychosocial_stage</span>
+                    <input name="erikson_psychosocial_stage" list="cfErikson" value="Industry vs. Inferiority" class="mt-1 w-full border rounded-lg px-2 py-1.5"></label>
+                <label class="block"><span class="note">kohlberg_moral_stage</span>
+                    <input name="kohlberg_moral_stage" list="cfKohlberg" value="Conventional Level" class="mt-1 w-full border rounded-lg px-2 py-1.5"></label>
+                <datalist id="cfPiaget"><option value="Concrete Operational Stage"><option value="Formal Operational Stage"></datalist>
+                <datalist id="cfErikson"><option value="Industry vs. Inferiority"><option value="Identity vs. Role Confusion"></datalist>
+                <datalist id="cfKohlberg"><option value="Pre-conventional Level"><option value="Conventional Level"></datalist>
+            </div>
+            <label class="block"><span class="eyebrow">strong_subjects</span>
+                <input name="strong_subjects" placeholder="사회, 체육 (쉼표로 구분)" class="mt-1 w-full border rounded-lg px-2 py-1.5"></label>
+            <label class="block"><span class="eyebrow">weak_subjects</span>
+                <input name="weak_subjects" placeholder="수학" class="mt-1 w-full border rounded-lg px-2 py-1.5"></label>
+            <p class="sm:col-span-2 note">아래 서술은 임상 용어 없이 수업 중 행동으로 적어 주세요.</p>
+            <label class="block sm:col-span-2"><span class="eyebrow">personality</span>
+                <textarea name="personality" rows="2" maxlength="2000" placeholder="예: 발표를 좋아하고 먼저 손을 들지만, 빨리 끝내면 옆 친구에게 말을 건다." class="mt-1 w-full border rounded-lg px-2 py-1.5"></textarea></label>
+            <label class="block sm:col-span-2"><span class="eyebrow">values</span>
+                <textarea name="values" rows="2" maxlength="2000" placeholder="임상 용어 없이 수업 중 행동으로 (예: 모둠 규칙을 지키려 하고 친구가 틀려도 비웃지 않는다)" class="mt-1 w-full border rounded-lg px-2 py-1.5"></textarea></label>
+            <label class="block sm:col-span-2"><span class="eyebrow">social_relationships</span>
+                <textarea name="social_relationships" rows="2" maxlength="2000" class="mt-1 w-full border rounded-lg px-2 py-1.5"></textarea></label>
+            <label class="block"><span class="eyebrow">creativity</span>
+                <textarea name="creativity" rows="2" maxlength="2000" class="mt-1 w-full border rounded-lg px-2 py-1.5"></textarea></label>
+            <label class="block"><span class="eyebrow">mental_health</span>
+                <textarea name="mental_health" rows="2" maxlength="2000" placeholder="임상 용어 없이 수업 중 행동으로" class="mt-1 w-full border rounded-lg px-2 py-1.5"></textarea></label>
+            <details class="sm:col-span-2 rounded-lg border p-3">
+                <summary class="text-sm cursor-pointer">JSON 내보내기 / 붙여넣기 가져오기</summary>
+                <textarea id="cfJson" rows="6" aria-label="페르소나 JSON" class="mt-2 w-full border rounded-lg px-2 py-1.5 mono text-xs" placeholder='{"age": 11, "gender": "female", "grade": 5, ...}'></textarea>
+                <div class="flex gap-2 mt-2">
+                    <button type="button" id="cfImport" class="text-xs px-3 py-1.5 rounded-lg border">JSON → 폼</button>
+                    <button type="button" id="cfExport" class="text-xs px-3 py-1.5 rounded-lg border">폼 → JSON</button>
+                </div>
+            </details>
+        </div>
+        <div class="p-4 border-t flex flex-wrap items-center justify-between gap-2 bg-white">
+            <p id="cfStatus" class="note" role="status">저장할 때 한국 맥락 번안(학업 수준 재명명·행동 서술)이 한 번 적용됩니다.</p>
+            <div class="flex gap-2">
+                <button type="button" data-close class="px-4 py-2 rounded-lg border text-sm">취소</button>
+                <button type="submit" id="cfSave" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white text-sm font-semibold">저장하고 후보에 추가</button>
+            </div>
+        </div>
+    </form>
+</div>
+<script>
+(() => {
+    const modal = document.getElementById("customModal");
+    const form = document.getElementById("customForm");
+    const json = document.getElementById("cfJson");
+    const status = document.getElementById("cfStatus");
+    const save = document.getElementById("cfSave");
+    const STAGES = ["piaget_cognitive_stage", "erikson_psychosocial_stage", "kohlberg_moral_stage"];
+    const TEXTS = ["personality", "values", "social_relationships", "creativity", "mental_health"];
+    const f = name => form.elements[name];
+    const list = value => value.split(",").map(s => s.trim()).filter(Boolean);
+
+    function toJSON() {
+        const out = {
+            age: Number(f("age").value),
+            gender: f("gender").value,
+            grade: Number(f("grade").value),
+            academic_level: f("academic_level").value,
+            development_stage: {},
+            strong_subjects: list(f("strong_subjects").value),
+            weak_subjects: list(f("weak_subjects").value),
+        };
+        STAGES.forEach(k => { out.development_stage[k] = f(k).value; });
+        TEXTS.forEach(k => { out[k] = f(k).value; });
+        return out;
+    }
+
+    // 데이터셋 레코드도 붙여넣을 수 있게 "High: 설명"·"Mid"·"Grade 5" 꼴을 받아 준다
+    function fromJSON(j) {
+        if (j.age !== undefined) f("age").value = j.age;
+        if (j.gender) f("gender").value = String(j.gender).toLowerCase();
+        const grade = String(j.grade ?? "").match(/\d+/);
+        if (grade) f("grade").value = grade[0];
+        const level = String(j.academic_level ?? "").split(":")[0].trim();
+        if (level) f("academic_level").value = level === "Mid" ? "Average" : level;
+        const stage = j.development_stage || {};
+        STAGES.forEach(k => { if (stage[k]) f(k).value = stage[k]; });
+        ["strong_subjects", "weak_subjects"].forEach(k => {
+            if (Array.isArray(j[k])) f(k).value = j[k].join(", ");
+        });
+        TEXTS.forEach(k => { if (typeof j[k] === "string") f(k).value = j[k]; });
+    }
+
+    function open() {
+        modal.classList.remove("hidden");
+        f("age").focus();
+    }
+    function close() {
+        modal.classList.add("hidden");
+    }
+
+    document.getElementById("cfExport").addEventListener("click", () => {
+        json.value = JSON.stringify(toJSON(), null, 2);
+    });
+    document.getElementById("cfImport").addEventListener("click", () => {
+        try {
+            fromJSON(JSON.parse(json.value));
+            status.textContent = "JSON을 폼에 채웠습니다. 확인 후 저장해 주세요.";
+        } catch (err) {
+            status.textContent = "JSON 형식이 올바르지 않습니다.";
+        }
+    });
+    modal.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", close));
+    modal.addEventListener("click", e => { if (e.target === modal) close(); });
+    document.addEventListener("keydown", e => {
+        if (e.key === "Escape" && !modal.classList.contains("hidden")) close();
+    });
+
+    form.addEventListener("submit", async e => {
+        e.preventDefault();
+        save.disabled = true;
+        status.textContent = "번안하는 중...";
+        try {
+            const res = await fetch("/api/simulation/library", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(toJSON()),
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error((body.detail && body.detail.message) || "저장하지 못했습니다.");
+            }
+            status.textContent = "저장했습니다.";
+            close();
+            document.dispatchEvent(new CustomEvent("sim:persona-saved", { detail: { ref: body.ref } }));
+        } catch (err) {
+            status.textContent = err.message;
+        } finally {
+            save.disabled = false;
+        }
+    });
+
+    window.simPersonaModal = { open };
+})();
+</script>

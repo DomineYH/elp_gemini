@@ -8,6 +8,7 @@ from fastapi import HTTPException
 CODES = {
     "SESSION_NOT_FOUND": (404, "시뮬레이션 세션을 찾을 수 없습니다."),
     "NO_UPLOAD": (404, "먼저 지도안을 업로드해 주세요."),
+    "LIBRARY_NOT_FOUND": (404, "내 페르소나를 찾을 수 없습니다."),
     "PHASE_NOT_CURRENT": (409, "현재 국면이 아닙니다."),
     "SESSION_FINISHED": (409, "이미 끝난 시뮬레이션입니다."),
     "CONFLICT_RETRY": (
@@ -19,6 +20,7 @@ CODES = {
         422,
         "가명이 중복되었거나 사용할 수 없는 이름입니다.",
     ),
+    "INVALID_PERSONA": (400, "페르소나 입력값을 확인해 주세요."),
     "RESOURCE_EXHAUSTED": (
         429,
         "AI 사용량이 잠시 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.",

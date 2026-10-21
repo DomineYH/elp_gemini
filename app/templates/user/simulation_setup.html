@@ -44,6 +44,12 @@
                     <input type="radio" name="mode" id="modeRandom" value="random" checked class="mt-1">
                     <span><b>무작위</b><br><span class="note">학년·학업 수준 분포를 맞춰 자동 추출</span></span>
                 </label>
+                <label class="flex items-start gap-2 p-2 mt-2 rounded-lg border border-gray-200 cursor-pointer text-sm">
+                    <input type="radio" name="mode" id="modeCustom" value="custom" class="mt-1">
+                    <span><b>직접 만들기</b><br><span class="note">HACHIMI-1M 형식으로 내 학생 작성</span></span>
+                </label>
+                <button type="button" id="openCustom"
+                    class="mt-2 w-full text-sm px-3 py-2 rounded-lg border border-dashed border-gray-300 text-gray-700 hover:bg-gray-50">+ 새 페르소나 만들기</button>
             </div>
             <div>
                 <label class="eyebrow" for="count">학생 수</label>
@@ -111,6 +117,7 @@
             </p>
         </div>
     </div>
+    {% include "user/_sim_persona_modal.html" %}
 {% endif %}
 </div>
 {% endblock %}
@@ -160,9 +167,17 @@
             );
             const level = el("td", "px-3 py-2", c.level_label + " ");
             level.append(el("span", "note", "(" + c.level + ")"));
+            const id = el("td", "px-3 py-2 mono text-gray-500", c.ref);
+            if (c.source === "custom") {
+                const del = el("button", "ml-1 text-xs text-red-600 hover:underline", "삭제");
+                del.type = "button";
+                del.dataset.del = c.ref;
+                del.setAttribute("aria-label", c.pseudonym + " 페르소나 삭제");
+                id.append(" ", el("span", "phase-pill", "내가 만듦"), del);
+            }
             tr.append(
                 tdBox,
-                el("td", "px-3 py-2 mono text-gray-500", c.ref),
+                id,
                 el("td", "px-3 py-2 font-medium name " + (chosen.has(c.ref) ? seatKey(c.ref) : ""), c.pseudonym),
                 level,
                 subjects,
@@ -197,7 +212,7 @@
     });
     count.addEventListener("input", () => chooseFirst(Number(count.value)));
 
-    async function load(newSeed) {
+    async function load(newSeed, pickRef) {
         const params = new URLSearchParams({
             grade: document.getElementById("fGrade").value,
             level: document.getElementById("fLevel").value,
@@ -213,6 +228,12 @@
             candidates = body.candidates;
             status.textContent = "";
             chooseFirst(Math.min(Math.max(Number(count.value), MIN), candidates.length));
+            if (pickRef) {
+                // 방금 만든 페르소나를 체크한다 (최대 인원이면 마지막 선택을 뺀다)
+                if (chosen.size >= MAX) chosen.delete([...chosen].pop());
+                chosen.add(pickRef);
+                render();
+            }
         } catch (err) {
             status.textContent = "후보를 불러오지 못했습니다. 다시 추출을 눌러 주세요.";
         }
@@ -250,6 +271,19 @@
             startBtn.disabled = false;
         }
     });
+
+    rows.addEventListener("click", async e => {
+        const ref = e.target.dataset.del;
+        if (!ref || !confirm("이 페르소나를 내 라이브러리에서 삭제할까요? 지난 시뮬레이션에는 남아 있습니다.")) return;
+        const res = await fetch("/api/simulation/library/" + ref.replace("custom:", ""), { method: "DELETE" });
+        if (!res.ok) status.textContent = "삭제하지 못했습니다.";
+        load(false);
+    });
+    document.getElementById("openCustom").addEventListener("click", () => window.simPersonaModal.open());
+    document.getElementById("modeCustom").addEventListener("change", e => {
+        if (e.target.checked) window.simPersonaModal.open();
+    });
+    document.addEventListener("sim:persona-saved", e => load(false, e.detail.ref));
 
     document.getElementById("reroll").addEventListener("click", () => load(true));
     document.getElementById("fGrade").addEventListener("change", () => load(false));
