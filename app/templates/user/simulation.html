@@ -11,7 +11,10 @@
             <p class="eyebrow">2 / 4 · 수업 시뮬레이션</p>
             <h1 class="text-xl font-bold truncate">수업 시뮬레이션</h1>
         </div>
-        <p class="note">생성 반응은 프로필을 조건화한 가설이며 실제 학생 행동이나 예측이 아닙니다.</p>
+        <div class="flex flex-wrap items-center gap-2">
+            <p class="note">생성 반응은 프로필을 조건화한 가설이며 실제 학생 행동이나 예측이 아닙니다.</p>
+            <button type="button" id="endBtn" class="phase-pill" disabled>수업 종료</button>
+        </div>
     </div>
 
     <!-- 국면 스테퍼 -->
@@ -39,25 +42,57 @@
             <div class="text-sm">
                 <span class="note">다음 단계 동의</span>
                 <span id="agreeCount" class="mono font-medium ml-1">0 / {{ persona_count }}</span>
+                <span class="note ml-2 hidden sm:inline">· 학생이 과업을 끝냈다고 판단하면 자동으로 표시됩니다</span>
             </div>
             <div class="flex gap-2">
-                <button type="button" id="skipBtn" class="px-4 py-2 rounded-lg border text-sm text-gray-400 cursor-not-allowed" disabled>Skip ▸</button>
+                <button type="button" id="skipBtn" class="px-4 py-2 rounded-lg border text-sm text-gray-700 hover:bg-gray-50" title="학생 동의 없이 다음 국면으로" disabled>Skip ▸</button>
                 <button type="button" id="nextBtn" class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gray-400 cursor-not-allowed" disabled>다음 국면으로 →</button>
             </div>
         </div>
         <p id="simStatus" class="note mt-3" role="status"></p>
+        <ul id="sysLog" class="mt-3 space-y-1 text-xs text-gray-400"></ul>
+    </div>
+</div>
+
+<!-- 1:1 대화 창 -->
+<div id="dmModal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" style="padding:max(16px,env(safe-area-inset-left,0px))">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="dmTitle">
+        <div class="flex items-center justify-between gap-3 px-4 py-3 border-b">
+            <div class="flex items-center gap-2 min-w-0">
+                <span id="dmDot" class="w-3 h-3 rounded-full shrink-0"></span>
+                <div class="min-w-0">
+                    <p id="dmTitle" class="font-semibold text-sm truncate">학생</p>
+                    <p id="dmSub" class="note truncate"></p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="phase-pill hidden sm:inline">1:1 대화 · 교실에도 기록됨</span>
+                <button type="button" id="dmClose" class="text-gray-500 hover:text-gray-800 p-1" aria-label="닫기">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+        </div>
+        <div id="dmFeed" class="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50 min-h-[12rem]"></div>
+        <form id="dmForm" class="p-3 border-t flex items-end gap-2 bg-white">
+            <label for="dmInput" class="sr-only">이 학생에게 말하기</label>
+            <textarea id="dmInput" rows="1" maxlength="1000" placeholder="이 학생에게만 말하기"
+                class="flex-1 min-w-0 resize-none px-3 py-2 text-sm border rounded-lg focus:outline-none"></textarea>
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shrink-0">말하기</button>
+        </form>
     </div>
 </div>
 
 <!-- 교사 입력 (하단 고정) -->
 <div class="fixed left-0 right-0 z-40" style="bottom:0;padding:0 max(16px,env(safe-area-inset-left,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-right,0px))">
     <form id="tForm" class="container mx-auto max-w-3xl bg-white border rounded-2xl shadow-lg p-2 flex items-end gap-2">
-        <span class="hidden sm:inline text-xs px-2 py-2 rounded-lg bg-gray-100 text-gray-600 shrink-0 whitespace-nowrap">전체에게</span>
+        <span class="hidden sm:inline text-xs px-2 py-2 rounded-lg bg-gray-100 text-gray-600 shrink-0 whitespace-nowrap" title="학생 개인에게는 좌석을 클릭해 말하기">전체에게</span>
         <label for="tInput" class="sr-only">교사 발화</label>
-        <textarea id="tInput" rows="1" placeholder="전체 학생에게 말하기" disabled
+        <textarea id="tInput" rows="1" maxlength="1000" placeholder="전체 학생에게 말하기" disabled
             class="flex-1 min-w-0 resize-none px-3 py-2 text-sm focus:outline-none bg-white"></textarea>
-        <button type="submit" disabled
-            class="bg-gray-400 text-white text-sm font-semibold px-4 py-2 rounded-lg shrink-0 cursor-not-allowed">말하기</button>
+        <button type="button" id="hintBtn" disabled
+            class="text-xs px-3 py-2 rounded-lg border text-gray-600 hover:bg-gray-50 shrink-0" title="지도안 발문 불러오기">지도안 발문</button>
+        <button type="submit" id="tSend" disabled
+            class="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-lg shrink-0">말하기</button>
     </form>
 </div>
 {% endblock %}
@@ -68,8 +103,15 @@
 <script>
 (() => {
     const SID = {{ sid }};
-    const status = document.getElementById("simStatus");
+    const API = "/api/simulation/sessions/" + SID;
+    const $ = id => document.getElementById(id);
+    const status = $("simStatus");
+    const tInput = $("tInput");
+    const dmModal = $("dmModal");
+    const dmInput = $("dmInput");
     let state = null;
+    let busy = false;
+    let dmPersona = null;
 
     function el(tag, className, text) {
         const node = document.createElement(tag);
@@ -78,13 +120,18 @@
         return node;
     }
 
-    async function api(method, url) {
-        const res = await fetch(url, { method, headers: { accept: "application/json" } });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
-            throw new Error((body.detail && body.detail.message) || "요청을 처리하지 못했습니다.");
+    async function api(method, url, body) {
+        const init = { method, headers: { accept: "application/json" } };
+        if (body !== undefined) {
+            init.headers["content-type"] = "application/json";
+            init.body = JSON.stringify(body);
         }
-        return body;
+        const res = await fetch(url, init);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error((data.detail && data.detail.message) || "요청을 처리하지 못했습니다.");
+        }
+        return data;
     }
 
     function currentPhase() {
@@ -94,6 +141,15 @@
     function phaseUtterances() {
         const idx = state.session.current_phase_idx;
         return state.utterances.filter(u => u.phase_idx === idx);
+    }
+
+    function personaName(id) {
+        const p = state.personas.find(x => x.id === id);
+        return p ? p.display_name : "";
+    }
+
+    function teacherText(u) {
+        return u.target_persona_id ? "(" + personaName(u.target_persona_id) + "에게) " + u.content : u.content;
     }
 
     function bubble(persona, u) {
@@ -109,6 +165,12 @@
         return box;
     }
 
+    function teacherBubble(u) {
+        const box = el("div", "bubble teacher in text-xs self-end", teacherText(u));
+        box.style.cssText = "padding:.35rem .7rem;border-radius:10px;max-width:90%";
+        return box;
+    }
+
     function typing(persona) {
         const box = el("div", "bubble " + persona.color_key + " typing in");
         box.setAttribute("aria-label", persona.display_name + " 반응 생성 중");
@@ -116,32 +178,104 @@
         return box;
     }
 
+    // 좌석·1:1 창에 보일 발화: 이 학생의 반응 + 이 학생에게 한 교사 1:1 발화
+    function seatUtterances(utts, p) {
+        return utts.filter(u =>
+            (u.speaker_type === "student" && u.persona_id === p.id) ||
+            (u.speaker_type === "teacher" && u.target_persona_id === p.id));
+    }
+
+    function openSeat(p) {
+        if (state.session.status !== "running") return;
+        dmPersona = p;
+        dmModal.classList.remove("hidden");
+        render(new Set());
+        setTimeout(() => dmInput.focus(), 50);
+    }
+
+    function closeDM() {
+        dmPersona = null;
+        dmModal.classList.add("hidden");
+    }
+
+    function renderDM(utts, pending) {
+        if (!dmPersona) return;
+        const p = dmPersona;
+        $("dmTitle").textContent = p.display_name;
+        $("dmSub").textContent = [p.adapted_level, p.adapted_profile.behavior_summary].filter(Boolean).join(" · ");
+        $("dmDot").style.background = "var(--" + p.color_key + ")";
+        const feed = $("dmFeed");
+        feed.replaceChildren(el("p", "note text-center",
+            currentPhase().name + " 국면 · " + p.display_name + "과(와)의 1:1 대화. 여기서 한 말과 반응은 교실 화면과 대화록에도 기록됩니다."));
+        seatUtterances(utts, p).forEach(u => {
+            const row = el("div", "flex " + (u.speaker_type === "teacher" ? "justify-end" : "justify-start"));
+            if (u.speaker_type === "teacher") {
+                row.append(el("div", "bubble teacher in max-w-[85%]", u.content));
+            } else {
+                const box = bubble(p, u);
+                box.classList.add("max-w-[85%]");
+                box.prepend(el("span", "name " + p.color_key + " text-xs font-semibold block mb-0.5", p.display_name));
+                row.append(box);
+            }
+            feed.append(row);
+        });
+        if (pending.has(p.id)) feed.append(typing(p));
+        feed.scrollTop = feed.scrollHeight;
+    }
+
+    function syncControls() {
+        const running = state && state.session.status === "running";
+        const entered = running && phaseUtterances().length > 0;
+        const canAct = running && !busy;
+        tInput.disabled = !(entered && !busy);
+        dmInput.disabled = !(entered && !busy);
+        $("tSend").disabled = !(entered && !busy);
+        dmModal.querySelector("button[type=submit]").disabled = !(entered && !busy);
+        $("hintBtn").disabled = !running;
+        $("skipBtn").disabled = !canAct;
+        $("endBtn").disabled = !canAct;
+        const all = canAct && entered && state.agreement.all_agreed;
+        const next = $("nextBtn");
+        next.disabled = !all;
+        next.className = "px-4 py-2 rounded-lg text-sm font-semibold text-white " +
+            (all ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed");
+    }
+
     function render(pending) {
         const idx = state.session.current_phase_idx;
-        document.getElementById("stepper").replaceChildren(...state.phases.map(p => {
+        $("stepper").replaceChildren(...state.phases.map(p => {
             const cls = p.idx < idx ? " done" : p.idx === idx ? " now" : "";
             return el("span", "phase-pill" + cls, p.name);
         }));
 
         const phase = currentPhase();
-        document.getElementById("phaseEyebrow").textContent =
+        $("phaseEyebrow").textContent =
             "지도안의 현재 국면 · " + phase.name + (phase.minutes ? " (" + phase.minutes + "분)" : "");
-        const prompt = document.getElementById("phasePrompt");
+        const prompt = $("phasePrompt");
         prompt.replaceChildren(el("b", "", "교사 발문 "), phase.teacher_prompt);
         if (phase.task) prompt.append(" · ", el("b", "", "과업 "), phase.task);
-        document.getElementById("phaseDetail").textContent = [
+        $("phaseDetail").textContent = [
             phase.materials && "자료: " + phase.materials,
             phase.cautions && "유의점: " + phase.cautions,
         ].filter(Boolean).join(" · ");
 
         const utts = phaseUtterances();
         const teacher = utts.filter(u => u.speaker_type === "teacher").pop();
-        const teacherLast = document.getElementById("teacherLast");
-        teacherLast.textContent = teacher ? teacher.content : "";
+        const teacherLast = $("teacherLast");
+        teacherLast.textContent = teacher ? teacherText(teacher) : "";
         teacherLast.classList.toggle("hidden", !teacher);
 
-        document.getElementById("seats").replaceChildren(...state.personas.map(p => {
-            const seat = el("div", "seat card p-3 flex flex-col gap-2");
+        const agreed = new Set(state.agreement.agreed_persona_ids);
+        $("agreeCount").textContent = state.agreement.count + " / " + state.agreement.total;
+        $("seats").replaceChildren(...state.personas.map(p => {
+            const seat = el("div", "seat card p-3 flex flex-col gap-2 cursor-pointer hover:shadow-md hover:border-gray-300 transition");
+            seat.tabIndex = 0;
+            seat.setAttribute("role", "button");
+            seat.title = "클릭하면 " + p.display_name + "에게 1:1로 말할 수 있어요";
+            seat.addEventListener("click", () => openSeat(p));
+            seat.addEventListener("keydown", e => {
+                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openSeat(p); }
+            });
             const head = el("div", "flex items-center justify-between gap-2");
             const who = el("div", "flex items-center gap-2 min-w-0");
             who.append(
@@ -149,44 +283,132 @@
                 el("span", "name " + p.color_key + " font-semibold text-sm truncate", p.display_name),
                 el("span", "note truncate", p.adapted_level),
             );
-            head.append(who, el("span", "agree", "대기"));
+            const ok = agreed.has(p.id);
+            head.append(who, el("span", "agree" + (ok ? " yes" : ""), ok ? "✓ 다음 단계 OK" : "대기"));
             const feed = el("div", "flex flex-col gap-2 min-h-[4.5rem]");
-            utts.filter(u => u.speaker_type === "student" && u.persona_id === p.id)
-                .forEach(u => feed.append(bubble(p, u)));
-            if (pending) feed.append(typing(p));
+            seatUtterances(utts, p).forEach(u =>
+                feed.append(u.speaker_type === "teacher" ? teacherBubble(u) : bubble(p, u)));
+            if (pending.has(p.id)) feed.append(typing(p));
             seat.append(head, feed);
             if (p.adapted_profile.behavior_summary) {
                 seat.append(el("p", "note", p.adapted_profile.behavior_summary));
             }
+            seat.append(el("p", "note text-right", "클릭해서 1:1 말하기"));
             return seat;
         }));
+
+        // 전이·종료 기록은 회색 시스템 줄로
+        $("sysLog").replaceChildren(...state.utterances
+            .filter(u => u.speaker_type === "system" && u.structured && u.structured.type !== "phase_enter")
+            .map(u => el("li", "", "· " + u.content)));
+
+        renderDM(utts, pending);
+        syncControls();
     }
 
-    async function enterCurrentPhase() {
-        const idx = state.session.current_phase_idx;
-        render(true);
+    function merge(turn) {
+        const known = new Set(state.utterances.map(u => u.id));
+        state.utterances.push(...turn.utterances.filter(u => !known.has(u.id)));
+        state.agreement = turn.agreement;
+        state.session.teacher_turns_used = turn.teacher_turns_used;
+    }
+
+    async function run(pending, action) {
+        busy = true;
         status.textContent = "";
+        render(pending);
         try {
-            const turn = await api("POST", "/api/simulation/sessions/" + SID + "/phases/" + idx + "/enter");
-            const known = new Set(state.utterances.map(u => u.id));
-            state.utterances.push(...turn.utterances.filter(u => !known.has(u.id)));
-            render(false);
+            await action();
         } catch (err) {
-            render(false);
             status.textContent = err.message;
+        } finally {
+            busy = false;
+            render(new Set());
         }
     }
 
+    function enterCurrentPhase() {
+        const idx = state.session.current_phase_idx;
+        return run(new Set(state.personas.map(p => p.id)), async () => {
+            merge(await api("POST", API + "/phases/" + idx + "/enter"));
+        });
+    }
+
+    function say(content, targetId) {
+        const pending = new Set(state.personas.filter(p => targetId === null || p.id === targetId).map(p => p.id));
+        return run(pending, async () => {
+            merge(await api("POST", API + "/say", { content, target_persona_id: targetId }));
+        });
+    }
+
+    function toTranscript() {
+        window.location.href = "/simulation/sessions/" + SID + "/transcript";
+    }
+
+    async function advance(mode) {
+        let result = null;
+        await run(new Set(), async () => {
+            result = await api("POST", API + "/advance", { mode });
+        });
+        if (!result) return;
+        if (result.status === "finished") return toTranscript();
+        await init();
+    }
+
+    function bindInput(form, input, target) {
+        form.addEventListener("submit", e => {
+            e.preventDefault();
+            const text = input.value.trim();
+            if (!text || busy) return;
+            input.value = "";
+            say(text, target());
+        });
+        input.addEventListener("keydown", e => {
+            if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+                e.preventDefault();
+                form.requestSubmit();
+            }
+        });
+    }
+
+    bindInput($("tForm"), tInput, () => null);
+    bindInput($("dmForm"), dmInput, () => dmPersona && dmPersona.id);
+    $("hintBtn").addEventListener("click", () => {
+        tInput.value = currentPhase().teacher_prompt;
+        tInput.focus();
+    });
+    $("nextBtn").addEventListener("click", () => advance("agree"));
+    $("skipBtn").addEventListener("click", () => advance("skip"));
+    $("endBtn").addEventListener("click", async () => {
+        if (!confirm("수업을 종료할까요? 종료 후에는 더 말하거나 국면을 넘길 수 없습니다.")) return;
+        let done = false;
+        await run(new Set(), async () => {
+            await api("POST", API + "/finish");
+            done = true;
+        });
+        if (done) toTranscript();
+    });
+    $("dmClose").addEventListener("click", closeDM);
+    dmModal.addEventListener("click", e => { if (e.target === dmModal) closeDM(); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && dmPersona) closeDM(); });
+
     async function init() {
         try {
-            state = await api("GET", "/api/simulation/sessions/" + SID);
+            state = await api("GET", API);
         } catch (err) {
             status.textContent = err.message;
             return;
         }
-        render(false);
+        render(new Set());
+        if (state.session.status === "finished") {
+            status.replaceChildren("종료된 시뮬레이션입니다. ");
+            const link = el("a", "text-blue-600 underline", "대화록 보기");
+            link.href = "/simulation/sessions/" + SID + "/transcript";
+            status.append(link);
+            return;
+        }
         // 복원: 현재 국면에 발화가 없을 때만 진입한다
-        if (state.session.status === "running" && phaseUtterances().length === 0) {
+        if (phaseUtterances().length === 0) {
             await enterCurrentPhase();
         }
     }

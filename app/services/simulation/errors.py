@@ -11,6 +11,11 @@ CODES = {
     "LIBRARY_NOT_FOUND": (404, "내 페르소나를 찾을 수 없습니다."),
     "PHASE_NOT_CURRENT": (409, "현재 국면이 아닙니다."),
     "SESSION_FINISHED": (409, "이미 끝난 시뮬레이션입니다."),
+    "PHASE_NOT_ENTERED": (409, "아직 현재 국면에 들어가지 않았습니다."),
+    "NOT_ALL_AGREED": (
+        409,
+        "아직 모든 학생이 다음 단계에 동의하지 않았습니다.",
+    ),
     "CONFLICT_RETRY": (
         409,
         "동시에 요청이 처리되었습니다. 다시 시도해 주세요.",

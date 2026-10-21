@@ -122,14 +122,45 @@ class SessionInfo(BaseModel):
     has_feedback: bool
 
 
+class Agreement(BaseModel):
+    phase_idx: int
+    agreed_persona_ids: list[int]
+    count: int
+    total: int
+    all_agreed: bool
+
+
 class SessionState(BaseModel):
     session: SessionInfo
     phases: list[Phase]
     personas: list[Persona]
     utterances: list[Utterance]
+    agreement: Agreement
 
 
 class TurnResult(BaseModel):
     utterances: list[Utterance]
     failed_persona_ids: list[int]
+    agreement: Agreement
     teacher_turns_used: int
+
+
+class SayRequest(BaseModel):
+    """target_persona_id가 없으면 전체에게"""
+
+    content: str = Field(min_length=1, max_length=1000)
+    target_persona_id: int | None = None
+
+
+class AdvanceRequest(BaseModel):
+    mode: Literal["agree", "skip"]
+
+
+class AdvanceResult(BaseModel):
+    status: str
+    current_phase_idx: int
+    next_phase: Phase | None
+
+
+class FinishResult(BaseModel):
+    status: Literal["finished"]
