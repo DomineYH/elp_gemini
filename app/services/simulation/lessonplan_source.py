@@ -5,7 +5,7 @@
 from pathlib import Path
 
 from pypdf import PdfReader
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.lessonplan_uploads import LessonPlanUpload
@@ -27,6 +27,16 @@ async def get_latest_upload(
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def forget_file_search_ids(db: AsyncSession, user_id: int) -> None:
+    """사용자 File Search 스토어를 지운 뒤 업로드 행의 문서 ID를 비운다 (#173)."""
+    await db.execute(
+        update(LessonPlanUpload)
+        .where(LessonPlanUpload.user_id == user_id)
+        .values(fs_document_id=None, fs_store_id=None)
+    )
+    await db.commit()
 
 
 def extract_text(upload: LessonPlanUpload) -> str:

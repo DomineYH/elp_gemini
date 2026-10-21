@@ -25,6 +25,7 @@ from app.services.file_search_service import (
 )
 from app.templating import templates
 from app.services.criteria_freshness import ensure_criteria_cache_fresh
+from app.services.simulation import lessonplan_source
 
 router = APIRouter(tags=["뷰"])
 logger = logging.getLogger(__name__)
@@ -43,6 +44,29 @@ def _criteria_documents_from_active(active_list) -> list[dict]:
         {"id": c.id, "name": c.display_alias or c.title}
         for c in active_list
     ]
+
+
+def _document_from_upload(upload: LessonPlanUpload) -> dict | None:
+    """
+    최근 업로드 행으로 대시보드 document를 재구성한다 (#173).
+
+    File Search 문서 ID가 없거나(과거 행·로그아웃으로 스토어 삭제)
+    원본 PDF가 없으면 None → 지금처럼 업로드 안내를 보인다.
+    """
+    path = (
+        lessonplan_source.UPLOADS_DIR / str(upload.user_id) / upload.filename
+    )
+    if not upload.fs_document_id or not path.is_file():
+        return None
+    return {
+        "id": upload.fs_document_id,
+        "title": upload.original_filename or upload.filename,
+        "status": "ready",
+        "uploaded_at": upload.created_at,
+        "file_size": path.stat().st_size,
+        "store_id": upload.fs_store_id,
+        "file_url": f"/dashboard/uploads/{upload.filename}",
+    }
 
 
 @router.get(
@@ -74,11 +98,21 @@ async def user_dashboard(
     active_list = await repo.get_active_criteria()
     criteria_documents = _criteria_documents_from_active(active_list)
 
+    # 새로고침해도 최근 업로드의 뷰어·QnA·분석 진입점을 유지 (#173)
+    upload = await lessonplan_source.get_latest_upload(db, current_user.id)
+    document = _document_from_upload(upload) if upload else None
+
     return templates.TemplateResponse(
         "user/dashboard.html",
         {
             "request": request,
             "user": current_user,
+            "document": document,
+            "expired_upload_name": (
+                upload.original_filename
+                if upload and document is None
+                else None
+            ),
             "criteria_documents": criteria_documents,
         }
     )
@@ -220,6 +254,8 @@ async def upload_document(
             filename=saved_filename,
             original_filename=file.filename,
             file_hash=file_hash,
+            fs_document_id=result.get("document_id"),
+            fs_store_id=result.get("store_id"),
         )
         db.add(upload_row)
         await db.flush()
@@ -282,6 +318,7 @@ async def upload_document(
 async def cleanup_dashboard(
     request: Request,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     대시보드 정리 (페이지 이탈/종료 시 호출)
@@ -292,6 +329,7 @@ async def cleanup_dashboard(
 
         # 사용자 스토어 삭제
         await file_search_service.delete_store_by_display_name(store_name)
+        await lessonplan_source.forget_file_search_ids(db, current_user.id)
 
         logger.info(f"대시보드 정리 완료: user={current_user.username}")
         return {"status": "success", "message": "Cleanup completed"}

@@ -525,7 +525,7 @@ async def login(
 
 # T025: POST /auth/logout - 로그아웃 처리
 @router.post("/auth/logout")
-async def logout(request: Request):
+async def logout(request: Request, db: AsyncSession = Depends(get_db)):
     """
     사용자 로그아웃
 
@@ -554,6 +554,12 @@ async def logout(request: Request):
             file_search_service = FileSearchService()
             store_name = f"user-{user_id}-store"
             await file_search_service.delete_store_by_display_name(store_name)
+            # 지워진 문서로 대시보드가 QnA 버튼을 복원하지 않게 (#173)
+            from app.services.simulation.lessonplan_source import (
+                forget_file_search_ids,
+            )
+
+            await forget_file_search_ids(db, user_id)
         except Exception as e:
             logger.warning(f"로그아웃 시 스토어 정리 실패: {str(e)}")
 

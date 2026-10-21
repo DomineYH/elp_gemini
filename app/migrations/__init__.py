@@ -17,6 +17,9 @@ from .criteria_stable_id import ensure_criteria_stable_id_column
 from .drop_invite_codes_table import drop_invite_codes_table
 from .drop_user_profiles import drop_user_profiles
 from .drop_users_email_column import drop_users_email_column
+from .lessonplan_uploads_fs_ids import (
+    ensure_lessonplan_uploads_fs_id_columns,
+)
 from .lessonplan_uploads_table import ensure_lessonplan_uploads_table
 from .preservice_region_kyodae_rename import (
     rename_preservice_university_regions,
@@ -35,6 +38,7 @@ __all__ = [
     "ensure_criteria_stable_id_column",
     "ensure_users_lockout_columns",
     "ensure_lessonplan_uploads_table",
+    "ensure_lessonplan_uploads_fs_id_columns",
     "ensure_simulation_tables",
     "rename_chat_session_in_service_teacher_label",
     "rename_preservice_university_regions",

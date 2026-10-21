@@ -297,12 +297,17 @@
         </div>
     </div>
     {% else %}
-    <div class="space-y-6">
-        <div class="text-center text-gray-600 py-4">
-            <p>문서를 업로드하면 분석 및 QnA 기능을 사용할 수 있습니다.</p>
-            <p class="text-sm text-gray-500 mt-2">이전에 진행한 세션과 분석 보고서는 아래에서 다시 확인할 수 있습니다.</p>
-        </div>
+    <div class="text-center text-gray-600 py-4">
+        <p>문서를 업로드하면 분석 및 QnA 기능을 사용할 수 있습니다.</p>
+        {% if expired_upload_name %}
+        <p class="text-sm text-amber-700 mt-2">최근 지도안({{ expired_upload_name }})은 로그아웃 등으로 검색 색인이 삭제되어 다시 업로드해야 QnA를 쓸 수 있습니다.</p>
+        {% endif %}
+        <p class="text-sm text-gray-500 mt-2">이전에 진행한 세션과 분석 보고서는 아래에서 다시 확인할 수 있습니다.</p>
+    </div>
+    {% endif %}
 
+    <!-- 지난 세션·보고서: 문서 유무와 관계없이 표시 (#173) -->
+    <div class="space-y-6">
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <section class="bg-white shadow-md rounded-lg p-6">
                 <div class="flex items-center justify-between mb-4">
@@ -325,7 +330,6 @@
             </section>
         </div>
     </div>
-    {% endif %}
 </div>
 
 <!-- Floating Action Buttons -->

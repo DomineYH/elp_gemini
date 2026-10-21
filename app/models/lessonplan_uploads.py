@@ -56,6 +56,10 @@ class LessonPlanUpload(Base):
         nullable=True,
         comment="SHA-256 of bytes — 향후 content-dedup 용",
     )
+    # File Search 문서·스토어 이름. GET /dashboard가 QnA 진입점을 복원할 때
+    # 쓴다(#173). 로그아웃 등으로 스토어가 지워지면 NULL로 비운다.
+    fs_document_id = Column(String(512), nullable=True)
+    fs_store_id = Column(String(512), nullable=True)
     created_at = Column(
         DateTime,
         nullable=False,

@@ -29,6 +29,7 @@ from app.migrations import (
     ensure_criteria_display_alias_column,
     ensure_criteria_file_path_column,
     ensure_criteria_stable_id_column,
+    ensure_lessonplan_uploads_fs_id_columns,
     ensure_lessonplan_uploads_table,
     ensure_simulation_tables,
     ensure_users_lockout_columns,
@@ -277,6 +278,9 @@ async def startup_event():
         logger.info(
             "lessonplan_uploads / analysis_reports.upload_id 자동 적용"
         )
+
+    if await ensure_lessonplan_uploads_fs_id_columns(engine):
+        logger.info("lessonplan_uploads.fs_document_id/fs_store_id 자동 추가")
 
     if await ensure_chat_sessions_document_id_column(engine):
         logger.info("chat_sessions.document_id 컬럼 자동 추가")
