@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}대화록 - 수업 시뮬레이션{% endblock %}
+
+{% block head %}{% include "user/_sim_style.html" %}{% endblock %}
+
+{% block content %}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+    <div class="min-w-0">
+        <p class="eyebrow">3 / 4 · 전체 대화록</p>
+        <h1 class="text-2xl font-bold mt-1">시간순 대화 기록</h1>
+        <p class="note mt-1" id="trMeta"></p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        <label for="trFilter" class="sr-only">국면으로 거르기</label>
+        <select id="trFilter" class="text-sm border rounded-lg px-2 py-1.5 bg-white">
+            <option value="">전체 국면</option>
+        </select>
+        <a id="runLink" href="/simulation/sessions/{{ sid }}" class="hidden text-sm px-4 py-2 rounded-lg border">시뮬레이션으로 돌아가기</a>
+        <a id="feedbackLink" href="/simulation/sessions/{{ sid }}/feedback" class="hidden bg-blue-600 text-white text-sm font-semibold px-4 py-2 rounded-lg">AI 피드백 받기 →</a>
+    </div>
+</div>
+<div class="card p-5">
+    <ol class="timeline space-y-3 text-sm" id="transcript"></ol>
+    <p id="trStatus" class="note mt-3" role="status"></p>
+</div>
+
+<script>
+(function () {
+    const SID = {{ sid }};
+    const $ = id => document.getElementById(id);
+    let state = null;
+
+    function el(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+
+    // 서버 시각은 모두 UTC naive (CURRENT_TIMESTAMP)
+    const utc = at => new Date(at + "Z");
+
+    function clock(at) {
+        const secs = Math.max(0, Math.round((utc(at) - utc(state.session.created_at)) / 1000));
+        return String(Math.floor(secs / 60)).padStart(2, "0") + ":" + String(secs % 60).padStart(2, "0");
+    }
+
+    function render() {
+        const filter = $("trFilter").value;
+        const personas = new Map(state.personas.map(p => [p.id, p]));
+        const phaseName = idx => (state.phases[idx] || {}).name || "";
+        const rows = state.utterances.filter(u => filter === "" || u.phase_idx === Number(filter));
+        const list = $("transcript");
+        list.replaceChildren();
+        for (const u of rows) {
+            const time = el("span", "mono text-gray-400 mr-2", clock(u.created_at));
+            if (u.speaker_type === "system") {
+                const li = el("li", "note");
+                li.append(time, el("span", "", u.content));
+                list.append(li);
+                continue;
+            }
+            const persona = personas.get(u.persona_id);
+            const key = u.speaker_type === "teacher" ? "teacher" : persona.color_key;
+            let label = persona ? persona.display_name : "교사";
+            if (u.speaker_type === "teacher" && u.target_persona_id) {
+                label = "교사 → " + personas.get(u.target_persona_id).display_name;
+            }
+            const li = el("li", key);
+            const name = el("b", "name " + key, label);
+            if (key === "teacher") name.style.color = "var(--teacher)";
+            li.append(
+                time,
+                el("span", "phase-pill mr-2", phaseName(u.phase_idx)),
+                name,
+                " ",
+                el("span", u.failed ? "note" : "", u.failed ? "(반응 생성 실패)" : u.content)
+            );
+            list.append(li);
+        }
+        if (!rows.length) list.append(el("li", "note", "아직 기록이 없습니다."));
+    }
+
+    async function init() {
+        const res = await fetch("/api/simulation/sessions/" + SID, { headers: { accept: "application/json" } });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            $("trStatus").textContent = (data.detail && data.detail.message) || "대화록을 불러오지 못했습니다.";
+            return;
+        }
+        state = data;
+        for (const p of state.phases) {
+            const option = el("option", "", p.name);
+            option.value = String(p.idx);
+            $("trFilter").append(option);
+        }
+        $("trMeta").textContent =
+            "세션 #" + SID + " · " + utc(state.session.created_at).toLocaleString("ko-KR") +
+            " 시작 · 국면 " + state.phases.length + " · 발화 " + state.utterances.length + "건";
+        const finished = state.session.status === "finished";
+        $(finished ? "feedbackLink" : "runLink").classList.remove("hidden");
+        if (!finished) $("trStatus").textContent = "수업을 종료하면 AI 피드백을 받을 수 있습니다.";
+        render();
+    }
+
+    $("trFilter").addEventListener("change", render);
+    init();
+})();
+</script>
+{% endblock %}
