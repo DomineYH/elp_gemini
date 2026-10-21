@@ -8,6 +8,8 @@ import random
 from functools import lru_cache
 from pathlib import Path
 
+from app.services.simulation.errors import SimulationError
+
 DATA_PATH = (
     Path(__file__).resolve().parents[3]
     / "data"
@@ -120,3 +122,19 @@ def to_candidate(record: dict, pseudonym: str) -> dict:
         "weak_subjects": [_subject_ko(s) for s in record["weak_subjects"]],
         "behavior_summary": record["personality"][:80],
     }
+
+
+@lru_cache(maxsize=1)
+def _pool_by_id() -> dict[str, dict]:
+    return {str(r["id"]): r for r in load_pool()}
+
+
+def resolve_refs(refs: list[str]) -> list[dict]:
+    """데이터셋 ref("123") → 원본 레코드. 모르는 ref → UNKNOWN_PERSONA.
+
+    custom:<id>는 #158에서 session_service가 따로 푼다.
+    """
+    by_id = _pool_by_id()
+    if any(ref not in by_id for ref in refs):
+        raise SimulationError("UNKNOWN_PERSONA")
+    return [by_id[ref] for ref in refs]

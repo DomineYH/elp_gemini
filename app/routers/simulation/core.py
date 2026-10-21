@@ -1,11 +1,11 @@
 """
-수업 시뮬레이션 핵심 라우터: 설정 화면, 후보 페르소나
+수업 시뮬레이션 핵심 라우터: 설정 화면, 후보 페르소나, 세션 생성·진입·실행 화면
 """
 
 import random
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,8 +13,20 @@ from app.config import settings
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models.users import User
-from app.schemas.simulation import CandidatesResponse, Level
-from app.services.simulation import lessonplan_source, persona_pool
+from app.schemas.simulation import (
+    CandidatesResponse,
+    CreateSessionRequest,
+    Level,
+    SessionState,
+    TurnResult,
+)
+from app.services.simulation import (
+    lessonplan_source,
+    persona_pool,
+    phase_split,
+    session_service,
+)
+from app.services.simulation.errors import SimulationError
 from app.templating import templates
 
 router = APIRouter(tags=["수업 시뮬레이션"])
@@ -71,3 +83,94 @@ async def get_candidates(
             for r, name in zip(records, names)
         ],
     }
+
+
+@router.get("/api/simulation/phases/draft")
+async def get_phase_draft(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # 빈 행은 PhaseIn 검증(teacher_prompt 1자 이상)에 걸리므로 dict 그대로
+    try:
+        return await phase_split.draft_phases(db, current_user.id)
+    except SimulationError as e:
+        raise e.to_http() from e
+
+
+@router.post(
+    "/api/simulation/sessions",
+    response_model=SessionState,
+    status_code=201,
+)
+async def create_session(
+    body: CreateSessionRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        session = await session_service.create_session(
+            db, current_user.id, body
+        )
+    except SimulationError as e:
+        raise e.to_http() from e
+    return await session_service.load_state(db, session)
+
+
+@router.get("/api/simulation/sessions/{sid}", response_model=SessionState)
+async def get_session_state(
+    sid: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        session = await session_service.get_owned_session(
+            db, sid, current_user.id
+        )
+    except SimulationError as e:
+        raise e.to_http() from e
+    return await session_service.load_state(db, session)
+
+
+@router.post(
+    "/api/simulation/sessions/{sid}/phases/{idx}/enter",
+    response_model=TurnResult,
+)
+async def enter_phase(
+    sid: int,
+    idx: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        session = await session_service.get_owned_session(
+            db, sid, current_user.id
+        )
+        return await session_service.enter_phase(db, session, idx)
+    except SimulationError as e:
+        raise e.to_http() from e
+
+
+@router.get("/simulation/sessions/{sid}", response_class=HTMLResponse)
+async def simulation_run_page(
+    sid: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        session = await session_service.get_owned_session(
+            db, sid, current_user.id
+        )
+    except SimulationError:
+        raise HTTPException(
+            status_code=404, detail="시뮬레이션 세션을 찾을 수 없습니다."
+        )
+    return templates.TemplateResponse(
+        "user/simulation.html",
+        {
+            "request": request,
+            "user": current_user,
+            "sid": session.id,
+            "persona_count": session.persona_count,
+        },
+    )

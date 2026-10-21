@@ -29,6 +29,8 @@
         <p class="text-sm text-gray-700 whitespace-pre-line break-words">{{ plan_summary or "지도안 본문을 읽지 못했습니다." }}</p>
     </div>
 
+    {% include "user/_sim_phase_panel.html" %}
+
     <p class="mb-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900 px-4 py-2">
         생성 반응은 프로필을 조건화한 가설이며 실제 학생 행동이나 예측이 아닙니다.
     </p>
@@ -98,6 +100,11 @@
                 <p id="candStatus" class="note px-4 py-2" role="status"></p>
             </div>
             <div class="flex flex-wrap gap-2" id="chosenChips"></div>
+            <div class="flex flex-wrap items-center justify-end gap-3">
+                <p id="startStatus" class="note" role="status"></p>
+                <button type="button" id="startBtn"
+                    class="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-5 py-2.5 rounded-lg font-semibold text-sm">시뮬레이션 시작</button>
+            </div>
             <p class="note">
                 페르소나 출처: HACHIMI-1M (sii-research, MIT License, 합성 데이터) ·
                 <a class="text-blue-600 hover:underline" href="https://github.com/DomineYH/elp_gemini/blob/main/data/personas/README.md" target="_blank" rel="noopener">데이터 안내</a>
@@ -210,6 +217,39 @@
             status.textContent = "후보를 불러오지 못했습니다. 다시 추출을 눌러 주세요.";
         }
     }
+
+    // 화면에 보인 가명 그대로 표 순서(=좌석 순)로 보낸다
+    const startBtn = document.getElementById("startBtn");
+    const startStatus = document.getElementById("startStatus");
+    startBtn.addEventListener("click", async () => {
+        let phases;
+        try {
+            phases = window.simPhasePanel.read();
+        } catch (err) {
+            startStatus.textContent = err.message;
+            return;
+        }
+        const personas = candidates
+            .filter(c => chosen.has(c.ref))
+            .map(c => ({ ref: c.ref, pseudonym: c.pseudonym }));
+        startBtn.disabled = true;
+        startStatus.textContent = "학생 프로필을 번안하는 중...";
+        try {
+            const res = await fetch("/api/simulation/sessions", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ personas, phases }),
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error((body.detail && body.detail.message) || "입력값을 확인해 주세요.");
+            }
+            window.location.href = "/simulation/sessions/" + body.session.id;
+        } catch (err) {
+            startStatus.textContent = err.message;
+            startBtn.disabled = false;
+        }
+    });
 
     document.getElementById("reroll").addEventListener("click", () => load(true));
     document.getElementById("fGrade").addEventListener("change", () => load(false));

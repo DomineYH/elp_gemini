@@ -1,0 +1,83 @@
+<!-- 국면 패널: /api/simulation/phases/draft로 채우고 window.simPhasePanel.read()로 읽는다 -->
+<div class="card p-4 mb-4" id="phasePanel">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <p class="font-medium text-sm">수업 국면</p>
+        <p class="note" id="phaseNotice" role="status"></p>
+    </div>
+    <div class="space-y-3" id="phaseRows"></div>
+</div>
+<script>
+window.simPhasePanel = (() => {
+    const rowsBox = document.getElementById("phaseRows");
+    let phases = [];  // 자료·유의점·원문 발췌는 화면에 없지만 그대로 돌려보낸다
+
+    function field(label, node) {
+        const wrap = document.createElement("label");
+        wrap.className = "block text-xs text-gray-500";
+        wrap.append(label, node);
+        node.className = "mt-1 w-full border rounded-lg px-2 py-1.5 text-sm text-gray-900 bg-white";
+        return wrap;
+    }
+
+    function render() {
+        rowsBox.replaceChildren(...phases.map((p, i) => {
+            const row = document.createElement("div");
+            row.className = "grid gap-2 sm:grid-cols-[1fr_6rem] lg:grid-cols-[10rem_5rem_1fr_1fr] border-b pb-3";
+            const name = document.createElement("input");
+            name.value = p.name;
+            name.maxLength = 50;
+            name.addEventListener("input", () => { p.name = name.value; });
+            const minutes = document.createElement("input");
+            minutes.type = "number";
+            minutes.min = "0";
+            minutes.max = "180";
+            minutes.value = p.minutes ?? "";
+            minutes.addEventListener("input", () => {
+                p.minutes = minutes.value === "" ? null : Number(minutes.value);
+            });
+            const prompt = document.createElement("textarea");
+            prompt.rows = 2;
+            prompt.maxLength = 2000;
+            prompt.value = p.teacher_prompt;
+            prompt.addEventListener("input", () => { p.teacher_prompt = prompt.value; });
+            const task = document.createElement("textarea");
+            task.rows = 2;
+            task.maxLength = 2000;
+            task.value = p.task;
+            task.addEventListener("input", () => { p.task = task.value; });
+            row.append(
+                field("국면 " + (i + 1) + " 이름", name),
+                field("시간(분)", minutes),
+                field("교사 발문", prompt),
+                field("과업", task),
+            );
+            return row;
+        }));
+    }
+
+    async function load() {
+        try {
+            const res = await fetch("/api/simulation/phases/draft");
+            if (!res.ok) throw new Error(res.status);
+            const body = await res.json();
+            phases = body.phases;
+            document.getElementById("phaseNotice").textContent = body.notice || "";
+            render();
+        } catch (err) {
+            document.getElementById("phaseNotice").textContent = "국면 초안을 불러오지 못했습니다. 새로고침해 주세요.";
+        }
+    }
+
+    load();
+    return {
+        // 비어 있는 이름·교사 발문이 있으면 오류 문구를 던진다
+        read() {
+            const cleaned = phases.map(p => ({ ...p, name: p.name.trim(), teacher_prompt: p.teacher_prompt.trim() }));
+            if (!cleaned.length || cleaned.some(p => !p.name || !p.teacher_prompt)) {
+                throw new Error("모든 국면의 이름과 교사 발문을 입력해 주세요.");
+            }
+            return cleaned;
+        },
+    };
+})();
+</script>

@@ -1,0 +1,54 @@
+"""
+시뮬레이션 오류 코드 → HTTP 상태·한국어 메시지 (PLAN 2.5, 표는 여기 하나)
+"""
+
+from fastapi import HTTPException
+
+# 코드: (상태, 메시지). 후속 티켓은 자기 코드 행만 추가한다.
+CODES = {
+    "SESSION_NOT_FOUND": (404, "시뮬레이션 세션을 찾을 수 없습니다."),
+    "NO_UPLOAD": (404, "먼저 지도안을 업로드해 주세요."),
+    "PHASE_NOT_CURRENT": (409, "현재 국면이 아닙니다."),
+    "SESSION_FINISHED": (409, "이미 끝난 시뮬레이션입니다."),
+    "CONFLICT_RETRY": (
+        409,
+        "동시에 요청이 처리되었습니다. 다시 시도해 주세요.",
+    ),
+    "UNKNOWN_PERSONA": (422, "알 수 없는 페르소나입니다."),
+    "DUPLICATE_PSEUDONYM": (
+        422,
+        "가명이 중복되었거나 사용할 수 없는 이름입니다.",
+    ),
+    "RESOURCE_EXHAUSTED": (
+        429,
+        "AI 사용량이 잠시 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.",
+    ),
+    "MODEL_OVERLOADED": (
+        503,
+        "AI 모델이 혼잡합니다. 잠시 후 다시 시도해 주세요.",
+    ),
+    "ADAPT_FAILED": (
+        502,
+        "페르소나 번안 결과를 읽지 못했습니다. 다시 시도해 주세요.",
+    ),
+}
+RETRY_AFTER_SECONDS = "30"
+
+
+class SimulationError(Exception):
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+    def to_http(self) -> HTTPException:
+        status, message = CODES[self.code]
+        headers = (
+            {"Retry-After": RETRY_AFTER_SECONDS}
+            if status in (429, 503)
+            else None
+        )
+        return HTTPException(
+            status_code=status,
+            detail={"code": self.code, "message": message},
+            headers=headers,
+        )

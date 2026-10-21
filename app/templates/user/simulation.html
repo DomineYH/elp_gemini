@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}수업 시뮬레이션 - AI기반 수업설계 피드백 시스템{% endblock %}
+
+{% block head %}{% include "user/_sim_style.html" %}{% endblock %}
+
+{% block content %}
+<div class="pb-28">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div class="min-w-0">
+            <p class="eyebrow">2 / 4 · 수업 시뮬레이션</p>
+            <h1 class="text-xl font-bold truncate">수업 시뮬레이션</h1>
+        </div>
+        <p class="note">생성 반응은 프로필을 조건화한 가설이며 실제 학생 행동이나 예측이 아닙니다.</p>
+    </div>
+
+    <!-- 국면 스테퍼 -->
+    <div class="flex items-center gap-2 overflow-x-auto pb-2 mb-3" id="stepper"></div>
+
+    <!-- 현재 국면 카드 -->
+    <div class="card p-4 mb-3 border-blue-200 bg-blue-50/40">
+        <p class="eyebrow" id="phaseEyebrow">지도안의 현재 국면</p>
+        <p class="text-sm mt-1" id="phasePrompt"></p>
+        <p class="note mt-1" id="phaseDetail"></p>
+    </div>
+
+    <!-- 교실 -->
+    <div class="card p-4 md:p-6">
+        <div class="flex flex-col items-center gap-2 mb-5">
+            <div class="flex items-center gap-2 text-xs text-gray-500">
+                <span class="w-2.5 h-2.5 rounded-full" style="background:var(--teacher)"></span>교사 (나)
+            </div>
+            <div class="bubble teacher max-w-2xl text-center hidden" id="teacherLast"></div>
+        </div>
+
+        <div class="grid gap-3 sm:grid-cols-2 {{ 'lg:grid-cols-3' if persona_count == 6 else 'lg:grid-cols-4' }}" id="seats"></div>
+
+        <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+            <div class="text-sm">
+                <span class="note">다음 단계 동의</span>
+                <span id="agreeCount" class="mono font-medium ml-1">0 / {{ persona_count }}</span>
+            </div>
+            <div class="flex gap-2">
+                <button type="button" id="skipBtn" class="px-4 py-2 rounded-lg border text-sm text-gray-400 cursor-not-allowed" disabled>Skip ▸</button>
+                <button type="button" id="nextBtn" class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gray-400 cursor-not-allowed" disabled>다음 국면으로 →</button>
+            </div>
+        </div>
+        <p id="simStatus" class="note mt-3" role="status"></p>
+    </div>
+</div>
+
+<!-- 교사 입력 (하단 고정) -->
+<div class="fixed left-0 right-0 z-40" style="bottom:0;padding:0 max(16px,env(safe-area-inset-left,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-right,0px))">
+    <form id="tForm" class="container mx-auto max-w-3xl bg-white border rounded-2xl shadow-lg p-2 flex items-end gap-2">
+        <span class="hidden sm:inline text-xs px-2 py-2 rounded-lg bg-gray-100 text-gray-600 shrink-0 whitespace-nowrap">전체에게</span>
+        <label for="tInput" class="sr-only">교사 발화</label>
+        <textarea id="tInput" rows="1" placeholder="전체 학생에게 말하기" disabled
+            class="flex-1 min-w-0 resize-none px-3 py-2 text-sm focus:outline-none bg-white"></textarea>
+        <button type="submit" disabled
+            class="bg-gray-400 text-white text-sm font-semibold px-4 py-2 rounded-lg shrink-0 cursor-not-allowed">말하기</button>
+    </form>
+</div>
+{% endblock %}
+
+{% block footer %}{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+    const SID = {{ sid }};
+    const status = document.getElementById("simStatus");
+    let state = null;
+
+    function el(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+
+    async function api(method, url) {
+        const res = await fetch(url, { method, headers: { accept: "application/json" } });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error((body.detail && body.detail.message) || "요청을 처리하지 못했습니다.");
+        }
+        return body;
+    }
+
+    function currentPhase() {
+        return state.phases[state.session.current_phase_idx];
+    }
+
+    function phaseUtterances() {
+        const idx = state.session.current_phase_idx;
+        return state.utterances.filter(u => u.phase_idx === idx);
+    }
+
+    function bubble(persona, u) {
+        const box = el("div", "bubble " + persona.color_key + " in");
+        if (u.failed) {
+            box.append(el("p", "note", "반응을 읽지 못했습니다."));
+            return box;
+        }
+        if (u.structured && u.structured.action) {
+            box.append(el("p", "note mb-0.5", u.structured.action));
+        }
+        box.append(el("p", "", u.content));
+        return box;
+    }
+
+    function typing(persona) {
+        const box = el("div", "bubble " + persona.color_key + " typing in");
+        box.setAttribute("aria-label", persona.display_name + " 반응 생성 중");
+        box.append(el("span"), el("span"), el("span"));
+        return box;
+    }
+
+    function render(pending) {
+        const idx = state.session.current_phase_idx;
+        document.getElementById("stepper").replaceChildren(...state.phases.map(p => {
+            const cls = p.idx < idx ? " done" : p.idx === idx ? " now" : "";
+            return el("span", "phase-pill" + cls, p.name);
+        }));
+
+        const phase = currentPhase();
+        document.getElementById("phaseEyebrow").textContent =
+            "지도안의 현재 국면 · " + phase.name + (phase.minutes ? " (" + phase.minutes + "분)" : "");
+        const prompt = document.getElementById("phasePrompt");
+        prompt.replaceChildren(el("b", "", "교사 발문 "), phase.teacher_prompt);
+        if (phase.task) prompt.append(" · ", el("b", "", "과업 "), phase.task);
+        document.getElementById("phaseDetail").textContent = [
+            phase.materials && "자료: " + phase.materials,
+            phase.cautions && "유의점: " + phase.cautions,
+        ].filter(Boolean).join(" · ");
+
+        const utts = phaseUtterances();
+        const teacher = utts.filter(u => u.speaker_type === "teacher").pop();
+        const teacherLast = document.getElementById("teacherLast");
+        teacherLast.textContent = teacher ? teacher.content : "";
+        teacherLast.classList.toggle("hidden", !teacher);
+
+        document.getElementById("seats").replaceChildren(...state.personas.map(p => {
+            const seat = el("div", "seat card p-3 flex flex-col gap-2");
+            const head = el("div", "flex items-center justify-between gap-2");
+            const who = el("div", "flex items-center gap-2 min-w-0");
+            who.append(
+                el("span", "dot " + p.color_key + " w-2.5 h-2.5 rounded-full shrink-0"),
+                el("span", "name " + p.color_key + " font-semibold text-sm truncate", p.display_name),
+                el("span", "note truncate", p.adapted_level),
+            );
+            head.append(who, el("span", "agree", "대기"));
+            const feed = el("div", "flex flex-col gap-2 min-h-[4.5rem]");
+            utts.filter(u => u.speaker_type === "student" && u.persona_id === p.id)
+                .forEach(u => feed.append(bubble(p, u)));
+            if (pending) feed.append(typing(p));
+            seat.append(head, feed);
+            if (p.adapted_profile.behavior_summary) {
+                seat.append(el("p", "note", p.adapted_profile.behavior_summary));
+            }
+            return seat;
+        }));
+    }
+
+    async function enterCurrentPhase() {
+        const idx = state.session.current_phase_idx;
+        render(true);
+        status.textContent = "";
+        try {
+            const turn = await api("POST", "/api/simulation/sessions/" + SID + "/phases/" + idx + "/enter");
+            const known = new Set(state.utterances.map(u => u.id));
+            state.utterances.push(...turn.utterances.filter(u => !known.has(u.id)));
+            render(false);
+        } catch (err) {
+            render(false);
+            status.textContent = err.message;
+        }
+    }
+
+    async function init() {
+        try {
+            state = await api("GET", "/api/simulation/sessions/" + SID);
+        } catch (err) {
+            status.textContent = err.message;
+            return;
+        }
+        render(false);
+        // 복원: 현재 국면에 발화가 없을 때만 진입한다
+        if (state.session.status === "running" && phaseUtterances().length === 0) {
+            await enterCurrentPhase();
+        }
+    }
+
+    init();
+})();
+</script>
+{% endblock %}

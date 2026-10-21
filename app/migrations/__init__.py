@@ -18,6 +18,7 @@ from .lessonplan_uploads_table import ensure_lessonplan_uploads_table
 from .preservice_region_kyodae_rename import (
     rename_preservice_university_regions,
 )
+from .simulation_tables import ensure_simulation_tables
 from .users_lockout_columns import ensure_users_lockout_columns
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "ensure_criteria_stable_id_column",
     "ensure_users_lockout_columns",
     "ensure_lessonplan_uploads_table",
+    "ensure_simulation_tables",
     "rename_chat_session_in_service_teacher_label",
     "rename_preservice_university_regions",
 ]
