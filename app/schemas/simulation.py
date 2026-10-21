@@ -10,6 +10,9 @@ from pydantic import BaseModel, Field, model_validator
 from app.config import settings
 from app.services.simulation.persona_pool import MIN_PERSONAS
 
+# 지도안 발문을 그대로 발화로 보낼 수 있도록 두 상한을 같이 둔다
+TEACHER_PROMPT_MAX = 2000
+
 Level = Literal["High", "Average", "Low", "Poor"]
 
 
@@ -37,7 +40,7 @@ class PhaseIn(BaseModel):
 
     name: str = Field(min_length=1, max_length=50)
     minutes: int | None = Field(None, ge=0, le=180)
-    teacher_prompt: str = Field(min_length=1, max_length=2000)
+    teacher_prompt: str = Field(min_length=1, max_length=TEACHER_PROMPT_MAX)
     task: str = Field("", max_length=2000)
     materials: str = Field("", max_length=4000)
     cautions: str = Field("", max_length=4000)
@@ -149,7 +152,7 @@ class TurnResult(BaseModel):
 class SayRequest(BaseModel):
     """target_persona_id가 없으면 전체에게"""
 
-    content: str = Field(min_length=1, max_length=1000)
+    content: str = Field(min_length=1, max_length=TEACHER_PROMPT_MAX)
     target_persona_id: int | None = None
 
 

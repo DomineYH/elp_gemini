@@ -75,7 +75,7 @@
         <div id="dmFeed" class="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50 min-h-[12rem]"></div>
         <form id="dmForm" class="p-3 border-t flex items-end gap-2 bg-white">
             <label for="dmInput" class="sr-only">이 학생에게 말하기</label>
-            <textarea id="dmInput" rows="1" maxlength="1000" placeholder="이 학생에게만 말하기"
+            <textarea id="dmInput" rows="1" maxlength="2000" placeholder="이 학생에게만 말하기"
                 class="flex-1 min-w-0 resize-none px-3 py-2 text-sm border rounded-lg focus:outline-none"></textarea>
             <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shrink-0">말하기</button>
         </form>
@@ -91,7 +91,7 @@
     <form id="tForm" class="container mx-auto max-w-3xl bg-white border rounded-2xl shadow-lg p-2 flex items-end gap-2">
         <span class="hidden sm:inline text-xs px-2 py-2 rounded-lg bg-gray-100 text-gray-600 shrink-0 whitespace-nowrap" title="학생 개인에게는 좌석을 클릭해 말하기">전체에게</span>
         <label for="tInput" class="sr-only">교사 발화</label>
-        <textarea id="tInput" rows="1" maxlength="1000" placeholder="전체 학생에게 말하기" disabled
+        <textarea id="tInput" rows="1" maxlength="2000" placeholder="전체 학생에게 말하기" disabled
             class="flex-1 min-w-0 resize-none px-3 py-2 text-sm focus:outline-none bg-white"></textarea>
         <button type="button" id="hintBtn" disabled
             class="text-xs px-3 py-2 rounded-lg border text-gray-600 hover:bg-gray-50 shrink-0" title="지도안 발문 불러오기">지도안 발문</button>

@@ -352,3 +352,30 @@ def test_regenerate_foreign_persona_is_422(ready, fake_gemini):
     r = ready.post(_api(sid, "/regenerate"), json={"persona_id": 99999})
     assert r.status_code == 422
     assert _code(r) == "UNKNOWN_PERSONA"
+
+
+def test_say_accepts_a_full_length_plan_prompt(ready):
+    # 지도안 발문(국면 teacher_prompt)은 그대로 보낼 수 있어야 한다
+    cands = ready.get(
+        "/api/simulation/candidates", params={"n": 4, "seed": 7}
+    ).json()["candidates"]
+    prompt = "가" * 1500
+    r = ready.post(
+        "/api/simulation/sessions",
+        json={
+            "personas": [
+                {"ref": c["ref"], "pseudonym": c["pseudonym"]} for c in cands
+            ],
+            "phases": [{"name": "도입", "teacher_prompt": prompt}],
+        },
+    )
+    assert r.status_code == 201
+    sid = r.json()["session"]["id"]
+    ready.post(_api(sid, "/phases/0/enter"))
+
+    assert (
+        ready.post(_api(sid, "/say"), json={"content": prompt}).status_code
+        == 200
+    )
+    too_long = ready.post(_api(sid, "/say"), json={"content": "가" * 2001})
+    assert too_long.status_code == 422
