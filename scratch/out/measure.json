@@ -1,0 +1,1470 @@
+{
+ "sim4_desk": {
+  "top": {
+   "vw": 1280,
+   "vh": 900,
+   "scrollX": 0,
+   "scrollW": 1280,
+   "nav": {
+    "top": 0,
+    "bottom": 60,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 60
+   },
+   "main": {
+    "top": 60,
+    "bottom": 883,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 823
+   },
+   "footer": {
+    "top": 883,
+    "bottom": 952,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 69
+   },
+   "tDock": {
+    "top": 834,
+    "bottom": 900,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 66
+   },
+   "tForm": {
+    "top": 834,
+    "bottom": 888,
+    "left": 256,
+    "right": 1024,
+    "w": 768,
+    "h": 54
+   },
+   "seatsGrid": {
+    "top": 399,
+    "bottom": 639,
+    "left": 41,
+    "right": 1239,
+    "w": 1198,
+    "h": 239
+   },
+   "seatCount": 4,
+   "seatCols": 4,
+   "lastSeatBottom": 639,
+   "advance": {
+    "top": 659,
+    "bottom": 714,
+    "left": 41,
+    "right": 1239,
+    "w": 1198,
+    "h": 55
+   },
+   "stepper": {
+    "top": 149,
+    "bottom": 185,
+    "left": 16,
+    "right": 1264,
+    "w": 1248,
+    "h": 36
+   },
+   "stepperScrollW": 1248,
+   "fab": null,
+   "dm": {
+    "top": 0,
+    "bottom": 0,
+    "left": 0,
+    "right": 0,
+    "w": 0,
+    "h": 0
+   },
+   "custom": null
+  },
+  "bottom": {
+   "vw": 1280,
+   "vh": 900,
+   "scrollX": 0,
+   "scrollW": 1280,
+   "nav": {
+    "top": -52,
+    "bottom": 8,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 60
+   },
+   "main": {
+    "top": 8,
+    "bottom": 831,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 823
+   },
+   "footer": {
+    "top": 831,
+    "bottom": 900,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 69
+   },
+   "tDock": {
+    "top": 834,
+    "bottom": 900,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 66
+   },
+   "tForm": {
+    "top": 834,
+    "bottom": 888,
+    "left": 256,
+    "right": 1024,
+    "w": 768,
+    "h": 54
+   },
+   "seatsGrid": {
+    "top": 347,
+    "bottom": 587,
+    "left": 41,
+    "right": 1239,
+    "w": 1198,
+    "h": 239
+   },
+   "seatCount": 4,
+   "seatCols": 4,
+   "lastSeatBottom": 587,
+   "advance": {
+    "top": 607,
+    "bottom": 662,
+    "left": 41,
+    "right": 1239,
+    "w": 1198,
+    "h": 55
+   },
+   "stepper": {
+    "top": 97,
+    "bottom": 133,
+    "left": 16,
+    "right": 1264,
+    "w": 1248,
+    "h": 36
+   },
+   "stepperScrollW": 1248,
+   "fab": null,
+   "dm": {
+    "top": 0,
+    "bottom": 0,
+    "left": 0,
+    "right": 0,
+    "w": 0,
+    "h": 0
+   },
+   "custom": null
+  }
+ },
+ "sim6_desk": {
+  "top": {
+   "vw": 1280,
+   "vh": 900,
+   "scrollX": 0,
+   "scrollW": 1280,
+   "nav": {
+    "top": 0,
+    "bottom": 60,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 60
+   },
+   "main": {
+    "top": 60,
+    "bottom": 1026,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 966
+   },
+   "footer": {
+    "top": 1026,
+    "bottom": 1095,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 69
+   },
+   "tDock": {
+    "top": 834,
+    "bottom": 900,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 66
+   },
+   "tForm": {
+    "top": 834,
+    "bottom": 888,
+    "left": 256,
+    "right": 1024,
+    "w": 768,
+    "h": 54
+   },
+   "seatsGrid": {
+    "top": 399,
+    "bottom": 782,
+    "left": 41,
+    "right": 1239,
+    "w": 1198,
+    "h": 382
+   },
+   "seatCount": 6,
+   "seatCols": 3,
+   "lastSeatBottom": 782,
+   "advance": {
+    "top": 802,
+    "bottom": 857,
+    "left": 41,
+    "right": 1239,
+    "w": 1198,
+    "h": 55
+   },
+   "stepper": {
+    "top": 149,
+    "bottom": 185,
+    "left": 16,
+    "right": 1264,
+    "w": 1248,
+    "h": 36
+   },
+   "stepperScrollW": 1248,
+   "fab": null,
+   "dm": {
+    "top": 0,
+    "bottom": 0,
+    "left": 0,
+    "right": 0,
+    "w": 0,
+    "h": 0
+   },
+   "custom": null
+  },
+  "bottom": {
+   "vw": 1280,
+   "vh": 900,
+   "scrollX": 0,
+   "scrollW": 1280,
+   "nav": {
+    "top": -195,
+    "bottom": -135,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 60
+   },
+   "main": {
+    "top": -135,
+    "bottom": 831,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 966
+   },
+   "footer": {
+    "top": 831,
+    "bottom": 900,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 69
+   },
+   "tDock": {
+    "top": 834,
+    "bottom": 900,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 66
+   },
+   "tForm": {
+    "top": 834,
+    "bottom": 888,
+    "left": 256,
+    "right": 1024,
+    "w": 768,
+    "h": 54
+   },
+   "seatsGrid": {
+    "top": 204,
+    "bottom": 587,
+    "left": 41,
+    "right": 1239,
+    "w": 1198,
+    "h": 382
+   },
+   "seatCount": 6,
+   "seatCols": 3,
+   "lastSeatBottom": 587,
+   "advance": {
+    "top": 607,
+    "bottom": 662,
+    "left": 41,
+    "right": 1239,
+    "w": 1198,
+    "h": 55
+   },
+   "stepper": {
+    "top": -46,
+    "bottom": -10,
+    "left": 16,
+    "right": 1264,
+    "w": 1248,
+    "h": 36
+   },
+   "stepperScrollW": 1248,
+   "fab": null,
+   "dm": {
+    "top": 0,
+    "bottom": 0,
+    "left": 0,
+    "right": 0,
+    "w": 0,
+    "h": 0
+   },
+   "custom": null
+  }
+ },
+ "sim_dm_desk": {
+  "top": {
+   "vw": 1280,
+   "vh": 900,
+   "scrollX": 0,
+   "scrollW": 1280,
+   "nav": {
+    "top": 0,
+    "bottom": 60,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 60
+   },
+   "main": {
+    "top": 60,
+    "bottom": 883,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 823
+   },
+   "footer": {
+    "top": 883,
+    "bottom": 952,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 69
+   },
+   "tDock": {
+    "top": 834,
+    "bottom": 900,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 66
+   },
+   "tForm": {
+    "top": 834,
+    "bottom": 888,
+    "left": 256,
+    "right": 1024,
+    "w": 768,
+    "h": 54
+   },
+   "seatsGrid": {
+    "top": 399,
+    "bottom": 639,
+    "left": 41,
+    "right": 1239,
+    "w": 1198,
+    "h": 239
+   },
+   "seatCount": 4,
+   "seatCols": 4,
+   "lastSeatBottom": 639,
+   "advance": {
+    "top": 659,
+    "bottom": 714,
+    "left": 41,
+    "right": 1239,
+    "w": 1198,
+    "h": 55
+   },
+   "stepper": {
+    "top": 149,
+    "bottom": 185,
+    "left": 16,
+    "right": 1264,
+    "w": 1248,
+    "h": 36
+   },
+   "stepperScrollW": 1248,
+   "fab": null,
+   "dm": {
+    "top": 258,
+    "bottom": 642,
+    "left": 384,
+    "right": 896,
+    "w": 512,
+    "h": 385
+   },
+   "custom": null
+  },
+  "bottom": {
+   "vw": 1280,
+   "vh": 900,
+   "scrollX": 0,
+   "scrollW": 1280,
+   "nav": {
+    "top": -52,
+    "bottom": 8,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 60
+   },
+   "main": {
+    "top": 8,
+    "bottom": 831,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 823
+   },
+   "footer": {
+    "top": 831,
+    "bottom": 900,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 69
+   },
+   "tDock": {
+    "top": 834,
+    "bottom": 900,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 66
+   },
+   "tForm": {
+    "top": 834,
+    "bottom": 888,
+    "left": 256,
+    "right": 1024,
+    "w": 768,
+    "h": 54
+   },
+   "seatsGrid": {
+    "top": 347,
+    "bottom": 587,
+    "left": 41,
+    "right": 1239,
+    "w": 1198,
+    "h": 239
+   },
+   "seatCount": 4,
+   "seatCols": 4,
+   "lastSeatBottom": 587,
+   "advance": {
+    "top": 607,
+    "bottom": 662,
+    "left": 41,
+    "right": 1239,
+    "w": 1198,
+    "h": 55
+   },
+   "stepper": {
+    "top": 97,
+    "bottom": 133,
+    "left": 16,
+    "right": 1264,
+    "w": 1248,
+    "h": 36
+   },
+   "stepperScrollW": 1248,
+   "fab": null,
+   "dm": {
+    "top": 258,
+    "bottom": 642,
+    "left": 384,
+    "right": 896,
+    "w": 512,
+    "h": 385
+   },
+   "custom": null
+  }
+ },
+ "setup_desk": {
+  "top": {
+   "vw": 1280,
+   "vh": 900,
+   "scrollX": 0,
+   "scrollW": 1280,
+   "nav": {
+    "top": 0,
+    "bottom": 60,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 60
+   },
+   "main": {
+    "top": 60,
+    "bottom": 950,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 890
+   },
+   "footer": {
+    "top": 950,
+    "bottom": 1019,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 69
+   },
+   "tDock": null,
+   "tForm": null,
+   "seatsGrid": null,
+   "seatCount": 0,
+   "seatCols": 0,
+   "lastSeatBottom": null,
+   "advance": null,
+   "stepper": null,
+   "fab": {
+    "top": 820,
+    "bottom": 868,
+    "left": 391,
+    "right": 889,
+    "w": 497,
+    "h": 48
+   },
+   "dm": null,
+   "custom": {
+    "top": 0,
+    "bottom": 0,
+    "left": 0,
+    "right": 0,
+    "w": 0,
+    "h": 0
+   }
+  },
+  "bottom": {
+   "vw": 1280,
+   "vh": 900,
+   "scrollX": 0,
+   "scrollW": 1280,
+   "nav": {
+    "top": -119,
+    "bottom": -59,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 60
+   },
+   "main": {
+    "top": -59,
+    "bottom": 831,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 890
+   },
+   "footer": {
+    "top": 831,
+    "bottom": 900,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 69
+   },
+   "tDock": null,
+   "tForm": null,
+   "seatsGrid": null,
+   "seatCount": 0,
+   "seatCols": 0,
+   "lastSeatBottom": null,
+   "advance": null,
+   "stepper": null,
+   "fab": {
+    "top": 820,
+    "bottom": 868,
+    "left": 391,
+    "right": 889,
+    "w": 497,
+    "h": 48
+   },
+   "dm": null,
+   "custom": {
+    "top": 0,
+    "bottom": 0,
+    "left": 0,
+    "right": 0,
+    "w": 0,
+    "h": 0
+   }
+  }
+ },
+ "setup_custom_desk": {
+  "top": {
+   "vw": 1280,
+   "vh": 900,
+   "scrollX": 0,
+   "scrollW": 1280,
+   "nav": {
+    "top": 0,
+    "bottom": 60,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 60
+   },
+   "main": {
+    "top": 60,
+    "bottom": 950,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 890
+   },
+   "footer": {
+    "top": 950,
+    "bottom": 1019,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 69
+   },
+   "tDock": null,
+   "tForm": null,
+   "seatsGrid": null,
+   "seatCount": 0,
+   "seatCols": 0,
+   "lastSeatBottom": null,
+   "advance": null,
+   "stepper": null,
+   "fab": {
+    "top": 820,
+    "bottom": 868,
+    "left": 391,
+    "right": 889,
+    "w": 497,
+    "h": 48
+   },
+   "dm": null,
+   "custom": {
+    "top": 54,
+    "bottom": 846,
+    "left": 304,
+    "right": 976,
+    "w": 672,
+    "h": 792
+   }
+  },
+  "bottom": {
+   "vw": 1280,
+   "vh": 900,
+   "scrollX": 0,
+   "scrollW": 1280,
+   "nav": {
+    "top": -119,
+    "bottom": -59,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 60
+   },
+   "main": {
+    "top": -59,
+    "bottom": 831,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 890
+   },
+   "footer": {
+    "top": 831,
+    "bottom": 900,
+    "left": 0,
+    "right": 1280,
+    "w": 1280,
+    "h": 69
+   },
+   "tDock": null,
+   "tForm": null,
+   "seatsGrid": null,
+   "seatCount": 0,
+   "seatCols": 0,
+   "lastSeatBottom": null,
+   "advance": null,
+   "stepper": null,
+   "fab": {
+    "top": 820,
+    "bottom": 868,
+    "left": 391,
+    "right": 889,
+    "w": 497,
+    "h": 48
+   },
+   "dm": null,
+   "custom": {
+    "top": 54,
+    "bottom": 846,
+    "left": 304,
+    "right": 976,
+    "w": 672,
+    "h": 792
+   }
+  }
+ },
+ "sim4_mob": {
+  "top": {
+   "vw": 375,
+   "vh": 812,
+   "scrollX": 0,
+   "scrollW": 375,
+   "nav": {
+    "top": 0,
+    "bottom": 104,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 104
+   },
+   "main": {
+    "top": 104,
+    "bottom": 1764,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 1660
+   },
+   "footer": {
+    "top": 1764,
+    "bottom": 1853,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 89
+   },
+   "tDock": {
+    "top": 746,
+    "bottom": 812,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 66
+   },
+   "tForm": {
+    "top": 746,
+    "bottom": 800,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 54
+   },
+   "seatsGrid": {
+    "top": 590,
+    "bottom": 1474,
+    "left": 33,
+    "right": 342,
+    "w": 309,
+    "h": 885
+   },
+   "seatCount": 4,
+   "seatCols": 1,
+   "lastSeatBottom": 1474,
+   "advance": {
+    "top": 1494,
+    "bottom": 1603,
+    "left": 33,
+    "right": 342,
+    "w": 309,
+    "h": 109
+   },
+   "stepper": {
+    "top": 231,
+    "bottom": 267,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 36
+   },
+   "stepperScrollW": 710,
+   "fab": null,
+   "dm": {
+    "top": 0,
+    "bottom": 0,
+    "left": 0,
+    "right": 0,
+    "w": 0,
+    "h": 0
+   },
+   "custom": null
+  },
+  "bottom": {
+   "vw": 375,
+   "vh": 812,
+   "scrollX": 0,
+   "scrollW": 375,
+   "nav": {
+    "top": -1041,
+    "bottom": -937,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 104
+   },
+   "main": {
+    "top": -937,
+    "bottom": 723,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 1660
+   },
+   "footer": {
+    "top": 723,
+    "bottom": 812,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 89
+   },
+   "tDock": {
+    "top": 746,
+    "bottom": 812,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 66
+   },
+   "tForm": {
+    "top": 746,
+    "bottom": 800,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 54
+   },
+   "seatsGrid": {
+    "top": -451,
+    "bottom": 433,
+    "left": 33,
+    "right": 342,
+    "w": 309,
+    "h": 885
+   },
+   "seatCount": 4,
+   "seatCols": 1,
+   "lastSeatBottom": 433,
+   "advance": {
+    "top": 453,
+    "bottom": 562,
+    "left": 33,
+    "right": 342,
+    "w": 309,
+    "h": 109
+   },
+   "stepper": {
+    "top": -810,
+    "bottom": -774,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 36
+   },
+   "stepperScrollW": 710,
+   "fab": null,
+   "dm": {
+    "top": 0,
+    "bottom": 0,
+    "left": 0,
+    "right": 0,
+    "w": 0,
+    "h": 0
+   },
+   "custom": null
+  }
+ },
+ "sim6_mob": {
+  "top": {
+   "vw": 375,
+   "vh": 812,
+   "scrollX": 0,
+   "scrollW": 375,
+   "nav": {
+    "top": 0,
+    "bottom": 104,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 104
+   },
+   "main": {
+    "top": 104,
+    "bottom": 2137,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 2033
+   },
+   "footer": {
+    "top": 2137,
+    "bottom": 2226,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 89
+   },
+   "tDock": {
+    "top": 746,
+    "bottom": 812,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 66
+   },
+   "tForm": {
+    "top": 746,
+    "bottom": 800,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 54
+   },
+   "seatsGrid": {
+    "top": 590,
+    "bottom": 1847,
+    "left": 33,
+    "right": 342,
+    "w": 309,
+    "h": 1257
+   },
+   "seatCount": 6,
+   "seatCols": 1,
+   "lastSeatBottom": 1847,
+   "advance": {
+    "top": 1867,
+    "bottom": 1976,
+    "left": 33,
+    "right": 342,
+    "w": 309,
+    "h": 109
+   },
+   "stepper": {
+    "top": 231,
+    "bottom": 267,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 36
+   },
+   "stepperScrollW": 710,
+   "fab": null,
+   "dm": {
+    "top": 0,
+    "bottom": 0,
+    "left": 0,
+    "right": 0,
+    "w": 0,
+    "h": 0
+   },
+   "custom": null
+  },
+  "bottom": {
+   "vw": 375,
+   "vh": 812,
+   "scrollX": 0,
+   "scrollW": 375,
+   "nav": {
+    "top": -1414,
+    "bottom": -1310,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 104
+   },
+   "main": {
+    "top": -1310,
+    "bottom": 723,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 2033
+   },
+   "footer": {
+    "top": 723,
+    "bottom": 812,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 89
+   },
+   "tDock": {
+    "top": 746,
+    "bottom": 812,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 66
+   },
+   "tForm": {
+    "top": 746,
+    "bottom": 800,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 54
+   },
+   "seatsGrid": {
+    "top": -824,
+    "bottom": 433,
+    "left": 33,
+    "right": 342,
+    "w": 309,
+    "h": 1257
+   },
+   "seatCount": 6,
+   "seatCols": 1,
+   "lastSeatBottom": 433,
+   "advance": {
+    "top": 453,
+    "bottom": 562,
+    "left": 33,
+    "right": 342,
+    "w": 309,
+    "h": 109
+   },
+   "stepper": {
+    "top": -1183,
+    "bottom": -1147,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 36
+   },
+   "stepperScrollW": 710,
+   "fab": null,
+   "dm": {
+    "top": 0,
+    "bottom": 0,
+    "left": 0,
+    "right": 0,
+    "w": 0,
+    "h": 0
+   },
+   "custom": null
+  }
+ },
+ "sim_dm_mob": {
+  "top": {
+   "vw": 375,
+   "vh": 812,
+   "scrollX": 0,
+   "scrollW": 375,
+   "nav": {
+    "top": 0,
+    "bottom": 104,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 104
+   },
+   "main": {
+    "top": 104,
+    "bottom": 1764,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 1660
+   },
+   "footer": {
+    "top": 1764,
+    "bottom": 1853,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 89
+   },
+   "tDock": {
+    "top": 746,
+    "bottom": 812,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 66
+   },
+   "tForm": {
+    "top": 746,
+    "bottom": 800,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 54
+   },
+   "seatsGrid": {
+    "top": 590,
+    "bottom": 1474,
+    "left": 33,
+    "right": 342,
+    "w": 309,
+    "h": 885
+   },
+   "seatCount": 4,
+   "seatCols": 1,
+   "lastSeatBottom": 1474,
+   "advance": {
+    "top": 1494,
+    "bottom": 1603,
+    "left": 33,
+    "right": 342,
+    "w": 309,
+    "h": 109
+   },
+   "stepper": {
+    "top": 231,
+    "bottom": 267,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 36
+   },
+   "stepperScrollW": 710,
+   "fab": null,
+   "dm": {
+    "top": 367,
+    "bottom": 796,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 429
+   },
+   "custom": null
+  },
+  "bottom": {
+   "vw": 375,
+   "vh": 812,
+   "scrollX": 0,
+   "scrollW": 375,
+   "nav": {
+    "top": -1041,
+    "bottom": -937,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 104
+   },
+   "main": {
+    "top": -937,
+    "bottom": 723,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 1660
+   },
+   "footer": {
+    "top": 723,
+    "bottom": 812,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 89
+   },
+   "tDock": {
+    "top": 746,
+    "bottom": 812,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 66
+   },
+   "tForm": {
+    "top": 746,
+    "bottom": 800,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 54
+   },
+   "seatsGrid": {
+    "top": -451,
+    "bottom": 433,
+    "left": 33,
+    "right": 342,
+    "w": 309,
+    "h": 885
+   },
+   "seatCount": 4,
+   "seatCols": 1,
+   "lastSeatBottom": 433,
+   "advance": {
+    "top": 453,
+    "bottom": 562,
+    "left": 33,
+    "right": 342,
+    "w": 309,
+    "h": 109
+   },
+   "stepper": {
+    "top": -810,
+    "bottom": -774,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 36
+   },
+   "stepperScrollW": 710,
+   "fab": null,
+   "dm": {
+    "top": 367,
+    "bottom": 796,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 429
+   },
+   "custom": null
+  }
+ },
+ "setup_mob": {
+  "top": {
+   "vw": 375,
+   "vh": 812,
+   "scrollX": 0,
+   "scrollW": 375,
+   "nav": {
+    "top": 0,
+    "bottom": 104,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 104
+   },
+   "main": {
+    "top": 104,
+    "bottom": 2076,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 1972
+   },
+   "footer": {
+    "top": 2076,
+    "bottom": 2165,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 89
+   },
+   "tDock": null,
+   "tForm": null,
+   "seatsGrid": null,
+   "seatCount": 0,
+   "seatCols": 0,
+   "lastSeatBottom": null,
+   "advance": null,
+   "stepper": null,
+   "fab": {
+    "top": 732,
+    "bottom": 780,
+    "left": -61,
+    "right": 436,
+    "w": 497,
+    "h": 48
+   },
+   "dm": null,
+   "custom": {
+    "top": 0,
+    "bottom": 0,
+    "left": 0,
+    "right": 0,
+    "w": 0,
+    "h": 0
+   }
+  },
+  "bottom": {
+   "vw": 375,
+   "vh": 812,
+   "scrollX": 0,
+   "scrollW": 375,
+   "nav": {
+    "top": -1353,
+    "bottom": -1249,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 104
+   },
+   "main": {
+    "top": -1249,
+    "bottom": 723,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 1972
+   },
+   "footer": {
+    "top": 723,
+    "bottom": 812,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 89
+   },
+   "tDock": null,
+   "tForm": null,
+   "seatsGrid": null,
+   "seatCount": 0,
+   "seatCols": 0,
+   "lastSeatBottom": null,
+   "advance": null,
+   "stepper": null,
+   "fab": {
+    "top": 732,
+    "bottom": 780,
+    "left": -61,
+    "right": 436,
+    "w": 497,
+    "h": 48
+   },
+   "dm": null,
+   "custom": {
+    "top": 0,
+    "bottom": 0,
+    "left": 0,
+    "right": 0,
+    "w": 0,
+    "h": 0
+   }
+  }
+ },
+ "setup_custom_mob": {
+  "top": {
+   "vw": 375,
+   "vh": 812,
+   "scrollX": 0,
+   "scrollW": 375,
+   "nav": {
+    "top": 0,
+    "bottom": 104,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 104
+   },
+   "main": {
+    "top": 104,
+    "bottom": 2076,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 1972
+   },
+   "footer": {
+    "top": 2076,
+    "bottom": 2165,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 89
+   },
+   "tDock": null,
+   "tForm": null,
+   "seatsGrid": null,
+   "seatCount": 0,
+   "seatCols": 0,
+   "lastSeatBottom": null,
+   "advance": null,
+   "stepper": null,
+   "fab": {
+    "top": 732,
+    "bottom": 780,
+    "left": -61,
+    "right": 436,
+    "w": 497,
+    "h": 48
+   },
+   "dm": null,
+   "custom": {
+    "top": 81,
+    "bottom": 796,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 715
+   }
+  },
+  "bottom": {
+   "vw": 375,
+   "vh": 812,
+   "scrollX": 0,
+   "scrollW": 375,
+   "nav": {
+    "top": -1353,
+    "bottom": -1249,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 104
+   },
+   "main": {
+    "top": -1249,
+    "bottom": 723,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 1972
+   },
+   "footer": {
+    "top": 723,
+    "bottom": 812,
+    "left": 0,
+    "right": 375,
+    "w": 375,
+    "h": 89
+   },
+   "tDock": null,
+   "tForm": null,
+   "seatsGrid": null,
+   "seatCount": 0,
+   "seatCols": 0,
+   "lastSeatBottom": null,
+   "advance": null,
+   "stepper": null,
+   "fab": {
+    "top": 732,
+    "bottom": 780,
+    "left": -61,
+    "right": 436,
+    "w": 497,
+    "h": 48
+   },
+   "dm": null,
+   "custom": {
+    "top": 81,
+    "bottom": 796,
+    "left": 16,
+    "right": 359,
+    "w": 343,
+    "h": 715
+   }
+  }
+ }
+}

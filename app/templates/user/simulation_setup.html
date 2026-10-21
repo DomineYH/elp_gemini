@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{# PROTOTYPE (#140) — throwaway. 시안 화면 1(페르소나 설정) + 페르소나 작성 모달 + 대시보드 FAB 복사본(3개). ?custom=1 모달 열림. 머지 금지. #}
+{% block title %}[PROTO] 페르소나 설정{% endblock %}
+{% block head %}{% include "user/_sim_proto_style.html" %}{% endblock %}
+
+{% block content %}
+<div class="sim pb-28">
+  <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+    <div>
+      <p class="eyebrow">1 / 4 · 가상 학생 구성</p>
+      <h1 class="text-2xl font-bold mt-1">누구와 수업해 볼까요?</h1>
+      <p class="note mt-1">HACHIMI-1M 공개 표본(10,000건)에서 학생 페르소나를 고릅니다. 이름은 한국식 가명으로 무작위 부여됩니다.</p>
+    </div>
+    <span class="phase-pill">지도안: 6학년 사회 · 40분 · 국면 5</span>
+  </div>
+
+  <div class="grid gap-4 lg:grid-cols-[320px_1fr]">
+    <div class="card p-5 space-y-5">
+      <div>
+        <p class="eyebrow mb-2">선택 방식</p>
+        <div class="space-y-2 text-sm">
+          <label class="flex items-start gap-2 p-2 rounded-lg border border-blue-200 bg-blue-50 cursor-pointer"><input type="radio" name="mode" checked class="mt-1"><span><b>무작위</b><br><span class="note">학년·학업 수준 분포를 맞춰 자동 추출</span></span></label>
+          <label class="flex items-start gap-2 p-2 rounded-lg border border-gray-200 cursor-pointer"><input type="radio" name="mode" class="mt-1"><span><b>직접 선택</b><br><span class="note">오른쪽 표에서 체크</span></span></label>
+          <label class="flex items-start gap-2 p-2 rounded-lg border border-gray-200 cursor-pointer"><input type="radio" name="mode" id="modeCustom" class="mt-1"><span><b>직접 만들기</b><br><span class="note">HACHIMI-1M 형식으로 내 학생 작성</span></span></label>
+        </div>
+        <button id="openCustom" class="mt-2 w-full text-sm px-3 py-2 rounded-lg border border-dashed border-gray-300 text-gray-700 hover:bg-gray-50">+ 새 페르소나 만들기</button>
+      </div>
+      <div>
+        <label class="eyebrow" for="count">학생 수</label>
+        <div class="flex items-center gap-3 mt-2"><input id="count" type="range" min="2" max="6" value="4" class="flex-1"><span class="mono text-lg font-medium w-6 text-right">4</span></div>
+        <p class="note mt-1">권장 3~5명. 많을수록 응답 생성 시간과 비용이 늘어납니다.</p>
+      </div>
+      <div>
+        <p class="eyebrow mb-2">필터</p>
+        <div class="grid grid-cols-2 gap-2 text-sm">
+          <select class="border rounded-lg px-2 py-1.5 bg-white"><option>Grade 6 (초6)</option></select>
+          <select class="border rounded-lg px-2 py-1.5 bg-white"><option>학업 수준: 골고루</option></select>
+        </div>
+      </div>
+      <div class="border-t pt-4"><p class="eyebrow mb-1">한국 맥락 번안</p><p class="note">석차 기반 수준 → <b>높은/안정적/부분 도달·추가 지원</b>으로 재명명, 교과명 매핑, 가치관·심리 필드는 관찰 가능한 행동으로 서술.</p></div>
+    </div>
+
+    <div class="space-y-4 min-w-0">
+      <div class="card overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b">
+          <p class="font-medium text-sm">후보 페르소나 <span class="note">(sample_data/merged_students_10k_EN.jsonl)</span></p>
+          <button class="text-xs text-blue-600 hover:underline">다시 추출</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-left text-xs text-gray-500"><tr><th class="px-3 py-2"></th><th class="px-3 py-2">id</th><th class="px-3 py-2">가명</th><th class="px-3 py-2">학업(번안)</th><th class="px-3 py-2">강점/약점</th><th class="px-3 py-2">행동 특성(요약)</th></tr></thead>
+            <tbody id="candRows" class="divide-y"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap gap-2" id="chosenChips"></div>
+        <a href="simulation.html" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-semibold text-sm">시뮬레이션 시작 →</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- COPY of dashboard.html FAB block + third button (prototype only) -->
+<div class="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 flex flex-row space-x-4" id="fabRow">
+  <button class="bg-blue-600 text-white px-5 py-3 rounded-lg shadow-lg hover:bg-blue-700 transition-colors flex items-center gap-2">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+    <span class="font-semibold whitespace-nowrap">QnA 챗봇</span>
+  </button>
+  <button class="bg-indigo-600 text-white px-5 py-3 rounded-lg shadow-lg hover:bg-indigo-700 transition-colors flex items-center gap-2">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+    <span class="font-semibold whitespace-nowrap">분석 시작</span>
+  </button>
+  <button class="bg-violet-700 text-white px-5 py-3 rounded-lg shadow-lg hover:bg-violet-800 transition-colors flex items-center gap-2">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+    <span class="font-semibold whitespace-nowrap">수업 시뮬레이션</span>
+  </button>
+</div>
+
+<!-- Custom persona editor (HACHIMI-1M schema) -->
+<div id="customModal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" style="padding:max(16px,env(safe-area-inset-left,0px))">
+  <form class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col overflow-hidden" role="dialog" onsubmit="return false">
+    <div class="flex items-center justify-between px-5 py-3 border-b">
+      <div><p class="font-semibold">새 페르소나 만들기</p><p class="note">필드명은 HACHIMI-1M <span class="mono">merged_students_10k_EN.jsonl</span> 스키마와 동일. 저장하면 내 라이브러리에 남고 후보 표에 추가됩니다.</p></div>
+      <button type="button" id="customClose" class="text-gray-500 hover:text-gray-800 p-1" aria-label="닫기"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-5 grid gap-3 sm:grid-cols-2 text-sm">
+      <label class="block"><span class="eyebrow">age</span><input type="number" value="12" class="mt-1 w-full border rounded-lg px-2 py-1.5"></label>
+      <label class="block"><span class="eyebrow">gender</span><select class="mt-1 w-full border rounded-lg px-2 py-1.5 bg-white"><option>Female</option><option>Male</option></select></label>
+      <label class="block"><span class="eyebrow">grade</span><select class="mt-1 w-full border rounded-lg px-2 py-1.5 bg-white"><option>Grade 6</option></select></label>
+      <label class="block"><span class="eyebrow">academic_level</span><select class="mt-1 w-full border rounded-lg px-2 py-1.5 bg-white"><option>Medium → 안정적 도달</option></select></label>
+      <div class="sm:col-span-2 rounded-lg bg-gray-50 p-3 grid gap-2 sm:grid-cols-3">
+        <p class="eyebrow sm:col-span-3">developmental_stage <span class="note normal-case tracking-normal">(학년에 맞춰 자동 제안, 수정 가능)</span></p>
+        <label class="block"><span class="note">piaget_cognitive_stage</span><select class="mt-1 w-full border rounded-lg px-2 py-1.5 bg-white"><option>Concrete Operational Stage</option></select></label>
+        <label class="block"><span class="note">erikson_psychosocial_stage</span><select class="mt-1 w-full border rounded-lg px-2 py-1.5 bg-white"><option>Industry vs. Inferiority</option></select></label>
+        <label class="block"><span class="note">kohlberg_moral_stage</span><select class="mt-1 w-full border rounded-lg px-2 py-1.5 bg-white"><option>Conventional Level</option></select></label>
+      </div>
+      <label class="block"><span class="eyebrow">strengths</span><input placeholder="사회, 체육 (쉼표 구분)" class="mt-1 w-full border rounded-lg px-2 py-1.5"></label>
+      <label class="block"><span class="eyebrow">weaknesses</span><input placeholder="수학" class="mt-1 w-full border rounded-lg px-2 py-1.5"></label>
+      <label class="block sm:col-span-2"><span class="eyebrow">personality</span><textarea rows="2" placeholder="예: 발표를 좋아하고 먼저 손을 들지만, 빠르게 끝낸 뒤에는 기다리지 못하고 옆 친구에게 말을 건다." class="mt-1 w-full border rounded-lg px-2 py-1.5"></textarea></label>
+      <label class="block sm:col-span-2"><span class="eyebrow">values</span><textarea rows="2" placeholder="관찰 가능한 행동으로 서술" class="mt-1 w-full border rounded-lg px-2 py-1.5"></textarea></label>
+      <label class="block sm:col-span-2"><span class="eyebrow">social_relationships</span><textarea rows="2" class="mt-1 w-full border rounded-lg px-2 py-1.5"></textarea></label>
+      <label class="block"><span class="eyebrow">creativity</span><textarea rows="2" class="mt-1 w-full border rounded-lg px-2 py-1.5"></textarea></label>
+      <label class="block"><span class="eyebrow">mental_health</span><textarea rows="2" placeholder="임상 용어·진단명 없이, 수업 중 보이는 행동으로" class="mt-1 w-full border rounded-lg px-2 py-1.5"></textarea></label>
+      <details class="sm:col-span-2 rounded-lg border p-3"><summary class="text-sm cursor-pointer">JSON 미리보기 / 붙여넣기 가져오기</summary><textarea rows="6" class="mt-2 w-full border rounded-lg px-2 py-1.5 mono text-xs"></textarea></details>
+    </div>
+    <div class="p-4 border-t flex flex-wrap justify-between gap-2 bg-white">
+      <p class="note self-center">저장 시 한국 맥락 번안(학업 범주 재명명·행동 기술)이 자동 적용됩니다.</p>
+      <div class="flex gap-2"><button type="button" id="customCancel" class="px-4 py-2 rounded-lg border text-sm">취소</button><button type="button" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold">저장하고 후보에 추가</button></div>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const NAMES=["민준","서연","지안","도윤","하은","시우"];
+const CANDIDATES=[
+  {id:4821,key:"p1",level:"높은 도달",lvRaw:"High",st:"사회",wk:"미술",trait:"외향, 먼저 발언, 심화 질문 많음, 빠른 완료 후 대기"},
+  {id:1377,key:"p2",level:"안정적 도달",lvRaw:"Medium",st:"국어",wk:"사회",trait:"서면 선호, 발표 부담, 작은 목소리"},
+  {id:9054,key:"p3",level:"부분 도달",lvRaw:"Low",st:"체육",wk:"수학·사회",trait:"시각 자료 선호, 추상 어휘 부담, 어림 답변"},
+  {id:2610,key:"p4",level:"추가 지원 필요",lvRaw:"Poor",st:"정보기기 조작",wk:"국어·사회·수학",trait:"과업 시작 지연, 디지털 자극에 주의 분산"},
+  {id:7733,key:"p2",level:"안정적 도달",lvRaw:"Medium",st:"음악",wk:"과학",trait:"협력적, 모둠 조정 역할"},
+  {id:5102,key:"p3",level:"부분 도달",lvRaw:"Low",st:"미술",wk:"사회",trait:"그림으로 표현, 문장 완성 어려움"},
+];
+const chosen=CANDIDATES.slice(0,4).map((c,i)=>({...c,name:NAMES[i]}));
+candRows.innerHTML=CANDIDATES.map(c=>`<tr><td class="px-3 py-2"><input type="checkbox" ${chosen.some(x=>x.id===c.id)?"checked":""}></td><td class="px-3 py-2 mono text-gray-500">${c.id}</td><td class="px-3 py-2 font-medium name ${c.key}">${chosen.find(x=>x.id===c.id)?.name||"—"}</td><td class="px-3 py-2">${c.level} <span class="note">(${c.lvRaw})</span></td><td class="px-3 py-2"><span class="text-green-700">${c.st}</span> / <span class="text-red-700">${c.wk}</span></td><td class="px-3 py-2 note">${c.trait}</td></tr>`).join("");
+chosenChips.innerHTML=chosen.map(c=>`<span class="phase-pill" style="border-color:var(--${c.key});color:var(--${c.key})">● ${c.name} · ${c.level}</span>`).join("");
+const cfOpen=()=>customModal.classList.remove("hidden"), cfClose=()=>customModal.classList.add("hidden");
+openCustom.onclick=cfOpen; modeCustom.onchange=cfOpen; customClose.onclick=cfClose; customCancel.onclick=cfClose;
+customModal.onclick=e=>{if(e.target===customModal)cfClose();};
+if(new URLSearchParams(location.search).get("custom")) cfOpen(); // screenshot hook
+</script>
+{% endblock %}

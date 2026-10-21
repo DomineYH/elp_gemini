@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{# PROTOTYPE (#140) — throwaway. 시안 화면 2(수업 시뮬레이션) + 1:1 DM 모달. ?n=6 좌석 6명, ?dm=1 모달 열림. 머지 금지. #}
+{% block title %}[PROTO] 수업 시뮬레이션{% endblock %}
+{% block head %}{% include "user/_sim_proto_style.html" %}{% endblock %}
+
+{% block content %}
+<div class="sim pb-28">
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+    <div class="min-w-0">
+      <p class="eyebrow">2 / 4 · 수업 시뮬레이션</p>
+      <h1 class="text-xl font-bold truncate">6학년 사회 — 여행하고 싶은 나라의 위치와 생활 모습</h1>
+    </div>
+    <div class="flex items-center gap-2 text-xs">
+      <span class="mono note">03:12</span>
+      <button class="phase-pill">대화록</button>
+      <button class="phase-pill">수업 종료</button>
+    </div>
+  </div>
+
+  <!-- phase stepper -->
+  <div class="flex items-center gap-2 overflow-x-auto pb-2 mb-3" id="stepper">
+    <span class="phase-pill done">도입 · 나라 떠올리기</span>
+    <span class="phase-pill now">활동1 · 스무고개로 위치 찾기</span>
+    <span class="phase-pill">활동2 · Padlet 댓글로 환경 추측</span>
+    <span class="phase-pill">활동3 · 생활 모습 이어 쓰기</span>
+    <span class="phase-pill">정리</span>
+  </div>
+
+  <!-- current task card -->
+  <div class="card p-4 mb-3 border-blue-200 bg-blue-50/40">
+    <div class="flex flex-wrap gap-3 justify-between">
+      <div class="min-w-0">
+        <p class="eyebrow">지도안의 현재 국면 · 활동 1 (10분)</p>
+        <p class="text-sm mt-1"><b>교사 발문</b> "모둠 친구가 고른 나라를 질문으로 알아맞혀 봅시다. 위치를 묻는 질문만 할 수 있어요." · <b>자료</b> Google Earth, 질문 카드</p>
+      </div>
+      <p class="note self-end">지도안 유의점: 질문은 위치(대륙·반구·적도 기준)로 제한</p>
+    </div>
+  </div>
+
+  <!-- classroom board -->
+  <div class="card p-4 md:p-6">
+    <div class="flex flex-col items-center gap-2 mb-5">
+      <div class="flex items-center gap-2 text-xs text-gray-500"><span class="w-2.5 h-2.5 rounded-full" style="background:var(--teacher)"></span>교사 (나)</div>
+      <div class="bubble teacher max-w-2xl text-center">자, 모둠 친구가 고른 나라를 스무고개로 맞혀 봅시다. 위치를 묻는 질문만 할 수 있어요.</div>
+    </div>
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" id="seats"></div>
+    <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4" id="advance">
+      <div class="text-sm"><span class="note">다음 단계 동의</span> <span id="agreeCount" class="mono font-medium ml-1">0 / 4</span> <span class="note ml-2">· 학생이 과업을 끝냈다고 판단하면 자동으로 표시됩니다</span></div>
+      <div class="flex gap-2">
+        <button class="px-4 py-2 rounded-lg border text-sm text-gray-700 hover:bg-gray-50">Skip ▸</button>
+        <button class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gray-400 cursor-not-allowed" disabled>다음 국면으로 →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- teacher input (fixed bottom, centered) -->
+<div class="fixed left-0 right-0 z-40" id="tDock" style="bottom:0;padding:0 max(16px,env(safe-area-inset-left,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-right,0px))">
+  <form class="container mx-auto max-w-3xl bg-white border rounded-2xl shadow-lg p-2 flex items-end gap-2" onsubmit="return false">
+    <span class="text-xs px-2 py-2 rounded-lg bg-gray-100 text-gray-600 shrink-0 whitespace-nowrap">전체에게</span>
+    <textarea rows="1" placeholder="전체 학생에게 말하기 (Enter 전송, Shift+Enter 줄바꿈) · 개인에게는 학생 카드를 클릭" class="flex-1 min-w-0 resize-none px-3 py-2 text-sm focus:outline-none"></textarea>
+    <button type="button" class="text-xs px-3 py-2 rounded-lg border text-gray-600 hover:bg-gray-50 shrink-0">지도안 발문</button>
+    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shrink-0">말하기</button>
+  </form>
+</div>
+
+<!-- 1:1 student dialog (floating) -->
+<div id="dmModal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" style="padding:max(16px,env(safe-area-inset-left,0px))">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden" role="dialog">
+    <div class="flex items-center justify-between gap-3 px-4 py-3 border-b">
+      <div class="flex items-center gap-2 min-w-0">
+        <span id="dmDot" class="w-3 h-3 rounded-full shrink-0"></span>
+        <div class="min-w-0"><p id="dmTitle" class="font-semibold text-sm truncate">학생</p><p id="dmSub" class="note truncate"></p></div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="phase-pill">1:1 대화 · 교실에도 기록됨</span>
+        <button id="dmClose" class="text-gray-500 hover:text-gray-800 p-1" aria-label="닫기"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
+      </div>
+    </div>
+    <div id="dmFeed" class="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50 min-h-[12rem]"></div>
+    <form class="p-3 border-t flex items-end gap-2 bg-white" onsubmit="return false">
+      <textarea rows="1" placeholder="이 학생에게만 말하기 (Enter 전송)" class="flex-1 min-w-0 resize-none px-3 py-2 text-sm border rounded-lg focus:outline-none"></textarea>
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shrink-0">말하기</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const P=[
+  {key:"p1",name:"민준",level:"높은 도달",trait:"외향, 먼저 발언",lines:["이 나라 북반구에 있어요? 적도 위에요? 그럼 유럽 쪽이에요? 아시아는 아니죠? 바다랑 붙어 있어요? 대륙이 커요?","(연속 6회 질문 후) 다 맞혔어요! 다음 거 해도 돼요?"],ok:true},
+  {key:"p2",name:"서연",level:"안정적 도달",trait:"서면 선호, 작은 목소리",lines:["(작은 목소리로) 적도… 기준으로 위쪽이에요?","(카드에 질문을 적고 조용히 들고 있음)"]},
+  {key:"p3",name:"지안",level:"부분 도달",trait:"시각 자료 선호",lines:["적도 근처면 더운 거 아니에요? 그럼 더운 나라겠다.","(화면의 사막 사진을 가리키며) 낙타 있는 데!"]},
+  {key:"p4",name:"도윤",level:"추가 지원 필요",trait:"주의 분산",lines:["이거 어떻게 돌려요? 3D 되네, 우리 집도 찾을 수 있어요?","(핀을 세 번 반복해서 찍는다)"]},
+  {key:"p2",name:"하은",level:"안정적 도달",trait:"협력적",lines:["우리 모둠은 질문 순서 정했어요.","(친구 질문을 카드에 받아 적는 중)"]},
+  {key:"p3",name:"시우",level:"부분 도달",trait:"그림으로 표현",lines:["지도에 색칠해도 돼요?","(사막 그림을 그리고 있음)"]},
+];
+const q=new URLSearchParams(location.search), n=Math.min(6,Math.max(2,+(q.get("n")||4))), chosen=P.slice(0,n);
+if(n>4) seats.classList.replace("lg:grid-cols-4","lg:grid-cols-3"); // 시안 설명: 6명은 lg:3열
+seats.innerHTML=chosen.map(c=>`<div class="seat card p-3 flex flex-col gap-2 cursor-pointer hover:shadow-md hover:border-gray-300 transition" tabindex="0" role="button" data-name="${c.name}">
+  <div class="flex items-center justify-between gap-2">
+    <div class="flex items-center gap-2 min-w-0"><span class="dot ${c.key} w-2.5 h-2.5 rounded-full shrink-0"></span><span class="name ${c.key} font-semibold text-sm truncate">${c.name}</span><span class="note truncate">${c.level}</span></div>
+    <span class="agree ${c.ok?"yes":""}">${c.ok?"✓ 다음 단계 OK":"대기"}</span>
+  </div>
+  <div class="flex flex-col gap-2 min-h-[4.5rem]">${c.lines.map(t=>`<div class="bubble ${c.key} in">${t}</div>`).join("")}</div>
+  <p class="note text-right">💬 클릭해서 1:1 말하기</p>
+</div>`).join("");
+agreeCount.textContent=`${chosen.filter(c=>c.ok).length} / ${n}`;
+function openDM(name){const c=chosen.find(x=>x.name===name); dmTitle.textContent=c.name; dmSub.textContent=`${c.level} · ${c.trait}`; dmDot.style.background=`var(--${c.key})`;
+  dmFeed.innerHTML=`<p class="note text-center">활동1 국면 · ${c.name}과(와)의 1:1 대화. 여기서 한 말과 반응은 교실 화면과 대화록에도 그대로 기록됩니다.</p>`+c.lines.map(t=>`<div class="flex justify-start"><div class="bubble ${c.key} in max-w-[85%]"><span class="name ${c.key} text-xs font-semibold block mb-0.5">${c.name}</span>${t}</div></div>`).join("")+`<div class="flex justify-end"><div class="bubble teacher in max-w-[85%]">${c.name}아, 질문 하나만 카드에 적어서 보여 줄래?</div></div>`;
+  dmModal.classList.remove("hidden");}
+seats.querySelectorAll(".seat").forEach(s=>s.onclick=()=>openDM(s.dataset.name));
+dmClose.onclick=()=>dmModal.classList.add("hidden"); dmModal.onclick=e=>{if(e.target===dmModal)dmModal.classList.add("hidden");};
+if(q.get("dm")) openDM(chosen[1].name); // screenshot hook
+</script>
+{% endblock %}
