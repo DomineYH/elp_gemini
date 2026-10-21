@@ -76,8 +76,40 @@ def test_to_candidate_maps_labels_and_truncates_summary():
         "level_label": "높은 도달",
         "strong_subjects": ["수학"],
         "weak_subjects": ["미술", "Unmapped"],
-        "behavior_summary": "x" * 80,
+        "behavior_summary": "x" * 80 + "…",
     }
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("short sentence.", "short sentence."),
+        ("a" * 80, "a" * 80),
+        (
+            "Student No. 9313 demonstrates strong self-discipline and a "
+            "sense of responsibility in class.",
+            "Student No. 9313 demonstrates strong self-discipline and a "
+            "sense of…",
+        ),
+        ("word " * 16 + "end", "word " * 15 + "word…"),
+        ("  extra   spaces  ", "extra spaces"),
+    ],
+)
+def test_summarize_cuts_on_word_boundary_with_ellipsis(text, expected):
+    """단어 중간에서 잘리지 않고, 잘렸으면 …로 끝난다 (#177)."""
+    out = persona_pool.summarize(text)
+    assert out == expected
+    assert len(out) <= persona_pool.SUMMARY_MAX_CHARS + 1
+
+
+def test_committed_pool_summaries_never_cut_mid_word():
+    for record in persona_pool.load_pool()[:200]:
+        out = persona_pool.to_candidate(record, "서연")["behavior_summary"]
+        if out.endswith("…"):
+            head = out[:-1]
+            full = " ".join(record["personality"].split())
+            assert full.startswith(head)
+            assert full[len(head)] in " ,.;:"
 
 
 def test_committed_pool_loads_grade_5_and_6_only():

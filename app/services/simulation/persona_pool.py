@@ -110,6 +110,20 @@ def _subject_ko(name: str) -> str:
     return SUBJECT_KO.get(plain, plain)
 
 
+SUMMARY_MAX_CHARS = 80
+
+
+def summarize(text: str, limit: int = SUMMARY_MAX_CHARS) -> str:
+    """limit자 안에서 단어 경계로 자르고, 잘랐으면 …을 붙인다 (#177)."""
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    if text[limit] != " " and " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip(" ,.;:") + "…"
+
+
 def to_candidate(record: dict, pseudonym: str) -> dict:
     return {
         "ref": str(record["id"]),
@@ -120,7 +134,7 @@ def to_candidate(record: dict, pseudonym: str) -> dict:
         "level_label": LEVEL_LABELS[record["academic_level"]],
         "strong_subjects": [_subject_ko(s) for s in record["strong_subjects"]],
         "weak_subjects": [_subject_ko(s) for s in record["weak_subjects"]],
-        "behavior_summary": record["personality"][:80],
+        "behavior_summary": summarize(record["personality"]),
     }
 
 

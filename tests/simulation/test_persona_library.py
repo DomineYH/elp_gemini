@@ -121,6 +121,8 @@ def test_list_and_candidates_show_own_items_only(
     assert cand["source"] == "custom"
     assert cand["grade"] == 5
     assert cand["level_label"] == "추가 지원 필요"
+    # 원문(raw) 대신 저장 시 번안한 요약 (#177)
+    assert cand["behavior_summary"] == "질문을 들으면 먼저 손을 든다."
     dataset_names = {
         c["pseudonym"]
         for c in lib.get(

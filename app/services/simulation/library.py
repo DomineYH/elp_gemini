@@ -35,6 +35,10 @@ def to_candidate(item: SimulationPersonaLibraryItem, pseudonym: str) -> dict:
         ),
         "ref": ref(item),
         "source": "custom",
+        # 저장 시 번안한 한국어 요약을 보인다 (#177)
+        "behavior_summary": persona_pool.summarize(
+            item.adapted_profile["behavior_summary"]
+        ),
     }
 
 
