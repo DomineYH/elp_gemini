@@ -294,7 +294,10 @@ def test_run_page_renders_for_owner(ready):
     assert "lg:grid-cols-4" in page.text
 
 
-def test_draft_is_fallback_rows_or_no_upload(client, teacher, make_upload):
+def test_draft_is_fallback_rows_or_no_upload(
+    client, teacher, make_upload, fake_gemini
+):
+    fake_gemini.parse_fail.add("phase_split")  # 분해 실패 → 폴백 (#155)
     r = client.get("/api/simulation/phases/draft")
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "NO_UPLOAD"
