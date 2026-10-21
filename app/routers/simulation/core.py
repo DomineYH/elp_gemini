@@ -2,6 +2,7 @@
 수업 시뮬레이션 핵심 라우터: 설정 화면, 후보 페르소나, 세션 생성·진입·실행 화면
 """
 
+import itertools
 import random
 from typing import Literal
 
@@ -26,6 +27,7 @@ from app.schemas.simulation import (
 )
 from app.services.simulation import (
     lessonplan_source,
+    library,
     persona_pool,
     phase_split,
     session_service,
@@ -73,6 +75,7 @@ async def get_candidates(
     ),
     seed: int | None = None,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     if seed is None:
         seed = random.randrange(2**31)
@@ -80,12 +83,19 @@ async def get_candidates(
         persona_pool.load_pool(), grade, level, n, seed
     )
     names = persona_pool.assign_pseudonyms(len(records), seed)
+    # 내 페르소나는 필터와 무관하게 전부, 표본에 안 쓰인 가명을 차례로 붙인다
+    # ponytail: 라이브러리가 NAME_POOL보다 많아지면 가명이 반복된다.
+    spare = itertools.cycle(
+        [name for name in persona_pool.NAME_POOL if name not in names]
+    )
+    items = await library.list_items(db, current_user.id)
     return {
         "seed": seed,
         "candidates": [
             persona_pool.to_candidate(r, name)
             for r, name in zip(records, names)
-        ],
+        ]
+        + [library.to_candidate(item, next(spare)) for item in items],
     }
 
 
