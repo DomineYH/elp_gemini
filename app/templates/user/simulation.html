@@ -194,11 +194,13 @@
         return box;
     }
 
-    // 좌석·1:1 창에 보일 발화: 이 학생의 반응 + 이 학생에게 한 교사 1:1 발화
+    // 좌석·1:1 창에 보일 발화: 이 학생의 반응 + 그 반응을 부른 교사 발화
+    // (이 학생에게 한 1:1 발화와 전체 발화). 전체 발화도 넣어야 반응과 짝이 맞는다 (#176)
     function seatUtterances(utts, p) {
         return utts.filter(u =>
             (u.speaker_type === "student" && u.persona_id === p.id) ||
-            (u.speaker_type === "teacher" && u.target_persona_id === p.id));
+            (u.speaker_type === "teacher" &&
+                (u.target_persona_id === p.id || u.target_persona_id == null)));
     }
 
     function openSeat(p) {
@@ -226,7 +228,8 @@
         seatUtterances(utts, p).forEach(u => {
             const row = el("div", "flex " + (u.speaker_type === "teacher" ? "justify-end" : "justify-start"));
             if (u.speaker_type === "teacher") {
-                row.append(el("div", "bubble teacher in max-w-[85%]", u.content));
+                const text = u.target_persona_id == null ? "(전체에게) " + u.content : u.content;
+                row.append(el("div", "bubble teacher in max-w-[85%]", text));
             } else {
                 const box = bubble(p, u);
                 box.classList.add("max-w-[85%]");
