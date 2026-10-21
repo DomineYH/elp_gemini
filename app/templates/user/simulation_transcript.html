@@ -63,10 +63,10 @@
             }
             const persona = personas.get(u.persona_id);
             const key = u.speaker_type === "teacher" ? "teacher" : persona.color_key;
-            let label = persona ? persona.display_name : "교사";
-            if (u.speaker_type === "teacher" && u.target_persona_id) {
-                label = "교사 → " + personas.get(u.target_persona_id).display_name;
-            }
+            const label = persona ? persona.display_name : "교사";
+            // 1:1 발화는 진행 화면처럼 "(이름에게) 본문"
+            const to = u.speaker_type === "teacher" && personas.get(u.target_persona_id);
+            const text = to ? "(" + to.display_name + "에게) " + u.content : u.content;
             const li = el("li", key);
             const name = el("b", "name " + key, label);
             if (key === "teacher") name.style.color = "var(--teacher)";
@@ -75,7 +75,7 @@
                 el("span", "phase-pill mr-2", phaseName(u.phase_idx)),
                 name,
                 " ",
-                el("span", u.failed ? "note" : "", u.failed ? "(반응 생성 실패)" : u.content)
+                el("span", u.failed ? "note" : "", u.failed ? "(반응 생성 실패)" : text)
             );
             list.append(li);
         }

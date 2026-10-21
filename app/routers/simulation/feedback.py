@@ -34,6 +34,7 @@ async def _page(template, sid, request, current_user, db):
             "user": current_user,
             "sid": session.id,
             "disclaimer": feedback.DISCLAIMER,
+            "section_note": feedback.SECTION_NOTE,
         },
     )
 

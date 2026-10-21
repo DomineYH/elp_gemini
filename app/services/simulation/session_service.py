@@ -405,6 +405,15 @@ async def _commit_or_conflict(db) -> None:
         raise SimulationError("CONFLICT_RETRY")
 
 
+async def _still_current(db, session: SimulationSession, idx: int) -> None:
+    """Gemini 호출 중 다른 요청이 종료·전이했으면 아무것도 쓰지 않는다."""
+    await db.refresh(session)
+    if session.status == "finished":
+        raise SimulationError("SESSION_FINISHED")
+    if session.current_phase_idx != idx:
+        raise SimulationError("CONFLICT_RETRY")
+
+
 async def say(
     db: AsyncSession, session: SimulationSession, body: SayRequest
 ) -> dict:
@@ -441,6 +450,9 @@ async def say(
     results = await gemini.call_many(
         [student_call(p, phase, transcript) for p in responders]
     )
+    await _still_current(db, session, idx)
+    if await _teacher_turns_used(db, sid) >= settings.SIM_MAX_TEACHER_TURNS:
+        raise SimulationError("TURN_LIMIT")
 
     seq = await next_seq(db, sid)
     teacher.seq = seq
@@ -540,6 +552,9 @@ async def regenerate(
     if session.status == "finished":
         raise SimulationError("SESSION_FINISHED")
     sid, idx = session.id, session.current_phase_idx
+    personas = await _personas(db, sid)
+    if persona_id not in {p.id for p in personas}:
+        raise SimulationError("UNKNOWN_PERSONA")
     stored = await _utterances(db, sid, idx)
     mine = [u for u in stored if u.persona_id == persona_id]
     if not mine or mine[-1].structured is not None:
@@ -549,7 +564,6 @@ async def regenerate(
     asked = max(
         u.seq for u in stored if u.speaker_type == "teacher" and u.seq < row.seq
     )
-    personas = await _personas(db, sid)
     names = {p.id: p.display_name for p in personas}
     transcript = [
         _transcript_line(u, names)
@@ -561,6 +575,7 @@ async def regenerate(
     [result] = await gemini.call_many(
         [student_call(persona, phase, transcript)]
     )
+    await _still_current(db, session, idx)
 
     fresh = student_utterance(sid, idx, row.seq, persona, result)
     for field in (

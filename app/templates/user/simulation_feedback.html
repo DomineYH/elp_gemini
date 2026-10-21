@@ -21,6 +21,7 @@
 
 <div id="fbBody" class="hidden">
     <h2 class="eyebrow mb-2">위험 시나리오</h2>
+    <p class="note mb-2">{{ section_note }}</p>
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-5" id="risks"></div>
 
     <div class="card">
@@ -30,6 +31,7 @@
             <button type="button" role="tab" class="fbtab px-4 py-3 font-medium border-b-2 whitespace-nowrap" data-fb="f3">③ 수업 활동 변경 방향</button>
         </div>
         <div class="p-5 text-sm">
+            <p class="note mb-3">{{ section_note }}</p>
             <div id="f1" class="fbpanel space-y-3" role="tabpanel"></div>
             <ul id="f2" class="fbpanel list-disc ml-5 space-y-1" role="tabpanel"></ul>
             <ol id="f3" class="fbpanel list-decimal ml-5 space-y-1" role="tabpanel"></ol>

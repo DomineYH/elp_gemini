@@ -1,8 +1,11 @@
 """대화록·시뮬레이션 피드백 생성·캐시·다운로드 (#156)."""
 
+import json
+import sqlite3
+
 import pytest
 
-from app.services.simulation import feedback
+from app.services.simulation import feedback, gemini
 
 
 def _api(sid, path=""):
@@ -163,3 +166,42 @@ def test_transcript_and_feedback_pages_render(ready):
     assert r.status_code == 200
     assert "보고서 Markdown 저장" in r.text
     assert feedback.DISCLAIMER in r.text
+    # 위험 시나리오 아래 1번, ①②③ 탭 본문 위 1번
+    assert r.text.count(feedback.SECTION_NOTE) == 2
+
+
+def test_concurrent_generation_returns_first_envelope_and_one_file(
+    ready, fake_gemini, tmp_path, monkeypatch
+):
+    sid = _finished(ready)
+    reports = tmp_path / "reports"
+    prior = {
+        "feedback": {
+            **fake_gemini.results["feedback"].model_dump(),
+            "progress_directions": ["먼저 저장된 피드백"],
+        },
+        "model_name": "fake-model",
+        "latency_ms": 1,
+        "guideline_version": None,
+        "created_at": "2026-10-21T00:00:00+00:00",
+    }
+
+    def other_request_wins(kind, **kw):
+        # 같은 세션의 다른 POST가 Gemini 호출 중에 먼저 저장을 끝낸다
+        other = reports / "1" / "other_reports.md"
+        other.parent.mkdir(parents=True, exist_ok=True)
+        other.write_text("first")
+        conn = sqlite3.connect(tmp_path / "sim.db")
+        with conn:
+            conn.execute(
+                "UPDATE simulation_sessions SET feedback_json=? WHERE id=?",
+                (json.dumps(prior, ensure_ascii=False), sid),
+            )
+        conn.close()
+        return fake_gemini(kind, **kw)
+
+    monkeypatch.setattr(gemini, "call_structured", other_request_wins)
+    r = ready.post(_api(sid, "/feedback"))
+    assert r.status_code == 200
+    assert r.json() == {**prior, "cached": True}
+    assert [p.name for p in reports.rglob("*.md")] == ["other_reports.md"]

@@ -66,7 +66,10 @@ async def save_guideline(
     db: AsyncSession = Depends(get_db),
 ):
     require_admin_csrf_token(request)
-    row = await guidelines.save(db, body.model_dump(), current_admin.id)
+    try:
+        row = await guidelines.save(db, body.model_dump(), current_admin.id)
+    except SimulationError as e:
+        raise e.to_http() from e
     return guidelines.to_out(row)
 
 

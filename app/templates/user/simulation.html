@@ -40,7 +40,7 @@
 
         <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
             <div class="text-sm">
-                <span class="note">다음 단계 동의</span>
+                <span class="note">다음 국면 동의</span>
                 <span id="agreeCount" class="mono font-medium ml-1">0 / {{ persona_count }}</span>
                 <span class="note ml-2 hidden sm:inline">· 학생이 과업을 끝냈다고 판단하면 자동으로 표시됩니다</span>
             </div>
@@ -85,7 +85,7 @@
 <!-- 교사 입력 (하단 고정) -->
 <div class="fixed left-0 right-0 z-40" style="bottom:0;padding:0 max(16px,env(safe-area-inset-left,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-right,0px))">
     <div id="retryBox" class="hidden container mx-auto max-w-3xl mb-2 flex items-center justify-end gap-2" role="alert">
-        <span class="note">AI 응답을 받지 못했습니다.</span>
+        <span class="note">학생 반응을 받지 못했습니다.</span>
         <button type="button" id="retryBtn" class="text-sm font-semibold px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white shrink-0">다시 시도</button>
     </div>
     <form id="tForm" class="container mx-auto max-w-3xl bg-white border rounded-2xl shadow-lg p-2 flex items-end gap-2">

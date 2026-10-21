@@ -9,6 +9,7 @@ from pathlib import Path
 
 from pypdf import PdfReader
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.criteria import Criteria
@@ -17,6 +18,7 @@ from app.models.simulation_feedback_guideline import (
 )
 from app.models.simulation_session import SimulationSession
 from app.services.prompt_loader_service import PromptLoaderService
+from app.services.simulation.errors import SimulationError
 
 FIXED_ASPECTS = ["교사 발화 추천", "진행 방향", "변경 방향"]
 OPTIONAL_ASPECTS = {
@@ -82,7 +84,7 @@ async def current(db: AsyncSession) -> SimulationFeedbackGuideline | None:
 async def save(
     db: AsyncSession, data: dict, admin_id: int
 ) -> SimulationFeedbackGuideline:
-    """저장은 항상 새 버전(max+1)."""
+    """저장은 항상 새 버전(max+1). 동시 저장으로 겹치면 CONFLICT_RETRY."""
     latest = await db.scalar(
         select(func.max(SimulationFeedbackGuideline.version))
     )
@@ -90,7 +92,11 @@ async def save(
         version=(latest or 0) + 1, created_by=admin_id, **data
     )
     db.add(row)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise SimulationError("CONFLICT_RETRY")
     await db.refresh(row)
     return row
 

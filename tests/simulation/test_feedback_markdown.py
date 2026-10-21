@@ -84,3 +84,13 @@ def test_emoji_in_model_text_is_stripped_and_guard_passes():
     assert "참여 편중" in md
     assert "\U0001f525" not in md and "✅" not in md
     assert _emoji_guard()._scan_full(md.splitlines()) == []
+
+
+def test_every_section_starts_with_hypothesis_note():
+    lines = feedback.render_markdown(_envelope(), SESSION).splitlines()
+    sections = [i for i, line in enumerate(lines) if line.startswith("## ")]
+    assert len(sections) == 4
+    for i in sections:
+        following = next(line for line in lines[i + 1 :] if line.strip())
+        assert following == feedback.SECTION_NOTE
+    assert "가설이며 예측이 아닙니다" in feedback.SECTION_NOTE

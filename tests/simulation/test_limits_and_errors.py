@@ -1,8 +1,11 @@
 """발화 상한, 좌석 단위 재생성, 한도·과부하 오류 (#154)."""
 
+import sqlite3
+
 import pytest
 
 from app.config import settings
+from app.services.simulation import gemini
 
 
 def _create(client, n_phases=2):
@@ -158,3 +161,90 @@ def test_gemini_error_during_regenerate_keeps_failed_row(ready, fake_gemini):
     r = ready.post(_api(sid, "/regenerate"), json={"persona_id": failing})
     assert r.status_code == 429
     assert ready.get(_api(sid)).json()["utterances"] == before
+
+
+# 다른 탭의 교사 발화(source=user) 1건
+OTHER_TAB_TURN = (
+    "INSERT INTO simulation_utterances (session_id, phase_idx, seq,"
+    " speaker_type, content, structured) VALUES"
+    " (1, 0, 900, 'teacher', '다른 탭', '{\"source\": \"user\"}')"
+)
+
+
+def _during_call(monkeypatch, fake_gemini, db_path, sql, params=()):
+    """Gemini 호출 중에 다른 요청이 DB를 바꾼 상황을 만든다."""
+
+    def wrapped(kind, **kw):
+        conn = sqlite3.connect(db_path)
+        with conn:
+            conn.execute(sql, params)
+        conn.close()
+        return fake_gemini(kind, **kw)
+
+    monkeypatch.setattr(gemini, "call_structured", wrapped)
+
+
+@pytest.mark.parametrize(
+    "sql,code",
+    [
+        (
+            "UPDATE simulation_sessions SET status='finished'",
+            "SESSION_FINISHED",
+        ),
+        (
+            "UPDATE simulation_sessions SET current_phase_idx=1",
+            "CONFLICT_RETRY",
+        ),
+        (OTHER_TAB_TURN, "TURN_LIMIT"),
+    ],
+)
+def test_say_rechecks_session_after_gemini_and_persists_nothing(
+    ready, fake_gemini, monkeypatch, tmp_path, sql, code
+):
+    monkeypatch.setattr(settings, "SIM_MAX_TEACHER_TURNS", 1)
+    state, _ = _create(ready)
+    sid = state["session"]["id"]
+    ready.post(_api(sid, "/phases/0/enter"))
+    before = [u["seq"] for u in ready.get(_api(sid)).json()["utterances"]]
+
+    _during_call(monkeypatch, fake_gemini, tmp_path / "sim.db", sql)
+    target = state["personas"][0]["id"]
+    r = ready.post(
+        _api(sid, "/say"), json={"content": "질문", "target_persona_id": target}
+    )
+    assert r.status_code == 409
+    assert _code(r) == code
+    after = [u["seq"] for u in ready.get(_api(sid)).json()["utterances"]]
+    assert [s for s in after if s != 900] == before
+
+
+def test_regenerate_after_concurrent_finish_keeps_failed_row(
+    ready, fake_gemini, monkeypatch, tmp_path
+):
+    state, refs = _create(ready)
+    sid = state["session"]["id"]
+    failing = state["personas"][0]["id"]
+    fake_gemini.parse_fail.add(refs[0])
+    ready.post(_api(sid, "/phases/0/enter"))
+    before = ready.get(_api(sid)).json()["utterances"]
+
+    fake_gemini.parse_fail.clear()
+    _during_call(
+        monkeypatch,
+        fake_gemini,
+        tmp_path / "sim.db",
+        "UPDATE simulation_sessions SET status='finished'",
+    )
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": failing})
+    assert r.status_code == 409
+    assert _code(r) == "SESSION_FINISHED"
+    assert ready.get(_api(sid)).json()["utterances"] == before
+
+
+def test_regenerate_foreign_persona_is_422(ready, fake_gemini):
+    state, _ = _create(ready)
+    sid = state["session"]["id"]
+    ready.post(_api(sid, "/phases/0/enter"))
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": 99999})
+    assert r.status_code == 422
+    assert _code(r) == "UNKNOWN_PERSONA"

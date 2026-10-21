@@ -3,7 +3,7 @@
 import re
 
 import pytest
-from sqlalchemy import func, inspect, select
+from sqlalchemy import event, func, inspect, select
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.migrations import ensure_simulation_tables
@@ -180,3 +180,26 @@ def test_guideline_model_matches_ddl(tmp_path):
 
     table = SimulationFeedbackGuideline.__table__
     assert run(_cols()) == {c.name for c in table.columns}
+
+
+def test_concurrent_save_with_same_version_is_409(admin_client, sim_db):
+    table = SimulationFeedbackGuideline.__table__
+
+    def other_save_first(mapper, connection, target):
+        # 다른 관리자의 저장이 같은 version을 먼저 넣은 상황
+        connection.execute(
+            table.insert().values(
+                version=target.version, required_aspects=[], criteria_ids=[]
+            )
+        )
+
+    event.listen(SimulationFeedbackGuideline, "before_insert", other_save_first)
+    try:
+        r = admin_client.post(API, json=BODY)
+    finally:
+        event.remove(
+            SimulationFeedbackGuideline, "before_insert", other_save_first
+        )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "CONFLICT_RETRY"
+    assert admin_client.post(API, json=BODY).status_code == 201

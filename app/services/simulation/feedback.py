@@ -5,7 +5,9 @@
 """
 
 from datetime import datetime, timezone
+from pathlib import Path
 
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.lessonplan_uploads import LessonPlanUpload
@@ -28,6 +30,8 @@ DISCLAIMER = (
     "도출한 가설입니다. 실제 학생의 행동을 예측하거나 진단하지 않으며, "
     "지도안을 점검하는 참고 자료로만 사용하세요."
 )
+# 스토리 42: 섹션마다 붙이는 고정 안내
+SECTION_NOTE = "이 섹션의 내용은 시뮬레이션에서 나온 가설이며 예측이 아닙니다."
 TRANSITIONS = {
     "agree_advance": "전원 동의 후 전이",
     "skip": "교사 개입 전 전이(Skip)",
@@ -128,6 +132,8 @@ def render_markdown(
         "",
         "## 위험 시나리오",
         "",
+        SECTION_NOTE,
+        "",
     ]
     for i, r in enumerate(fb["risk_scenarios"], 1):
         out += [
@@ -139,7 +145,7 @@ def render_markdown(
             "",
         ]
 
-    out += ["## ① 교사 발화 추천", ""]
+    out += ["## ① 교사 발화 추천", "", SECTION_NOTE, ""]
     for s in fb["utterance_suggestions"]:
         out += [
             f"### {clean(phase_label(s['phase_idx']))}",
@@ -150,9 +156,9 @@ def render_markdown(
             "",
         ]
 
-    out += ["## ② 진행 방향", ""]
+    out += ["## ② 진행 방향", "", SECTION_NOTE, ""]
     out += [f"- {clean(d)}" for d in fb["progress_directions"]]
-    out += ["", "## ③ 변경 방향", ""]
+    out += ["", "## ③ 변경 방향", "", SECTION_NOTE, ""]
     out += [
         f"- **{clean(c['kind'])}** {clean(c['content'])}"
         for c in fb["change_directions"]
@@ -204,8 +210,22 @@ async def generate(db: AsyncSession, session: SimulationSession) -> dict:
     saved = ReportStorageService(base_dir=REPORTS_DIR).save_report(
         session.user_id, f"simulation_{session.id}.md", md
     )
-    session.feedback_json = envelope
-    session.feedback_guideline_version = version
-    session.feedback_report_path = saved["file_path"]
+    # 동시 생성: 먼저 저장한 쪽만 남기고 이쪽 파일은 지운다
+    written = await db.execute(
+        update(SimulationSession)
+        .where(
+            SimulationSession.id == session.id,
+            SimulationSession.feedback_json.is_(None),
+        )
+        .values(
+            feedback_json=envelope,
+            feedback_guideline_version=version,
+            feedback_report_path=saved["file_path"],
+        )
+    )
     await db.commit()
+    if written.rowcount == 0:
+        Path(saved["file_path"]).unlink(missing_ok=True)
+        await db.refresh(session)
+        return {**session.feedback_json, "cached": True}
     return {**envelope, "cached": False}
