@@ -343,6 +343,11 @@ class AdminDeletionService:
                 )
             if result.scalar_one() != 0:
                 continue
+            # 시뮬레이션 세션이 이 지도안 업로드를 참조하면 원본을 보존한다.
+            # (업로드 행은 보고서 삭제로 지우지 않으므로 파일만 지우면
+            # 시뮬레이션·내보내기에서 원본이 MISSING이 된다.)
+            if await self._lessonplan_used_by_simulation(user_id, name):
+                continue
 
             if not path.is_file() or path.is_symlink():
                 continue
@@ -354,6 +359,19 @@ class AdminDeletionService:
                     "파일 삭제 실패: path=%s, err=%s", path, exc
                 )
         return removed
+
+    async def _lessonplan_used_by_simulation(
+        self, user_id: int, filename: str
+    ) -> bool:
+        result = await self.db.execute(
+            text(
+                "SELECT count(1) FROM simulation_sessions s "
+                "JOIN lessonplan_uploads u ON u.id = s.upload_id "
+                "WHERE u.user_id = :user_id AND u.filename = :name"
+            ),
+            {"user_id": user_id, "name": Path(filename).name},
+        )
+        return result.scalar_one() != 0
 
     def _resolve_lessonplan_path(
         self,

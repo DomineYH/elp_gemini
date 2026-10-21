@@ -538,34 +538,42 @@ class AdminExportService:
 
     def stream_zip(self, plan: ExportPlan) -> Iterator[bytes]:
         buf = _ChunkBuffer()
+        # archive_path -> (byte_size, sha256). manifest.csv는 실제로 쓴 파일의
+        # 크기·해시를 담아야 하므로 모든 파일을 쓴 뒤 마지막에 쓴다.
+        digests: dict[str, tuple[int, str]] = {}
         with zipfile.ZipFile(
             buf, mode="w", compression=zipfile.ZIP_DEFLATED
         ) as zf:
             yield from self._emit_meta(zf, buf, plan)
-            yield from self._emit_reports(zf, buf, plan)
-            yield from self._emit_conversations(zf, buf, plan)
-            yield from self._emit_simulations(zf, buf, plan)
-            yield from self._emit_lessonplans(zf, buf, plan)
+            yield from self._emit_reports(zf, buf, plan, digests)
+            yield from self._emit_conversations(zf, buf, plan, digests)
+            yield from self._emit_simulations(zf, buf, plan, digests)
+            yield from self._emit_lessonplans(zf, buf, plan, digests)
+            yield from self._emit_manifest(zf, buf, plan, digests)
         yield buf.take()
 
     def _emit_meta(self, zf, buf, plan):
         if "meta" in plan.filters.include:
             zf.writestr("README.txt", build_readme(plan))
             yield buf.take()
-            zf.writestr("manifest.csv", build_manifest_csv(plan))
-            yield buf.take()
             zf.writestr("users.csv", build_users_csv(plan))
             yield buf.take()
 
-    def _emit_reports(self, zf, buf, plan):
+    def _emit_manifest(self, zf, buf, plan, digests):
+        if "meta" in plan.filters.include:
+            zf.writestr("manifest.csv", build_manifest_csv(plan, digests))
+            yield buf.take()
+
+    def _emit_reports(self, zf, buf, plan, digests):
         if "reports" not in plan.filters.include:
             return
         for r in plan.reports:
-            data, _ = _read_file_or_missing(r.source_path)
+            data, sha = _read_file_or_missing(r.source_path)
             zf.writestr(r.archive_path, data)
+            digests[r.archive_path] = _digest(data, sha)
             yield buf.take()
 
-    def _emit_conversations(self, zf, buf, plan):
+    def _emit_conversations(self, zf, buf, plan, digests):
         if "conversations" not in plan.filters.include:
             return
         for s in plan.sessions:
@@ -573,22 +581,25 @@ class AdminExportService:
                 s, plan.session_messages.get(s.session_id, [])
             )
             zf.writestr(s.archive_path, payload)
+            digests[s.archive_path] = _digest(payload)
             yield buf.take()
 
-    def _emit_simulations(self, zf, buf, plan):
+    def _emit_simulations(self, zf, buf, plan, digests):
         for s in plan.simulations:
             payload = _serialize_simulation_jsonl(
                 s, plan.simulation_utterances.get(s.session_id, [])
             )
             zf.writestr(s.archive_path, payload)
+            digests[s.archive_path] = _digest(payload)
             yield buf.take()
 
-    def _emit_lessonplans(self, zf, buf, plan):
+    def _emit_lessonplans(self, zf, buf, plan, digests):
         if "lessonplans" not in plan.filters.include:
             return
         for lessonplan in plan.lessonplans:
-            data, _ = _read_file_or_missing(lessonplan.source_path)
+            data, sha = _read_file_or_missing(lessonplan.source_path)
             zf.writestr(lessonplan.archive_path, data)
+            digests[lessonplan.archive_path] = _digest(data, sha)
             yield buf.take()
 
 
@@ -624,6 +635,13 @@ def _read_file_or_missing(path: str) -> tuple[bytes, str]:
         return data, hashlib.sha256(data).hexdigest()
     except FileNotFoundError:
         return b"", "MISSING"
+
+
+def _digest(data: bytes, sha: str | None = None) -> tuple[int, str]:
+    """manifest용 (byte_size, sha256). 원본이 없으면(MISSING) 해시는 비운다."""
+    if sha is None:
+        sha = hashlib.sha256(data).hexdigest()
+    return len(data), "" if sha == "MISSING" else sha
 
 
 def _serialize_session_jsonl(
@@ -708,15 +726,28 @@ def _csv_safe(value: str | None) -> str:
     return value
 
 
-def build_manifest_csv(plan: ExportPlan) -> bytes:
-    """sha256/byte_size는 ZIP 단계에서 채워지므로 빈 칸으로 둔다."""
+def build_manifest_csv(
+    plan: ExportPlan,
+    digests: dict[str, tuple[int, str]] | None = None,
+) -> bytes:
+    """manifest.csv를 만든다.
+
+    byte_size/sha256은 ``stream_zip``이 실제로 쓴 파일에서 계산한
+    ``digests``(archive_path -> (크기, 해시))로 채운다. ZIP에 들어가지 않은
+    항목(include에서 빠진 종류)은 빈 칸으로 둔다.
+    """
+    digests = digests or {}
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=_MANIFEST_COLUMNS)
     w.writeheader()
     iter_entries: Iterable = (
-        list(plan.reports) + list(plan.sessions) + list(plan.lessonplans)
+        list(plan.reports)
+        + list(plan.sessions)
+        + list(plan.simulations)
+        + list(plan.lessonplans)
     )
     for e in iter_entries:
+        size, sha = digests.get(e.archive_path, ("", ""))
         w.writerow({
             "kind": e.kind,
             "user_id": e.user_id,
@@ -725,11 +756,11 @@ def build_manifest_csv(plan: ExportPlan) -> bytes:
             "created_at": (
                 e.created_at.isoformat() if e.created_at else ""
             ),
-            "original_name": _csv_safe(e.original_name),
+            "original_name": _csv_safe(getattr(e, "original_name", "")),
             "archive_path": e.archive_path,
             "source_status": getattr(e, "source_status", "OK"),
-            "byte_size": "",
-            "sha256": "",
+            "byte_size": size,
+            "sha256": sha,
         })
     return buf.getvalue().encode("utf-8")
 
@@ -780,6 +811,7 @@ def build_readme(plan: ExportPlan) -> bytes:
         f"  users={len(plan.users)}",
         f"  reports={len(plan.reports)}",
         f"  conversations={len(plan.sessions)}",
+        f"  simulations={len(plan.simulations)}",
         f"  lessonplans={len(plan.lessonplans)}",
         "",
         "Layout:",
@@ -787,7 +819,8 @@ def build_readme(plan: ExportPlan) -> bytes:
         "  users.csv         사용자 메타데이터 + 자원 개수",
         "  reports/          분석 보고서 (.md)",
         "  conversations/    QnA 세션 대화 (.jsonl)",
-        "  simulations/      수업 시뮬레이션 세션 발화 (.jsonl)",
+        "  simulations/      수업 시뮬레이션 세션 발화 (.jsonl,"
+        " include=conversations에 포함)",
         "  lessonplans/      원본 수업 지도안",
         "",
         "파일명 규칙:",
