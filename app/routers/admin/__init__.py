@@ -9,6 +9,8 @@ from . import (
     dashboard,
     prompts,
     qna_logs,
+    simulation_logs,
+    simulation_settings,
     users,
 )
 
@@ -22,3 +24,5 @@ router.include_router(criteria.router)  # API 라우터는 나중에 등록
 router.include_router(qna_logs.router)  # QnA 로그 라우터
 router.include_router(users.router)  # 사용자 관리 라우터
 router.include_router(prompts.router)
+router.include_router(simulation_settings.router)
+router.include_router(simulation_logs.router)

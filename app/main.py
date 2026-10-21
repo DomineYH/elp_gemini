@@ -329,6 +329,7 @@ from app.routers import (  # noqa: E402
     evaluations,
     lessonplan_analysis,
     qna,
+    simulation,
     views,
 )
 from app.routers.admin import exports as admin_exports  # noqa: E402
@@ -372,6 +373,7 @@ app.include_router(lessonplan_analysis.router)
 app.include_router(views.router)
 app.include_router(admin_router)
 app.include_router(admin_exports.router)
+app.include_router(simulation.router)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,50 @@
+<style>
+/* 수업 시뮬레이션 공용 스타일 (시안 v0.1 + p5/p6). 좌석마다 고유 색, 학업 수준은 글로만 표시 */
+:root{
+  --bg:#f3f4f6; --surface:#ffffff; --ink:#111827; --muted:#6b7280; --line:#e5e7eb;
+  --teacher:#1d4ed8; --teacher-soft:#dbeafe;
+  --p1:#be123c; --p1s:#ffe4e6;
+  --p2:#0f766e; --p2s:#ccfbf1;
+  --p3:#b45309; --p3s:#fef3c7;
+  --p4:#6d28d9; --p4s:#ede9fe;
+  --p5:#4d7c0f; --p5s:#ecfccb;
+  --p6:#a21caf; --p6s:#fae8ff;
+  --ok:#16a34a; --warn:#d97706;
+  --font-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.bubble{position:relative;border-radius:14px;padding:.6rem .85rem;font-size:.9rem;line-height:1.5;max-width:100%;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.bubble.p1{background:var(--p1s);border-left:4px solid var(--p1)}
+.bubble.p2{background:var(--p2s);border-left:4px solid var(--p2)}
+.bubble.p3{background:var(--p3s);border-left:4px solid var(--p3)}
+.bubble.p4{background:var(--p4s);border-left:4px solid var(--p4)}
+.bubble.p5{background:var(--p5s);border-left:4px solid var(--p5)}
+.bubble.p6{background:var(--p6s);border-left:4px solid var(--p6)}
+.bubble.teacher{background:var(--teacher);color:#fff;border-radius:16px;padding:.75rem 1.1rem;font-size:.95rem}
+.name.p1{color:var(--p1)}.name.p2{color:var(--p2)}.name.p3{color:var(--p3)}
+.name.p4{color:var(--p4)}.name.p5{color:var(--p5)}.name.p6{color:var(--p6)}
+.dot.p1{background:var(--p1)}.dot.p2{background:var(--p2)}.dot.p3{background:var(--p3)}
+.dot.p4{background:var(--p4)}.dot.p5{background:var(--p5)}.dot.p6{background:var(--p6)}
+.seat{min-width:0}
+.seat .bubble{opacity:0;transform:translateY(6px);transition:opacity .25s,transform .25s}
+.seat .bubble.in{opacity:1;transform:none}
+.typing span{display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.4;animation:blink 1.2s infinite}
+.typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.3}40%{opacity:1}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.phase-pill{font-size:.75rem;padding:.25rem .6rem;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--muted);white-space:nowrap}
+.phase-pill.done{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+.phase-pill.now{background:var(--teacher);color:#fff;border-color:var(--teacher)}
+.agree{font-size:.72rem;padding:.15rem .5rem;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:#fff}
+.agree.yes{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--teacher);outline-offset:2px}
+.note{font-size:.78rem;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.timeline li{position:relative;padding-left:1.25rem}
+.timeline li::before{content:"";position:absolute;left:0;top:.55rem;width:8px;height:8px;border-radius:50%;background:var(--line)}
+.timeline li.p1::before{background:var(--p1)}.timeline li.p2::before{background:var(--p2)}
+.timeline li.p3::before{background:var(--p3)}.timeline li.p4::before{background:var(--p4)}
+.timeline li.p5::before{background:var(--p5)}.timeline li.p6::before{background:var(--p6)}
+.timeline li.teacher::before{background:var(--teacher)}
+</style>

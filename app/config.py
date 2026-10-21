@@ -66,6 +66,16 @@ class Settings(BaseSettings):
         default="gemini-3.1-flash-lite",
         description="평가용 모델",
     )
+    GEMINI_SIM_MODEL: str = Field(
+        default="gemini-3.1-flash-lite",
+        description="수업 시뮬레이션용 모델",
+    )
+    SIM_MAX_PERSONAS: int = Field(
+        default=6, description="시뮬레이션 최대 학생 수"
+    )
+    SIM_MAX_TEACHER_TURNS: int = Field(
+        default=40, description="세션당 교사 자유 발화 최대 횟수"
+    )
 
     # File Search
     FS_MAIN_STORE_NAME: str = Field(
