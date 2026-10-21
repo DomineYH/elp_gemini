@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}시뮬레이션 로그 - 관리자{% endblock %}
+
+{% block nav_links %}
+{% if user.is_admin %}
+<a href="/admin/dashboard" class="text-gray-600 hover:text-blue-600">대시보드</a>
+<a href="/admin/users" class="text-gray-600 hover:text-blue-600">사용자</a>
+<a href="/admin/qna-logs" class="text-gray-600 hover:text-blue-600">QnA 로그</a>
+<a href="/admin/prompts" class="text-gray-600 hover:text-blue-600">프롬프트</a>
+<a href="/admin/simulation/settings" class="text-gray-600 hover:text-blue-600">시뮬레이션 설정</a>
+<a href="/admin/criteria" class="text-gray-600 hover:text-blue-600">평가기준</a>
+{% endif %}
+<span class="text-gray-600">{{ user.username }}</span>
+<form method="POST" action="/auth/logout" class="inline">
+    <button type="submit" class="text-gray-600 hover:text-red-600">로그아웃</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <h1 class="text-3xl font-bold mb-6">시뮬레이션 로그</h1>
+
+    <div class="bg-white shadow-md rounded-lg overflow-x-auto mb-6">
+        <table class="min-w-full text-sm">
+            <thead class="bg-gray-50 text-gray-600">
+                <tr>
+                    <th class="px-4 py-2 text-left">ID</th>
+                    <th class="px-4 py-2 text-left">사용자</th>
+                    <th class="px-4 py-2 text-left">일시</th>
+                    <th class="px-4 py-2 text-left">인원</th>
+                    <th class="px-4 py-2 text-left">상태</th>
+                    <th class="px-4 py-2 text-left">발화 수</th>
+                    <th class="px-4 py-2"></th>
+                </tr>
+            </thead>
+            <tbody id="sessionRows">
+                <tr><td colspan="7" class="px-4 py-6 text-gray-500">로딩 중...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div id="pagination" class="mb-6 flex justify-center items-center gap-2">
+        <button id="prevBtn" type="button" class="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-700 disabled:opacity-50">이전</button>
+        <span id="pageInfo" class="text-sm text-gray-500"></span>
+        <button id="nextBtn" type="button" class="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-700 disabled:opacity-50">다음</button>
+    </div>
+
+    <div id="detail" class="hidden bg-white shadow-md rounded-lg p-4">
+        <h2 id="detailTitle" class="text-xl font-semibold mb-4"></h2>
+        <h3 class="font-medium text-gray-700 mb-2">페르소나</h3>
+        <div id="detailPersonas" class="space-y-2 mb-6"></div>
+        <h3 class="font-medium text-gray-700 mb-2">발화</h3>
+        <ol id="detailUtterances" class="space-y-2"></ol>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 모델·사용자 문자열은 모두 textContent로만 넣는다 (XSS 규칙)
+const pageSize = 20;
+let currentPage = 1;
+
+function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+}
+
+function formatDate(dateStr) {
+    return dateStr ? new Date(dateStr).toLocaleString('ko-KR') : '';
+}
+
+async function loadSessions(page) {
+    currentPage = page;
+    const tbody = document.getElementById('sessionRows');
+    try {
+        const resp = await fetch(`/admin/api/simulation/sessions?page=${page}&page_size=${pageSize}`);
+        const data = await resp.json();
+        tbody.replaceChildren();
+        if (!data.sessions || data.sessions.length === 0) {
+            const tr = el('tr');
+            const td = el('td', 'px-4 py-6 text-gray-500', '세션이 없습니다');
+            td.colSpan = 7;
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+        }
+        for (const s of data.sessions || []) {
+            const tr = el('tr', 'border-t border-gray-100');
+            for (const value of [s.id, s.username, formatDate(s.created_at), s.persona_count, s.status, s.utterance_count]) {
+                tr.appendChild(el('td', 'px-4 py-2', value));
+            }
+            const td = el('td', 'px-4 py-2 text-right');
+            const btn = el('button', 'text-blue-600 hover:underline', '열기');
+            btn.type = 'button';
+            btn.addEventListener('click', () => loadDetail(s.id));
+            td.appendChild(btn);
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+        }
+        const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
+        document.getElementById('pageInfo').textContent = `${page} / ${totalPages} (총 ${data.total}개)`;
+        document.getElementById('prevBtn').disabled = page <= 1;
+        document.getElementById('nextBtn').disabled = page >= totalPages;
+    } catch (error) {
+        console.error('시뮬레이션 로그 로드 실패:', error);
+        tbody.replaceChildren();
+        const tr = el('tr');
+        const td = el('td', 'px-4 py-6 text-red-500', '로그를 불러올 수 없습니다');
+        td.colSpan = 7;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+    }
+}
+
+async function loadDetail(sid) {
+    const resp = await fetch(`/admin/api/simulation/sessions/${sid}`);
+    if (!resp.ok) {
+        alert('세션을 불러올 수 없습니다.');
+        return;
+    }
+    const state = await resp.json();
+    const names = {};
+    const personaBox = document.getElementById('detailPersonas');
+    personaBox.replaceChildren();
+    for (const p of state.personas) {
+        names[p.id] = p.display_name;
+        const details = el('details', 'border border-gray-200 rounded p-2');
+        details.appendChild(el('summary', 'cursor-pointer', `${p.display_name} · ${p.adapted_level} · ${p.source}`));
+        details.appendChild(el('pre', 'text-xs whitespace-pre-wrap mt-2', JSON.stringify(p.raw_profile, null, 2)));
+        details.appendChild(el('pre', 'text-xs whitespace-pre-wrap mt-2', JSON.stringify(p.adapted_profile, null, 2)));
+        personaBox.appendChild(details);
+    }
+    const phaseNames = {};
+    for (const ph of state.phases) phaseNames[ph.idx] = ph.name;
+    const list = document.getElementById('detailUtterances');
+    list.replaceChildren();
+    for (const u of state.utterances) {
+        let speaker = u.speaker_type === 'teacher' ? '교사' : (names[u.persona_id] || '시스템');
+        if (u.target_persona_id) speaker += ` (${names[u.target_persona_id]}에게)`;
+        const li = el('li', u.speaker_type === 'system' ? 'text-gray-400 text-sm' : 'text-sm');
+        li.appendChild(el('span', 'text-gray-500 mr-2', `#${u.seq} [${phaseNames[u.phase_idx] || u.phase_idx}]`));
+        li.appendChild(el('span', 'font-medium mr-2', speaker));
+        li.appendChild(el('span', 'whitespace-pre-wrap', u.failed ? `(파싱 실패) ${u.content}` : u.content));
+        list.appendChild(li);
+    }
+    document.getElementById('detailTitle').textContent = `세션 #${state.session.id} · ${state.session.status}`;
+    document.getElementById('detail').classList.remove('hidden');
+}
+
+document.getElementById('prevBtn').addEventListener('click', () => loadSessions(currentPage - 1));
+document.getElementById('nextBtn').addEventListener('click', () => loadSessions(currentPage + 1));
+loadSessions(1);
+</script>
+{% endblock %}

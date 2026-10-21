@@ -20,6 +20,9 @@ from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage
 from app.models.chat_sessions import ChatSession
 from app.models.lessonplan_uploads import LessonPlanUpload
+from app.models.simulation_persona import SimulationPersona
+from app.models.simulation_session import SimulationSession
+from app.models.simulation_utterance import SimulationUtterance
 from app.models.users import User
 from app.schemas.admin_export import ExportFilters
 from app.utils.admin_export_naming import (
@@ -79,12 +82,27 @@ class LessonplanEntry:
 
 
 @dataclass(frozen=True)
+class SimulationEntry:
+    kind: str  # "simulation"
+    user_id: int
+    resource_id: int  # simulation session id
+    session_id: int
+    created_at: datetime
+    archive_path: str
+    persona_names: dict[int, str]  # persona_id -> display_name
+
+
+@dataclass(frozen=True)
 class ExportPlan:
     users: list[UserContext]
     reports: list[ReportEntry] = field(default_factory=list)
     sessions: list[SessionEntry] = field(default_factory=list)
     lessonplans: list[LessonplanEntry] = field(default_factory=list)
     session_messages: dict[int, list[ChatMessage]] = field(
+        default_factory=dict
+    )
+    simulations: list[SimulationEntry] = field(default_factory=list)
+    simulation_utterances: dict[int, list[SimulationUtterance]] = field(
         default_factory=dict
     )
     filters: ExportFilters = field(default_factory=ExportFilters)
@@ -116,6 +134,9 @@ class AdminExportService:
             user_ids, ctx_by_id, filters
         )
         lessonplans = await self._collect_lessonplans(users, filters)
+        simulations, sim_utterances = await self._collect_simulations(
+            user_ids, ctx_by_id, filters
+        )
 
         return ExportPlan(
             users=users,
@@ -123,6 +144,8 @@ class AdminExportService:
             sessions=sessions,
             lessonplans=lessonplans,
             session_messages=messages,
+            simulations=simulations,
+            simulation_utterances=sim_utterances,
             filters=filters,
             generated_at=datetime.utcnow(),
         )
@@ -455,6 +478,62 @@ class AdminExportService:
             msgs[s.id] = sorted_msgs
         return sessions, msgs
 
+    async def _collect_simulations(
+        self, user_ids, ctx_by_id, filters
+    ) -> tuple[list[SimulationEntry], dict[int, list[SimulationUtterance]]]:
+        # 시뮬레이션 발화는 별도 include 키 없이 conversations에 묶는다
+        if "conversations" not in filters.include:
+            return [], {}
+        stmt = (
+            select(SimulationSession)
+            .where(SimulationSession.user_id.in_(user_ids))
+            .order_by(SimulationSession.created_at.asc())
+        )
+        if filters.date_from:
+            stmt = stmt.where(
+                SimulationSession.created_at
+                >= datetime.combine(filters.date_from, datetime.min.time())
+            )
+        if filters.date_to:
+            stmt = stmt.where(
+                SimulationSession.created_at
+                < datetime.combine(filters.date_to, datetime.min.time())
+                + timedelta(days=1)
+            )
+        rows = (await self.db.execute(stmt)).scalars().all()
+
+        entries: list[SimulationEntry] = []
+        utterances: dict[int, list[SimulationUtterance]] = {}
+        for s in rows:
+            ctx = ctx_by_id[s.user_id]
+            personas = await self.db.scalars(
+                select(SimulationPersona).where(
+                    SimulationPersona.session_id == s.id
+                )
+            )
+            entries.append(
+                SimulationEntry(
+                    kind="simulation",
+                    user_id=s.user_id,
+                    resource_id=s.id,
+                    session_id=s.id,
+                    created_at=s.created_at,
+                    archive_path=(
+                        f"simulations/{ctx.filename_prefix}"
+                        f"__simsession_{s.id}.jsonl"
+                    ),
+                    persona_names={p.id: p.display_name for p in personas},
+                )
+            )
+            utterances[s.id] = list(
+                await self.db.scalars(
+                    select(SimulationUtterance)
+                    .where(SimulationUtterance.session_id == s.id)
+                    .order_by(SimulationUtterance.seq)
+                )
+            )
+        return entries, utterances
+
     # -------- ZIP streaming --------
 
     def stream_zip(self, plan: ExportPlan) -> Iterator[bytes]:
@@ -465,6 +544,7 @@ class AdminExportService:
             yield from self._emit_meta(zf, buf, plan)
             yield from self._emit_reports(zf, buf, plan)
             yield from self._emit_conversations(zf, buf, plan)
+            yield from self._emit_simulations(zf, buf, plan)
             yield from self._emit_lessonplans(zf, buf, plan)
         yield buf.take()
 
@@ -491,6 +571,14 @@ class AdminExportService:
         for s in plan.sessions:
             payload = _serialize_session_jsonl(
                 s, plan.session_messages.get(s.session_id, [])
+            )
+            zf.writestr(s.archive_path, payload)
+            yield buf.take()
+
+    def _emit_simulations(self, zf, buf, plan):
+        for s in plan.simulations:
+            payload = _serialize_simulation_jsonl(
+                s, plan.simulation_utterances.get(s.session_id, [])
             )
             zf.writestr(s.archive_path, payload)
             yield buf.take()
@@ -553,6 +641,32 @@ def _serialize_session_jsonl(
                 m.created_at.isoformat() if m.created_at else None
             ),
         }, ensure_ascii=False))
+    return ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
+
+
+def _serialize_simulation_jsonl(entry, utterances) -> bytes:
+    lines = [
+        json.dumps(
+            {
+                "session_id": entry.session_id,
+                "seq": u.seq,
+                "phase_idx": u.phase_idx,
+                "speaker_type": u.speaker_type,
+                "persona_id": u.persona_id,
+                "persona_name": entry.persona_names.get(u.persona_id),
+                "target_persona_id": u.target_persona_id,
+                "content": u.content,
+                "structured": u.structured,
+                "model_name": u.model_name,
+                "latency_ms": u.latency_ms,
+                "created_at": (
+                    u.created_at.isoformat() if u.created_at else None
+                ),
+            },
+            ensure_ascii=False,
+        )
+        for u in utterances
+    ]
     return ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
 
 
@@ -673,6 +787,7 @@ def build_readme(plan: ExportPlan) -> bytes:
         "  users.csv         사용자 메타데이터 + 자원 개수",
         "  reports/          분석 보고서 (.md)",
         "  conversations/    QnA 세션 대화 (.jsonl)",
+        "  simulations/      수업 시뮬레이션 세션 발화 (.jsonl)",
         "  lessonplans/      원본 수업 지도안",
         "",
         "파일명 규칙:",
