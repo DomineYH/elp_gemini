@@ -104,3 +104,19 @@ async def test_session_ask_timeout_returns_504(client, user):
     assert response.status_code == 504, response.text
     assert response.json()["detail"] == DETAIL
     assert [s.id for s in await _sessions()] == [session_id]
+
+
+@pytest.mark.asyncio
+async def test_first_question_error_hides_internal_detail(client):
+    error = RuntimeError("fileSearchStores/user3store-abc/documents/x")
+    with patch(
+        "app.services.qna_service.QnAService.ask_question",
+        AsyncMock(side_effect=error),
+    ):
+        response = await client.post(
+            f"/api/qna/{DOC}", json={"question": "질문"}
+        )
+
+    assert response.status_code == 500, response.text
+    assert "fileSearchStores" not in response.json()["detail"]
+    assert await _sessions() == []
