@@ -216,6 +216,12 @@
         dmModal.classList.add("hidden");
     }
 
+    // 이름 끝 글자 받침 유무로 '와/과' 선택. 한글이 아니면 '와'로 폴백.
+    function josaWa(name) {
+        const c = name ? name.codePointAt(name.length - 1) : 0;
+        if (c < 0xAC00 || c > 0xD7A3) return "와";
+        return (c - 0xAC00) % 28 === 0 ? "와" : "과";
+    }
     function renderDM(utts, pending) {
         if (!dmPersona) return;
         const p = dmPersona;
@@ -224,7 +230,7 @@
         $("dmDot").style.background = "var(--" + p.color_key + ")";
         const feed = $("dmFeed");
         feed.replaceChildren(el("p", "note text-center",
-            currentPhase().name + " 국면 · " + p.display_name + "과(와)의 1:1 대화. 여기서 한 말과 반응은 교실 화면과 대화록에도 기록됩니다."));
+            currentPhase().name + " 국면 · " + p.display_name + josaWa(p.display_name) + "의 1:1 대화. 여기서 한 말과 반응은 교실 화면과 대화록에도 기록됩니다."));
         seatUtterances(utts, p).forEach(u => {
             const row = el("div", "flex " + (u.speaker_type === "teacher" ? "justify-end" : "justify-start"));
             if (u.speaker_type === "teacher") {
