@@ -304,9 +304,14 @@ async def test_qna_evaluation_filters_rubric_store_by_active_stable_id():
             username="teacher",
         )
 
-    config = client.models.generate_content.call_args.kwargs["config"]
-    rubric_search = _file_search_for_store(config, "fileSearchStores/rubric")
-    user_search = _file_search_for_store(config, "fileSearchStores/user")
+    # 2-패스(#199): 1패스는 user store만(필터 없음), 2패스는 rubric만
+    pass1, pass2 = client.models.generate_content.call_args_list
+    user_search = _file_search_for_store(
+        pass1.kwargs["config"], "fileSearchStores/user"
+    )
+    rubric_search = _file_search_for_store(
+        pass2.kwargs["config"], "fileSearchStores/rubric"
+    )
 
     assert rubric_search is not None
     assert rubric_search.metadata_filter == 'stable_id="01HACTIVE"'

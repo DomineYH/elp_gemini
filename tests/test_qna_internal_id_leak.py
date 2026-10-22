@@ -83,14 +83,21 @@ def _grounded(title):
 
 
 async def _ask(
-    question, model_answer, history=None, lesson_text=None, pass2_title=None
+    question,
+    model_answer,
+    history=None,
+    lesson_text=None,
+    pass2_title=None,
+    pass1_exc=None,
 ):
     db = AsyncMock()
     client = MagicMock()
     response = MagicMock()
     response.text = model_answer
     response.candidates = _grounded(pass2_title) if pass2_title else []
-    if lesson_text is None:
+    if pass1_exc is not None:
+        client.models.generate_content.side_effect = [pass1_exc, response]
+    elif lesson_text is None:
         client.models.generate_content.return_value = response
     else:
         pass1 = MagicMock(text=lesson_text)
@@ -233,3 +240,16 @@ async def test_evaluation_falls_back_to_dual_tools_when_pass1_empty():
     calls = client.models.generate_content.call_args_list
     assert len(calls) == 2
     assert _stores(calls[1].kwargs) == [[USER_STORE], [RUBRIC_STORE]]
+
+
+@pytest.mark.asyncio
+async def test_evaluation_falls_back_to_dual_tools_when_pass1_raises():
+    client, _, result = await _ask(
+        "평가 계획의 보완점은 무엇인가요?",
+        "보완점입니다.",
+        pass1_exc=RuntimeError("file search down"),
+    )
+    calls = client.models.generate_content.call_args_list
+    assert len(calls) == 2
+    assert _stores(calls[1].kwargs) == [[USER_STORE], [RUBRIC_STORE]]
+    assert "보완점입니다" in result["answer"]
