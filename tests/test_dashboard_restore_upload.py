@@ -217,6 +217,32 @@ async def test_cleanup_forgets_fs_ids(env):
     assert row.fs_document_id is None
 
 
+@pytest.mark.asyncio
+async def test_failed_replacement_upload_forgets_deleted_doc(env):
+    c, factory, _, _ = env
+    await _upload(c)
+    from app.routers import views as views_mod
+
+    fss = views_mod.FileSearchService.return_value
+    fss.upload_document.side_effect = RuntimeError("upload failed")
+    with patch("app.routers.views.PdfReader") as reader:
+        reader.return_value.pages = []
+        res = await c.post(
+            "/dashboard/upload",
+            files={"file": ("new.pdf", BytesIO(PDF_BYTES), "application/pdf")},
+        )
+    assert res.status_code == 500
+    assert fss.delete_store_by_display_name.await_count == 2
+
+    async with factory() as s:
+        row = (await s.execute(select(LessonPlanUpload))).scalar_one()
+    assert row.fs_document_id is None
+    html = (await c.get("/dashboard")).text
+    assert UPLOAD_HINT in html
+    assert QNA_FAB not in html
+    assert "최근 지도안(plan.pdf)" in html
+
+
 def test_sim_feedback_back_button_goes_to_dashboard():
     """#165: 버튼 이름은 유지하고 /dashboard가 최근 지도안을 다시 보여 준다."""
     from pathlib import Path

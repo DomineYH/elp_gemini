@@ -30,7 +30,7 @@ async def get_latest_upload(
 
 
 async def forget_file_search_ids(db: AsyncSession, user_id: int) -> None:
-    """사용자 File Search 스토어를 지운 뒤 업로드 행의 문서 ID를 비운다 (#173)."""
+    """사용자 File Search 스토어 삭제 뒤 업로드 행의 문서 ID를 비운다 (#173)."""
     await db.execute(
         update(LessonPlanUpload)
         .where(LessonPlanUpload.user_id == user_id)

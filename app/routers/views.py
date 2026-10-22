@@ -233,6 +233,8 @@ async def upload_document(
         # 기존 스토어 정리 (새 문서 업로드 시 이전 스토어 삭제)
         store_name = f"user-{current_user.id}-store"
         await file_search_service.delete_store_by_display_name(store_name)
+        # 커밋까지 하므로 뒤 업로드 실패의 rollback이 되살리지 않는다 (#173)
+        await lessonplan_source.forget_file_search_ids(db, current_user.id)
 
         # 메타데이터 설정
         metadata = {
