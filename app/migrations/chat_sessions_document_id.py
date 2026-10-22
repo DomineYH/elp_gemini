@@ -3,6 +3,7 @@ chat_sessions.document_id 컬럼 추가 마이그레이션 (#175)
 
 문서 대화 세션의 키를 title에서 분리한다. 과거 행은 title에 File Search
 문서 경로를 저장했으므로 그 값을 document_id로 백필해 세션 재사용을 유지한다.
+백필 뒤 그 title은 업로드 파일명이나 고정 문구로 바꾼다 (#214).
 """
 
 from __future__ import annotations
@@ -60,5 +61,23 @@ async def ensure_chat_sessions_document_id_column(engine: AsyncEngine) -> bool:
         if result.rowcount:
             logger.info(
                 "chat_sessions.document_id 백필: %d 행", result.rowcount
+            )
+        # document_id 백필 뒤에 실행해야 원래 문서 경로가 남는다
+        result = await conn.execute(
+            text(
+                "UPDATE chat_sessions SET title = COALESCE(("
+                "SELECT u.original_filename FROM lessonplan_uploads u "
+                "WHERE u.user_id = chat_sessions.user_id "
+                "AND u.fs_document_id = chat_sessions.document_id "
+                "AND u.original_filename IS NOT NULL "
+                "AND u.original_filename != '' "
+                "ORDER BY u.created_at DESC, u.id DESC LIMIT 1"
+                "), '업로드한 지도안') "
+                "WHERE title LIKE 'fileSearchStores/%'"
+            )
+        )
+        if result.rowcount:
+            logger.info(
+                "chat_sessions.title 레거시 제목 정리: %d 행", result.rowcount
             )
         return column_added
