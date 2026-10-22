@@ -3,9 +3,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from app.db import get_db
 from app.main import app
 from app.models.users import User
 from app.routers.auth import get_current_user
+from app.services.criteria_freshness import ensure_criteria_cache_fresh
 
 client = TestClient(app)
 
@@ -18,10 +20,21 @@ def mock_current_user():
 
 @pytest.fixture
 def mock_criteria_service():
-    with patch("app.routers.views.CriteriaVectorService") as mock:
-        service = mock.return_value
-        service.list_criteria_documents = AsyncMock(return_value=[])
-        yield service
+    # views.py는 DB의 활성 기준·최근 업로드를 읽는다: DB 없이 빈 값으로
+    app.dependency_overrides[ensure_criteria_cache_fresh] = lambda: None
+    app.dependency_overrides[get_db] = lambda: None
+    with (
+        patch("app.routers.views.CriteriaRepository") as mock,
+        patch(
+            "app.routers.views.lessonplan_source.get_latest_upload",
+            AsyncMock(return_value=None),
+        ),
+    ):
+        repo = mock.return_value
+        repo.get_active_criteria = AsyncMock(return_value=[])
+        yield repo
+    app.dependency_overrides.pop(ensure_criteria_cache_fresh, None)
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_dashboard_view_authenticated(mock_current_user, mock_criteria_service):

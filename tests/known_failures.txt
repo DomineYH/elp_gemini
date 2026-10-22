@@ -6,8 +6,6 @@
 #       SESSION_HTTPS_ONLY=false TZ=UTC \
 #       uv run --frozen python scripts/ci_ratchet.py tests --update
 # 정리 후속 이슈: #227
-ERROR tests/test_dashboard_view.py::test_dashboard_report_links_use_viewer_endpoint
-ERROR tests/test_dashboard_view.py::test_dashboard_view_authenticated
 FAILED tests/services/test_lessonplan_analysis_tool_order.py::test_rubric_metadata_filter_omitted_when_none
 FAILED tests/services/test_lessonplan_analysis_tool_order.py::test_user_store_tool_precedes_rubric_tool
 FAILED tests/test_lessonplan_analysis_service.py::TestLessonPlanAnalysisService::test_analyze_lesson_plan_no_stores
