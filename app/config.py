@@ -70,6 +70,10 @@ class Settings(BaseSettings):
         default="gemini-3.1-flash-lite",
         description="수업 시뮬레이션용 모델",
     )
+    GEMINI_HTTP_TIMEOUT_MS: int = Field(
+        default=120_000,
+        description="QnA·평가·File Search Gemini 요청 타임아웃(ms)",
+    )
     SIM_MAX_PERSONAS: int = Field(
         default=6, description="시뮬레이션 최대 학생 수"
     )

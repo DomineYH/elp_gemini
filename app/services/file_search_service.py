@@ -118,7 +118,10 @@ class FileSearchService:
         if cls._client is None:
             cls._client = genai.Client(
                 api_key=settings.GOOGLE_API_KEY,
-                http_options={'api_version': 'v1beta'}
+                http_options=types.HttpOptions(
+                    api_version="v1beta",
+                    timeout=settings.GEMINI_HTTP_TIMEOUT_MS,
+                ),
             )
         return cls._client
 
@@ -422,7 +425,8 @@ class FileSearchService:
             safe_display_name = _sanitize_display_name(display_name)
 
             # 직접 업로드 및 청킹 설정
-            operation = self.client.file_search_stores.upload_to_file_search_store(
+            operation = await asyncio.to_thread(
+                self.client.file_search_stores.upload_to_file_search_store,
                 file_search_store_name=store.name,
                 file=file_path,
                 config={
@@ -449,7 +453,9 @@ class FileSearchService:
                 elapsed += poll_interval
 
                 try:
-                    operation = self.client.operations.get(operation)
+                    operation = await asyncio.to_thread(
+                        self.client.operations.get, operation
+                    )
                     logger.debug(f"인덱싱 진행 중... (경과: {elapsed}초)")
                 except Exception as e:
                     logger.info(f"Operation 빠른 완료 감지: {str(e)}")
@@ -559,7 +565,8 @@ class FileSearchService:
                 file_search_config["metadata_filter"] = metadata_filter
 
             # Generate Content 요청
-            response = self.client.models.generate_content(
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
                 model=model,
                 contents=query,
                 config=types.GenerateContentConfig(

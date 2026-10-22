@@ -2,6 +2,7 @@
 문서 평가 서비스 (리팩토링)
 파일 기반 평가 결과 저장 및 Vector DB 검색
 """
+import asyncio
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -36,7 +37,11 @@ class EvaluationService:
         self.prompt_builder = EvaluationPromptBuilder()
         self.eval_model_name = settings.GEMINI_EVAL_MODEL
         self.client = genai.Client(
-            api_key=settings.GOOGLE_API_KEY
+            api_key=settings.GOOGLE_API_KEY,
+            http_options=types.HttpOptions(
+                api_version="v1beta",
+                timeout=settings.GEMINI_HTTP_TIMEOUT_MS,
+            ),
         )
 
     async def run_evaluation(
@@ -168,7 +173,8 @@ class EvaluationService:
         """
         try:
             # API 호출
-            response = self.client.models.generate_content(
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
                 model=self.eval_model_name,
                 contents=prompt,
                 config=types.GenerateContentConfig(

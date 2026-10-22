@@ -3,6 +3,7 @@ QnA 서비스
 Gemini API를 사용한 질문답변 처리 (FileSearch RAG)
 세션 기반 대화 관리 및 ChatMessage 저장
 """
+import asyncio
 import logging
 import re
 import time
@@ -133,7 +134,10 @@ class QnAService:
         self.qna_model_name = settings.GEMINI_QNA_MODEL
         self.client = genai.Client(
             api_key=settings.GOOGLE_API_KEY,
-            http_options={'api_version': 'v1beta'}
+            http_options=types.HttpOptions(
+                api_version="v1beta",
+                timeout=settings.GEMINI_HTTP_TIMEOUT_MS,
+            ),
         )
         self.prompt_loader = PromptLoaderService()
         self.file_search_service = FileSearchService()
@@ -388,7 +392,8 @@ class QnAService:
                     )
                 )
                 try:
-                    pass1 = self.client.models.generate_content(
+                    pass1 = await asyncio.to_thread(
+                        self.client.models.generate_content,
                         model=self.qna_model_name,
                         contents=_LESSONPLAN_RETRIEVE_QUERY,
                         config=types.GenerateContentConfig(
@@ -427,7 +432,8 @@ class QnAService:
                 else:
                     file_search_tools.append(rubric_tool)
 
-            response = self.client.models.generate_content(
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
                 model=self.qna_model_name,
                 contents=contents,
                 config=types.GenerateContentConfig(

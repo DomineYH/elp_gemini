@@ -6,6 +6,7 @@ import logging
 from datetime import datetime
 from typing import Optional, cast
 
+import httpx
 from fastapi import (
     APIRouter,
     Depends,
@@ -41,6 +42,9 @@ SESSION_LIST_DEFAULT_LIMIT = 50
 SESSION_LIST_MAX_LIMIT = 100
 CHAT_HISTORY_DEFAULT_LIMIT = 200
 CHAT_HISTORY_MAX_LIMIT = 200
+GEMINI_TIMEOUT_DETAIL = (
+    "AI 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."
+)
 
 
 def _model_int(value: object) -> int:
@@ -214,6 +218,13 @@ async def ask_question(
             criteria_notice=result.get("criteria_notice"),
         )
 
+    except httpx.TimeoutException as e:
+        await db.rollback()
+        logger.error(f"QnA 질문 처리 타임아웃: {e!r}")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=GEMINI_TIMEOUT_DETAIL,
+        )
     except ValueError as e:
         await db.rollback()
         logger.warning(f"QnA 질문 처리 실패 (잘못된 요청): {e}")
@@ -473,6 +484,7 @@ async def chat_with_document(
     Returns:
         답변 정보
     """
+    created_session = None
     try:
         from app.services.qna_service import QnAService
         from app.services.simulation.lessonplan_source import (
@@ -508,6 +520,7 @@ async def chat_with_document(
                 document_id=document_id,
             )
             await db.commit()
+            created_session = session
             logger.info(f"새 세션 자동 생성: {session.id} for {document_id}")
 
         # 3. 질문 처리
@@ -535,6 +548,19 @@ async def chat_with_document(
             f"문서 대화 처리 실패: {str(e)}",
             exc_info=True
         )
+        # 질문 실패로 빈 세션이 목록에 남지 않게 보상 삭제한다
+        if created_session is not None:
+            try:
+                await db.delete(created_session)
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                logger.warning("빈 세션 정리 실패", exc_info=True)
+        if isinstance(e, httpx.TimeoutException):
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=GEMINI_TIMEOUT_DETAIL,
+            )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"대화 처리 중 오류가 발생했습니다: {str(e)}"
