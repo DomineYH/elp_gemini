@@ -340,7 +340,10 @@ class QnAService:
             # 평가성 질문은 분석 경로(#118)처럼 2-패스: 이중 도구는 모델이
             # rubric만 검색해 지도안 청크를 놓친다 (#199)
             lesson_text, pass1_citations = "", None
-            if is_evaluation and active_rubric_filter and rubric_store_id:
+            two_pass = bool(
+                is_evaluation and active_rubric_filter and rubric_store_id
+            )
+            if two_pass:
                 rubric_tool = types.Tool(
                     file_search=types.FileSearch(
                         file_search_store_names=[rubric_store_id],
@@ -412,7 +415,7 @@ class QnAService:
                 )
                 citations = self._extract_citations(grounding)
 
-            if pass1_citations is not None:
+            if two_pass:
                 logger.info(
                     "QnA 2패스 grounding titles: %s",
                     _chunk_titles(citations),

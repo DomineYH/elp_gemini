@@ -12,6 +12,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.services.lessonplan_analysis_service import (
+    _LESSONPLAN_RETRIEVE_QUERY,
+)
 from app.services.prompt_loader_service import PromptLoaderService
 from app.services.qna_service import QnAService, strip_internal_store_ids
 
@@ -162,6 +165,7 @@ async def test_evaluation_question_hides_store_ids_and_searches_user_first():
     calls = client.models.generate_content.call_args_list
     assert len(calls) == 2
     assert _stores(calls[0].kwargs) == [[USER_STORE]]
+    assert calls[0].kwargs["contents"] == _LESSONPLAN_RETRIEVE_QUERY
 
     kwargs = calls[1].kwargs
     _assert_no_leak(kwargs["contents"])
