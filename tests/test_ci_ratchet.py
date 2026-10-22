@@ -62,25 +62,3 @@ def test_compare_reports_new_and_fixed():
         {"ERROR tests/b.py"},
     )
     assert ratchet.compare(known, known) == (set(), set())
-
-
-def test_lint_verdict_ruff_count():
-    assert ratchet.lint_verdict(3, 4, True, True) == ["ruff 위반 3 -> 4"]
-    assert ratchet.lint_verdict(3, 3, True, True) == []
-    assert ratchet.lint_verdict(3, 1, True, True) == []
-
-
-def test_lint_verdict_black():
-    # base 통과 -> head 실패는 새 위반
-    assert ratchet.lint_verdict(0, 0, True, False) == ["black 포맷이 새로 깨짐"]
-    # base 부터 실패한 파일은 기존 위반으로 본다
-    assert ratchet.lint_verdict(0, 0, False, False) == []
-
-
-def test_lint_verdict_new_file():
-    # 새 파일은 base 를 ruff 0, black 통과로 넘긴다
-    assert ratchet.lint_verdict(0, 0, True, True) == []
-    assert ratchet.lint_verdict(0, 2, True, False) == [
-        "ruff 위반 0 -> 2",
-        "black 포맷이 새로 깨짐",
-    ]

@@ -114,11 +114,11 @@ elp_gemini/
 ### 코드 스타일
 
 ```bash
-# Black 포매터 (80자 제한)
-black --line-length 80 app/
+# Black 포매터 (80자 제한, pyproject.toml 설정)
+black .
 
 # Ruff 린터
-ruff check app/
+ruff check .
 ```
 
 ### 데이터베이스 백업
@@ -135,14 +135,17 @@ pytest
 
 # 커버리지
 pytest --cov=app tests/
+
+# git blame에서 전체 포맷 커밋 건너뛰기 (클론마다 한 번)
+git config blame.ignoreRevsFile .git-blame-ignore-revs
 ```
 
 ### CI (래칫)
 
-`.github/workflows/ci.yml`이 main 대상 PR과 main push마다 세 가지를 검사합니다. 기존 실패는 허용하고 새 실패만 막는 래칫 방식입니다.
+`.github/workflows/ci.yml`이 main 대상 PR과 main push마다 세 가지를 검사합니다. 테스트는 기존 실패는 허용하고 새 실패만 막는 래칫 방식입니다.
 
 1. 이모지 회귀 점검 (`scripts/check_no_emojis_in_reports.py`)
-2. lint 래칫: 바뀐 `.py` 파일마다 ruff 위반 수가 base보다 늘었거나, base에서 통과하던 black(80자)이 깨지면 실패
+2. lint: 저장소 전체 `ruff check .` 위반 0건, `black --check .`(80자) 통과
 3. 테스트 래칫: pytest 실패 집합이 `tests/known_failures.txt`와 다르면 실패 (새 실패 또는 목록에 있는데 통과한 항목)
 
 로컬에서 같은 검사를 돌리려면 (`.env` 없이 CI와 같은 조건):
@@ -152,13 +155,14 @@ export GOOGLE_API_KEY=ci-placeholder \
   SECRET_KEY=ci-placeholder-secret-key-0123456789abcdef \
   SESSION_HTTPS_ONLY=false TZ=UTC
 uv run --frozen python scripts/check_no_emojis_in_reports.py
-uv run --frozen python scripts/ci_ratchet.py lint --base origin/main
+uv run --frozen ruff check .
+uv run --frozen black --check .
 uv run --frozen python scripts/ci_ratchet.py tests
 ```
 
 `tests/known_failures.txt`는 줄어들기만 해야 합니다. 테스트를 고쳐 CI가 `fixed`를 알리면 해당 줄을 지웁니다. 목록 전체를 다시 쓰려면 위 환경변수로 `uv run --frozen python scripts/ci_ratchet.py tests --update`를 실행합니다. 새 실패를 목록에 추가해서 CI를 통과시키지 않습니다.
 
-커밋 전 lint 래칫과 이모지 점검은 pre-commit으로 돌릴 수 있습니다 (테스트는 CI만 돌립니다).
+커밋 전 ruff·black 검사와 이모지 점검은 pre-commit으로 돌릴 수 있습니다 (테스트는 CI만 돌립니다).
 
 ```bash
 uv tool install pre-commit && pre-commit install
