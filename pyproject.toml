@@ -48,6 +48,13 @@ line-length = 80
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
+ignore = ["E501", "N818"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/**" = ["E402"]
+
+[tool.ruff.lint.pep8-naming]
+classmethod-decorators = ["pydantic.field_validator"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

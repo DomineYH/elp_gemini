@@ -34,7 +34,7 @@ def test_criteria_upload_page_injects_max_upload_size(monkeypatch):
     captured = {}
 
     class _FakeTemplates:
-        def TemplateResponse(self, name, context):
+        def TemplateResponse(self, name, context):  # noqa: N802
             captured["name"] = name
             captured["context"] = context
             return context

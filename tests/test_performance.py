@@ -240,11 +240,9 @@ class PerformanceTest:
                     start_time = time.time()
 
                     if config["method"] == "GET":
-                        resp = await client.get(
-                            f"{self.base_url}{config['url']}"
-                        )
+                        await client.get(f"{self.base_url}{config['url']}")
                     else:
-                        resp = await client.post(
+                        await client.post(
                             f"{self.base_url}{config['url']}",
                             json=config.get("json", {}),
                         )

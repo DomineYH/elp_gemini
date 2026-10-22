@@ -50,10 +50,8 @@ async def migrate_metadata():
 
         # 스토어 타입 결정
         if "rubric" in store_name.lower():
-            document_type = "rubric"
             print('   타입: 평가기준 스토어 → document_type="rubric"')
         elif "user" in store_name.lower():
-            document_type = "user_document"
             print('   타입: 사용자 스토어 → document_type="user_document"')
         else:
             print("   ⚠️  알 수 없는 스토어 타입 (스킵)")

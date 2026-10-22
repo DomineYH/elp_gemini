@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 # Mock missing modules
 sys.modules["app.services.criteria_context_service"] = MagicMock()
 
-from app.services.qna_service import QnAService
+from app.services.qna_service import QnAService  # noqa: E402
 
 
 async def reproduce():

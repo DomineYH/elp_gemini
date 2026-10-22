@@ -107,7 +107,7 @@ async def _rebuild_users_without_email(engine: AsyncEngine) -> None:
             # 2. Copy data
             await conn.execute(
                 text(
-                    "INSERT INTO users_new ({cols}) SELECT {cols} FROM users".format(  # noqa: E501
+                    "INSERT INTO users_new ({cols}) SELECT {cols} FROM users".format(
                         cols=_USERS_COLUMNS_NO_EMAIL
                     )
                 )

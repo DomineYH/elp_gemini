@@ -76,7 +76,7 @@ class TestQnAStoreUserIdKeying:
                 patch(_COMMON_PATCHES[0], Mock()),
                 patch(_COMMON_PATCHES[1], AsyncMock(return_value=(None, None))),
                 patch(_COMMON_PATCHES[2], Mock()),
-                patch(_COMMON_PATCHES[3]) as MockQA,
+                patch(_COMMON_PATCHES[3]) as MockQA,  # noqa: N806
             ):
                 MockQA.return_value.analyze_question.return_value = {
                     "question_type": "general",
@@ -121,7 +121,7 @@ class TestQnAStoreUserIdKeying:
                 patch(_COMMON_PATCHES[0], Mock()),
                 patch(_COMMON_PATCHES[1], AsyncMock(return_value=(None, None))),
                 patch(_COMMON_PATCHES[2], Mock()),
-                patch(_COMMON_PATCHES[3]) as MockQA,
+                patch(_COMMON_PATCHES[3]) as MockQA,  # noqa: N806
                 patch(
                     "app.services.criteria_vector_service"
                     ".CriteriaVectorService.active_stable_id_filter",

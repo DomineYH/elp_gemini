@@ -107,7 +107,7 @@ async def main():
                         value = getattr(operation.response, attr)
                         if not callable(value):
                             print(f"     - {attr}: {value}")
-                    except:
+                    except Exception:
                         pass
 
         # 이제 고수준 API 호출

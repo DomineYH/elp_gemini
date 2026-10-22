@@ -36,7 +36,7 @@ def create_db_session():
         sys.exit(1)
 
     engine = create_engine(f"sqlite:///{db_path}", echo=False)
-    Session = sessionmaker(bind=engine)
+    Session = sessionmaker(bind=engine)  # noqa: N806
     return Session(), engine
 
 

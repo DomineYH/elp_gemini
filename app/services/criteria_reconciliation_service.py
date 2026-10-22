@@ -268,7 +268,7 @@ class CriteriaReconciliationService:
                                 KEY_LAST_SYNCED_AT: _now_iso(),
                                 KEY_SYNC_STATE: "ok",
                                 KEY_SYNC_ERROR: None,
-                                KEY_LAST_ALIAS_MAP_UPDATED_AT: alias_map.updated_at,  # noqa: E501
+                                KEY_LAST_ALIAS_MAP_UPDATED_AT: alias_map.updated_at,
                             }
                         )
                     return ReconcileResult(ok=True, count=len(criteria_docs))

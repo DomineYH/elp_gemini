@@ -10,7 +10,7 @@ class TestQnAStoreSelection(unittest.TestCase):
     @patch("app.services.qna_service.FileSearchService")
     @patch("app.services.qna_service.PromptLoaderService")
     def test_store_selection(
-        self, MockPromptLoader, MockFileSearchService, MockGenai
+        self, MockPromptLoader, MockFileSearchService, MockGenai  # noqa: N803
     ):
         # Setup mocks
         mock_db = AsyncMock()

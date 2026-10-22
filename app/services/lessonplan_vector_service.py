@@ -4,7 +4,7 @@
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from app.services.file_search_service import FileSearchService
@@ -195,7 +195,6 @@ class LessonPlanVectorService:
         try:
             client = self.file_search_service.client
             deleted_count = 0
-            cutoff_time = datetime.now() - timedelta(hours=expiry_hours)
 
             # 모든 사용자 Store 확인
             for store in client.file_search_stores.list():

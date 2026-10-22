@@ -397,7 +397,7 @@ async def test_swallow_errors_does_not_swallow_key_change_failures():
 
 
 @pytest.mark.asyncio
-async def test_swallow_errors_swallows_transient_cloud_failure_when_key_unchanged():  # noqa: E501
+async def test_swallow_errors_swallows_transient_cloud_failure_when_key_unchanged():
     from app.db import Base
     from app.models import app_state as _app_state_model  # noqa: F401
     from app.repositories.app_state_repository import (

@@ -25,7 +25,7 @@ def create_db_session():
     """데이터베이스 세션 생성"""
     db_path = Path(__file__).parent.parent / "data" / "app.db"
     engine = create_engine(f"sqlite:///{db_path}", echo=False)
-    Session = sessionmaker(bind=engine)
+    Session = sessionmaker(bind=engine)  # noqa: N806
     return Session()
 
 

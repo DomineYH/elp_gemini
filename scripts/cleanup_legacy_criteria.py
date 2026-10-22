@@ -129,7 +129,7 @@ async def main(dry_run: bool = False):
             )
             print(
                 f"{record.id:<5} "
-                f"{record.title[:27] + '...' if len(record.title) > 30 else record.title:<30} "  # noqa: E501
+                f"{record.title[:27] + '...' if len(record.title) > 30 else record.title:<30} "
                 f"{store_id_short:<35}"
             )
 

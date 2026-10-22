@@ -50,7 +50,7 @@ class TestQnAServiceRefactored:
         user_id = 100
         title = "테스트 세션"
 
-        session = await qna_service.create_session(user_id=user_id, title=title)
+        await qna_service.create_session(user_id=user_id, title=title)
 
         # 세션이 DB에 추가되었는지 확인
         mock_db.add.assert_called_once()

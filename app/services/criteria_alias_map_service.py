@@ -27,7 +27,7 @@ from app.services.alias_map_codec import (
 
 logger = logging.getLogger(__name__)
 
-# Single-process lock; guards alias-map mutations across router and reconcile paths.  # noqa: E501
+# Single-process lock; guards alias-map mutations across router and reconcile paths.
 alias_map_mutation_lock = asyncio.Lock()
 
 

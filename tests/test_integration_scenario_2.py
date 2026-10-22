@@ -134,24 +134,6 @@ async def verify_criteria_deleted(
     print(f"\n⏭️  {LEGACY_UPLOAD_SKIP_MESSAGE}")
     return None
 
-    # 평가 시도 (평가기준이 없으면 실패해야 함)
-    eval_response = await client.post(
-        f"{BASE_URL}/api/evaluations",
-        json={
-            "lessonplan_filename": lessonplan_filename,
-            "evaluation_type": "comprehensive",
-        },
-        headers={"Authorization": f"Bearer {token}"},
-    )
-
-    # 평가기준이 없으면 실패해야 함
-    if eval_response.status_code != 201:
-        print("✅ 평가기준 삭제 확인: 평가 실패 (예상된 동작)")
-        return True
-    else:
-        print("❌ 평가기준 삭제 확인 실패: 평가 성공 (예상치 못한 동작)")
-        return False
-
 
 async def run_integration_test_scenario_2():
     """

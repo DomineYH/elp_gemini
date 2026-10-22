@@ -91,7 +91,7 @@ def test_qna_verification():
         print("❌ QnA API failed!")
         try:
             print(f"  Error: {response.json()}")
-        except:
+        except Exception:
             print(f"  Response: {response.text[:500]}")
         return False
 

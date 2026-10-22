@@ -25,7 +25,9 @@ async def verify_upload():
     mock_upload_file = UploadFile(file=file_obj, filename="test.pdf")
 
     # Mock FileSearchService
-    with patch("app.routers.views.FileSearchService") as MockService:
+    with patch(
+        "app.routers.views.FileSearchService"
+    ) as MockService:  # noqa: N806
         mock_service_instance = MockService.return_value
         # Make upload_document an async mock
         from unittest.mock import AsyncMock

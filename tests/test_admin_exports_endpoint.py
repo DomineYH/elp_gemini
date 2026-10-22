@@ -140,7 +140,7 @@ async def test_export_returns_valid_zip(client_admin, db_session, tmp_path):
     assert "README.txt" in names
     convo = [n for n in names if n.startswith("conversations/")][0]
     lines = zf.read(convo).decode("utf-8").splitlines()
-    parsed = [json.loads(l) for l in lines]
+    parsed = [json.loads(line) for line in lines]
     assert len(parsed) == 2
     assert parsed[0]["role"] == "user"
 

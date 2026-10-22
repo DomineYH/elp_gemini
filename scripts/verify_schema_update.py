@@ -114,7 +114,7 @@ async def test_model_creation():
 
     try:
         # Document 모델 테스트
-        doc = Document(
+        Document(
             user_id=1,
             random_key="test_key_123",
             title="Test Document",
@@ -126,7 +126,7 @@ async def test_model_creation():
         print("  ✅ Document 모델 생성 성공")
 
         # QALog 모델 테스트
-        qa_log = QALog(
+        QALog(
             document_id=1,
             user_id=1,
             prompt_id=1,
@@ -146,7 +146,7 @@ async def test_model_creation():
         print("  ✅ QALog 모델 생성 성공 (citations 포함)")
 
         # Citations 없는 QALog (기존 레코드 호환성)
-        qa_log_legacy = QALog(
+        QALog(
             document_id=1,
             user_id=1,
             prompt_id=1,

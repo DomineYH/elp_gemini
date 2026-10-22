@@ -367,7 +367,7 @@ class LessonPlanAnalysisService:
                                 (
                                     latest_upload,
                                     existing_report,
-                                ) = await self._find_existing_report_for_latest_upload(  # noqa: E501
+                                ) = await self._find_existing_report_for_latest_upload(
                                     user_id
                                 )
                                 if existing_report is not None:
