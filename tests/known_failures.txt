@@ -15,13 +15,6 @@ FAILED tests/test_preservice_region_kyodae_rename.py::test_rename_idempotent
 FAILED tests/test_preservice_region_kyodae_rename.py::test_rename_leaves_unknown_values
 FAILED tests/test_preservice_region_kyodae_rename.py::test_rename_preserves_kornu
 FAILED tests/test_preservice_region_kyodae_rename.py::test_rename_updates_legacy_region
-FAILED tests/test_prompt_loader_service.py::test_get_prompt_exists
-FAILED tests/test_prompt_loader_service.py::test_get_prompt_stats
-FAILED tests/test_prompt_loader_service.py::test_has_prompt
-FAILED tests/test_prompt_loader_service.py::test_list_available_prompts
-FAILED tests/test_prompt_loader_service.py::test_load_prompts
-FAILED tests/test_prompt_loader_service.py::test_malformed_markdown
-FAILED tests/test_prompt_loader_service.py::test_utf8_encoding
 FAILED tests/unit/test_criteria_context_service.py::TestCriteriaContextService::test_get_context_api_error
 FAILED tests/unit/test_criteria_context_service.py::TestCriteriaContextService::test_get_context_no_active
 FAILED tests/unit/test_criteria_context_service.py::TestCriteriaContextService::test_get_context_success

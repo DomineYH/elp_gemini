@@ -26,6 +26,8 @@ def sample_prompt_content():
     """샘플 프롬프트 마크다운 내용"""
     return """# 시스템 프롬프트 템플릿
 
+---
+
 ## qna
 
 당신은 질문답변 전문가입니다.
@@ -201,6 +203,8 @@ def test_utf8_encoding(temp_prompt_dir):
     # Given
     korean_content = """# 프롬프트
 
+---
+
 ## korean
 
 당신은 한국어 전문가입니다. 🇰🇷
@@ -238,9 +242,13 @@ def test_malformed_markdown(temp_prompt_dir):
     # Given
     malformed_content = """# 프롬프트
 
+---
+
 ##
 
 빈 헤더
+
+---
 
 ## valid
 
