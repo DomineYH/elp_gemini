@@ -13,7 +13,6 @@ from app.models.chat_sessions import ChatSession
 from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.simulation_session import SimulationSession
 from app.models.users import User
-from app.routers.views import _sanitize_display_name
 from app.services.admin_deletion_service import AdminDeletionService
 from tests.conftest import TestingSessionLocal, engine
 
@@ -115,11 +114,9 @@ async def seeded(db_tables, tmp_path, monkeypatch):
         lessonplan_file = lessonplan_base / lessonplan_filename
         lessonplan_file.write_bytes(b"%PDF-1.4\n")
 
-        safe_username = _sanitize_display_name(user.username)
-        dashboard_upload_file = (
-            static_uploads_dir
-            / f"{safe_username}_20260101000000_dashboard.pdf"
-        )
+        user_upload_dir = static_uploads_dir / str(user.id)
+        user_upload_dir.mkdir()
+        dashboard_upload_file = user_upload_dir / "20260101000000_dashboard.pdf"
         dashboard_upload_file.write_bytes(b"%PDF-1.4\n")
 
         report = AnalysisReport(
@@ -295,275 +292,11 @@ async def test_delete_user_calls_file_search_cleanup(seeded, monkeypatch):
             current_admin_id=seeded["admin_id"],
         )
 
-    assert called_with == [_sanitize_display_name("user-stu1-store")]
-
-
-@pytest.mark.asyncio
-async def test_delete_user_sanitizes_file_search_store_name(
-    db_tables, tmp_path, monkeypatch
-):
-    lessonplan_base = tmp_path / "data" / "lessonplan"
-    lessonplan_base.mkdir(parents=True)
-    monkeypatch.setattr(
-        "app.services.admin_deletion_service.LESSONPLAN_BASE_DIR",
-        str(lessonplan_base),
-    )
-    static_uploads_dir = tmp_path / "app" / "static" / "uploads"
-    static_uploads_dir.mkdir(parents=True)
-    monkeypatch.setattr(
-        "app.services.admin_deletion_service.STATIC_UPLOADS_DIR",
-        str(static_uploads_dir),
-        raising=False,
-    )
-
-    import app.services.file_search_service as fss_module
-
-    called_with = []
-
-    class FakeFSS:
-        async def delete_store_by_display_name(self, display_name):
-            called_with.append(display_name)
-
-    monkeypatch.setattr(
-        fss_module, "FileSearchService", lambda *a, **k: FakeFSS()
-    )
-
-    async with TestingSessionLocal() as db:
-        admin = User(
-            username="admin1",
-            nickname="Admin",
-            hashed_password="h",
-            is_admin=True,
-        )
-        user = User(
-            username="한글유저",
-            nickname="Student",
-            hashed_password="h",
-            is_admin=False,
-        )
-        db.add_all([admin, user])
-        await db.commit()
-        await db.refresh(admin)
-        await db.refresh(user)
-
-        service = AdminDeletionService(db)
-        await service.delete_user(
-            target_user_id=user.id,
-            current_admin_id=admin.id,
-        )
-
-    assert called_with
-    assert called_with[0] == _sanitize_display_name("user-한글유저-store")
-    assert called_with[0] != "user-한글유저-store"
-
-
-@pytest.mark.asyncio
-async def test_delete_user_skips_file_search_store_on_sanitized_collision(
-    db_tables, tmp_path, monkeypatch, caplog
-):
-    """If another user shares the sanitized store name, skip deletion."""
-    lessonplan_base = tmp_path / "data" / "lessonplan"
-    lessonplan_base.mkdir(parents=True)
-    monkeypatch.setattr(
-        "app.services.admin_deletion_service.LESSONPLAN_BASE_DIR",
-        str(lessonplan_base),
-    )
-    static_uploads_dir = tmp_path / "app" / "static" / "uploads"
-    static_uploads_dir.mkdir(parents=True)
-    monkeypatch.setattr(
-        "app.services.admin_deletion_service.STATIC_UPLOADS_DIR",
-        str(static_uploads_dir),
-        raising=False,
-    )
-
-    called_with = []
-
-    class FakeFSS:
-        async def delete_store_by_display_name(self, display_name):
-            called_with.append(display_name)
-
-    import app.services.file_search_service as fss_module
-    monkeypatch.setattr(
-        fss_module, "FileSearchService", lambda *a, **k: FakeFSS()
-    )
-
-    async with TestingSessionLocal() as db:
-        admin = User(
-            username="admin1",
-            nickname="A",
-            hashed_password="h",
-            is_admin=True,
-        )
-        # Two users that sanitize to the same store name
-        user_a = User(
-            username="Jose",
-            nickname="J",
-            hashed_password="h",
-            is_admin=False,
-        )
-        user_b = User(
-            username="José",
-            nickname="J2",
-            hashed_password="h",
-            is_admin=False,
-        )
-        db.add_all([admin, user_a, user_b])
-        await db.commit()
-        await db.refresh(admin)
-        await db.refresh(user_a)
-
-        service = AdminDeletionService(db)
-        with caplog.at_level("WARNING"):
-            await service.delete_user(
-                target_user_id=user_a.id,
-                current_admin_id=admin.id,
-            )
-
-    # The fake store deletion was NOT called
-    assert called_with == []
-    # A warning was logged about the collision
-    assert any(
-        "sanitized 충돌" in record.message
-        for record in caplog.records
-        if record.levelname == "WARNING"
-    )
-
-
-@pytest.mark.asyncio
-async def test_delete_user_skips_static_uploads_for_nondeterministic_username(
-    db_tables, tmp_path, monkeypatch, caplog
-):
-    lessonplan_base = tmp_path / "data" / "lessonplan"
-    lessonplan_base.mkdir(parents=True)
-    monkeypatch.setattr(
-        "app.services.admin_deletion_service.LESSONPLAN_BASE_DIR",
-        str(lessonplan_base),
-    )
-    static_uploads_dir = tmp_path / "app" / "static" / "uploads"
-    static_uploads_dir.mkdir(parents=True)
-    monkeypatch.setattr(
-        "app.services.admin_deletion_service.STATIC_UPLOADS_DIR",
-        str(static_uploads_dir),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "app.services.admin_deletion_service._sanitize_display_name",
-        lambda _name: "doc_20260101_000000",
-    )
-    _stub_file_search_service(monkeypatch)
-
-    decoy_upload_file = (
-        static_uploads_dir
-        / "doc_20260101_000000_20260101000000_dashboard.pdf"
-    )
-    decoy_upload_file.write_bytes(b"%PDF-1.4\n")
-
-    async with TestingSessionLocal() as db:
-        admin = User(
-            username="admin1",
-            nickname="Admin",
-            hashed_password="h",
-            is_admin=True,
-        )
-        user = User(
-            username="한글유저",
-            nickname="Student",
-            hashed_password="h",
-            is_admin=False,
-        )
-        db.add_all([admin, user])
-        await db.commit()
-        await db.refresh(admin)
-        await db.refresh(user)
-
-        service = AdminDeletionService(db)
-        with caplog.at_level(
-            "WARNING", logger="app.services.admin_deletion_service"
-        ):
-            result = await service.delete_user(
-                target_user_id=user.id,
-                current_admin_id=admin.id,
-            )
-
-    assert result["ok"] is True
-    assert result["deleted"] == 1
-    assert decoy_upload_file.exists()
-    assert any("비결정적" in record.message for record in caplog.records)
-
-
-@pytest.mark.asyncio
-async def test_delete_user_skips_static_uploads_on_sanitized_collision(
-    db_tables, tmp_path, monkeypatch, caplog
-):
-    lessonplan_base = tmp_path / "data" / "lessonplan"
-    lessonplan_base.mkdir(parents=True)
-    monkeypatch.setattr(
-        "app.services.admin_deletion_service.LESSONPLAN_BASE_DIR",
-        str(lessonplan_base),
-    )
-    static_uploads_dir = tmp_path / "app" / "static" / "uploads"
-    static_uploads_dir.mkdir(parents=True)
-    monkeypatch.setattr(
-        "app.services.admin_deletion_service.STATIC_UPLOADS_DIR",
-        str(static_uploads_dir),
-        raising=False,
-    )
-    _stub_file_search_service(monkeypatch)
-
-    assert _sanitize_display_name("Jose") == _sanitize_display_name("José")
-    colliding_upload_file = (
-        static_uploads_dir / "Jose_20260101000000_dashboard.pdf"
-    )
-    colliding_upload_file.write_bytes(b"%PDF-1.4\n")
-
-    async with TestingSessionLocal() as db:
-        admin = User(
-            username="admin1",
-            nickname="Admin",
-            hashed_password="h",
-            is_admin=True,
-        )
-        jose = User(
-            username="Jose",
-            nickname="Jose",
-            hashed_password="h",
-            is_admin=False,
-        )
-        jose_accented = User(
-            username="José",
-            nickname="Jose Accented",
-            hashed_password="h",
-            is_admin=False,
-        )
-        db.add_all([admin, jose, jose_accented])
-        await db.commit()
-        await db.refresh(admin)
-        await db.refresh(jose)
-
-        service = AdminDeletionService(db)
-        with caplog.at_level(
-            "WARNING", logger="app.services.admin_deletion_service"
-        ):
-            result = await service.delete_user(
-                target_user_id=jose.id,
-                current_admin_id=admin.id,
-            )
-
-    assert result["ok"] is True
-    assert result["deleted"] == 1
-    assert colliding_upload_file.exists()
-    assert any(
-        "sanitized 충돌" in record.message for record in caplog.records
-    )
+    assert called_with == [f"user-{seeded['user_id']}-store"]
 
 
 @pytest.mark.asyncio
 async def test_delete_user_removes_orphaned_upload(seeded):
-    orphan_file = seeded["static_uploads_dir"] / (
-        "orphan1_20260101000000_orphan.pdf"
-    )
-    orphan_file.write_bytes(b"%PDF-1.4\n")
-
     async with TestingSessionLocal() as db:
         user = User(
             username="orphan1",
@@ -574,6 +307,11 @@ async def test_delete_user_removes_orphaned_upload(seeded):
         db.add(user)
         await db.commit()
         await db.refresh(user)
+
+        orphan_dir = seeded["static_uploads_dir"] / str(user.id)
+        orphan_dir.mkdir()
+        orphan_file = orphan_dir / "20260101000000_orphan.pdf"
+        orphan_file.write_bytes(b"%PDF-1.4\n")
 
         service = AdminDeletionService(db)
         result = await service.delete_user(
@@ -605,8 +343,6 @@ async def test_delete_user_removes_lessonplan_orphan_without_report(
         raising=False,
     )
     _stub_file_search_service(monkeypatch)
-    orphan_file = lessonplan_base / "lonely1_plan.pdf"
-    orphan_file.write_bytes(b"%PDF-1.4\n")
 
     async with TestingSessionLocal() as db:
         admin = User(
@@ -625,6 +361,11 @@ async def test_delete_user_removes_lessonplan_orphan_without_report(
         await db.commit()
         await db.refresh(admin)
         await db.refresh(user)
+
+        orphan_dir = lessonplan_base / str(user.id)
+        orphan_dir.mkdir()
+        orphan_file = orphan_dir / "plan.pdf"
+        orphan_file.write_bytes(b"%PDF-1.4\n")
 
         service = AdminDeletionService(db)
         result = await service.delete_user(
@@ -683,18 +424,19 @@ async def test_delete_user_skips_other_user_files(
         kim_report_file.write_text("# kim", encoding="utf-8")
         kim_lessonplan_file = lessonplan_base / "kim_plan.pdf"
         kim_lessonplan_file.write_bytes(b"%PDF-1.4\n")
-        kim_dashboard_file = (
-            static_uploads_dir / "kim_20260101000000_dashboard.pdf"
-        )
+        kim_dashboard_dir = static_uploads_dir / str(kim.id)
+        kim_dashboard_dir.mkdir()
+        kim_dashboard_file = kim_dashboard_dir / "20260101000000_dashboard.pdf"
         kim_dashboard_file.write_bytes(b"%PDF-1.4\n")
 
         other_report_file = tmp_path / "kim_teacher.md"
         other_report_file.write_text("# kim_teacher", encoding="utf-8")
         other_lessonplan_file = lessonplan_base / "kim_teacher_plan.pdf"
         other_lessonplan_file.write_bytes(b"%PDF-1.4\n")
+        other_dashboard_dir = static_uploads_dir / str(kim_teacher.id)
+        other_dashboard_dir.mkdir()
         other_dashboard_file = (
-            static_uploads_dir
-            / "kim_teacher_20260101000000_dashboard.pdf"
+            other_dashboard_dir / "20260101000000_dashboard.pdf"
         )
         other_dashboard_file.write_bytes(b"%PDF-1.4\n")
 
@@ -1067,14 +809,14 @@ async def test_delete_analysis_report_removes_synthetic_upload_legacy_file(
 
     async with TestingSessionLocal() as db:
         service = AdminDeletionService(db)
-        result = await service.delete_analysis_report(
-            report_id=report_id,
-            current_admin_id=seeded["admin_id"],
-        )
         resolved = service._resolve_lessonplan_path(
             legacy_file.name,
             user_id=seeded["user_id"],
             upload_id=upload_id,
+        )
+        result = await service.delete_analysis_report(
+            report_id=report_id,
+            current_admin_id=seeded["admin_id"],
         )
 
     assert resolved == legacy_file
