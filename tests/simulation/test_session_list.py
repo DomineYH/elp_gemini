@@ -1,5 +1,6 @@
 """지난 세션 목록과 다른 학생으로 다시 실행 (#157)."""
 
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -53,7 +54,11 @@ def test_lists_own_sessions_newest_first(
         "current_phase_idx": 0,
         "phase_count": 1,
     }
-    assert sessions[0]["created_at"].endswith("+00:00")
+    # response_model이 UTC aware datetime을 "Z"로 다시 직렬화한다
+    created = sessions[0]["created_at"]
+    assert created.endswith(("Z", "+00:00"))
+    aware = datetime.fromisoformat(created.replace("Z", "+00:00"))
+    assert aware.utcoffset() == timedelta(0)
 
 
 def test_upload_id_filter_and_latest_upload_flag(ready, teacher, make_upload):
