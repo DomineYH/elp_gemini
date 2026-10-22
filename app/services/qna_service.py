@@ -266,8 +266,9 @@ class QnAService:
             # Store ID 결정
             try:
                 if criteria_notice or not is_evaluation:
-                    user_store_id = self.file_search_service.get_user_store_id(
-                        user_key=user_id
+                    user_store_id = await asyncio.to_thread(
+                        self.file_search_service.get_user_store_id,
+                        user_key=user_id,
                     )
                     rubric_store_id = None
                     store_ids = [user_store_id]
@@ -283,8 +284,9 @@ class QnAService:
                         )
                 else:
                     # 사용자 스토어와 평가기준 스토어 모두 가져오기
-                    store_ids = self.file_search_service.get_dual_store_ids(
-                        user_key=user_id
+                    store_ids = await asyncio.to_thread(
+                        self.file_search_service.get_dual_store_ids,
+                        user_key=user_id,
                     )
                     logger.info(f"🎯 Store 조회 완료: {store_ids}")
 

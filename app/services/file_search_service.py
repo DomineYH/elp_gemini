@@ -372,7 +372,9 @@ class FileSearchService:
             else:
                 store_name = self.main_store_name
 
-            store = self._get_or_create_store(store_name)
+            store = await asyncio.to_thread(
+                self._get_or_create_store, store_name
+            )
 
             document_type = (
                 "rubric" if store_type == "rubric" else "user_document"
@@ -482,7 +484,7 @@ class FileSearchService:
         try:
             # Google API: files.delete 또는 file_search_stores의 documents 삭제
             # file_id는 이미 전체 경로 형식
-            self.client.files.delete(name=file_id)
+            await asyncio.to_thread(self.client.files.delete, name=file_id)
             logger.info(f"문서 삭제 완료: {file_id}")
         except Exception as e:
             logger.warning(
@@ -501,26 +503,31 @@ class FileSearchService:
             display_name: 스토어 표시 이름
         """
         try:
-            target_store = None
-            # 스토어 목록에서 이름으로 검색
-            for store in self.client.file_search_stores.list():
-                if store.display_name == display_name:
-                    target_store = store
-                    break
-
-            if target_store:
-                # Store 삭제 (force=True로 내부 문서와 함께 삭제)
-                self.client.file_search_stores.delete(
-                    name=target_store.name,
-                    config={"force": True},  # 내부 문서와 함께 강제 삭제
-                )
-                logger.info(
-                    f"스토어 삭제 완료: {display_name} ({target_store.name})"
-                )
-            else:
-                logger.info(f"삭제할 스토어를 찾지 못함 (무시): {display_name}")
+            await asyncio.to_thread(
+                self._delete_store_by_display_name_sync, display_name
+            )
         except Exception as e:
             logger.warning(f"스토어 삭제 중 오류 발생: {str(e)}")
+
+    def _delete_store_by_display_name_sync(self, display_name: str) -> None:
+        target_store = None
+        # 스토어 목록에서 이름으로 검색
+        for store in self.client.file_search_stores.list():
+            if store.display_name == display_name:
+                target_store = store
+                break
+
+        if target_store:
+            # Store 삭제 (force=True로 내부 문서와 함께 삭제)
+            self.client.file_search_stores.delete(
+                name=target_store.name,
+                config={"force": True},  # 내부 문서와 함께 강제 삭제
+            )
+            logger.info(
+                f"스토어 삭제 완료: {display_name} ({target_store.name})"
+            )
+        else:
+            logger.info(f"삭제할 스토어를 찾지 못함 (무시): {display_name}")
 
     async def search_in_store(
         self,
@@ -591,25 +598,33 @@ class FileSearchService:
     async def get_or_create_store(self, store_name: str) -> tuple[str, bool]:
         """스토어를 찾거나 생성하여 (store_id, created) 반환."""
         safe_name = _sanitize_display_name(store_name)
-        for store in self.client.file_search_stores.list():
+        stores = await asyncio.to_thread(
+            lambda: list(self.client.file_search_stores.list())
+        )
+        for store in stores:
             if store.display_name == safe_name:
                 return store.name, False
-        store = self.client.file_search_stores.create(
-            config={"display_name": safe_name}
+        store = await asyncio.to_thread(
+            self.client.file_search_stores.create,
+            config={"display_name": safe_name},
         )
         return store.name, True
 
     async def list_documents(self, store_id: str) -> list:
         """스토어 내 문서 목록 반환."""
-        return list(
-            self.client.file_search_stores.documents.list(parent=store_id)
+        return await asyncio.to_thread(
+            lambda: list(
+                self.client.file_search_stores.documents.list(parent=store_id)
+            )
         )
 
     async def download_document_bytes(
         self, store_id: str, document_name: str
     ) -> bytes:
         """문서의 원본 바이트 다운로드."""
-        doc = self.client.file_search_stores.documents.get(name=document_name)
+        doc = await asyncio.to_thread(
+            self.client.file_search_stores.documents.get, name=document_name
+        )
         if hasattr(doc, "content") and doc.content:
             return doc.content
 
@@ -632,11 +647,17 @@ class FileSearchService:
         """스토어에서 동일 display_name의 문서를 삭제 후 새로 업로드."""
         safe_name = _sanitize_display_name(display_name)
         # 기존 문서 삭제
-        for doc in self.client.file_search_stores.documents.list(
-            parent=store_id
-        ):
+        docs = await asyncio.to_thread(
+            lambda: list(
+                self.client.file_search_stores.documents.list(parent=store_id)
+            )
+        )
+        for doc in docs:
             if getattr(doc, "display_name", "") == safe_name:
-                self.client.file_search_stores.documents.delete(name=doc.name)
+                await asyncio.to_thread(
+                    self.client.file_search_stores.documents.delete,
+                    name=doc.name,
+                )
                 break
         # 새 문서 업로드 (임시 파일 경유)
         tmp_path = None
@@ -647,21 +668,20 @@ class FileSearchService:
                 tmp_file.write(content)
                 tmp_path = tmp_file.name
 
-            operation = (
-                self.client.file_search_stores.upload_to_file_search_store(
-                    file_search_store_name=store_id,
-                    file=tmp_path,
-                    config={
-                        "display_name": safe_name,
-                        "mime_type": mime_type,
-                        "chunking_config": {
-                            "white_space_config": {
-                                "max_tokens_per_chunk": 512,
-                            }
-                        },
-                        "custom_metadata": _manifest_payload_metadata(content),
+            operation = await asyncio.to_thread(
+                self.client.file_search_stores.upload_to_file_search_store,
+                file_search_store_name=store_id,
+                file=tmp_path,
+                config={
+                    "display_name": safe_name,
+                    "mime_type": mime_type,
+                    "chunking_config": {
+                        "white_space_config": {
+                            "max_tokens_per_chunk": 512,
+                        }
                     },
-                )
+                    "custom_metadata": _manifest_payload_metadata(content),
+                },
             )
             deadline = time.monotonic() + 30
             while not operation.done:
@@ -670,7 +690,9 @@ class FileSearchService:
                         "manifest indexing did not finish in 30s"
                     )
                 await asyncio.sleep(1)
-                operation = self.client.operations.get(operation)
+                operation = await asyncio.to_thread(
+                    self.client.operations.get, operation
+                )
             doc_id = getattr(operation.response, "document_name", None)
             if not doc_id:
                 raise RuntimeError("manifest upload returned no document_name")
