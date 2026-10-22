@@ -27,7 +27,8 @@ def _seat_utterances_js() -> str:
 def _run(utts, persona_id):
     script = (
         _seat_utterances_js()
-        + f"\nconst out = seatUtterances({json.dumps(utts)}, {{id: {persona_id}}});"
+        + f"\nconst out = seatUtterances({json.dumps(utts)}, "
+        + f"{{id: {persona_id}}});"
         + "\nconsole.log(JSON.stringify(out.map(u => u.seq)));"
     )
     res = subprocess.run(
