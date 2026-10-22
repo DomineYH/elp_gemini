@@ -680,7 +680,7 @@
                 if (!response.ok) throw new Error('요청 실패');
 
                 const data = await response.json();
-                updateMessage(loadingId, data.answer, 'ai');
+                updateMessage(loadingId, data.answer, 'ai', data.sources);
 
             } catch (error) {
                 updateMessage(loadingId, '오류가 발생했습니다.', 'error');
@@ -727,7 +727,7 @@
         return id;
     }
 
-    function updateMessage(id, text, type) {
+    function updateMessage(id, text, type, sources) {
         const div = document.getElementById(id);
         if (div) {
             let classes = "p-3 rounded-lg max-w-[80%] text-sm ";
@@ -741,7 +741,8 @@
                 div.innerHTML =
                     '<div class="prose prose-sm max-w-none">'
                     + renderSafeMarkdown(text)
-                    + '</div>';
+                    + '</div>'
+                    + renderSourcesLine(sources);
             } else {
                 div.textContent = text;
             }
@@ -757,6 +758,14 @@
         const div = document.createElement('div');
         div.textContent = String(text);
         return div.innerHTML;
+    }
+
+    // 답변 출처: 문서 제목만, 링크·청크 미리보기 없음 (#206)
+    function renderSourcesLine(sources) {
+        if (!sources || !sources.length) return '';
+        return '<div class="text-xs text-gray-500 mt-2 pt-2 border-t">'
+            + '참고 문서: ' + sources.map(escapeHtml).join(' · ')
+            + '</div>';
     }
 
     function escapeHtmlAttribute(text) {
@@ -1065,7 +1074,8 @@
             const isUser = message.role === 'user';
             const body = isUser
                 ? `<p class="whitespace-pre-wrap">${escapeHtml(message.content)}</p>`
-                : `<div class="prose prose-sm max-w-none">${renderSafeMarkdown(message.content)}</div>`;
+                : `<div class="prose prose-sm max-w-none">${renderSafeMarkdown(message.content)}</div>`
+                    + renderSourcesLine(message.sources);
 
             return `
                 <div class="flex ${isUser ? 'justify-end' : 'justify-start'}">

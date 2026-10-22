@@ -70,6 +70,9 @@ class AskQuestionResponse(BaseModel):
     citations: Optional[Any] = Field(
         None, description="인용 정보"
     )
+    sources: List[str] = Field(
+        default_factory=list, description="출처 문서 제목"
+    )
     criteria_notice: Optional[str] = Field(
         None, description="평가기준 사용 제한 안내"
     )
@@ -82,6 +85,7 @@ class ChatMessageResponse(BaseModel):
     session_id: int
     role: str
     content: str
+    sources: List[str] = []
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -54,6 +54,7 @@ def test_no_document_title_skips_document():
 def test_empty_or_missing_citations():
     assert citation_source_titles(None, "lesson.pdf") == []
     assert citation_source_titles({}, "lesson.pdf") == []
+    assert citation_source_titles([{"title": "x"}], "lesson.pdf") == []
     assert (
         citation_source_titles({"documents": {}, "criteria": []}, "lesson.pdf")
         == []

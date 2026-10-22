@@ -210,6 +210,7 @@ async def ask_question(
             answer=result["answer"],
             latency_ms=result.get("latency_ms"),
             citations=result.get("citations"),
+            sources=result.get("sources", []),
             criteria_notice=result.get("criteria_notice"),
         )
 
@@ -376,7 +377,8 @@ async def get_chat_history(
                 ChatSession.user_id == _model_int(current_user.id),
             )
         )
-        if session_result.scalar_one_or_none() is None:
+        session = session_result.scalar_one_or_none()
+        if session is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="세션을 찾을 수 없습니다."
@@ -398,7 +400,10 @@ async def get_chat_history(
         )
         messages = message_result.scalars().all()
 
-        from app.services.qna_service import strip_internal_store_ids
+        from app.services.qna_service import (
+            citation_source_titles,
+            strip_internal_store_ids,
+        )
 
         # 응답 모델로 변환 (#174 이전에 저장된 답변의 내부 store id는 숨김)
         message_responses = [
@@ -415,6 +420,7 @@ async def get_chat_history(
                     if msg.role == MessageRole.ASSISTANT
                     else msg.content
                 ),
+                sources=citation_source_titles(msg.citations, session.title),
                 created_at=_model_datetime(msg.created_at),
             )
             for msg in messages
@@ -519,6 +525,7 @@ async def chat_with_document(
             answer=result["answer"],
             latency_ms=result.get("latency_ms"),
             citations=result.get("citations"),
+            sources=result.get("sources", []),
             criteria_notice=result.get("criteria_notice"),
         )
 

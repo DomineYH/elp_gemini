@@ -88,6 +88,39 @@ def strip_internal_store_ids(text: Optional[str]) -> Optional[str]:
     return _USER_STORE_RE.sub("업로드하신 지도안", text)
 
 
+# 저장·응답 citations에서 지우는 내부 경로 키 (#206)
+_INTERNAL_CITATION_KEYS = {"uri", "document_name", "file_path"}
+
+
+def _drop_internal_keys(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _drop_internal_keys(item)
+            for key, item in value.items()
+            if key not in _INTERNAL_CITATION_KEYS
+        }
+    if isinstance(value, list):
+        return [_drop_internal_keys(item) for item in value]
+    return value
+
+
+def citation_source_titles(
+    citations: Any, document_title: Optional[str]
+) -> list[str]:
+    """
+    답변 출처 제목: 평가기준 표시명 + 지도안 제목 (#206).
+
+    grounding title은 ASCII화된 업로드 이름이라 쓰지 않는다.
+    """
+    if not isinstance(citations, dict):
+        return []
+    titles = [c.get("title") for c in citations.get("criteria") or []]
+    documents = citations.get("documents") or {}
+    if documents.get("grounding_chunks"):
+        titles.append(document_title)
+    return list(dict.fromkeys(t for t in titles if t))
+
+
 class QnAService:
     """QnA 서비스 클래스 (세션 기반 FileSearch RAG)"""
 
@@ -443,6 +476,7 @@ class QnAService:
 
                 logger.info(f"검색된 Citations: {sources_count}개")
 
+            citations = _drop_internal_keys(citations)
             # Citations에 평가기준 출처 추가
             extended_citations = self._extend_citations(
                 citations, criteria_metadata
@@ -470,6 +504,10 @@ class QnAService:
                 "answer": answer,
                 "latency_ms": latency_ms,
                 "citations": citations,
+                # 테스트 대역 세션에는 title이 없을 수 있다
+                "sources": citation_source_titles(
+                    extended_citations, getattr(session, "title", None)
+                ),
                 "criteria_notice": criteria_notice,
                 "grounding_metadata": {
                     "search_performed": bool(citations),
@@ -521,7 +559,7 @@ class QnAService:
             logger.error(f"Citations 추출 실패: {str(e)}")
             return {
                 "error": str(e),
-                "raw": str(grounding_metadata)
+                "raw": strip_internal_store_ids(str(grounding_metadata))
             }
 
     def _extend_citations(
@@ -550,7 +588,6 @@ class QnAService:
                 result["criteria"].append({
                     "id": criteria.get("id"),
                     "title": criteria.get("title"),
-                    "file_path": criteria.get("file_path"),
                     "type": "criteria"
                 })
 
