@@ -2,7 +2,10 @@
 import csv
 import inspect
 import io
-from datetime import date, datetime
+import os
+import time
+from contextlib import contextmanager
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -17,6 +20,7 @@ from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage, MessageRole
 from app.models.chat_sessions import ChatSession
 from app.models.lessonplan_uploads import LessonPlanUpload
+from app.models.simulation_session import SimulationSession
 from app.models.users import User
 from app.schemas.admin_export import ExportFilters
 from app.services.admin_export_service import (
@@ -160,7 +164,8 @@ async def test_collect_filters_date_to_inclusive(db_session):
         lessonplan_original_name="edge.pdf",
         report_filename="1_edge_reports.md",
         report_path="/tmp/edge.md",
-        created_at=datetime(2026, 4, 30, 23, 59, 59),
+        # KST 4/30 23:59:59 (DB created_at은 naive UTC)
+        created_at=datetime(2026, 4, 30, 14, 59, 59),
     )
     db_session.add(edge)
     await db_session.commit()
@@ -169,6 +174,110 @@ async def test_collect_filters_date_to_inclusive(db_session):
         ExportFilters(date_to=datetime(2026, 4, 30).date())
     )
     assert {r.resource_id for r in plan.reports} == {edge.id}
+
+
+# KST 10-22 자정 = UTC 10-21 15:00. 그 ±1분 (#211)
+_KST_EDGE = {
+    "before": datetime(2026, 10, 21, 14, 59),
+    "after": datetime(2026, 10, 21, 15, 1),
+}
+
+
+@contextmanager
+def _server_tz(tz):
+    old_tz = os.environ.get("TZ")
+    try:
+        os.environ["TZ"] = tz
+        time.tzset()
+        yield
+    finally:
+        if old_tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old_tz
+        time.tzset()
+
+
+@pytest.mark.asyncio
+async def test_collect_date_filters_use_kst_midnight(db_session, tmp_path):
+    await _seed_user(db_session, user_id=1)
+    for tag, at in _KST_EDGE.items():
+        upload = LessonPlanUpload(
+            user_id=1,
+            filename=f"{tag}_up.pdf",
+            original_filename=f"{tag}_up.pdf",
+            created_at=at,
+        )
+        db_session.add(upload)
+        await db_session.flush()
+        db_session.add_all(
+            [
+                AnalysisReport(
+                    user_id=1,
+                    lessonplan_filename=f"{tag}_rp.pdf",
+                    lessonplan_original_name=f"{tag}_rp.pdf",
+                    report_filename=f"{tag}.md",
+                    report_path=f"/tmp/{tag}.md",
+                    created_at=at,
+                ),
+                ChatSession(user_id=1, title=tag, created_at=at, updated_at=at),
+                SimulationSession(
+                    user_id=1,
+                    upload_id=upload.id,
+                    persona_count=1,
+                    model_name="m",
+                    created_at=at,
+                ),
+            ]
+        )
+    await db_session.commit()
+    svc = AdminExportService(db_session, lessonplan_base_dir=str(tmp_path))
+    cases = (
+        (ExportFilters(date_from=date(2026, 10, 22)), "after"),
+        (ExportFilters(date_to=date(2026, 10, 21)), "before"),
+    )
+    for tz in ("UTC", "Asia/Seoul"):
+        with _server_tz(tz):
+            for filters, tag in cases:
+                plan = await svc.collect(filters)
+                at = _KST_EDGE[tag]
+                for entries in (plan.reports, plan.sessions, plan.simulations):
+                    assert [e.created_at for e in entries] == [at], (tz, tag)
+                assert {e.original_name for e in plan.lessonplans} == {
+                    f"{tag}_rp.pdf",
+                    f"{tag}_up.pdf",
+                }, (tz, tag)
+
+
+@pytest.mark.asyncio
+async def test_collect_lessonplan_mtime_uses_kst_midnight(db_session, tmp_path):
+    await _seed_user(db_session, user_id=1)
+    user_dir = tmp_path / "1"
+    user_dir.mkdir()
+    for tag, at in _KST_EDGE.items():
+        fpath = user_dir / f"{tag}.pdf"
+        fpath.write_bytes(b"x")
+        ts = at.replace(tzinfo=timezone.utc).timestamp()
+        os.utime(fpath, (ts, ts))
+    svc = AdminExportService(db_session, lessonplan_base_dir=str(tmp_path))
+    cases = (
+        (date(2026, 10, 22), None, "after"),
+        (None, date(2026, 10, 21), "before"),
+    )
+    for tz in ("UTC", "Asia/Seoul"):
+        with _server_tz(tz):
+            for date_from, date_to, tag in cases:
+                plan = await svc.collect(
+                    ExportFilters(
+                        date_from=date_from,
+                        date_to=date_to,
+                        include=frozenset({"lessonplans"}),
+                    )
+                )
+                # mtime도 DB created_at처럼 naive UTC로 기록된다
+                assert [
+                    (e.original_name, e.created_at) for e in plan.lessonplans
+                ] == [(f"{tag}.pdf", _KST_EDGE[tag])], (tz, tag)
 
 
 # ---- CSV shape ----

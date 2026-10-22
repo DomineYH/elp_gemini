@@ -1,6 +1,11 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
-from app.utils.timestamps import KST, kst_today_start_utc_naive, utc_iso
+from app.utils.timestamps import (
+    KST,
+    kst_date_start_utc_naive,
+    kst_today_start_utc_naive,
+    utc_iso,
+)
 
 
 def test_naive_is_treated_as_utc():
@@ -40,3 +45,9 @@ def test_kst_today_start_right_after_and_before_midnight():
 def test_kst_today_start_accepts_utc_aware_now():
     now = datetime(2026, 10, 21, 15, 0, tzinfo=timezone.utc)
     assert kst_today_start_utc_naive(now) == datetime(2026, 10, 21, 15, 0)
+
+
+def test_kst_date_start_is_previous_utc_day_15h():
+    assert kst_date_start_utc_naive(date(2026, 10, 22)) == datetime(
+        2026, 10, 21, 15, 0
+    )
