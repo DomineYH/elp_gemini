@@ -1,7 +1,7 @@
 """
 scripts/ci_ratchet.py 판정 로직 단위 테스트
 
-pytest·ruff·black 을 실제로 돌리지 않고 순수 함수만 검증한다.
+pytest 를 실제로 돌리지 않고 순수 함수만 검증한다.
 """
 
 from __future__ import annotations
