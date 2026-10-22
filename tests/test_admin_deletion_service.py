@@ -9,6 +9,7 @@ from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage, MessageRole
 from app.models.chat_sessions import ChatSession
 from app.models.lessonplan_uploads import LessonPlanUpload
+from app.models.simulation_session import SimulationSession
 from app.models.users import User
 from app.routers.views import _sanitize_display_name
 from app.services.admin_deletion_service import AdminDeletionService
@@ -718,6 +719,82 @@ async def test_delete_user_skips_other_user_files(
     assert other_report_file.exists()
     assert other_lessonplan_file.exists()
     assert other_dashboard_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_user_removes_simulation_feedback_report(
+    db_tables, tmp_path, monkeypatch
+):
+    """#162: 시뮬레이션 피드백 .md와 reports/{user_id}/ 디렉터리 제거."""
+    module = "app.services.admin_deletion_service"
+    reports_dir = tmp_path / "app" / "static" / "reports"
+    for name, path in [
+        ("LESSONPLAN_BASE_DIR", tmp_path / "data" / "lessonplan"),
+        ("STATIC_UPLOADS_DIR", tmp_path / "app" / "static" / "uploads"),
+        ("SIMULATION_REPORTS_DIR", reports_dir),
+    ]:
+        path.mkdir(parents=True)
+        monkeypatch.setattr(f"{module}.{name}", str(path), raising=False)
+    _stub_file_search_service(monkeypatch)
+
+    async with TestingSessionLocal() as db:
+        admin = User(
+            username="admin1",
+            nickname="Admin",
+            hashed_password="h",
+            is_admin=True,
+        )
+        user = User(
+            username="stu1",
+            nickname="Student",
+            hashed_password="h",
+            is_admin=False,
+        )
+        other = User(
+            username="stu2",
+            nickname="Other",
+            hashed_password="h",
+            is_admin=False,
+        )
+        db.add_all([admin, user, other])
+        await db.flush()
+
+        report_files = []
+        for owner in (user, other):
+            upload = LessonPlanUpload(
+                user_id=owner.id,
+                filename=f"{owner.username}_20260101000000_plan.pdf",
+                original_filename="plan.pdf",
+                file_hash="c" * 64,
+            )
+            db.add(upload)
+            await db.flush()
+            report = reports_dir / str(owner.id) / "x_simulation_1_reports.md"
+            report.parent.mkdir(parents=True)
+            report.write_text("# 피드백", encoding="utf-8")
+            report_files.append(report)
+            db.add(
+                SimulationSession(
+                    user_id=owner.id,
+                    upload_id=upload.id,
+                    persona_count=2,
+                    model_name="m",
+                    feedback_report_path=str(report),
+                )
+            )
+        await db.commit()
+        report, other_report = report_files
+
+        service = AdminDeletionService(db)
+        result = await service.delete_user(
+            target_user_id=user.id,
+            current_admin_id=admin.id,
+        )
+
+    assert result["files_removed"] == 1
+    assert report.exists() is False
+    assert report.parent.exists() is False
+    assert other_report.exists()
 
 
 @pytest.mark.asyncio
