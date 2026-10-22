@@ -87,6 +87,8 @@ async def analyze_lesson_plan(
                 detail=result.get("error", "분석 중 오류 발생"),
             )
 
+        # get_db commit은 응답 뒤에 돈다: 즉시 목록 조회용으로 먼저 커밋
+        await db.commit()
         return LessonPlanAnalysisResponse(**result)
 
     except HTTPException:
