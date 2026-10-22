@@ -65,14 +65,14 @@ async def ensure_chat_sessions_document_id_column(engine: AsyncEngine) -> bool:
         # document_id 백필 뒤에 실행해야 원래 문서 경로가 남는다
         result = await conn.execute(
             text(
-                "UPDATE chat_sessions SET title = COALESCE(("
+                "UPDATE chat_sessions SET title = SUBSTR(COALESCE(("
                 "SELECT u.original_filename FROM lessonplan_uploads u "
                 "WHERE u.user_id = chat_sessions.user_id "
                 "AND u.fs_document_id = chat_sessions.document_id "
                 "AND u.original_filename IS NOT NULL "
                 "AND u.original_filename != '' "
                 "ORDER BY u.created_at DESC, u.id DESC LIMIT 1"
-                "), '업로드한 지도안') "
+                "), '업로드한 지도안'), 1, 255) "
                 "WHERE title LIKE 'fileSearchStores/%'"
             )
         )
