@@ -71,13 +71,31 @@ def test_ask_question_no_longer_takes_client_store_id():
     assert "store_id" not in params
 
 
-async def _ask(question, model_answer, history=None):
+def _grounded(title):
+    chunk = SimpleNamespace(
+        retrieved_context=SimpleNamespace(title=title, uri="u")
+    )
+    return [
+        SimpleNamespace(
+            grounding_metadata=SimpleNamespace(grounding_chunks=[chunk])
+        )
+    ]
+
+
+async def _ask(
+    question, model_answer, history=None, lesson_text=None, pass2_title=None
+):
     db = AsyncMock()
     client = MagicMock()
     response = MagicMock()
     response.text = model_answer
-    response.candidates = []
-    client.models.generate_content.return_value = response
+    response.candidates = _grounded(pass2_title) if pass2_title else []
+    if lesson_text is None:
+        client.models.generate_content.return_value = response
+    else:
+        pass1 = MagicMock(text=lesson_text)
+        pass1.candidates = _grounded("lesson.pdf")
+        client.models.generate_content.side_effect = [pass1, response]
 
     with (
         patch("app.services.qna_service.genai.Client", return_value=client),
@@ -114,6 +132,13 @@ async def _ask(question, model_answer, history=None):
     return client, service, result
 
 
+def _stores(kwargs):
+    return [
+        tool.file_search.file_search_store_names
+        for tool in kwargs["config"].tools
+    ]
+
+
 @pytest.mark.asyncio
 async def test_evaluation_question_hides_store_ids_and_searches_user_first():
     leaked = (
@@ -124,17 +149,21 @@ async def test_evaluation_question_hides_store_ids_and_searches_user_first():
         "평가 계획의 보완점은 무엇인가요?",
         leaked,
         history=[{"question": "q", "answer": f"이전 답 {USER_STORE}"}],
+        lesson_text="평가기준(상·중·하) 방법: 관찰",
     )
 
-    kwargs = client.models.generate_content.call_args.kwargs
+    calls = client.models.generate_content.call_args_list
+    assert len(calls) == 2
+    assert _stores(calls[0].kwargs) == [[USER_STORE]]
+
+    kwargs = calls[1].kwargs
     _assert_no_leak(kwargs["contents"])
     _assert_no_leak(kwargs["config"].system_instruction)
+    assert "관찰" in kwargs["contents"]
 
-    stores = [
-        tool.file_search.file_search_store_names
-        for tool in kwargs["config"].tools
-    ]
-    assert stores == [[USER_STORE], [RUBRIC_STORE]]
+    assert _stores(kwargs) == [[RUBRIC_STORE]]
+    rubric_tool = kwargs["config"].tools[0]
+    assert rubric_tool.file_search.metadata_filter == 'stable_id="01HACTIVE"'
 
     _assert_no_leak(result["answer"])
     assert "평가 계획을 보완해야 합니다" in result["answer"]
@@ -148,6 +177,7 @@ async def test_content_question_hides_store_ids():
         "이 지도안의 학습 목표는 무엇인가요?",
         f"{USER_STORE} 문서의 학습 목표는 분수 이해입니다.",
     )
+    assert client.models.generate_content.call_count == 1
     kwargs = client.models.generate_content.call_args.kwargs
     _assert_no_leak(kwargs["contents"])
     stores = [
@@ -157,3 +187,49 @@ async def test_content_question_hides_store_ids():
     assert stores == [[USER_STORE]]
     _assert_no_leak(result["answer"])
     assert "학습 목표는 분수 이해입니다" in result["answer"]
+
+
+def _titles(citations):
+    return [
+        chunk["retrieved_context"]["title"]
+        for chunk in citations["grounding_chunks"]
+    ]
+
+
+@pytest.mark.asyncio
+async def test_evaluation_citations_include_pass1_user_chunks():
+    client, service, result = await _ask(
+        "평가 계획의 보완점은 무엇인가요?",
+        "관찰 평가를 보완하세요.",
+        lesson_text="평가기준(상·중·하) 방법: 관찰",
+        pass2_title="rubric.pdf",
+    )
+    assert client.models.generate_content.call_count == 2
+    # 1패스 청크는 뒤에 붙인다: grounding_supports 인덱스 유지
+    assert _titles(result["citations"]) == ["rubric.pdf", "lesson.pdf"]
+    saved = service._save_messages.await_args.kwargs["citations"]
+    assert "lesson.pdf" in _titles(saved["documents"])
+    assert result["grounding_metadata"]["sources_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_evaluation_keeps_pass1_chunks_without_pass2_grounding():
+    _, _, result = await _ask(
+        "평가 계획의 보완점은 무엇인가요?",
+        "관찰 평가를 보완하세요.",
+        lesson_text="평가기준(상·중·하) 방법: 관찰",
+    )
+    assert _titles(result["citations"]) == ["lesson.pdf"]
+    assert result["grounding_metadata"]["sources_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_evaluation_falls_back_to_dual_tools_when_pass1_empty():
+    client, _, _ = await _ask(
+        "평가 계획의 보완점은 무엇인가요?",
+        "보완점입니다.",
+        lesson_text="",
+    )
+    calls = client.models.generate_content.call_args_list
+    assert len(calls) == 2
+    assert _stores(calls[1].kwargs) == [[USER_STORE], [RUBRIC_STORE]]
