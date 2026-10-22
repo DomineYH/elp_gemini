@@ -110,6 +110,7 @@ def test_cjk_strong_extension_registered_once():
         ("**「제목」**은", "「제목」"),
         ("**강조**를", "강조"),
         ("**굵게 *기울임* 포함**이다", "굵게 *기울임* 포함"),
+        ("**`npm install`**을", "`npm install`"),
     ],
 )
 def test_cjk_strong_tokenizes_bold_followed_by_josa(src, inner):
@@ -131,6 +132,7 @@ def test_cjk_strong_tokenizes_bold_followed_by_josa(src, inner):
         "** b ** c",
         "**\n줄바꿈**을",
         "__밑줄__",
+        "**x `y**` z",
     ],
 )
 def test_cjk_strong_leaves_other_markup_alone(src):
