@@ -6,8 +6,9 @@ API 엔드포인트 검증
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
+from app.dependencies import get_current_user, get_db
 from app.main import app
 
 
@@ -16,6 +17,13 @@ class TestLessonPlanAnalysisIntegration:
     """
     API 엔드포인트 통합 테스트
     """
+
+    @pytest.fixture(autouse=True)
+    def restore_overrides(self):
+        """FastAPI는 의존성을 import 시점에 묶어 patch가 안 먹는다"""
+        yield
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db, None)
 
     @pytest.fixture
     def mock_user(self):
@@ -51,30 +59,26 @@ class TestLessonPlanAnalysisIntegration:
             }
         )
 
+        app.dependency_overrides[get_current_user] = mock_get_current_user
+        app.dependency_overrides[get_db] = mock_get_db
         with patch(
-            "app.routers.lessonplan_analysis.get_current_user",
-            mock_get_current_user,
+            "app.routers.lessonplan_analysis.LessonPlanAnalysisService",
+            return_value=mock_service_instance,
         ):
-            with patch("app.routers.lessonplan_analysis.get_db", mock_get_db):
-                with patch(
-                    "app.routers.lessonplan_analysis"
-                    ".LessonPlanAnalysisService",
-                    return_value=mock_service_instance,
-                ):
-                    async with AsyncClient(
-                        app=app, base_url="http://test"
-                    ) as client:
-                        # When
-                        response = await client.post(
-                            "/api/lessonplan/analyze", json={"session_id": 1}
-                        )
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                # When
+                response = await client.post(
+                    "/api/lessonplan/analyze", json={"session_id": 1}
+                )
 
-                    # Then
-                    assert response.status_code == 200
-                    data = response.json()
-                    assert data["success"] is True
-                    assert "report" in data
-                    assert "수업 지도안 평가 보고서" in data["report"]
+            # Then
+            assert response.status_code == 200
+            data = response.json()
+            assert data["success"] is True
+            assert "report" in data
+            assert "수업 지도안 평가 보고서" in data["report"]
 
     @pytest.mark.asyncio
     async def test_analyze_endpoint_unauthorized(self):
@@ -91,18 +95,17 @@ class TestLessonPlanAnalysisIntegration:
                 detail="인증되지 않은 사용자",
             )
 
-        with patch(
-            "app.routers.lessonplan_analysis.get_current_user",
-            mock_get_current_user_fail,
-        ):
-            async with AsyncClient(app=app, base_url="http://test") as client:
-                # When
-                response = await client.post(
-                    "/api/lessonplan/analyze", json={"session_id": 1}
-                )
+        app.dependency_overrides[get_current_user] = mock_get_current_user_fail
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            # When
+            response = await client.post(
+                "/api/lessonplan/analyze", json={"session_id": 1}
+            )
 
-            # Then
-            assert response.status_code == 401
+        # Then
+        assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_analyze_endpoint_invalid_session(self, mock_user):
@@ -114,18 +117,17 @@ class TestLessonPlanAnalysisIntegration:
         async def mock_get_current_user():
             return mock_user
 
-        with patch(
-            "app.routers.lessonplan_analysis.get_current_user",
-            mock_get_current_user,
-        ):
-            async with AsyncClient(app=app, base_url="http://test") as client:
-                # When - session_id가 음수
-                response = await client.post(
-                    "/api/lessonplan/analyze", json={"session_id": -1}
-                )
+        app.dependency_overrides[get_current_user] = mock_get_current_user
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            # When - session_id가 음수
+            response = await client.post(
+                "/api/lessonplan/analyze", json={"session_id": -1}
+            )
 
-            # Then
-            assert response.status_code == 422
+        # Then
+        assert response.status_code == 422
 
     @pytest.mark.asyncio
     async def test_analyze_endpoint_service_error(self, mock_user):
@@ -147,23 +149,19 @@ class TestLessonPlanAnalysisIntegration:
             return_value={"success": False, "error": "분석 중 오류 발생"}
         )
 
+        app.dependency_overrides[get_current_user] = mock_get_current_user
+        app.dependency_overrides[get_db] = mock_get_db
         with patch(
-            "app.routers.lessonplan_analysis.get_current_user",
-            mock_get_current_user,
+            "app.routers.lessonplan_analysis.LessonPlanAnalysisService",
+            return_value=mock_service_instance,
         ):
-            with patch("app.routers.lessonplan_analysis.get_db", mock_get_db):
-                with patch(
-                    "app.routers.lessonplan_analysis"
-                    ".LessonPlanAnalysisService",
-                    return_value=mock_service_instance,
-                ):
-                    async with AsyncClient(
-                        app=app, base_url="http://test"
-                    ) as client:
-                        # When
-                        response = await client.post(
-                            "/api/lessonplan/analyze", json={"session_id": 1}
-                        )
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                # When
+                response = await client.post(
+                    "/api/lessonplan/analyze", json={"session_id": 1}
+                )
 
-                    # Then
-                    assert response.status_code == 500
+            # Then
+            assert response.status_code == 500
