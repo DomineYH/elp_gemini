@@ -1,5 +1,7 @@
 """AdminDeletionService 단위 테스트."""
 
+from pathlib import Path
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
@@ -14,6 +16,20 @@ from app.models.users import User
 from app.routers.views import _sanitize_display_name
 from app.services.admin_deletion_service import AdminDeletionService
 from tests.conftest import TestingSessionLocal, engine
+
+
+@pytest.fixture(autouse=True)
+def _isolate_file_dirs(tmp_path, monkeypatch):
+    """실제 체크아웃의 업로드/보고서 디렉터리를 건드리지 않도록 막는다."""
+    for name in (
+        "LESSONPLAN_BASE_DIR",
+        "STATIC_UPLOADS_DIR",
+        "SIMULATION_REPORTS_DIR",
+    ):
+        monkeypatch.setattr(
+            f"app.services.admin_deletion_service.{name}",
+            str(tmp_path / "isolated" / name),
+        )
 
 
 @pytest_asyncio.fixture
@@ -795,6 +811,71 @@ async def test_delete_user_removes_simulation_feedback_report(
     assert report.exists() is False
     assert report.parent.exists() is False
     assert other_report.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_user_leaves_checkout_reports_dir(
+    db_tables, tmp_path, monkeypatch
+):
+    """#162 리뷰: 테스트가 실제 app/static/reports/{id}/를 지우면 안 된다."""
+    module = "app.services.admin_deletion_service"
+    for name in ("LESSONPLAN_BASE_DIR", "STATIC_UPLOADS_DIR"):
+        monkeypatch.setattr(f"{module}.{name}", str(tmp_path / name))
+    _stub_file_search_service(monkeypatch)
+
+    async with TestingSessionLocal() as db:
+        admin = User(
+            username="admin1", nickname="A", hashed_password="h", is_admin=True
+        )
+        user = User(
+            username="stu1", nickname="S", hashed_password="h", is_admin=False
+        )
+        db.add_all([admin, user])
+        await db.commit()
+
+        checkout_dir = Path("app/static/reports") / str(user.id)
+        created = [
+            p for p in (checkout_dir.parent, checkout_dir) if not p.exists()
+        ]
+        checkout_dir.mkdir(parents=True, exist_ok=True)
+        sentinel = checkout_dir / "sentinel_simulation.md"
+        sentinel.write_text("keep", encoding="utf-8")
+        try:
+            await AdminDeletionService(db).delete_user(
+                target_user_id=user.id, current_admin_id=admin.id
+            )
+            assert sentinel.exists()
+        finally:
+            sentinel.unlink(missing_ok=True)
+            for path in reversed(created):
+                if path.is_dir() and not any(path.iterdir()):
+                    path.rmdir()
+
+
+def test_unlink_files_skips_paths_outside_reports_dir(
+    tmp_path, monkeypatch, caplog
+):
+    """#162 리뷰: SIMULATION_REPORTS_DIR 밖의 경로는 지우지 않는다."""
+    reports_dir = tmp_path / "reports"
+    inside = reports_dir / "1" / "x_simulation_1_reports.md"
+    inside.parent.mkdir(parents=True)
+    inside.write_text("in", encoding="utf-8")
+    outside = tmp_path / "outside.md"
+    outside.write_text("out", encoding="utf-8")
+    monkeypatch.setattr(
+        "app.services.admin_deletion_service.SIMULATION_REPORTS_DIR",
+        str(reports_dir),
+    )
+
+    with caplog.at_level("WARNING"):
+        removed = AdminDeletionService(None)._unlink_files(
+            {str(inside), str(outside), str(reports_dir / ".." / "outside.md")}
+        )
+
+    assert removed == 1
+    assert not inside.exists()
+    assert outside.exists()
+    assert any("outside.md" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.asyncio

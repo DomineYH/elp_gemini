@@ -317,9 +317,13 @@ class AdminDeletionService:
     def _unlink_files(self, paths: set[str]) -> int:
         """시뮬레이션 피드백 보고서 등 참조 검사 없이 지울 파일 (#162)."""
         removed = 0
+        base = Path(SIMULATION_REPORTS_DIR).resolve()
         for raw in sorted(paths):
             path = Path(raw)
             if not path.is_file() or path.is_symlink():
+                continue
+            if not path.resolve().is_relative_to(base):
+                logger.warning("보고서 디렉터리 밖 경로 건너뜀: %s", path)
                 continue
             try:
                 path.unlink()
