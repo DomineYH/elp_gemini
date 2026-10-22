@@ -19,6 +19,7 @@ from app.models.simulation_feedback_guideline import (
 from app.models.simulation_session import SimulationSession
 from app.services.prompt_loader_service import PromptLoaderService
 from app.services.simulation.errors import SimulationError
+from app.utils.timestamps import utc_iso
 
 FIXED_ASPECTS = ["교사 발화 추천", "진행 방향", "변경 방향"]
 OPTIONAL_ASPECTS = {
@@ -109,7 +110,7 @@ def to_out(row: SimulationFeedbackGuideline) -> dict:
         "criteria_ids": row.criteria_ids,
         "extra_instructions": row.extra_instructions,
         "created_by": row.created_by,
-        "created_at": row.created_at,
+        "created_at": utc_iso(row.created_at),
     }
 
 

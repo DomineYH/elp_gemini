@@ -47,7 +47,7 @@
                     : "진행 중 · 국면 " + (s.current_phase_idx + 1) + "/" + s.phase_count;
                 const tr = document.createElement("tr");
                 tr.append(
-                    cell(new Date(s.created_at + "Z").toLocaleString("ko-KR")),
+                    cell(new Date(s.created_at).toLocaleString("ko-KR")),
                     cell(s.persona_count + "명"),
                     cell(status),
                     open

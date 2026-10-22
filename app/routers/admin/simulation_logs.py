@@ -16,6 +16,7 @@ from app.models.users import User
 from app.services.simulation import session_service
 from app.services.simulation.errors import SimulationError
 from app.templating import templates
+from app.utils.timestamps import utc_iso
 
 router = APIRouter(tags=["관리자-시뮬레이션로그"])
 
@@ -63,7 +64,7 @@ async def list_simulation_sessions(
                 "id": s.id,
                 "user_id": s.user_id,
                 "username": username,
-                "created_at": s.created_at,
+                "created_at": utc_iso(s.created_at),
                 "persona_count": s.persona_count,
                 "status": s.status,
                 "utterance_count": n or 0,

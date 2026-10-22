@@ -29,6 +29,7 @@ from app.services.simulation.adaptation import adapt_many
 from app.services.simulation.agreement import compute_agreement
 from app.services.simulation.errors import SimulationError
 from app.services.simulation.llm_schemas import StudentReaction
+from app.utils.timestamps import utc_iso
 
 PHASE_FIELDS = (
     "name",
@@ -194,7 +195,7 @@ def _utterance_out(u: SimulationUtterance) -> dict:
         "failed": u.speaker_type == "student" and u.structured is None,
         "model_name": u.model_name,
         "latency_ms": u.latency_ms,
-        "created_at": u.created_at,
+        "created_at": utc_iso(u.created_at),
     }
 
 
@@ -374,8 +375,8 @@ async def load_state(db: AsyncSession, session: SimulationSession) -> dict:
             "persona_count": session.persona_count,
             "model_name": session.model_name,
             "upload_id": session.upload_id,
-            "created_at": session.created_at,
-            "finished_at": session.finished_at,
+            "created_at": utc_iso(session.created_at),
+            "finished_at": utc_iso(session.finished_at),
             "teacher_turns_used": await _teacher_turns_used(db, sid),
             "teacher_turns_max": settings.SIM_MAX_TEACHER_TURNS,
             "has_feedback": session.feedback_json is not None,
@@ -651,7 +652,7 @@ async def list_sessions(
     return [
         {
             "id": s.id,
-            "created_at": s.created_at,
+            "created_at": utc_iso(s.created_at),
             "persona_count": s.persona_count,
             "status": s.status,
             "has_feedback": s.feedback_json is not None,

@@ -38,8 +38,8 @@
         return node;
     }
 
-    // 서버 시각은 모두 UTC naive (CURRENT_TIMESTAMP)
-    const utc = at => new Date(at + "Z");
+    // 서버 시각은 `+00:00` 오프셋이 붙은 ISO
+    const utc = at => new Date(at);
 
     function clock(at) {
         const secs = Math.max(0, Math.round((utc(at) - utc(state.session.created_at)) / 1000));
