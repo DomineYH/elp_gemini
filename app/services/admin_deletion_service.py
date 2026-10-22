@@ -15,12 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analysis_reports import AnalysisReport
 from app.models.chat_sessions import ChatSession
+from app.models.simulation_session import SimulationSession
 from app.models.users import User
 from app.services.admin_export_service import LESSONPLAN_BASE_DIR
 from app.utils.logging import log_user_action
 
 logger = logging.getLogger(__name__)
 STATIC_UPLOADS_DIR = "app/static/uploads"
+SIMULATION_REPORTS_DIR = "app/static/reports"
 
 
 class AdminDeletionService:
@@ -52,12 +54,24 @@ class AdminDeletionService:
             )
         )
         reports_snapshot = list(reports_result.scalars().all())
+        # 운영 DB는 FK cascade로 커밋 후 행이 사라지므로 삭제 전에 수집 (#162)
+        sim_paths = set(
+            (
+                await self.db.scalars(
+                    select(SimulationSession.feedback_report_path).where(
+                        SimulationSession.user_id == target_user_id,
+                        SimulationSession.feedback_report_path.is_not(None),
+                    )
+                )
+            ).all()
+        )
 
         # DB 삭제 — relationship cascade가 세션/메시지/프로필 처리
         await self.db.delete(user)
         await self.db.commit()
 
         md_count = await self._remove_report_md_files(reports_snapshot)
+        md_count += self._unlink_files(sim_paths)
         upload_count = await self._remove_user_upload_files(
             target_user_id, reports_snapshot
         )
@@ -300,6 +314,20 @@ class AdminDeletionService:
                 )
         return removed
 
+    def _unlink_files(self, paths: set[str]) -> int:
+        """시뮬레이션 피드백 보고서 등 참조 검사 없이 지울 파일 (#162)."""
+        removed = 0
+        for raw in sorted(paths):
+            path = Path(raw)
+            if not path.is_file() or path.is_symlink():
+                continue
+            try:
+                path.unlink()
+                removed += 1
+            except OSError as exc:
+                logger.warning("파일 삭제 실패: %s (%s)", path, exc)
+        return removed
+
     async def _remove_unreferenced_lessonplans(
         self, reports: list[AnalysisReport]
     ) -> int:
@@ -417,7 +445,11 @@ class AdminDeletionService:
         removed = await self._remove_unreferenced_lessonplans(reports)
 
         # Per-user subdirectory cleanup: shutil.rmtree
-        for base in [Path(LESSONPLAN_BASE_DIR), Path(STATIC_UPLOADS_DIR)]:
+        for base in [
+            Path(LESSONPLAN_BASE_DIR),
+            Path(STATIC_UPLOADS_DIR),
+            Path(SIMULATION_REPORTS_DIR),
+        ]:
             user_dir = base / str(user_id)
             if user_dir.is_dir():
                 try:
