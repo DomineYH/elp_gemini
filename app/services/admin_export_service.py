@@ -8,7 +8,7 @@ import json
 import os
 import zipfile
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, Iterator
 
@@ -29,6 +29,7 @@ from app.utils.admin_export_naming import (
     build_filename_prefix,
     slugify_original_name,
 )
+from app.utils.timestamps import kst_date_start_utc_naive
 
 LESSONPLAN_BASE_DIR = "data/lessonplan"
 STATIC_UPLOADS_DIR = "app/static/uploads"
@@ -188,20 +189,11 @@ class AdminExportService:
             .where(AnalysisReport.user_id.in_(user_ids))
             .order_by(AnalysisReport.created_at.asc())
         )
-        if filters.date_from:
-            stmt = stmt.where(
-                AnalysisReport.created_at
-                >= datetime.combine(
-                    filters.date_from, datetime.min.time()
-                )
-            )
-        if filters.date_to:
-            stmt = stmt.where(
-                AnalysisReport.created_at
-                < datetime.combine(
-                    filters.date_to, datetime.min.time()
-                ) + timedelta(days=1)
-            )
+        lower_bound, upper_bound = _date_bounds(filters)
+        if lower_bound:
+            stmt = stmt.where(AnalysisReport.created_at >= lower_bound)
+        if upper_bound:
+            stmt = stmt.where(AnalysisReport.created_at < upper_bound)
         rows = (await self.db.execute(stmt)).scalars().all()
 
         reports: list[ReportEntry] = []
@@ -247,21 +239,7 @@ class AdminExportService:
         seen: set[tuple[int, str]] = set()
         ctx_by_id = {ctx.user_id: ctx for ctx in users}
         user_ids = [ctx.user_id for ctx in users]
-        lower_bound = (
-            datetime.combine(
-                filters.date_from, datetime.min.time()
-            )
-            if filters.date_from
-            else None
-        )
-        upper_bound = (
-            datetime.combine(
-                filters.date_to, datetime.min.time()
-            )
-            + timedelta(days=1)
-            if filters.date_to
-            else None
-        )
+        lower_bound, upper_bound = _date_bounds(filters)
 
         if base.exists():
             for ctx in users:
@@ -276,7 +254,10 @@ class AdminExportService:
                         stat = fpath.stat()
                     except OSError:
                         continue
-                    mtime = datetime.fromtimestamp(stat.st_mtime)
+                    # DB created_at과 같은 naive UTC로 맞춘다 (#211)
+                    mtime = datetime.fromtimestamp(
+                        stat.st_mtime, timezone.utc
+                    ).replace(tzinfo=None)
                     if lower_bound and mtime < lower_bound:
                         continue
                     if upper_bound and mtime >= upper_bound:
@@ -306,20 +287,10 @@ class AdminExportService:
             .where(AnalysisReport.user_id.in_(user_ids))
             .order_by(AnalysisReport.created_at.asc())
         )
-        if filters.date_from:
-            stmt = stmt.where(
-                AnalysisReport.created_at
-                >= datetime.combine(
-                    filters.date_from, datetime.min.time()
-                )
-            )
-        if filters.date_to:
-            stmt = stmt.where(
-                AnalysisReport.created_at
-                < datetime.combine(
-                    filters.date_to, datetime.min.time()
-                ) + timedelta(days=1)
-            )
+        if lower_bound:
+            stmt = stmt.where(AnalysisReport.created_at >= lower_bound)
+        if upper_bound:
+            stmt = stmt.where(AnalysisReport.created_at < upper_bound)
         rows = (await self.db.execute(stmt)).scalars().all()
 
         for r in rows:
@@ -359,19 +330,13 @@ class AdminExportService:
             .where(LessonPlanUpload.user_id.in_(user_ids))
             .order_by(LessonPlanUpload.created_at.asc())
         )
-        if filters.date_from:
+        if lower_bound:
             upload_stmt = upload_stmt.where(
-                LessonPlanUpload.created_at
-                >= datetime.combine(
-                    filters.date_from, datetime.min.time()
-                )
+                LessonPlanUpload.created_at >= lower_bound
             )
-        if filters.date_to:
+        if upper_bound:
             upload_stmt = upload_stmt.where(
-                LessonPlanUpload.created_at
-                < datetime.combine(
-                    filters.date_to, datetime.min.time()
-                ) + timedelta(days=1)
+                LessonPlanUpload.created_at < upper_bound
             )
         uploads = (await self.db.execute(upload_stmt)).scalars().all()
 
@@ -437,20 +402,11 @@ class AdminExportService:
             .options(selectinload(ChatSession.messages))
             .order_by(ChatSession.created_at.asc())
         )
-        if filters.date_from:
-            stmt = stmt.where(
-                ChatSession.created_at
-                >= datetime.combine(
-                    filters.date_from, datetime.min.time()
-                )
-            )
-        if filters.date_to:
-            stmt = stmt.where(
-                ChatSession.created_at
-                < datetime.combine(
-                    filters.date_to, datetime.min.time()
-                ) + timedelta(days=1)
-            )
+        lower_bound, upper_bound = _date_bounds(filters)
+        if lower_bound:
+            stmt = stmt.where(ChatSession.created_at >= lower_bound)
+        if upper_bound:
+            stmt = stmt.where(ChatSession.created_at < upper_bound)
         rows = (await self.db.execute(stmt)).scalars().all()
 
         sessions: list[SessionEntry] = []
@@ -489,17 +445,11 @@ class AdminExportService:
             .where(SimulationSession.user_id.in_(user_ids))
             .order_by(SimulationSession.created_at.asc())
         )
-        if filters.date_from:
-            stmt = stmt.where(
-                SimulationSession.created_at
-                >= datetime.combine(filters.date_from, datetime.min.time())
-            )
-        if filters.date_to:
-            stmt = stmt.where(
-                SimulationSession.created_at
-                < datetime.combine(filters.date_to, datetime.min.time())
-                + timedelta(days=1)
-            )
+        lower_bound, upper_bound = _date_bounds(filters)
+        if lower_bound:
+            stmt = stmt.where(SimulationSession.created_at >= lower_bound)
+        if upper_bound:
+            stmt = stmt.where(SimulationSession.created_at < upper_bound)
         rows = (await self.db.execute(stmt)).scalars().all()
 
         entries: list[SimulationEntry] = []
@@ -601,6 +551,18 @@ class AdminExportService:
             zf.writestr(lessonplan.archive_path, data)
             digests[lessonplan.archive_path] = _digest(data, sha)
             yield buf.take()
+
+
+def _date_bounds(
+    filters: ExportFilters,
+) -> tuple[datetime | None, datetime | None]:
+    """관리자(KST) 날짜 범위를 naive UTC [하한, 상한)으로. date_to 포함."""
+    lower = upper = None
+    if filters.date_from:
+        lower = kst_date_start_utc_naive(filters.date_from)
+    if filters.date_to:
+        upper = kst_date_start_utc_naive(filters.date_to + timedelta(days=1))
+    return lower, upper
 
 
 def _strip_ext(name: str) -> str:
