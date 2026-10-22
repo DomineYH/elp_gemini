@@ -1155,6 +1155,7 @@
 
             if (data.success) {
                 showAnalysisResult(data.report);
+                loadReportList();
             } else {
                 throw new Error(data.error || '분석 실패');
             }
