@@ -160,3 +160,44 @@ def test_escape_html_attribute_helper_blocks_quote_breakout_payloads():
         assert.equal(escapeHtmlAttribute(null), '');
         assert.equal(escapeHtmlAttribute(undefined), '');
     """)
+
+
+def test_answer_and_history_render_sources_line():
+    source = _dashboard_source()
+
+    assert "updateMessage(loadingId, data.answer, 'ai', data.sources)" in source
+    assert "renderSourcesLine(message.sources)" in source
+    function_source = _extract_js_function(source, "renderSourcesLine")
+    assert "map(escapeHtml)" in function_source
+    assert "참고 문서: " in function_source
+
+
+def test_sources_line_escapes_titles_and_skips_empty():
+    source = _dashboard_source()
+    escape_source = _extract_js_function(source, "escapeHtml")
+    sources_source = _extract_js_function(source, "renderSourcesLine")
+
+    _run_node_script(f"""
+        const assert = require('node:assert/strict');
+        global.document = {{
+            createElement() {{
+                return {{
+                    innerHTML: '',
+                    set textContent(value) {{
+                        this.innerHTML = String(value)
+                            .replace(/&/g, '&amp;')
+                            .replace(/</g, '&lt;')
+                            .replace(/>/g, '&gt;');
+                    }},
+                }};
+            }},
+        }};
+        {escape_source}
+        {sources_source}
+
+        assert.equal(renderSourcesLine([]), '');
+        assert.equal(renderSourcesLine(undefined), '');
+        const html = renderSourcesLine(['기준 A', '<img src=x onerror=1>']);
+        assert.match(html, /참고 문서: 기준 A · &lt;img/);
+        assert.equal(html.includes('<img'), false);
+    """)
