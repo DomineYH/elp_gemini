@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from typing import AsyncIterator
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -62,8 +62,16 @@ async def session_factory():
         await engine.dispose()
 
 
+@pytest.fixture
+def store_delete():
+    """로그아웃의 File Search 스토어 삭제가 실제 API로 나가지 않게 한다."""
+    with patch("app.services.file_search_service.FileSearchService") as fss:
+        fss.return_value.delete_store_by_display_name = AsyncMock()
+        yield fss.return_value.delete_store_by_display_name
+
+
 @pytest_asyncio.fixture
-async def make_client(session_factory):
+async def make_client(session_factory, store_delete):
     async def _get_db_override() -> AsyncIterator[AsyncSession]:
         async with session_factory() as session:
             yield session
@@ -127,7 +135,7 @@ async def _me_status(make_client, cookie: str) -> int:
 
 
 @pytest.mark.asyncio
-async def test_old_cookie_rejected_after_logout(make_client):
+async def test_old_cookie_rejected_after_logout(make_client, store_delete):
     client = make_client()
     old_cookie = await _login(client)
     assert await _me_status(make_client, old_cookie) == 200
@@ -135,6 +143,7 @@ async def test_old_cookie_rejected_after_logout(make_client):
     assert await _logout(make_client, old_cookie) == 302
 
     assert await _me_status(make_client, old_cookie) == 401
+    store_delete.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -193,6 +202,58 @@ async def test_old_cookie_rejected_after_admin_password_change(
     assert await _me_status(make_client, old_cookie) == 401
     new_cookie = await _login(make_client(), NEW_PASSWORD)
     assert await _me_status(make_client, new_cookie) == 200
+
+
+async def _user_pk(session_factory) -> int:
+    async with session_factory() as s:
+        return (
+            await s.execute(select(User.id).where(User.username == USER_ID))
+        ).scalar_one()
+
+
+async def _db_version(session_factory, user_pk: int) -> int:
+    async with session_factory() as s:
+        return (
+            await s.execute(
+                select(User.session_version).where(User.id == user_pk)
+            )
+        ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_password_changes_each_bump_version(session_factory):
+    """두 세션이 같은 버전을 읽은 뒤 변경해도 버전은 두 번 오른다."""
+    user_pk = await _user_pk(session_factory)
+    async with session_factory() as a, session_factory() as b:
+        # 참조를 잡아 두어야 identity map에 읽은 값이 남는다
+        _held = [await a.get(User, user_pk), await b.get(User, user_pk)]
+
+        await AuthService(a).admin_set_user_password(user_pk, NEW_PASSWORD)
+        cookie_version = await _db_version(session_factory, user_pk)
+        await AuthService(b).admin_set_user_password(user_pk, USER_PASSWORD)
+
+    assert await _db_version(session_factory, user_pk) == 2
+    async with session_factory() as s:
+        user = await s.get(User, user_pk)
+        assert not AuthService.session_version_matches(user, cookie_version)
+
+
+@pytest.mark.asyncio
+async def test_stale_logout_does_not_roll_back_version(session_factory):
+    """지연된 로그아웃이 더 최신 버전을 덮어쓰지 않는다."""
+    user_pk = await _user_pk(session_factory)
+    async with session_factory() as a, session_factory() as b:
+        # 참조를 잡아 두어야 identity map에 읽은 값이 남는다
+        _held = await a.get(User, user_pk)
+
+        await AuthService(b).admin_set_user_password(user_pk, NEW_PASSWORD)
+        await AuthService(b).admin_set_user_password(user_pk, USER_PASSWORD)
+
+        assert await AuthService(a).revoke_sessions_if_current(user_pk, 0) is (
+            False
+        )
+
+    assert await _db_version(session_factory, user_pk) == 2
 
 
 @pytest.mark.asyncio
