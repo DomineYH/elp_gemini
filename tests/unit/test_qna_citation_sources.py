@@ -59,3 +59,21 @@ def test_empty_or_missing_citations():
         citation_source_titles({"documents": {}, "criteria": []}, "lesson.pdf")
         == []
     )
+
+
+def test_malformed_citation_shapes_are_skipped():
+    """비정상 형태는 건너뛰고 정상 항목만 남긴다 (#213)"""
+    assert citation_source_titles({"criteria": ["평가기준"]}, "a.pdf") == []
+    assert (
+        citation_source_titles(
+            {"documents": [{"grounding_chunks": [1]}]}, "a.pdf"
+        )
+        == []
+    )
+    criteria = [
+        {"title": {"name": "x"}},
+        {"title": ["x"]},
+        {"title": "평가기준"},
+    ]
+    citations = {"documents": _documents("lesson.pdf"), "criteria": criteria}
+    assert citation_source_titles(citations, "a.pdf") == ["평가기준", "a.pdf"]

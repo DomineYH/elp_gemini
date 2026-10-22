@@ -199,6 +199,19 @@ class TestQnAServiceRefactored:
         assert "grounding_chunks" in result
         assert len(result["grounding_chunks"]) == 2
 
+    def test_extract_citations_error_returns_none(self, qna_service):
+        """직렬화 실패 시 raw/error 없이 None (#213)"""
+        mock_metadata = Mock()
+        mock_metadata.to_dict = Mock(
+            side_effect=RuntimeError("uri=fileSearchStores/x")
+        )
+
+        with patch("app.services.qna_service.logger") as mock_logger:
+            result = qna_service._extract_citations(mock_metadata)
+
+        assert result is None
+        assert "uri=fileSearchStores/x" in str(mock_logger.error.call_args)
+
     def test_build_context_without_history(self, qna_service):
         """히스토리 없이 컨텍스트 구성 테스트"""
         system_prompt = "테스트 시스템 프롬프트"
