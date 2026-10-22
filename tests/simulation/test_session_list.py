@@ -1,5 +1,6 @@
 """지난 세션 목록과 다른 학생으로 다시 실행 (#157)."""
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -52,6 +53,7 @@ def test_lists_own_sessions_newest_first(
         "current_phase_idx": 0,
         "phase_count": 1,
     }
+    assert sessions[0]["created_at"].endswith("+00:00")
 
 
 def test_upload_id_filter_and_latest_upload_flag(ready, teacher, make_upload):
@@ -111,3 +113,10 @@ def test_dashboard_includes_session_list():
     )
     assert 'id="simSessions"' in html
     assert 'fetch("/api/simulation/sessions"' in html
+
+
+def test_templates_parse_offset_timestamps_without_z_suffix():
+    # API가 +00:00을 붙이므로 "Z"를 덧붙이면 Invalid Date (#163)
+    root = Path("app/templates/user")
+    for name in ("_sim_sessions_list.html", "simulation_transcript.html"):
+        assert '+ "Z"' not in (root / name).read_text(encoding="utf-8")

@@ -50,6 +50,7 @@ def test_list_shows_sessions_with_utterance_count(
     assert row["status"] == "running"
     # 입장: system + teacher(plan) + 2 students, 말하기: teacher + 2 students
     assert row["utterance_count"] == 7
+    assert row["created_at"].endswith("+00:00")
 
 
 def test_detail_includes_raw_profile_and_utterances(
@@ -64,6 +65,8 @@ def test_detail_includes_raw_profile_and_utterances(
     assert all(p["raw_profile"]["id"] for p in state["personas"])
     seqs = [u["seq"] for u in state["utterances"]]
     assert seqs == list(range(1, 8))
+    assert state["session"]["created_at"].endswith("+00:00")
+    assert state["utterances"][0]["created_at"].endswith("+00:00")
 
 
 def test_detail_missing_session_404(client, as_user, admin):

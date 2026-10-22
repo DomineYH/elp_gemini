@@ -52,6 +52,7 @@ def test_each_save_is_a_new_version(admin_client):
     assert got["current"]["version"] == 2
     assert got["current"]["enabled"] is False
     assert [h["version"] for h in got["history"]] == [2, 1]
+    assert got["history"][0]["created_at"].endswith("+00:00")
     assert len(got["aspects"]["fixed"]) == 3
     assert got["base_prompt"]
 
