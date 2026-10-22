@@ -114,11 +114,15 @@ def citation_source_titles(
     """
     if not isinstance(citations, dict):
         return []
-    titles = [c.get("title") for c in citations.get("criteria") or []]
-    documents = citations.get("documents") or {}
-    if documents.get("grounding_chunks"):
+    titles = [
+        c.get("title")
+        for c in citations.get("criteria") or []
+        if isinstance(c, dict)
+    ]
+    documents = citations.get("documents")
+    if isinstance(documents, dict) and documents.get("grounding_chunks"):
         titles.append(document_title)
-    return list(dict.fromkeys(t for t in titles if t))
+    return list(dict.fromkeys(t for t in titles if isinstance(t, str) and t))
 
 
 class QnAService:
@@ -557,10 +561,7 @@ class QnAService:
             return to_serializable(grounding_metadata)
         except Exception as e:
             logger.error(f"Citations 추출 실패: {str(e)}")
-            return {
-                "error": str(e),
-                "raw": strip_internal_store_ids(str(grounding_metadata))
-            }
+            return None
 
     def _extend_citations(
         self,
