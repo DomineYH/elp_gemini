@@ -6,8 +6,6 @@
 #       SESSION_HTTPS_ONLY=false TZ=UTC \
 #       uv run --frozen python scripts/ci_ratchet.py tests --update
 # 정리 후속 이슈: #227
-FAILED tests/services/test_lessonplan_analysis_tool_order.py::test_rubric_metadata_filter_omitted_when_none
-FAILED tests/services/test_lessonplan_analysis_tool_order.py::test_user_store_tool_precedes_rubric_tool
 FAILED tests/test_preservice_region_kyodae_rename.py::test_rename_idempotent
 FAILED tests/test_preservice_region_kyodae_rename.py::test_rename_leaves_unknown_values
 FAILED tests/test_preservice_region_kyodae_rename.py::test_rename_preserves_kornu
