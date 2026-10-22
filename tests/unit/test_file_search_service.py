@@ -59,7 +59,10 @@ class TestFileSearchService:
                 mock_operation = Mock()
                 mock_operation.done = True
                 mock_operation.response = Mock()
-                mock_operation.response.name = "documents/test-doc-456"
+                mock_operation.response.document_name = "documents/test-doc-456"
+                mock_operation.response.parent = (
+                    "fileSearchStores/test-store-123"
+                )
 
                 # Mock 메서드 설정
                 with patch.object(

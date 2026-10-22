@@ -30,4 +30,3 @@ FAILED tests/unit/test_criteria_context_service.py::TestCriteriaContextService::
 FAILED tests/unit/test_criteria_context_service.py::TestCriteriaContextService::test_get_context_with_k_limit
 FAILED tests/unit/test_criteria_context_service.py::TestCriteriaContextService::test_init_no_api_key
 FAILED tests/unit/test_criteria_context_service.py::TestCriteriaContextService::test_init_success
-FAILED tests/unit/test_file_search_service.py::TestFileSearchService::test_upload_document_returns_correct_keys
