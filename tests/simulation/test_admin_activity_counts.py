@@ -2,9 +2,16 @@
 관리자 활동 집계에 시뮬레이션 포함 (#188) · 관리자 대시보드 실제 통계 (#181)
 """
 
+import os
 import re
+import time
+from datetime import datetime, timedelta, timezone
 
 import pytest
+
+from app.models.lessonplan_uploads import LessonPlanUpload
+from app.routers.admin.dashboard import _collect_metrics
+from tests.simulation.conftest import run
 
 
 def _create_session(client, make_upload, user):
@@ -95,3 +102,37 @@ def test_user_dashboard_session_count_label_is_qna():
 
     html = Path("app/templates/user/dashboard.html").read_text()
     assert ">지난 QnA 세션<" in html
+
+
+def test_dashboard_7day_boundary_uses_utc_on_non_utc_server(sim_db, teacher):
+    # created_at은 UTC naive(CURRENT_TIMESTAMP). 서버 TZ가 KST여도 경계는 UTC.
+    utc_now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    async def _go():
+        async with sim_db() as db:
+            for hours, name in ((167, "in.pdf"), (169, "out.pdf")):
+                db.add(
+                    LessonPlanUpload(
+                        user_id=teacher.id,
+                        filename=name,
+                        created_at=utc_now - timedelta(hours=hours),
+                    )
+                )
+            await db.commit()
+            return await _collect_metrics(db)
+
+    old_tz = os.environ.get("TZ")
+    os.environ["TZ"] = "Asia/Seoul"
+    time.tzset()
+    try:
+        metrics = run(_go())
+    finally:
+        if old_tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old_tz
+        time.tzset()
+
+    uploads = next(m for m in metrics["activity"] if m["key"] == "uploads")
+    assert uploads["total"] == 2
+    assert uploads["last_7days"] == 1

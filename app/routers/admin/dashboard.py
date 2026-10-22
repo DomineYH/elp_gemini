@@ -2,7 +2,7 @@
 관리자 대시보드 라우터
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
@@ -32,7 +32,8 @@ _ACTIVITY_METRICS = (
 
 
 async def _collect_metrics(db: AsyncSession) -> dict:
-    since = datetime.now() - timedelta(days=7)
+    # created_at(CURRENT_TIMESTAMP)과 같은 UTC naive 기준
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
     users = await db.scalar(
         select(func.count(User.id)).where(User.is_admin.is_(False))
     )
