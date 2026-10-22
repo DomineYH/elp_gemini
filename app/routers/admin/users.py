@@ -3,7 +3,6 @@
 학년별 통계, 세션 목록, 세션 상세 API
 """
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +38,7 @@ from app.utils.admin_csrf import (
 )
 from app.templating import templates
 from app.utils.logging import log_auth_event, log_user_action
-from app.utils.timestamps import utc_iso
+from app.utils.timestamps import kst_today_start_utc_naive, utc_iso
 
 router = APIRouter(tags=["관리자-사용자관리"])
 logger = logging.getLogger(__name__)
@@ -156,8 +155,7 @@ async def get_user_stats(
 ):
     """레거시 세션 세그먼트별 사용자 통계 API."""
     try:
-        today = datetime.now().replace(
-            hour=0, minute=0, second=0, microsecond=0)
+        today = kst_today_start_utc_naive()
         ut_in = ChatSession.user_type.in_(USER_TYPES)
         # 세션+오늘 세션 (1 쿼리)
         sess_q = (

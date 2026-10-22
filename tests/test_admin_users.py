@@ -479,9 +479,7 @@ async def test_stats_today_boundary_is_kst_midnight_on_non_utc_server(
                 resp = client.get("/admin/api/users/stats")
             assert resp.status_code == 200
             data = resp.json()
-            grade1 = next(
-                s for s in data["stats"] if s["user_type"] == "1학년"
-            )
+            grade1 = next(s for s in data["stats"] if s["user_type"] == "1학년")
             assert grade1["session_count"] == 2, tz
             assert grade1["today_count"] == 1, tz
             assert data["totals"]["today_count"] == 1, tz
