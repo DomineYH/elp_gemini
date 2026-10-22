@@ -20,7 +20,7 @@ from sqlalchemy.orm import aliased
 from app.constants import SESSION_USER_TYPE_LABELS, UNPROFILED_USER_TYPE
 from app.db import get_db
 from app.dependencies import get_current_user
-from app.models.chat_messages import ChatMessage
+from app.models.chat_messages import ChatMessage, MessageRole
 from app.models.chat_sessions import ChatSession
 from app.models.users import User
 from app.schemas.sessions import (
@@ -398,7 +398,9 @@ async def get_chat_history(
         )
         messages = message_result.scalars().all()
 
-        # 응답 모델로 변환
+        from app.services.qna_service import strip_internal_store_ids
+
+        # 응답 모델로 변환 (#174 이전에 저장된 답변의 내부 store id는 숨김)
         message_responses = [
             ChatMessageResponse(
                 id=_model_int(msg.id),
@@ -408,7 +410,11 @@ async def get_chat_history(
                     if hasattr(msg.role, "value")
                     else str(msg.role)
                 ),
-                content=_model_str(msg.content),
+                content=_model_str(
+                    strip_internal_store_ids(msg.content)
+                    if msg.role == MessageRole.ASSISTANT
+                    else msg.content
+                ),
                 created_at=_model_datetime(msg.created_at),
             )
             for msg in messages

@@ -12,6 +12,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -384,6 +385,52 @@ async def test_get_history_uses_id_tiebreaker_for_equal_timestamps(
         "같은 시각의 낮은 ID 메시지",
         "같은 시각의 높은 ID 메시지",
     ]
+
+
+@pytest.mark.asyncio
+async def test_get_history_hides_store_ids_in_saved_answers(
+    client,
+    seeded_history,
+):
+    """#174 이전에 저장된 답변도 조회 시 내부 store id를 숨긴다."""
+    session_id = seeded_history["session_a_old"].id
+    question = "user5store-0sjez5f0ga08 는 뭔가요?"
+    leaked = "업로드하신 지도안(user5store-0sjez5f0ga08)을 확인했습니다."
+    async with TestingSessionLocal() as db:
+        db.add_all(
+            [
+                ChatMessage(
+                    session_id=session_id,
+                    role=MessageRole.USER,
+                    content=question,
+                    created_at=datetime(2026, 5, 4, 12, 0, 0),
+                ),
+                ChatMessage(
+                    session_id=session_id,
+                    role=MessageRole.ASSISTANT,
+                    content=leaked,
+                    model_name="gemini-test",
+                    created_at=datetime(2026, 5, 4, 12, 0, 1),
+                ),
+            ]
+        )
+        await db.commit()
+
+    response = await client.get(f"/api/qna/sessions/{session_id}/history")
+
+    assert response.status_code == 200
+    assert [m["content"] for m in response.json()["messages"]] == [
+        question,
+        "업로드하신 지도안을 확인했습니다.",
+    ]
+    async with TestingSessionLocal() as db:
+        stored = await db.scalar(
+            select(ChatMessage.content).where(
+                ChatMessage.role == MessageRole.ASSISTANT,
+                ChatMessage.session_id == session_id,
+            )
+        )
+    assert stored == leaked
 
 
 @pytest.mark.asyncio

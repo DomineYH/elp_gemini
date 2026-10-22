@@ -261,7 +261,8 @@ class QnAService:
                     "**중요 지시사항:**\n"
                     "- 평가기준 문서의 자료는 **답변 생성의 참고 자료**로만 "
                     "사용하세요.\n"
-                    "- 사용자가 업로드한 수업 지도안만 **질의 응답 대상**입니다.\n"
+                    "- 사용자가 업로드한 수업 지도안만 "
+                    "**질의 응답 대상**입니다.\n"
                     "- 답변 근거는 반드시 지도안에서 찾으세요. 지도안의 "
                     "표·평가 계획·활동 등을 먼저 검색하고, 찾지 못했을 때만 "
                     "지도안에 없다고 답하세요.\n"
@@ -282,9 +283,9 @@ class QnAService:
             if conversation_history:
                 history_context = "\n\n**이전 대화:**\n"
                 for conv in conversation_history:
+                    past = strip_internal_store_ids(conv.get("answer", ""))
                     history_context += (
-                        f"Q: {conv.get('question', '')}\n"
-                        f"A: {strip_internal_store_ids(conv.get('answer', ''))}\n"
+                        f"Q: {conv.get('question', '')}\nA: {past}\n"
                     )
 
             # Contents 구성: Store 역할 명시 + 평가기준 컨텍스트 + 히스토리 + 질문

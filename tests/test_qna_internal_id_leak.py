@@ -29,7 +29,8 @@ def _assert_no_leak(text):
     ("raw", "expected"),
     [
         (
-            "업로드하신 수업 지도안(user5store-0sjez5f0ga08) 문서를 확인한 결과",
+            "업로드하신 수업 지도안(user5store-0sjez5f0ga08) "
+            "문서를 확인한 결과",
             "업로드하신 수업 지도안 문서를 확인한 결과",
         ),
         (
