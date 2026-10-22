@@ -524,7 +524,11 @@ class LessonPlanAnalysisService:
 
         except exceptions.GoogleAPIError as e:
             logger.error(f"Google API 오류: {e}")
-            return {"success": False, "error": f"API 오류: {str(e)}"}
+            return {
+                "success": False,
+                "error": "AI 서비스 호출 중 오류가 발생했습니다. "
+                "잠시 후 다시 시도해주세요.",
+            }
 
         except Exception as e:
             logger.error(f"분석 실패: {e}", exc_info=True)

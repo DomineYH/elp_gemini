@@ -2,6 +2,7 @@
 수업 지도안 분석 라우터
 """
 
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -22,6 +23,8 @@ from app.schemas.lessonplan_analysis import (
 )
 from app.services.lessonplan_analysis_service import LessonPlanAnalysisService
 from app.utils.timestamps import utc_iso
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/lessonplan", tags=["lessonplan"])
 
@@ -95,9 +98,10 @@ async def analyze_lesson_plan(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error("지도안 분석 실패: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"서버 오류: {str(e)}",
+            detail="분석 중 오류가 발생했습니다.",
         )
 
 
@@ -129,9 +133,10 @@ async def list_analysis_reports(
         )
 
     except Exception as e:
+        logger.error("보고서 목록 조회 실패: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"보고서 목록 조회 실패: {str(e)}",
+            detail="보고서 목록을 불러오지 못했습니다.",
         )
 
 
@@ -184,9 +189,10 @@ async def get_analysis_report(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error("보고서 조회 실패: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"보고서 조회 실패: {str(e)}",
+            detail="보고서를 불러오지 못했습니다.",
         )
 
 
@@ -232,7 +238,8 @@ async def download_analysis_report(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error("보고서 다운로드 실패: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"보고서 다운로드 실패: {str(e)}",
+            detail="보고서를 다운로드하지 못했습니다.",
         )
