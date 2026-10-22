@@ -324,7 +324,8 @@ class AdminDeletionService:
                 user_id=user_id,
                 upload_id=upload_id,
             )
-            if self._is_user_scoped_lessonplan_path(path, user_id):
+            user_scoped = self._is_user_scoped_lessonplan_path(path, user_id)
+            if user_scoped:
                 result = await self.db.execute(
                     text(
                         "SELECT count(1) FROM analysis_reports "
@@ -346,7 +347,10 @@ class AdminDeletionService:
             # 시뮬레이션 세션이 이 지도안 업로드를 참조하면 원본을 보존한다.
             # (업로드 행은 보고서 삭제로 지우지 않으므로 파일만 지우면
             # 시뮬레이션·내보내기에서 원본이 MISSING이 된다.)
-            if await self._lessonplan_used_by_simulation(user_id, name):
+            # 공용 레거시 경로는 다른 사용자의 시뮬레이션 참조도 확인한다.
+            if await self._lessonplan_used_by_simulation(
+                user_id if user_scoped else None, name
+            ):
                 continue
 
             if not path.is_file() or path.is_symlink():
@@ -361,13 +365,15 @@ class AdminDeletionService:
         return removed
 
     async def _lessonplan_used_by_simulation(
-        self, user_id: int, filename: str
+        self, user_id: int | None, filename: str
     ) -> bool:
+        """user_id가 None이면 모든 사용자의 참조를 확인한다."""
         result = await self.db.execute(
             text(
                 "SELECT count(1) FROM simulation_sessions s "
                 "JOIN lessonplan_uploads u ON u.id = s.upload_id "
-                "WHERE u.user_id = :user_id AND u.filename = :name"
+                "WHERE (:user_id IS NULL OR u.user_id = :user_id) "
+                "AND u.filename = :name"
             ),
             {"user_id": user_id, "name": Path(filename).name},
         )

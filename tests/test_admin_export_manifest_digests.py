@@ -234,3 +234,53 @@ async def test_bulk_report_delete_still_removes_unused_lessonplan(seeded):
         )
     assert (lp_base / "sim.pdf").exists()
     assert not (lp_base / "plain.pdf").exists()
+
+
+async def _seed_other_user_simulation(name: str) -> None:
+    """다른 사용자가 보고서 없이 시뮬레이션으로만 공용 파일을 참조."""
+    async with TestingSessionLocal() as db:
+        other = User(username="t5", nickname="o", is_admin=False)
+        db.add(other)
+        await db.flush()
+        upload = LessonPlanUpload(
+            user_id=other.id, filename=name, file_hash="o" + name
+        )
+        db.add(upload)
+        await db.flush()
+        db.add(
+            SimulationSession(
+                user_id=other.id,
+                upload_id=upload.id,
+                persona_count=1,
+                model_name="m",
+            )
+        )
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_report_delete_keeps_shared_file_for_other_sim(
+    seeded,
+):
+    ids, lp_base = seeded
+    await _seed_other_user_simulation("plain.pdf")
+    async with TestingSessionLocal() as db:
+        await AdminDeletionService(db).delete_analysis_report(
+            report_id=ids["plain.pdf"], current_admin_id=ids["admin_id"]
+        )
+    assert (lp_base / "plain.pdf").exists()
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_keeps_shared_file_for_other_sim(
+    seeded,
+):
+    ids, lp_base = seeded
+    await _seed_other_user_simulation("plain.pdf")
+    async with TestingSessionLocal() as db:
+        await AdminDeletionService(db).bulk_delete_reports(
+            user_id=ids["user_id"],
+            report_ids=[ids["sim.pdf"], ids["plain.pdf"]],
+            current_admin_id=ids["admin_id"],
+        )
+    assert (lp_base / "plain.pdf").exists()
