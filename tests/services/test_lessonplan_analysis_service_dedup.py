@@ -1,5 +1,6 @@
 """LessonPlanAnalysisService 중복 분석 차단 동작 테스트."""
 
+import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -225,6 +226,13 @@ async def test_analyze_allows_premigration_file_search_upload_without_row(
     fake_response = MagicMock()
     fake_response.text = ""
     fake_response.candidates = []
+    real_to_thread = asyncio.to_thread
+
+    async def fake_to_thread(func, *args, **kwargs):
+        # 문서 확인은 실제로 돌리고 Gemini 호출만 가짜 응답
+        if func == svc._user_file_search_store_has_documents:
+            return await real_to_thread(func, *args, **kwargs)
+        return fake_response
 
     with (
         patch.object(
@@ -249,7 +257,7 @@ async def test_analyze_allows_premigration_file_search_upload_without_row(
         ),
         patch(
             "app.services.lessonplan_analysis_service.asyncio.to_thread",
-            return_value=fake_response,
+            side_effect=fake_to_thread,
         ) as mock_to_thread,
     ):
         result = await svc.analyze_lesson_plan(
@@ -260,7 +268,7 @@ async def test_analyze_allows_premigration_file_search_upload_without_row(
     assert result["success"] is True
     assert "upload" not in result.get("error", "").lower()
     mock_stores.assert_called_once_with(1)
-    assert mock_to_thread.call_count == 1
+    assert mock_to_thread.call_count == 2
 
 
 @pytest.mark.asyncio

@@ -226,8 +226,8 @@ class LessonPlanAnalysisService:
                     legacy_lessonplans = (
                         self.lessonplan_storage.list_lessonplans(user_id)
                     )
-                    has_file_search_documents = (
-                        self._user_file_search_store_has_documents(user_id)
+                    has_file_search_documents = await asyncio.to_thread(
+                        self._user_file_search_store_has_documents, user_id
                     )
                     if not legacy_lessonplans and not has_file_search_documents:
                         return {
