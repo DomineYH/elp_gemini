@@ -10,6 +10,8 @@ from app.migrations.chat_sessions_document_id import (
 )
 
 PATH = "fileSearchStores/s1/documents/d1"
+PATH2 = "fileSearchStores/s1/documents/d2"
+TITLES = {1: "lesson.pdf", 2: "내 수업", 3: "업로드한 지도안"}
 
 
 @pytest.fixture
@@ -27,7 +29,26 @@ async def legacy_engine():
         await conn.execute(
             text(
                 "INSERT INTO chat_sessions (id, user_id, title) "
-                f"VALUES (1, 1, '{PATH}'), (2, 1, '내 수업')"
+                f"VALUES (1, 1, '{PATH}'), (2, 1, '내 수업'), "
+                f"(3, 2, '{PATH2}')"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE TABLE lessonplan_uploads (id INTEGER PRIMARY KEY, "
+                "user_id INTEGER NOT NULL, original_filename VARCHAR(255), "
+                "fs_document_id VARCHAR(512), created_at DATETIME)"
+            )
+        )
+        # 최신 업로드 우선, 빈 파일명 제외, 다른 사용자의 업로드는 매칭 안 함
+        await conn.execute(
+            text(
+                "INSERT INTO lessonplan_uploads "
+                "(id, user_id, original_filename, fs_document_id, created_at) "
+                f"VALUES (1, 1, 'old.pdf', '{PATH}', '2026-01-01'), "
+                f"(2, 1, 'lesson.pdf', '{PATH}', '2026-02-01'), "
+                f"(3, 1, NULL, '{PATH}', '2026-03-01'), "
+                f"(4, 1, 'other.pdf', '{PATH2}', '2026-03-01')"
             )
         )
     yield engine
@@ -49,6 +70,14 @@ async def _document_ids(engine):
         return dict(rows.all())
 
 
+async def _titles(engine):
+    async with engine.connect() as conn:
+        rows = await conn.execute(
+            text("SELECT id, title FROM chat_sessions ORDER BY id")
+        )
+        return dict(rows.all())
+
+
 async def test_adds_column_index_and_backfills_path_titles(legacy_engine):
     added = await ensure_chat_sessions_document_id_column(legacy_engine)
 
@@ -57,16 +86,33 @@ async def test_adds_column_index_and_backfills_path_titles(legacy_engine):
         columns, indexes = await conn.run_sync(_schema)
     assert "document_id" in columns
     assert "idx_chat_sessions_document_id" in indexes
-    assert await _document_ids(legacy_engine) == {1: PATH, 2: None}
+    assert await _document_ids(legacy_engine) == {
+        1: PATH,
+        2: None,
+        3: PATH2,
+    }
+    assert await _titles(legacy_engine) == TITLES
 
 
-async def test_second_run_is_idempotent(legacy_engine):
+async def test_second_run_is_idempotent(legacy_engine, caplog):
     await ensure_chat_sessions_document_id_column(legacy_engine)
 
-    added = await ensure_chat_sessions_document_id_column(legacy_engine)
+    caplog.clear()
+    with caplog.at_level(
+        "INFO", logger="app.migrations.chat_sessions_document_id"
+    ):
+        added = await ensure_chat_sessions_document_id_column(legacy_engine)
 
     assert added is False
-    assert await _document_ids(legacy_engine) == {1: PATH, 2: None}
+    # 두 UPDATE 모두 rowcount == 0이면 로그가 남지 않는다
+    assert "백필" not in caplog.text
+    assert "레거시 제목" not in caplog.text
+    assert await _document_ids(legacy_engine) == {
+        1: PATH,
+        2: None,
+        3: PATH2,
+    }
+    assert await _titles(legacy_engine) == TITLES
 
 
 async def test_missing_table_is_skipped():

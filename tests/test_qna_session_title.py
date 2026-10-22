@@ -134,3 +134,9 @@ async def test_legacy_session_is_reused_after_backfill(client, user):
     assert session_id == legacy.id
     assert len(sessions) == 1
     assert sessions[0].document_id == DOC
+    assert sessions[0].title == "업로드한 지도안"
+    response = await client.get("/api/qna/sessions")
+    assert response.status_code == 200, response.text
+    listed = response.json()["sessions"]
+    assert [s["title"] for s in listed] == ["업로드한 지도안"]
+    assert "fileSearchStores/" not in response.text
