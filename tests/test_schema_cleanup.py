@@ -283,3 +283,66 @@ async def test_rebuild_path_preserves_data_and_child_fks():
         assert await drop_users_email_column(eng) is False
     finally:
         await eng.dispose()
+
+
+LEGACY_USERS_DDL = """
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username VARCHAR(255) NOT NULL UNIQUE,
+    nickname VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE,
+    hashed_password VARCHAR(255),
+    is_admin BOOLEAN NOT NULL DEFAULT 0,
+    failed_login_count INTEGER NOT NULL DEFAULT 0,
+    locked_until DATETIME,
+    last_failed_login_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+"""
+
+
+@pytest.mark.asyncio
+async def test_startup_keeps_session_version_after_email_rebuild(monkeypatch):
+    """#169: email 재구성 경로 뒤에도 startup이 session_version을 남긴다."""
+    from sqlalchemy import select
+
+    import app.main as main_mod
+    from app.models.users import User
+
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+    monkeypatch.setattr(main_mod, "engine", eng)
+    monkeypatch.setattr(main_mod.settings, "DEBUG", False)
+    monkeypatch.setattr(
+        main_mod.settings, "CRITERIA_CLOUD_RECONCILE_ENABLED", False
+    )
+    try:
+        async with eng.begin() as conn:
+            await conn.execute(text(LEGACY_USERS_DDL))
+            await conn.execute(
+                text(
+                    "INSERT INTO users (username, nickname, email, "
+                    "hashed_password) "
+                    "VALUES ('olduser', 'Old', 'old@example.com', 'hash')"
+                )
+            )
+
+        for _ in range(2):  # 재실행 멱등
+            await main_mod.startup_event()
+
+            async with eng.begin() as conn:
+                cols = await conn.run_sync(
+                    lambda c: [
+                        col["name"] for col in inspect(c).get_columns("users")
+                    ]
+                )
+            assert "email" not in cols
+            assert "session_version" in cols
+
+            async with async_sessionmaker(eng, class_=AsyncSession)() as s:
+                users = (await s.execute(select(User))).scalars().all()
+            assert [(u.username, u.session_version) for u in users] == [
+                ("olduser", 0)
+            ]
+    finally:
+        await eng.dispose()

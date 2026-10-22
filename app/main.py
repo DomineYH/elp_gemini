@@ -265,9 +265,6 @@ async def startup_event():
             "users 테이블 lockout 컬럼이 자동 복구되었습니다."
         )
 
-    if await ensure_users_session_version_column(engine):
-        logger.info("users.session_version 컬럼 자동 추가")
-
     profiles_dropped = await drop_user_profiles(engine)
     if profiles_dropped:
         logger.info("user_profiles 테이블이 자동 제거되었습니다.")
@@ -275,6 +272,10 @@ async def startup_event():
     email_dropped = await drop_users_email_column(engine)
     if email_dropped:
         logger.info("users.email 컬럼이 자동 제거되었습니다.")
+
+    # email 제거의 테이블 재구성이 session_version을 빠뜨리므로 그 뒤에 보정
+    if await ensure_users_session_version_column(engine):
+        logger.info("users.session_version 컬럼 자동 추가")
 
     uploads_patched = await ensure_lessonplan_uploads_table(engine)
     if uploads_patched:
