@@ -36,7 +36,6 @@ from app.migrations import (
     ensure_users_lockout_columns,
     ensure_users_session_version_column,
     rename_chat_session_in_service_teacher_label,
-    rename_preservice_university_regions,
 )
 from app.rate_limit import limiter
 from app.templating import templates
@@ -286,13 +285,6 @@ async def startup_event():
         logger.info(
             "chat_sessions.user_type '현직교사' → '교사' 갱신: %d 행",
             renamed,
-        )
-
-    region_renamed = await rename_preservice_university_regions(engine)
-    if region_renamed:
-        logger.info(
-            "user_profiles.preservice_university_region 라벨 갱신: %d 행",
-            region_renamed,
         )
 
     # 데이터베이스 초기화 (개발 모드에서만)

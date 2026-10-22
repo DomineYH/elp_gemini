@@ -5,8 +5,3 @@
 # 갱신: GOOGLE_API_KEY=ci-placeholder SECRET_KEY=<32자 이상> \
 #       SESSION_HTTPS_ONLY=false TZ=UTC \
 #       uv run --frozen python scripts/ci_ratchet.py tests --update
-# 정리 후속 이슈: #227
-FAILED tests/test_preservice_region_kyodae_rename.py::test_rename_idempotent
-FAILED tests/test_preservice_region_kyodae_rename.py::test_rename_leaves_unknown_values
-FAILED tests/test_preservice_region_kyodae_rename.py::test_rename_preserves_kornu
-FAILED tests/test_preservice_region_kyodae_rename.py::test_rename_updates_legacy_region
