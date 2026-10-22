@@ -2,7 +2,9 @@
 관리자 사용자 관리 API 테스트
 통계, 세션 목록, 세션 상세 엔드포인트 검증
 """
-from datetime import datetime, timedelta
+import os
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,6 +25,7 @@ from app.models.chat_messages import (
 )
 from app.models.analysis_reports import AnalysisReport
 from app.routers.admin import users as admin_users_router
+from app.utils import timestamps
 from tests.conftest import (
     TestingSessionLocal,
     override_get_db,
@@ -424,6 +427,70 @@ async def test_stats_includes_unprofiled_segment(db_tables):
     assert data["totals"]["qna_count"] == 1
     assert data["totals"]["report_count"] == 1
     assert data["totals"]["today_count"] == 1
+
+
+# KST 2026-10-22 10:00 == UTC 01:00. KST 자정은 UTC 2026-10-21 15:00.
+_FIXED_NOW = datetime(2026, 10, 22, 1, 0, tzinfo=timezone.utc)
+
+
+class _FixedDatetime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        if tz is None:
+            return _FIXED_NOW.astimezone().replace(tzinfo=None)
+        return _FIXED_NOW.astimezone(tz)
+
+
+@pytest.mark.asyncio
+async def test_stats_today_boundary_is_kst_midnight_on_non_utc_server(
+    db_tables, monkeypatch
+):
+    """'오늘'은 서버 TZ와 무관하게 KST 자정(UTC naive로 비교)부터"""
+    monkeypatch.setattr(timestamps, "datetime", _FixedDatetime)
+    async with TestingSessionLocal() as db:
+        user = User(
+            username="tzuser",
+            nickname="tzuser",
+            hashed_password="h",
+            is_admin=False,
+        )
+        db.add(user)
+        await db.flush()
+        # created_at은 UTC naive. KST 자정 ±1분
+        for minute, title in ((14 * 60 + 59, "어제"), (15 * 60 + 1, "오늘")):
+            at = datetime(2026, 10, 21) + timedelta(minutes=minute)
+            db.add(
+                ChatSession(
+                    user_id=user.id,
+                    user_type="1학년",
+                    title=title,
+                    created_at=at,
+                    updated_at=at,
+                )
+            )
+        await db.commit()
+
+    old_tz = os.environ.get("TZ")
+    try:
+        for tz in ("Asia/Seoul", "UTC"):
+            os.environ["TZ"] = tz
+            time.tzset()
+            with TestClient(app) as client:
+                resp = client.get("/admin/api/users/stats")
+            assert resp.status_code == 200
+            data = resp.json()
+            grade1 = next(
+                s for s in data["stats"] if s["user_type"] == "1학년"
+            )
+            assert grade1["session_count"] == 2, tz
+            assert grade1["today_count"] == 1, tz
+            assert data["totals"]["today_count"] == 1, tz
+    finally:
+        if old_tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old_tz
+        time.tzset()
 
 
 @pytest.mark.asyncio
