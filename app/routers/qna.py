@@ -563,5 +563,5 @@ async def chat_with_document(
             )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"대화 처리 중 오류가 발생했습니다: {str(e)}"
+            detail="대화 처리 중 오류가 발생했습니다."
         )
