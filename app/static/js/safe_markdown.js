@@ -85,6 +85,8 @@ const CJK_STRONG_EXTENSION = {
     tokenizer(src) {
         const m = /^\*\*(?![\s*])([^\n]*?[^\s*])\*\*/.exec(src);
         if (!m) return undefined;
+        // An odd backtick count means a code span straddles the closing `**`.
+        if ((m[1].split('`').length - 1) % 2) return undefined;
         return {
             type: 'strong',
             raw: m[0],
