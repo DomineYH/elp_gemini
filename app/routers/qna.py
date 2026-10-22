@@ -499,7 +499,7 @@ async def chat_with_document(
             title = (
                 upload.original_filename
                 if upload and upload.original_filename
-                else document_id.rsplit("/", 1)[-1]
+                else "업로드한 지도안"
             )
             session = await qna_service.create_session(
                 user_id=_model_int(current_user.id),
