@@ -1,0 +1,70 @@
+# CI 테스트 래칫의 기준 실패 목록 (scripts/ci_ratchet.py tests)
+# 목적: 기존 실패는 허용하고 새 실패만 CI에서 막는다.
+# 규칙: 이 목록은 줄어들기만 해야 한다. 테스트를 고쳤으면 해당 줄을 지운다.
+#       새 실패를 여기에 추가해서 CI를 통과시키지 않는다.
+# 갱신: GOOGLE_API_KEY=ci-placeholder SECRET_KEY=<32자 이상> \
+#       SESSION_HTTPS_ONLY=false TZ=UTC \
+#       python scripts/ci_ratchet.py tests --update
+# 정리 후속 이슈: #TBD
+ERROR tests/integration/test_criteria_delete_integration.py
+ERROR tests/integration/test_criteria_full_lifecycle.py
+ERROR tests/integration/test_criteria_pipeline_evaluation.py
+ERROR tests/integration/test_criteria_pipeline_isolation_store.py
+ERROR tests/integration/test_criteria_pipeline_isolation_user.py
+ERROR tests/integration/test_qna_api.py
+ERROR tests/test_dashboard_view.py::test_dashboard_report_links_use_viewer_endpoint
+ERROR tests/test_dashboard_view.py::test_dashboard_view_authenticated
+ERROR tests/test_frontend_flow.py
+ERROR tests/test_lifecycle.py
+ERROR tests/unit/test_criteria_delete.py
+ERROR tests/unit/test_criteria_delete_logic.py
+ERROR tests/unit/test_criteria_embedding_service_cleanup.py
+ERROR tests/unit/test_criteria_embedding_service_edge_cases.py
+ERROR tests/unit/test_criteria_embedding_service_metadata.py
+ERROR tests/unit/test_criteria_embedding_service_polling.py
+ERROR tests/unit/test_criteria_embedding_service_retry.py
+ERROR tests/unit/test_criteria_embedding_service_store.py
+ERROR tests/unit/test_criteria_embedding_service_upload.py
+ERROR tests/unit/test_criteria_repository.py
+ERROR tests/unit/test_criteria_repository_activation.py
+ERROR tests/unit/test_legacy_data_handling.py
+ERROR tests/unit/test_lessonplan_analysis_service.py
+ERROR tests/unit/test_qna_service.py
+ERROR tests/unit/test_qna_service_refactored.py
+FAILED tests/services/test_lessonplan_analysis_tool_order.py::test_rubric_metadata_filter_omitted_when_none
+FAILED tests/services/test_lessonplan_analysis_tool_order.py::test_user_store_tool_precedes_rubric_tool
+FAILED tests/services/test_lessonplan_storage_service.py::test_save_lessonplan_different_content_different_hash
+FAILED tests/services/test_lessonplan_storage_service.py::test_save_lessonplan_returns_file_hash
+FAILED tests/test_analysis_storage_service.py::test_filename_format
+FAILED tests/test_analysis_storage_service.py::test_markdown_header_generation
+FAILED tests/test_analysis_storage_service.py::test_multiple_users
+FAILED tests/test_analysis_storage_service.py::test_save_analysis
+FAILED tests/test_dashboard_upload_creates_upload_row.py::test_dashboard_upload_inserts_lessonplan_upload_row
+FAILED tests/test_lessonplan_analysis_service.py::TestLessonPlanAnalysisService::test_analyze_lesson_plan_no_stores
+FAILED tests/test_lessonplan_analysis_service.py::TestLessonPlanAnalysisService::test_analyze_lesson_plan_timeout
+FAILED tests/test_lessonplan_analysis_service.py::TestLessonPlanAnalysisService::test_get_store_ids_success
+FAILED tests/test_lessonplan_storage_service.py::test_filename_format
+FAILED tests/test_lessonplan_storage_service.py::test_multiple_users
+FAILED tests/test_lessonplan_storage_service.py::test_save_lessonplan
+FAILED tests/test_preservice_region_kyodae_rename.py::test_rename_idempotent
+FAILED tests/test_preservice_region_kyodae_rename.py::test_rename_leaves_unknown_values
+FAILED tests/test_preservice_region_kyodae_rename.py::test_rename_preserves_kornu
+FAILED tests/test_preservice_region_kyodae_rename.py::test_rename_updates_legacy_region
+FAILED tests/test_prompt_loader_service.py::test_get_prompt_exists
+FAILED tests/test_prompt_loader_service.py::test_get_prompt_stats
+FAILED tests/test_prompt_loader_service.py::test_has_prompt
+FAILED tests/test_prompt_loader_service.py::test_list_available_prompts
+FAILED tests/test_prompt_loader_service.py::test_load_prompts
+FAILED tests/test_prompt_loader_service.py::test_malformed_markdown
+FAILED tests/test_prompt_loader_service.py::test_utf8_encoding
+FAILED tests/unit/test_criteria_context_service.py::TestCriteriaContextService::test_get_context_api_error
+FAILED tests/unit/test_criteria_context_service.py::TestCriteriaContextService::test_get_context_no_active
+FAILED tests/unit/test_criteria_context_service.py::TestCriteriaContextService::test_get_context_success
+FAILED tests/unit/test_criteria_context_service.py::TestCriteriaContextService::test_get_context_with_k_limit
+FAILED tests/unit/test_criteria_context_service.py::TestCriteriaContextService::test_init_no_api_key
+FAILED tests/unit/test_criteria_context_service.py::TestCriteriaContextService::test_init_success
+FAILED tests/unit/test_file_search_service.py::TestFileSearchService::test_upload_document_returns_correct_keys
+FAILED tests/unit/test_lessonplan_analysis_integration.py::TestLessonPlanAnalysisIntegration::test_analyze_endpoint_invalid_session
+FAILED tests/unit/test_lessonplan_analysis_integration.py::TestLessonPlanAnalysisIntegration::test_analyze_endpoint_service_error
+FAILED tests/unit/test_lessonplan_analysis_integration.py::TestLessonPlanAnalysisIntegration::test_analyze_endpoint_success
+FAILED tests/unit/test_lessonplan_analysis_integration.py::TestLessonPlanAnalysisIntegration::test_analyze_endpoint_unauthorized

@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # 비밀값이 아니다. 테스트는 Gemini 를 목킹한다.
+      GOOGLE_API_KEY: ci-placeholder
+      SECRET_KEY: ci-placeholder-secret-key-0123456789abcdef
+      # TestClient(http)가 secure 쿠키를 버리지 않게 한다.
+      SESSION_HTTPS_ONLY: "false"
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev --python 3.12
+
+      - name: Emoji check
+        run: uv run --frozen python scripts/check_no_emojis_in_reports.py
+
+      - name: Lint ratchet (ruff/black on changed files)
+        # 새 브랜치 push 는 before 가 전부 0 이라 비교할 base 가 없다.
+        if: >-
+          github.event_name == 'pull_request' ||
+          github.event.before != '0000000000000000000000000000000000000000'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: uv run --frozen python scripts/ci_ratchet.py lint --base "$BASE_SHA"
+
+      - name: Test ratchet
+        run: uv run --frozen python scripts/ci_ratchet.py tests

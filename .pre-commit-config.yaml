@@ -1,0 +1,15 @@
+# 설치: uv tool install pre-commit && pre-commit install
+# 테스트는 넣지 않는다(전체 2~3분). CI 가 맡는다.
+repos:
+  - repo: local
+    hooks:
+      - id: lint-ratchet
+        name: ruff/black ratchet
+        entry: uv run --frozen python scripts/ci_ratchet.py lint --base HEAD
+        language: system
+        types: [python]
+      - id: check-emojis
+        name: emoji check
+        entry: uv run --frozen python scripts/check_no_emojis_in_reports.py
+        language: system
+        pass_filenames: false
