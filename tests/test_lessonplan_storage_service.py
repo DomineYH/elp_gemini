@@ -30,18 +30,18 @@ def service(temp_storage_dir):
 def test_save_lessonplan(service):
     """지도안 저장 테스트"""
     # Given
-    username = "testuser"
+    user_id = 1
     original_filename = "lesson1.pdf"
     file_content = b"test content"
 
     # When
-    result = service.save_lessonplan(username, original_filename, file_content)
+    result = service.save_lessonplan(user_id, original_filename, file_content)
 
     # Then
     assert "file_path" in result
     assert "filename" in result
     assert "timestamp" in result
-    assert result["filename"] == f"{username}_{original_filename}"
+    assert result["filename"] == original_filename
     assert Path(result["file_path"]).exists()
 
 
@@ -163,31 +163,32 @@ def test_get_storage_stats(service):
 def test_filename_format(service):
     """파일명 규칙 검증 테스트"""
     # Given
-    username = "testuser"
+    user_id = 1
     original_filename = "my_lesson.pdf"
     file_content = b"test content"
 
     # When
-    result = service.save_lessonplan(username, original_filename, file_content)
+    result = service.save_lessonplan(user_id, original_filename, file_content)
 
     # Then
-    expected_filename = f"{username}_{original_filename}"
-    assert result["filename"] == expected_filename
+    # 사용자 구분은 디렉터리로 하고 파일명은 원본 그대로
+    assert result["filename"] == original_filename
 
 
 def test_multiple_users(service):
     """여러 사용자 지도안 분리 테스트"""
     # Given
-    users = ["user1", "user2", "user3"]
+    users = [1, 2, 3]
     for user in users:
         service.save_lessonplan(user, "lesson.pdf", b"content")
 
     # When
-    user1_files = service.list_lessonplans("user1")
-    user2_files = service.list_lessonplans("user2")
+    user1_files = service.list_lessonplans(1)
+    user2_files = service.list_lessonplans(2)
 
     # Then
     assert len(user1_files) == 1
     assert len(user2_files) == 1
-    assert user1_files[0]["filename"] == "user1_lesson.pdf"
-    assert user2_files[0]["filename"] == "user2_lesson.pdf"
+    assert user1_files[0]["filename"] == "lesson.pdf"
+    assert user2_files[0]["filename"] == "lesson.pdf"
+    assert user1_files[0]["file_path"] != user2_files[0]["file_path"]

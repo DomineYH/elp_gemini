@@ -2,6 +2,7 @@
 /dashboard/upload 이 LessonPlanUpload 행을 만드는지 검증.
 """
 
+import re
 from io import BytesIO
 from unittest.mock import AsyncMock, patch
 
@@ -112,9 +113,8 @@ async def test_dashboard_upload_inserts_lessonplan_upload_row(client):
         assert row.original_filename == "plan.pdf"
         assert row.file_hash is not None
         assert len(row.file_hash) == 64
-        # filename should contain user + original (timestamped form)
-        assert "plan.pdf" in row.filename
-        assert "alice" in row.filename
+        # filename is "{YYYYMMDDHHMMSS}_{original}"; user is the directory
+        assert re.fullmatch(r"\d{14}_plan\.pdf", row.filename)
 
 
 @pytest.mark.asyncio

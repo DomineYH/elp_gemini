@@ -30,40 +30,38 @@ def service(temp_storage_dir):
 def test_save_analysis(service):
     """분석 결과 저장 테스트"""
     # Given
-    username = "testuser"
+    user_id = 1
     lessonplan_filename = "lesson1.pdf"
     analysis_content = "## 분석 결과\n\n훌륭한 수업입니다."
 
     # When
     result = service.save_analysis(
-        username, lessonplan_filename, analysis_content
+        user_id, lessonplan_filename, analysis_content
     )
 
     # Then
     assert "file_path" in result
     assert "filename" in result
     assert "timestamp" in result
-    assert result["filename"] == f"{username}_lesson1.md"
+    assert result["filename"] == "lesson1.md"
     assert Path(result["file_path"]).exists()
 
 
 def test_markdown_header_generation(service):
     """마크다운 헤더 자동 생성 테스트"""
     # Given
-    username = "testuser"
+    user_id = 1
     lessonplan_filename = "lesson1.pdf"
     analysis_content = "분석 내용"
 
     # When
-    result = service.save_analysis(
-        username, lessonplan_filename, analysis_content
-    )
-    content = service.get_analysis(username, lessonplan_filename)
+    service.save_analysis(user_id, lessonplan_filename, analysis_content)
+    content = service.get_analysis(user_id, lessonplan_filename)
 
     # Then
     assert "# 수업 지도안 분석 결과" in content
     assert "## 메타데이터" in content
-    assert f"**사용자**: {username}" in content
+    assert f"**사용자 ID**: {user_id}" in content
     assert f"**지도안 파일**: {lessonplan_filename}" in content
     assert "**분석 일시**:" in content
 
@@ -186,37 +184,38 @@ def test_get_storage_stats(service):
 def test_filename_format(service):
     """파일명 규칙 검증 테스트"""
     # Given
-    username = "testuser"
+    user_id = 1
     lessonplan_filename = "my_lesson.pdf"
     analysis_content = "분석 내용"
 
     # When
     result = service.save_analysis(
-        username, lessonplan_filename, analysis_content
+        user_id, lessonplan_filename, analysis_content
     )
 
     # Then
-    # PDF 확장자 제거하고 .md 추가
-    expected_filename = f"{username}_my_lesson.md"
+    # PDF 확장자 제거하고 .md 추가 (사용자 구분은 디렉터리로)
+    expected_filename = "my_lesson.md"
     assert result["filename"] == expected_filename
 
 
 def test_multiple_users(service):
     """여러 사용자 분석 결과 분리 테스트"""
     # Given
-    users = ["user1", "user2", "user3"]
+    users = [1, 2, 3]
     for user in users:
         service.save_analysis(user, "lesson.pdf", "분석")
 
     # When
-    user1_files = service.list_analyses("user1")
-    user2_files = service.list_analyses("user2")
+    user1_files = service.list_analyses(1)
+    user2_files = service.list_analyses(2)
 
     # Then
     assert len(user1_files) == 1
     assert len(user2_files) == 1
-    assert user1_files[0]["filename"] == "user1_lesson.md"
-    assert user2_files[0]["filename"] == "user2_lesson.md"
+    assert user1_files[0]["filename"] == "lesson.md"
+    assert user2_files[0]["filename"] == "lesson.md"
+    assert user1_files[0]["file_path"] != user2_files[0]["file_path"]
 
 
 def test_evaluation_type_in_header(service):

@@ -11,7 +11,7 @@ def test_save_lessonplan_returns_file_hash(tmp_path):
     svc = LessonPlanStorageService(base_dir=str(tmp_path))
     content = b"hello world"
     result = svc.save_lessonplan(
-        username="alice",
+        user_id=1,
         original_filename="plan.pdf",
         file_content=content,
     )
@@ -23,12 +23,12 @@ def test_save_lessonplan_returns_file_hash(tmp_path):
 def test_save_lessonplan_different_content_different_hash(tmp_path):
     svc = LessonPlanStorageService(base_dir=str(tmp_path))
     r1 = svc.save_lessonplan(
-        username="alice",
+        user_id=1,
         original_filename="a.pdf",
         file_content=b"aaa",
     )
     r2 = svc.save_lessonplan(
-        username="alice",
+        user_id=1,
         original_filename="b.pdf",
         file_content=b"bbb",
     )
