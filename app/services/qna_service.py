@@ -22,8 +22,22 @@ from app.repositories.app_state_repository import (
 )
 from app.services.prompt_loader_service import PromptLoaderService
 from app.services.file_search_service import FileSearchService
+from app.services.lessonplan_analysis_service import (
+    _LESSONPLAN_RETRIEVE_QUERY,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _chunk_titles(citations: Any) -> list:
+    """로그용: citations의 grounding_chunks 출처 제목 목록."""
+    if not isinstance(citations, dict):
+        return []
+    return [
+        (chunk.get("retrieved_context") or {}).get("title")
+        for chunk in citations.get("grounding_chunks") or []
+        if isinstance(chunk, dict)
+    ]
 
 
 async def _mark_criteria_filter_needs_resync(
@@ -319,22 +333,59 @@ class QnAService:
             if metadata_filter and not is_evaluation:
                 user_file_search_config["metadata_filter"] = metadata_filter
 
-            file_search_tools = [
-                types.Tool(
-                    file_search=types.FileSearch(
-                        **user_file_search_config
-                    )
-                )
-            ]
+            user_tool = types.Tool(
+                file_search=types.FileSearch(**user_file_search_config)
+            )
+            file_search_tools = [user_tool]
+            # 평가성 질문은 분석 경로(#118)처럼 2-패스: 이중 도구는 모델이
+            # rubric만 검색해 지도안 청크를 놓친다 (#199)
+            lesson_text, pass1_citations = "", None
             if is_evaluation and active_rubric_filter and rubric_store_id:
-                file_search_tools.append(
-                    types.Tool(
-                        file_search=types.FileSearch(
-                            file_search_store_names=[rubric_store_id],
-                            metadata_filter=active_rubric_filter,
-                        )
+                rubric_tool = types.Tool(
+                    file_search=types.FileSearch(
+                        file_search_store_names=[rubric_store_id],
+                        metadata_filter=active_rubric_filter,
                     )
                 )
+                try:
+                    pass1 = self.client.models.generate_content(
+                        model=self.qna_model_name,
+                        contents=_LESSONPLAN_RETRIEVE_QUERY,
+                        config=types.GenerateContentConfig(
+                            tools=[user_tool],
+                            temperature=0.2,
+                        ),
+                    )
+                    lesson_text = (pass1.text or "").strip()
+                    if (
+                        pass1.candidates
+                        and pass1.candidates[0].grounding_metadata
+                    ):
+                        pass1_citations = self._extract_citations(
+                            pass1.candidates[0].grounding_metadata
+                        )
+                    logger.info(
+                        "QnA 1패스 지도안 원문 %d자: %.300s",
+                        len(lesson_text),
+                        lesson_text,
+                    )
+                    logger.info(
+                        "QnA 1패스 grounding titles: %s",
+                        _chunk_titles(pass1_citations),
+                    )
+                except Exception:
+                    logger.warning(
+                        "QnA 1패스 실패, 이중 도구로 폴백", exc_info=True
+                    )
+                if lesson_text:
+                    contents += (
+                        "\n\n**질의 대상 수업 지도안 원문 "
+                        "(답변 근거는 반드시 여기서 찾으세요):**"
+                        f"\n---\n{lesson_text}\n---"
+                    )
+                    file_search_tools = [rubric_tool]
+                else:
+                    file_search_tools.append(rubric_tool)
 
             response = self.client.models.generate_content(
                 model=self.qna_model_name,
@@ -361,6 +412,20 @@ class QnAService:
                 )
                 citations = self._extract_citations(grounding)
 
+            if pass1_citations is not None:
+                logger.info(
+                    "QnA 2패스 grounding titles: %s",
+                    _chunk_titles(citations),
+                )
+            # 1패스 청크는 뒤에 붙인다: 앞에 넣으면 grounding_supports
+            # 의 chunk 인덱스가 어긋난다
+            pass1_chunks = (pass1_citations or {}).get("grounding_chunks")
+            if pass1_chunks:
+                citations = citations if isinstance(citations, dict) else {}
+                chunks = list(citations.get("grounding_chunks") or [])
+                citations["grounding_chunks"] = chunks + pass1_chunks
+
+            if citations:
                 if (
                     isinstance(citations, dict)
                     and 'grounding_chunks' in citations
