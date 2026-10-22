@@ -55,7 +55,7 @@ def test_detail_hides_alias_line_when_null():
 
 
 def test_detail_shows_real_metadata_and_hides_missing_file_fields():
-    """클라우드 동기화 행: 빈 파일 경로·0 bytes·없는 MIME/Vector Store 칸 숨김."""
+    """클라우드 동기화 행: 빈 파일 경로·0 bytes·없는 MIME/Vector Store 숨김."""
     text = _render(_criteria(display_alias=None))
 
     assert "01HSTABLE001" in text
