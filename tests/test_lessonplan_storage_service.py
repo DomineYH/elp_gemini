@@ -1,11 +1,13 @@
 """
 LessonPlanStorageService 단위 테스트
 """
-import os
-import pytest
-import tempfile
+
 import shutil
+import tempfile
 from pathlib import Path
+
+import pytest
+
 from app.services.lessonplan_storage_service import (
     LessonPlanStorageService,
 )
@@ -33,9 +35,7 @@ def test_save_lessonplan(service):
     file_content = b"test content"
 
     # When
-    result = service.save_lessonplan(
-        username, original_filename, file_content
-    )
+    result = service.save_lessonplan(username, original_filename, file_content)
 
     # Then
     assert "file_path" in result
@@ -51,14 +51,10 @@ def test_get_lessonplan_path_exists(service):
     username = "testuser"
     original_filename = "lesson1.pdf"
     file_content = b"test content"
-    service.save_lessonplan(
-        username, original_filename, file_content
-    )
+    service.save_lessonplan(username, original_filename, file_content)
 
     # When
-    path = service.get_lessonplan_path(
-        username, original_filename
-    )
+    path = service.get_lessonplan_path(username, original_filename)
 
     # Then
     assert path is not None
@@ -72,9 +68,7 @@ def test_get_lessonplan_path_not_exists(service):
     original_filename = "nonexistent.pdf"
 
     # When
-    path = service.get_lessonplan_path(
-        username, original_filename
-    )
+    path = service.get_lessonplan_path(username, original_filename)
 
     # Then
     assert path is None
@@ -122,21 +116,14 @@ def test_delete_lessonplan_exists(service):
     username = "testuser"
     original_filename = "lesson1.pdf"
     file_content = b"test content"
-    service.save_lessonplan(
-        username, original_filename, file_content
-    )
+    service.save_lessonplan(username, original_filename, file_content)
 
     # When
-    result = service.delete_lessonplan(
-        username, original_filename
-    )
+    result = service.delete_lessonplan(username, original_filename)
 
     # Then
     assert result is True
-    assert (
-        service.get_lessonplan_path(username, original_filename)
-        is None
-    )
+    assert service.get_lessonplan_path(username, original_filename) is None
 
 
 def test_delete_lessonplan_not_exists(service):
@@ -146,9 +133,7 @@ def test_delete_lessonplan_not_exists(service):
     original_filename = "nonexistent.pdf"
 
     # When
-    result = service.delete_lessonplan(
-        username, original_filename
-    )
+    result = service.delete_lessonplan(username, original_filename)
 
     # Then
     assert result is False
@@ -183,9 +168,7 @@ def test_filename_format(service):
     file_content = b"test content"
 
     # When
-    result = service.save_lessonplan(
-        username, original_filename, file_content
-    )
+    result = service.save_lessonplan(username, original_filename, file_content)
 
     # Then
     expected_filename = f"{username}_{original_filename}"

@@ -1,4 +1,5 @@
 """lessonplan_analysis 라우터의 503 MODEL_OVERLOADED 분기 테스트 (#120)"""
+
 from unittest.mock import AsyncMock, patch
 
 import pytest

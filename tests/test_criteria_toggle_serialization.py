@@ -11,6 +11,7 @@
 본 모듈은 동시 호출 시 alias_svc.replace 가 결코 동시에 두 번 진행 중이지
 않음을 검증한다.
 """
+
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -102,19 +103,21 @@ async def test_concurrent_toggle_same_stable_id_is_serialized():
     stable_id = "01HTOGGLE"
     probe = _ConcurrencyProbe()
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as repo_cls:
+    with (
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+    ):
         vector_cls.return_value.file_search_service.client = MagicMock()
         alias = alias_cls.return_value
-        alias.fetch = AsyncMock(return_value=(
-            "fileSearchStores/s/documents/alias-map-old",
-            _alias_map_with([stable_id]),
-        ))
+        alias.fetch = AsyncMock(
+            return_value=(
+                "fileSearchStores/s/documents/alias-map-old",
+                _alias_map_with([stable_id]),
+            )
+        )
         alias.replace = probe
 
         repo = repo_cls.return_value
@@ -141,9 +144,9 @@ async def test_concurrent_toggle_same_stable_id_is_serialized():
         )
 
     assert len(results) == 2
-    assert probe.calls == 2, (
-        "두 mutation 모두 alias_svc.replace 를 호출해야 한다"
-    )
+    assert (
+        probe.calls == 2
+    ), "두 mutation 모두 alias_svc.replace 를 호출해야 한다"
     assert probe.max_in_progress == 1, (
         "alias_svc.replace 가 동시에 두 번 진행 중이면 안 된다 "
         "(asyncio.Lock 직렬화 실패)"
@@ -160,19 +163,21 @@ async def test_concurrent_toggle_different_stable_ids_is_serialized():
     sid_b = "01HTOGGLEB"
     probe = _ConcurrencyProbe()
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as repo_cls:
+    with (
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+    ):
         vector_cls.return_value.file_search_service.client = MagicMock()
         alias = alias_cls.return_value
-        alias.fetch = AsyncMock(return_value=(
-            "fileSearchStores/s/documents/alias-map-old",
-            _alias_map_with([sid_a, sid_b]),
-        ))
+        alias.fetch = AsyncMock(
+            return_value=(
+                "fileSearchStores/s/documents/alias-map-old",
+                _alias_map_with([sid_a, sid_b]),
+            )
+        )
         alias.replace = probe
 
         repo = repo_cls.return_value
@@ -209,24 +214,26 @@ async def test_toggle_lock_is_released_after_exception():
     stable_id = "01HTOGGLE"
     probe = _ConcurrencyProbe()
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as repo_cls, patch(
-        "app.routers.admin.criteria.AppStateRepository"
-    ) as state_cls, patch(
-        "app.routers.admin.criteria._recover_status_mutation_from_cloud",
-        new=AsyncMock(return_value=False),
+    with (
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as state_cls,
+        patch(
+            "app.routers.admin.criteria._recover_status_mutation_from_cloud",
+            new=AsyncMock(return_value=False),
+        ),
     ):
         vector_cls.return_value.file_search_service.client = MagicMock()
         alias = alias_cls.return_value
-        alias.fetch = AsyncMock(return_value=(
-            "fileSearchStores/s/documents/alias-map-old",
-            _alias_map_with([stable_id]),
-        ))
+        alias.fetch = AsyncMock(
+            return_value=(
+                "fileSearchStores/s/documents/alias-map-old",
+                _alias_map_with([stable_id]),
+            )
+        )
         # 첫 호출은 실패, 두 번째 호출은 probe 를 경유 (정상 진행)
         call_count = {"n": 0}
 
@@ -251,6 +258,7 @@ async def test_toggle_lock_is_released_after_exception():
 
         # 첫 호출: 500 예상
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             await activate_by_stable_id(
                 stable_id=stable_id,
@@ -268,9 +276,9 @@ async def test_toggle_lock_is_released_after_exception():
             db=db,
         )
         assert result["status"] == "uploaded"
-        assert probe.calls == 1, (
-            "두 번째 호출이 실제로 probe 를 경유해야 락이 풀린 것이 검증된다"
-        )
+        assert (
+            probe.calls == 1
+        ), "두 번째 호출이 실제로 probe 를 경유해야 락이 풀린 것이 검증된다"
 
 
 @pytest.mark.asyncio
@@ -286,19 +294,21 @@ async def test_alias_patch_serialized_with_toggle():
     class _AliasPatchBody:
         alias = "새이름"
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as repo_cls:
+    with (
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+    ):
         vector_cls.return_value.file_search_service.client = MagicMock()
         alias = alias_cls.return_value
-        alias.fetch = AsyncMock(return_value=(
-            "fileSearchStores/s/documents/alias-map-old",
-            _alias_map_with([stable_id]),
-        ))
+        alias.fetch = AsyncMock(
+            return_value=(
+                "fileSearchStores/s/documents/alias-map-old",
+                _alias_map_with([stable_id]),
+            )
+        )
         alias.replace = probe
 
         repo = repo_cls.return_value
@@ -328,9 +338,9 @@ async def test_alias_patch_serialized_with_toggle():
 
     assert len(results) == 2
     assert probe.calls == 2
-    assert probe.max_in_progress == 1, (
-        "alias 편집과 토글 사이에도 alias_svc.replace 는 직렬화되어야 한다"
-    )
+    assert (
+        probe.max_in_progress == 1
+    ), "alias 편집과 토글 사이에도 alias_svc.replace 는 직렬화되어야 한다"
 
 
 @pytest.mark.asyncio
@@ -365,17 +375,17 @@ async def test_reconcile_serialized_with_toggle():
         },
     ]
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as router_alias_cls, patch(
-        "app.services.criteria_alias_map_service.CriteriaAliasMapService"
-    ) as service_alias_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as repo_cls, patch(
-        "app.routers.admin.criteria.AppStateRepository"
-    ) as state_cls:
+    with (
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as router_alias_cls,
+        patch(
+            "app.services.criteria_alias_map_service.CriteriaAliasMapService"
+        ) as service_alias_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as state_cls,
+    ):
         vector = vector_cls.return_value
         vector.file_search_service.client = MagicMock()
         vector.list_criteria_documents = AsyncMock(return_value=docs)
@@ -383,10 +393,12 @@ async def test_reconcile_serialized_with_toggle():
         alias = MagicMock()
         router_alias_cls.return_value = alias
         service_alias_cls.return_value = alias
-        alias.fetch = AsyncMock(return_value=(
-            "fileSearchStores/s/documents/alias-map-old",
-            alias_map,
-        ))
+        alias.fetch = AsyncMock(
+            return_value=(
+                "fileSearchStores/s/documents/alias-map-old",
+                alias_map,
+            )
+        )
         alias.replace = probe
 
         repo = repo_cls.return_value
@@ -436,6 +448,5 @@ async def test_reconcile_serialized_with_toggle():
     assert len(results) == 2
     assert probe.calls == 2
     assert probe.max_in_progress == 1, (
-        "reconcile 과 toggle 사이에도 alias_svc.replace 는 "
-        "직렬화되어야 한다"
+        "reconcile 과 toggle 사이에도 alias_svc.replace 는 " "직렬화되어야 한다"
     )

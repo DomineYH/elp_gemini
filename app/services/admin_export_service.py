@@ -1,4 +1,5 @@
 """관리자 일괄 내보내기 — 비동기 수집 + CSV/README 빌더."""
+
 from __future__ import annotations
 
 import csv
@@ -99,9 +100,7 @@ class ExportPlan:
     reports: list[ReportEntry] = field(default_factory=list)
     sessions: list[SessionEntry] = field(default_factory=list)
     lessonplans: list[LessonplanEntry] = field(default_factory=list)
-    session_messages: dict[int, list[ChatMessage]] = field(
-        default_factory=dict
-    )
+    session_messages: dict[int, list[ChatMessage]] = field(default_factory=dict)
     simulations: list[SimulationEntry] = field(default_factory=list)
     simulation_utterances: dict[int, list[SimulationUtterance]] = field(
         default_factory=dict
@@ -128,9 +127,7 @@ class AdminExportService:
         user_ids = [u.user_id for u in users]
         ctx_by_id = {u.user_id: u for u in users}
 
-        reports = await self._collect_reports(
-            user_ids, ctx_by_id, filters
-        )
+        reports = await self._collect_reports(user_ids, ctx_by_id, filters)
         sessions, messages = await self._collect_sessions(
             user_ids, ctx_by_id, filters
         )
@@ -153,13 +150,9 @@ class AdminExportService:
 
     # -------- internal --------
 
-    async def _collect_users(
-        self, filters: ExportFilters
-    ) -> list[UserContext]:
+    async def _collect_users(self, filters: ExportFilters) -> list[UserContext]:
         stmt = (
-            select(User)
-            .where(User.is_admin.is_(False))
-            .order_by(User.id.asc())
+            select(User).where(User.is_admin.is_(False)).order_by(User.id.asc())
         )
         if filters.user_ids:
             stmt = stmt.where(User.id.in_(filters.user_ids))
@@ -204,9 +197,7 @@ class AdminExportService:
                 f"{ctx.filename_prefix}__report_{r.id}__"
                 f"{slugify_original_name(_strip_ext(original))}.md"
             )
-            report_status = (
-                "OK" if os.path.exists(r.report_path) else "MISSING"
-            )
+            report_status = "OK" if os.path.exists(r.report_path) else "MISSING"
             reports.append(
                 ReportEntry(
                     kind="report",
@@ -413,12 +404,8 @@ class AdminExportService:
         msgs: dict[int, list[ChatMessage]] = {}
         for s in rows:
             ctx = ctx_by_id[s.user_id]
-            fname = (
-                f"{ctx.filename_prefix}__session_{s.id}.jsonl"
-            )
-            sorted_msgs = sorted(
-                s.messages, key=lambda m: (m.created_at, m.id)
-            )
+            fname = f"{ctx.filename_prefix}__session_{s.id}.jsonl"
+            sorted_msgs = sorted(s.messages, key=lambda m: (m.created_at, m.id))
             sessions.append(
                 SessionEntry(
                     kind="conversation",
@@ -589,7 +576,6 @@ class _ChunkBuffer:
         return chunk
 
 
-
 def _read_file_or_missing(path: str) -> tuple[bytes, str]:
     try:
         with open(path, "rb") as f:
@@ -606,21 +592,27 @@ def _digest(data: bytes, sha: str | None = None) -> tuple[int, str]:
     return len(data), "" if sha == "MISSING" else sha
 
 
-def _serialize_session_jsonl(
-    session_entry, messages
-) -> bytes:
+def _serialize_session_jsonl(session_entry, messages) -> bytes:
     lines = []
     for m in messages:
-        lines.append(json.dumps({
-            "session_id": session_entry.session_id,
-            "message_id": m.id,
-            "role": m.role.value if hasattr(m.role, "value")
-                    else str(m.role),
-            "content": m.content,
-            "created_at": (
-                m.created_at.isoformat() if m.created_at else None
-            ),
-        }, ensure_ascii=False))
+        lines.append(
+            json.dumps(
+                {
+                    "session_id": session_entry.session_id,
+                    "message_id": m.id,
+                    "role": (
+                        m.role.value
+                        if hasattr(m.role, "value")
+                        else str(m.role)
+                    ),
+                    "content": m.content,
+                    "created_at": (
+                        m.created_at.isoformat() if m.created_at else None
+                    ),
+                },
+                ensure_ascii=False,
+            )
+        )
     return ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
 
 
@@ -710,20 +702,22 @@ def build_manifest_csv(
     )
     for e in iter_entries:
         size, sha = digests.get(e.archive_path, ("", ""))
-        w.writerow({
-            "kind": e.kind,
-            "user_id": e.user_id,
-            "resource_id": e.resource_id,
-            "session_id": e.session_id or "",
-            "created_at": (
-                e.created_at.isoformat() if e.created_at else ""
-            ),
-            "original_name": _csv_safe(getattr(e, "original_name", "")),
-            "archive_path": e.archive_path,
-            "source_status": getattr(e, "source_status", "OK"),
-            "byte_size": size,
-            "sha256": sha,
-        })
+        w.writerow(
+            {
+                "kind": e.kind,
+                "user_id": e.user_id,
+                "resource_id": e.resource_id,
+                "session_id": e.session_id or "",
+                "created_at": (
+                    e.created_at.isoformat() if e.created_at else ""
+                ),
+                "original_name": _csv_safe(getattr(e, "original_name", "")),
+                "archive_path": e.archive_path,
+                "source_status": getattr(e, "source_status", "OK"),
+                "byte_size": size,
+                "sha256": sha,
+            }
+        )
     return buf.getvalue().encode("utf-8")
 
 
@@ -742,19 +736,20 @@ def build_users_csv(plan: ExportPlan) -> bytes:
     w = csv.DictWriter(buf, fieldnames=_USERS_COLUMNS)
     w.writeheader()
     for u in plan.users:
-        w.writerow({
-            "user_id": u.user_id,
-            "created_at": (
-                u.created_at.isoformat() if u.created_at else ""
-            ),
-            "last_login_at": (
-                u.last_login_at.isoformat()
-                if u.last_login_at else ""
-            ),
-            "n_reports": counts[u.user_id]["r"],
-            "n_sessions": counts[u.user_id]["s"],
-            "n_lessonplans": counts[u.user_id]["l"],
-        })
+        w.writerow(
+            {
+                "user_id": u.user_id,
+                "created_at": (
+                    u.created_at.isoformat() if u.created_at else ""
+                ),
+                "last_login_at": (
+                    u.last_login_at.isoformat() if u.last_login_at else ""
+                ),
+                "n_reports": counts[u.user_id]["r"],
+                "n_sessions": counts[u.user_id]["s"],
+                "n_lessonplans": counts[u.user_id]["l"],
+            }
+        )
     return buf.getvalue().encode("utf-8")
 
 
@@ -786,7 +781,6 @@ def build_readme(plan: ExportPlan) -> bytes:
         "  lessonplans/      원본 수업 지도안",
         "",
         "파일명 규칙:",
-        "  u{user_id}__{resource_kind}_{resource_id}"
-        "__{original_name}.{ext}",
+        "  u{user_id}__{resource_kind}_{resource_id}" "__{original_name}.{ext}",
     ]
     return ("\n".join(lines) + "\n").encode("utf-8")

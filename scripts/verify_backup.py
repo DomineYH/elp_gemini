@@ -6,8 +6,8 @@ DB 백업 무결성 검증 스크립트
 """
 import sqlite3
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 
 def verify_backup(backup_path: str) -> bool:
@@ -29,9 +29,11 @@ def verify_backup(backup_path: str) -> bool:
 
     print(f"✅ 백업 파일 존재 확인: {backup_file.name}")
     print(f"   크기: {backup_file.stat().st_size:,} bytes")
-    print(f"   생성일: {datetime.fromtimestamp(
+    print(
+        f"   생성일: {datetime.fromtimestamp(
         backup_file.stat().st_ctime
-    ).strftime('%Y-%m-%d %H:%M:%S')}")
+    ).strftime('%Y-%m-%d %H:%M:%S')}"
+    )
     print()
 
     try:
@@ -52,11 +54,13 @@ def verify_backup(backup_path: str) -> bool:
 
         # 3. 테이블 목록 및 레코드 수 확인
         print("📊 테이블 정보:")
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT name FROM sqlite_master
             WHERE type='table' AND name NOT LIKE 'sqlite_%'
             ORDER BY name
-        """)
+        """
+        )
         tables = cursor.fetchall()
 
         total_records = 0
@@ -90,8 +94,10 @@ def main():
     """메인 실행 함수"""
     if len(sys.argv) < 2:
         print("사용법: python verify_backup.py <백업_파일_경로>")
-        print("예시: python verify_backup.py "
-              "backup/db_backup_20251121_232324.db")
+        print(
+            "예시: python verify_backup.py "
+            "backup/db_backup_20251121_232324.db"
+        )
         sys.exit(1)
 
     backup_path = sys.argv[1]

@@ -2,14 +2,16 @@
 데이터베이스 연결 및 초기화
 SQLite with WAL mode, SQLAlchemy async support
 """
+
 from typing import AsyncGenerator
+
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
-    create_async_engine,
     async_sessionmaker,
+    create_async_engine,
 )
 from sqlalchemy.orm import declarative_base
-from sqlalchemy import event
 from sqlalchemy.pool import NullPool
 
 from app.config import settings
@@ -73,13 +75,12 @@ async def seed_initial_data():
     초기 데이터 시드
     - 기본 관리자 계정
     """
-    from app.models.users import User
     from passlib.context import CryptContext
     from sqlalchemy import select
 
-    pwd_context = CryptContext(
-        schemes=["bcrypt"], deprecated="auto"
-    )
+    from app.models.users import User
+
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
     async with async_session_maker() as session:
         try:
@@ -94,9 +95,7 @@ async def seed_initial_data():
                 admin = User(
                     username="admin",
                     nickname="admin",
-                    hashed_password=pwd_context.hash(
-                        "admin1234"
-                    ),
+                    hashed_password=pwd_context.hash("admin1234"),
                     is_admin=True,
                 )
                 session.add(admin)

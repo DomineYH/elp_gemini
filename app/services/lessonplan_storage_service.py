@@ -2,6 +2,7 @@
 지도안 파일 로컬 저장 서비스
 data/lessonplan/{user_id}/ 디렉토리에 사용자별 지도안 파일 관리
 """
+
 import hashlib
 import logging
 from datetime import datetime
@@ -121,9 +122,7 @@ class LessonPlanStorageService:
             if not user_dir.is_dir():
                 return []
 
-            files = [
-                f for f in user_dir.iterdir() if f.is_file()
-            ]
+            files = [f for f in user_dir.iterdir() if f.is_file()]
 
             lessonplans = []
             for file_path in files:
@@ -142,17 +141,14 @@ class LessonPlanStorageService:
                 )
 
             logger.info(
-                f"지도안 목록 조회: user_id={user_id}, "
-                f"{len(lessonplans)}개"
+                f"지도안 목록 조회: user_id={user_id}, " f"{len(lessonplans)}개"
             )
             return lessonplans
         except Exception as e:
             logger.error(f"지도안 목록 조회 실패: {str(e)}")
             raise
 
-    def delete_lessonplan(
-        self, user_id: int, original_filename: str
-    ) -> bool:
+    def delete_lessonplan(self, user_id: int, original_filename: str) -> bool:
         """
         지도안 파일 삭제
 
@@ -164,7 +160,9 @@ class LessonPlanStorageService:
             삭제 성공 여부
         """
         try:
-            file_path = self.base_dir / str(user_id) / Path(original_filename).name
+            file_path = (
+                self.base_dir / str(user_id) / Path(original_filename).name
+            )
 
             if not file_path.exists():
                 logger.warning(
@@ -175,8 +173,7 @@ class LessonPlanStorageService:
 
             file_path.unlink()
             logger.info(
-                f"지도안 삭제 완료: user_id={user_id}, "
-                f"{original_filename}"
+                f"지도안 삭제 완료: user_id={user_id}, " f"{original_filename}"
             )
             return True
         except Exception as e:
@@ -193,11 +190,7 @@ class LessonPlanStorageService:
             - total_size: 전체 크기 (bytes)
         """
         try:
-            files = [
-                f
-                for f in self.base_dir.rglob("*")
-                if f.is_file()
-            ]
+            files = [f for f in self.base_dir.rglob("*") if f.is_file()]
             total_size = sum(f.stat().st_size for f in files)
 
             return {

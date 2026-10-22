@@ -2,6 +2,7 @@
 FastAPI 애플리케이션 메인 엔트리포인트
 미들웨어, 라우터, 예외 핸들러 설정
 """
+
 import asyncio
 import logging
 
@@ -56,9 +57,7 @@ app = FastAPI(
 
 # Rate limiter (Issue #5: 관리자 로그인 brute-force 방어)
 app.state.limiter = limiter
-app.add_exception_handler(
-    RateLimitExceeded, _rate_limit_exceeded_handler
-)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS 미들웨어 (T013)
 # 역순 실행: 나중에 추가한 것이 먼저 실행됨
@@ -82,9 +81,7 @@ app.add_middleware(
     session_cookie=settings.SESSION_COOKIE_NAME,
     max_age=settings.SESSION_MAX_AGE,
     same_site=settings.SESSION_SAME_SITE,
-    https_only=(
-        settings.SESSION_HTTPS_ONLY and not settings.DEBUG
-    ),
+    https_only=(settings.SESSION_HTTPS_ONLY and not settings.DEBUG),
 )
 
 # 정적 파일 및 템플릿 설정 (T016)
@@ -94,17 +91,16 @@ app.mount(
     StaticFiles(directory="app/static/js"),
     name="static",
 )
+
+
 # Note: /files 정적 마운트 제거 (보안 강화)
 # 파일 다운로드는 /docs/{document_id}/download 엔드포인트 사용
 # 커스텀 예외 핸들러 (T015)
 @app.exception_handler(HTTPException)
-async def http_exception_handler(
-    request: Request, exc: HTTPException
-):
+async def http_exception_handler(request: Request, exc: HTTPException):
     """HTTP 예외 핸들러"""
     logger.warning(
-        f"HTTP {exc.status_code}: {exc.detail} - "
-        f"Path: {request.url.path}"
+        f"HTTP {exc.status_code}: {exc.detail} - " f"Path: {request.url.path}"
     )
 
     # HTML 요청 여부 확인
@@ -138,13 +134,10 @@ async def http_exception_handler(
 
 
 @app.exception_handler(Exception)
-async def general_exception_handler(
-    request: Request, exc: Exception
-):
+async def general_exception_handler(request: Request, exc: Exception):
     """일반 예외 핸들러"""
     logger.error(
-        f"처리되지 않은 예외: {str(exc)} - "
-        f"Path: {request.url.path}",
+        f"처리되지 않은 예외: {str(exc)} - " f"Path: {request.url.path}",
         exc_info=True,
     )
 
@@ -225,7 +218,10 @@ async def _run_criteria_reconcile_in_background():
                 await db.commit()
                 logger.info(
                     "startup reconcile 결과: ok=%s skipped=%s count=%d err=%s",
-                    result.ok, result.skipped, result.count, result.error,
+                    result.ok,
+                    result.skipped,
+                    result.count,
+                    result.error,
                 )
         except Exception:
             logger.exception("startup reconcile 실패")
@@ -246,15 +242,11 @@ async def startup_event():
 
     alias_patched = await ensure_criteria_display_alias_column(engine)
     if alias_patched:
-        logger.info(
-            "criteria.display_alias 컬럼이 자동 추가되었습니다."
-        )
+        logger.info("criteria.display_alias 컬럼이 자동 추가되었습니다.")
 
     stable_id_patched = await ensure_criteria_stable_id_column(engine)
     if stable_id_patched:
-        logger.info(
-            "criteria.stable_id 컬럼이 자동 추가되었습니다."
-        )
+        logger.info("criteria.stable_id 컬럼이 자동 추가되었습니다.")
 
     created = await ensure_app_state_table(engine)
     if created:
@@ -262,9 +254,7 @@ async def startup_event():
 
     lockout_patched = await ensure_users_lockout_columns(engine)
     if lockout_patched:
-        logger.info(
-            "users 테이블 lockout 컬럼이 자동 복구되었습니다."
-        )
+        logger.info("users 테이블 lockout 컬럼이 자동 복구되었습니다.")
 
     profiles_dropped = await drop_user_profiles(engine)
     if profiles_dropped:
@@ -280,9 +270,7 @@ async def startup_event():
 
     uploads_patched = await ensure_lessonplan_uploads_table(engine)
     if uploads_patched:
-        logger.info(
-            "lessonplan_uploads / analysis_reports.upload_id 자동 적용"
-        )
+        logger.info("lessonplan_uploads / analysis_reports.upload_id 자동 적용")
 
     if await ensure_lessonplan_uploads_fs_id_columns(engine):
         logger.info("lessonplan_uploads.fs_document_id/fs_store_id 자동 추가")
@@ -366,14 +354,10 @@ async def root(request: Request):
         # 로그인한 경우 - 역할에 따라 리다이렉트
         if is_admin:
             # 관리자 → 관리자 대시보드
-            return RedirectResponse(
-                url="/admin/dashboard", status_code=302
-            )
+            return RedirectResponse(url="/admin/dashboard", status_code=302)
         else:
             # 일반 사용자 → 사용자 대시보드
-            return RedirectResponse(
-                url="/dashboard", status_code=302
-            )
+            return RedirectResponse(url="/dashboard", status_code=302)
     else:
         # 미인증 → 로그인 페이지
         return RedirectResponse(url="/login", status_code=302)

@@ -1,6 +1,7 @@
 """
 레거시 초대 코드 테이블 제거 마이그레이션 도우미
 """
+
 from __future__ import annotations
 
 import logging
@@ -53,9 +54,7 @@ async def drop_invite_codes_table(engine: AsyncEngine) -> bool:
                 "invite_codes 테이블 row count 확인 없이 삭제를 진행"
             )
         else:
-            logger.info(
-                "invite_codes 테이블 삭제 진행: rows=%s", row_count
-            )
+            logger.info("invite_codes 테이블 삭제 진행: rows=%s", row_count)
 
         await conn.execute(text("DROP TABLE IF EXISTS invite_codes"))
         logger.info("invite_codes 테이블 제거 완료")

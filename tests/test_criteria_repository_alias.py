@@ -95,11 +95,13 @@ async def test_get_criteria_map_by_document_ids():
     )
     repo = CriteriaRepository(_Db(rows=[c1, c2]))
 
-    mapping = await repo.get_criteria_map_by_document_ids([
-        "doc-aaa",
-        "doc-bbb",
-        "doc-missing",
-    ])
+    mapping = await repo.get_criteria_map_by_document_ids(
+        [
+            "doc-aaa",
+            "doc-bbb",
+            "doc-missing",
+        ]
+    )
 
     assert mapping["doc-aaa"] is c1
     assert mapping["doc-aaa"].display_alias is None

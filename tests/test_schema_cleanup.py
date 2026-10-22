@@ -47,7 +47,9 @@ async def test_drop_user_profiles_migration():
     try:
         # Create the table first so we can verify it gets dropped
         async with eng.begin() as conn:
-            await conn.execute(text("""
+            await conn.execute(
+                text(
+                    """
                 CREATE TABLE user_profiles (
                     id INTEGER PRIMARY KEY,
                     user_id INTEGER NOT NULL,
@@ -55,7 +57,9 @@ async def test_drop_user_profiles_migration():
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """))
+            """
+                )
+            )
 
         dropped = await drop_user_profiles(eng)
         assert dropped is True
@@ -85,7 +89,9 @@ async def test_drop_users_email_column_migration():
     try:
         # Create a users table WITH an email column + index
         async with eng.begin() as conn:
-            await conn.execute(text("""
+            await conn.execute(
+                text(
+                    """
                 CREATE TABLE users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username VARCHAR(255) NOT NULL UNIQUE,
@@ -99,10 +105,12 @@ async def test_drop_users_email_column_migration():
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """))
-            await conn.execute(text(
-                "CREATE INDEX ix_users_email ON users (email)"
-            ))
+            """
+                )
+            )
+            await conn.execute(
+                text("CREATE INDEX ix_users_email ON users (email)")
+            )
 
         dropped = await drop_users_email_column(eng)
         assert dropped is True
@@ -166,7 +174,9 @@ async def test_rebuild_path_preserves_data_and_child_fks():
     try:
         # --- Set up production-like schema with indexes & data ---
         async with eng.begin() as conn:
-            await conn.execute(text("""
+            await conn.execute(
+                text(
+                    """
                 CREATE TABLE users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username VARCHAR(255) NOT NULL UNIQUE,
@@ -180,26 +190,32 @@ async def test_rebuild_path_preserves_data_and_child_fks():
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """))
+            """
+                )
+            )
             # Production indexes (the names that would collide if created
             # before DROP TABLE in the rebuild).
-            await conn.execute(text(
-                "CREATE INDEX ix_users_id ON users (id)"
-            ))
-            await conn.execute(text(
-                "CREATE INDEX ix_users_username ON users (username)"
-            ))
-            await conn.execute(text(
-                "CREATE INDEX ix_users_email ON users (email)"
-            ))
+            await conn.execute(text("CREATE INDEX ix_users_id ON users (id)"))
+            await conn.execute(
+                text("CREATE INDEX ix_users_username ON users (username)")
+            )
+            await conn.execute(
+                text("CREATE INDEX ix_users_email ON users (email)")
+            )
             # Seed a user row
-            await conn.execute(text("""
+            await conn.execute(
+                text(
+                    """
                 INSERT INTO users (username, nickname, email, hashed_password,
                                    is_admin, failed_login_count)
                 VALUES ('testuser', 'Test', 'test@example.com', 'hash', 0, 0)
-            """))
+            """
+                )
+            )
             # Child table with FK → users.id
-            await conn.execute(text("""
+            await conn.execute(
+                text(
+                    """
                 CREATE TABLE chat_sessions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
@@ -210,16 +226,24 @@ async def test_rebuild_path_preserves_data_and_child_fks():
                     FOREIGN KEY (user_id) REFERENCES users (id)
                         ON DELETE CASCADE
                 )
-            """))
-            await conn.execute(text(
-                "CREATE INDEX ix_chat_sessions_user_id "
-                "ON chat_sessions (user_id)"
-            ))
+            """
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE INDEX ix_chat_sessions_user_id "
+                    "ON chat_sessions (user_id)"
+                )
+            )
             # Seed a child row referencing the user
-            await conn.execute(text("""
+            await conn.execute(
+                text(
+                    """
                 INSERT INTO chat_sessions (user_id, title, user_type)
                 VALUES (1, 'test session', '미지정')
-            """))
+            """
+                )
+            )
 
         # --- Run the rebuild directly ---
         await _rebuild_users_without_email(eng)
@@ -234,9 +258,7 @@ async def test_rebuild_path_preserves_data_and_child_fks():
                     col["name"] for col in inspect(c).get_columns("users")
                 ]
             )
-            assert "email" not in cols, (
-                f"email column still present: {cols}"
-            )
+            assert "email" not in cols, f"email column still present: {cols}"
 
             # User row preserved
             row = await conn.execute(
@@ -260,9 +282,7 @@ async def test_rebuild_path_preserves_data_and_child_fks():
             assert sess[1] == 1
 
             # FK integrity
-            fk_violations = await conn.execute(
-                text("PRAGMA foreign_key_check")
-            )
+            fk_violations = await conn.execute(text("PRAGMA foreign_key_check"))
             assert fk_violations.fetchall() == [], "FK violations found"
 
         # Idempotent: running the rebuild helper again on an email-less table
@@ -280,6 +300,7 @@ async def test_rebuild_path_preserves_data_and_child_fks():
         from app.migrations.drop_users_email_column import (
             drop_users_email_column,
         )
+
         assert await drop_users_email_column(eng) is False
     finally:
         await eng.dispose()

@@ -1,4 +1,5 @@
 """관리자 삭제 엔드포인트 통합 테스트."""
+
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
@@ -84,11 +85,13 @@ async def seeded(db_tables, tmp_path, monkeypatch):
         session = ChatSession(user_id=user.id, user_type="1학년", title="A")
         db.add(session)
         await db.flush()
-        db.add(ChatMessage(
-            session_id=session.id,
-            role=MessageRole.USER,
-            content="hi",
-        ))
+        db.add(
+            ChatMessage(
+                session_id=session.id,
+                role=MessageRole.USER,
+                content="hi",
+            )
+        )
 
         report_file = tmp_path / "r.md"
         report_file.write_text("x", encoding="utf-8")
@@ -119,6 +122,7 @@ async def seeded(db_tables, tmp_path, monkeypatch):
 def _get_token(client):
     """GET /admin/users 페이지를 통해 세션 CSRF 토큰을 발급/추출한다."""
     import re
+
     html = client.get("/admin/users").text
     m = re.search(r'name="csrf-token" content="([^"]+)"', html)
     assert m, "csrf-token meta missing"
@@ -206,9 +210,7 @@ async def test_delete_chat_session_not_found(seeded):
 @pytest.mark.asyncio
 async def test_delete_chat_session_csrf_required(seeded):
     with TestClient(app) as client:
-        resp = client.delete(
-            f"/admin/api/chat-sessions/{seeded['session_id']}"
-        )
+        resp = client.delete(f"/admin/api/chat-sessions/{seeded['session_id']}")
     assert resp.status_code == 403
 
 
@@ -244,13 +246,15 @@ async def test_delete_report_keeps_other_users_same_basename_upload(
     )
 
     async with TestingSessionLocal() as db:
-        db.add(User(
-            id=_admin.id,
-            username=_admin.username,
-            nickname=_admin.nickname,
-            hashed_password="h",
-            is_admin=True,
-        ))
+        db.add(
+            User(
+                id=_admin.id,
+                username=_admin.username,
+                nickname=_admin.nickname,
+                hashed_password="h",
+                is_admin=True,
+            )
+        )
         user_a = User(
             id=101,
             username="stu-a",

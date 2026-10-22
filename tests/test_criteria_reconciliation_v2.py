@@ -1,4 +1,5 @@
 """reconcile v2 — alias_map 기반"""
+
 import asyncio
 import hashlib
 import logging
@@ -41,14 +42,16 @@ async def _reconcile_with_cloud_docs(docs, alias_entries=None):
     fake_vec.list_criteria_documents = AsyncMock(return_value=docs)
 
     fake_alias = MagicMock()
-    fake_alias.fetch = AsyncMock(return_value=(
-        "docs/alias-map",
-        AliasMap(
-            schema_version=1,
-            updated_at="2026-05-15T00:00:00Z",
-            entries=alias_entries or {},
-        ),
-    ))
+    fake_alias.fetch = AsyncMock(
+        return_value=(
+            "docs/alias-map",
+            AliasMap(
+                schema_version=1,
+                updated_at="2026-05-15T00:00:00Z",
+                entries=alias_entries or {},
+            ),
+        )
+    )
     fake_alias.replace = AsyncMock()
 
     inserted = []
@@ -120,8 +123,7 @@ def test_legacy_surrogate_stable_id_is_url_safe_and_deterministic():
 
     assert first == second
     assert first == (
-        "legacy_"
-        + hashlib.sha1(document_id.encode("utf-8")).hexdigest()[:16]
+        "legacy_" + hashlib.sha1(document_id.encode("utf-8")).hexdigest()[:16]
     )
     assert re.fullmatch(r"legacy_[a-f0-9]{16}", first)
 
@@ -138,14 +140,19 @@ async def test_reconcile_runs_v2_migration_before_skip_on_ok_state():
 
     fake_vec = MagicMock()
     fake_vec.file_search_service.client = client
-    fake_vec.list_criteria_documents = AsyncMock(return_value=[
-        _doc_kv("docs/a", [
-            ("type", "criteria"),
-            ("stable_id", "01HA"),
-            ("original_title_b64", "aGVsbG8="),
-            ("created_at", "2026-05-15T00:00:00Z"),
-        ]),
-    ])
+    fake_vec.list_criteria_documents = AsyncMock(
+        return_value=[
+            _doc_kv(
+                "docs/a",
+                [
+                    ("type", "criteria"),
+                    ("stable_id", "01HA"),
+                    ("original_title_b64", "aGVsbG8="),
+                    ("created_at", "2026-05-15T00:00:00Z"),
+                ],
+            ),
+        ]
+    )
 
     fake_alias = MagicMock()
     fake_alias.fetch = AsyncMock(return_value=None)
@@ -234,9 +241,9 @@ async def test_reconcile_upgrade_ok_state_with_real_session_completes():
     from app.models import app_state as _app_state_model  # noqa: F401
     from app.models import criteria as _criteria_model  # noqa: F401
     from app.repositories.app_state_repository import (
-        AppStateRepository,
         KEY_API_KEY_HASH,
         KEY_SYNC_STATE,
+        AppStateRepository,
     )
     from app.repositories.criteria_repository import CriteriaRepository
     from app.services.criteria_reconciliation_service import (
@@ -264,25 +271,34 @@ async def test_reconcile_upgrade_ok_state_with_real_session_completes():
         fake_client.file_search_stores.list.return_value = iter([])
         fake_vec = MagicMock()
         fake_vec.file_search_service.client = fake_client
-        fake_vec.list_criteria_documents = AsyncMock(return_value=[
-            _doc_kv("fileSearchStores/s/documents/a", [
-                ("type", "criteria"),
-                ("stable_id", "01HA"),
-            ]),
-        ])
+        fake_vec.list_criteria_documents = AsyncMock(
+            return_value=[
+                _doc_kv(
+                    "fileSearchStores/s/documents/a",
+                    [
+                        ("type", "criteria"),
+                        ("stable_id", "01HA"),
+                    ],
+                ),
+            ]
+        )
         fake_alias = MagicMock()
-        fake_alias.fetch = AsyncMock(return_value=(
-            "docs/alias-map",
-            AliasMap(
-                schema_version=1,
-                updated_at="2026-05-15T00:00:00Z",
-                entries={
-                    "01HA": AliasMapEntry(
-                        alias=None, status="uploaded", activated_at=None,
-                    ),
-                },
-            ),
-        ))
+        fake_alias.fetch = AsyncMock(
+            return_value=(
+                "docs/alias-map",
+                AliasMap(
+                    schema_version=1,
+                    updated_at="2026-05-15T00:00:00Z",
+                    entries={
+                        "01HA": AliasMapEntry(
+                            alias=None,
+                            status="uploaded",
+                            activated_at=None,
+                        ),
+                    },
+                ),
+            )
+        )
         fake_alias.replace = AsyncMock()
 
         async with session_factory() as db:
@@ -317,9 +333,9 @@ async def test_reconcile_completes_when_session_already_autobegun():
     from app.models import criteria as _criteria_model  # noqa: F401
     from app.models.app_state import AppState
     from app.repositories.app_state_repository import (
-        AppStateRepository,
         KEY_API_KEY_HASH,
         KEY_SYNC_STATE,
+        AppStateRepository,
     )
     from app.repositories.criteria_repository import CriteriaRepository
     from app.services.criteria_legacy_migration import MIGRATION_MARKER_KEY
@@ -349,25 +365,34 @@ async def test_reconcile_completes_when_session_already_autobegun():
         fake_client.file_search_stores.list.return_value = iter([])
         fake_vec = MagicMock()
         fake_vec.file_search_service.client = fake_client
-        fake_vec.list_criteria_documents = AsyncMock(return_value=[
-            _doc_kv("fileSearchStores/s/documents/a", [
-                ("type", "criteria"),
-                ("stable_id", "01HA"),
-            ]),
-        ])
+        fake_vec.list_criteria_documents = AsyncMock(
+            return_value=[
+                _doc_kv(
+                    "fileSearchStores/s/documents/a",
+                    [
+                        ("type", "criteria"),
+                        ("stable_id", "01HA"),
+                    ],
+                ),
+            ]
+        )
         fake_alias = MagicMock()
-        fake_alias.fetch = AsyncMock(return_value=(
-            "docs/alias-map",
-            AliasMap(
-                schema_version=1,
-                updated_at="2026-05-15T00:00:00Z",
-                entries={
-                    "01HA": AliasMapEntry(
-                        alias=None, status="uploaded", activated_at=None,
-                    ),
-                },
-            ),
-        ))
+        fake_alias.fetch = AsyncMock(
+            return_value=(
+                "docs/alias-map",
+                AliasMap(
+                    schema_version=1,
+                    updated_at="2026-05-15T00:00:00Z",
+                    entries={
+                        "01HA": AliasMapEntry(
+                            alias=None,
+                            status="uploaded",
+                            activated_at=None,
+                        ),
+                    },
+                ),
+            )
+        )
         fake_alias.replace = AsyncMock()
 
         async with session_factory() as db:
@@ -407,29 +432,36 @@ async def test_reconcile_inserts_rows_with_alias_from_map(monkeypatch):
     )
 
     fake_vec = MagicMock()
-    fake_vec.list_criteria_documents = AsyncMock(return_value=[
-        _doc_kv("docs/a", [
-            ("type", "criteria"),
-            ("stable_id", "01HA"),
-            ("original_title_b64", "aGVsbG8="),  # "hello"
-            ("created_at", "2026-05-15T00:00:00Z"),
-        ]),
-    ])
+    fake_vec.list_criteria_documents = AsyncMock(
+        return_value=[
+            _doc_kv(
+                "docs/a",
+                [
+                    ("type", "criteria"),
+                    ("stable_id", "01HA"),
+                    ("original_title_b64", "aGVsbG8="),  # "hello"
+                    ("created_at", "2026-05-15T00:00:00Z"),
+                ],
+            ),
+        ]
+    )
     fake_alias = MagicMock()
-    fake_alias.fetch = AsyncMock(return_value=(
-        "docs/alias-map",
-        AliasMap(
-            schema_version=1,
-            updated_at="2026-05-15T00:00:00Z",
-            entries={
-                "01HA": AliasMapEntry(
-                    alias="1학기",
-                    status="active",
-                    activated_at="2026-05-15T00:00:00Z",
-                ),
-            },
-        ),
-    ))
+    fake_alias.fetch = AsyncMock(
+        return_value=(
+            "docs/alias-map",
+            AliasMap(
+                schema_version=1,
+                updated_at="2026-05-15T00:00:00Z",
+                entries={
+                    "01HA": AliasMapEntry(
+                        alias="1학기",
+                        status="active",
+                        activated_at="2026-05-15T00:00:00Z",
+                    ),
+                },
+            ),
+        )
+    )
     fake_alias.replace = AsyncMock()
 
     fake_repo = MagicMock()
@@ -444,10 +476,12 @@ async def test_reconcile_inserts_rows_with_alias_from_map(monkeypatch):
     fake_repo.get_criteria_by_stable_id = AsyncMock(return_value=None)
 
     fake_state = MagicMock()
-    fake_state.get = AsyncMock(side_effect=lambda key: {
-        "criteria_api_key_hash": "samehash",
-        "criteria_sync_state": "needs_resync",
-    }.get(key))
+    fake_state.get = AsyncMock(
+        side_effect=lambda key: {
+            "criteria_api_key_hash": "samehash",
+            "criteria_sync_state": "needs_resync",
+        }.get(key)
+    )
     fake_state.set_many = AsyncMock()
     fake_state.set = AsyncMock()
 
@@ -492,16 +526,24 @@ async def test_reconcile_uses_legacy_surrogates_for_missing_stable_ids(
         "legacy_" + hashlib.sha1(doc_id.encode("utf-8")).hexdigest()[:16]
         for doc_id in doc_ids
     ]
-    outcome = await _reconcile_with_cloud_docs([
-        _doc_kv(doc_ids[0], [
-            ("type", "criteria"),
-            ("original_title_b64", "Zmlyc3Q="),
-        ]),
-        _doc_kv(doc_ids[1], [
-            ("type", "criteria"),
-            ("original_title_b64", "c2Vjb25k"),
-        ]),
-    ])
+    outcome = await _reconcile_with_cloud_docs(
+        [
+            _doc_kv(
+                doc_ids[0],
+                [
+                    ("type", "criteria"),
+                    ("original_title_b64", "Zmlyc3Q="),
+                ],
+            ),
+            _doc_kv(
+                doc_ids[1],
+                [
+                    ("type", "criteria"),
+                    ("original_title_b64", "c2Vjb25k"),
+                ],
+            ),
+        ]
+    )
 
     assert outcome.result.ok is True
     outcome.alias.replace.assert_called_once()
@@ -528,10 +570,13 @@ async def test_reconcile_preserves_mixed_stable_and_surrogate_documents():
     )
     outcome = await _reconcile_with_cloud_docs(
         [
-            _doc_kv("fileSearchStores/s/documents/modern", [
-                ("type", "criteria"),
-                ("stable_id", stable_id),
-            ]),
+            _doc_kv(
+                "fileSearchStores/s/documents/modern",
+                [
+                    ("type", "criteria"),
+                    ("stable_id", stable_id),
+                ],
+            ),
             _doc_kv(legacy_document_id, [("type", "criteria")]),
         ],
         alias_entries={
@@ -570,16 +615,24 @@ async def test_reconcile_fresh_install_stable_id_documents_do_not_use_surrogates
         "fileSearchStores/s/documents/modern-b",
     ]
     stable_ids = ["01HAAA", "01HBBB"]
-    outcome = await _reconcile_with_cloud_docs([
-        _doc_kv(doc_ids[0], [
-            ("type", "criteria"),
-            ("stable_id", stable_ids[0]),
-        ]),
-        _doc_kv(doc_ids[1], [
-            ("type", "criteria"),
-            ("stable_id", stable_ids[1]),
-        ]),
-    ])
+    outcome = await _reconcile_with_cloud_docs(
+        [
+            _doc_kv(
+                doc_ids[0],
+                [
+                    ("type", "criteria"),
+                    ("stable_id", stable_ids[0]),
+                ],
+            ),
+            _doc_kv(
+                doc_ids[1],
+                [
+                    ("type", "criteria"),
+                    ("stable_id", stable_ids[1]),
+                ],
+            ),
+        ]
+    )
 
     assert outcome.result.ok is True
     healed_map = outcome.alias.replace.call_args.args[0]
@@ -600,10 +653,13 @@ async def test_reconcile_demotes_active_legacy_surrogates():
 
     outcome = await _reconcile_with_cloud_docs(
         [
-            _doc_kv("fileSearchStores/s/documents/modern", [
-                ("type", "criteria"),
-                ("stable_id", stable_id),
-            ]),
+            _doc_kv(
+                "fileSearchStores/s/documents/modern",
+                [
+                    ("type", "criteria"),
+                    ("stable_id", stable_id),
+                ],
+            ),
             _doc_kv(legacy_document_id, [("type", "criteria")]),
         ],
         alias_entries={
@@ -638,30 +694,41 @@ async def test_reconcile_self_heals_orphan_entries():
     )
 
     fake_vec = MagicMock()
-    fake_vec.list_criteria_documents = AsyncMock(return_value=[
-        _doc_kv("docs/a", [
-            ("type", "criteria"),
-            ("stable_id", "01HA"),
-            ("original_title_b64", "aGVsbG8="),
-            ("created_at", "2026-05-15T00:00:00Z"),
-        ]),
-    ])
+    fake_vec.list_criteria_documents = AsyncMock(
+        return_value=[
+            _doc_kv(
+                "docs/a",
+                [
+                    ("type", "criteria"),
+                    ("stable_id", "01HA"),
+                    ("original_title_b64", "aGVsbG8="),
+                    ("created_at", "2026-05-15T00:00:00Z"),
+                ],
+            ),
+        ]
+    )
     fake_alias = MagicMock()
-    fake_alias.fetch = AsyncMock(return_value=(
-        "docs/alias-map",
-        AliasMap(
-            schema_version=1,
-            updated_at="2026-05-15T00:00:00Z",
-            entries={
-                "01HA": AliasMapEntry(
-                    alias="x", status="uploaded", activated_at=None,
-                ),
-                "01HGHOST": AliasMapEntry(
-                    alias="orphan", status="uploaded", activated_at=None,
-                ),
-            },
-        ),
-    ))
+    fake_alias.fetch = AsyncMock(
+        return_value=(
+            "docs/alias-map",
+            AliasMap(
+                schema_version=1,
+                updated_at="2026-05-15T00:00:00Z",
+                entries={
+                    "01HA": AliasMapEntry(
+                        alias="x",
+                        status="uploaded",
+                        activated_at=None,
+                    ),
+                    "01HGHOST": AliasMapEntry(
+                        alias="orphan",
+                        status="uploaded",
+                        activated_at=None,
+                    ),
+                },
+            ),
+        )
+    )
     fake_alias.replace = AsyncMock()
 
     fake_repo = MagicMock()
@@ -741,16 +808,18 @@ async def test_reconcile_completes_dbcache_after_chunk_size_fix():
         if longest > 256:
             raise genai_errors.ClientError(
                 400,
-                {"error": {
-                    "code": 400,
-                    "status": "INVALID_ARGUMENT",
-                    "message": (
-                        "* UploadToFileSearchStoreRequest."
-                        "custom_metadata[1].string_list_value.values[0]: "
-                        "StringList value cannot be more than 256 characters "
-                        "long."
-                    ),
-                }},
+                {
+                    "error": {
+                        "code": 400,
+                        "status": "INVALID_ARGUMENT",
+                        "message": (
+                            "* UploadToFileSearchStoreRequest."
+                            "custom_metadata[1].string_list_value.values[0]: "
+                            "StringList value cannot be more than 256 characters "
+                            "long."
+                        ),
+                    }
+                },
                 MagicMock(),
             )
         return "fileSearchStores/rs/docs/alias-map-new"
@@ -813,7 +882,9 @@ async def test_reconcile_completes_dbcache_after_chunk_size_fix():
     # Local cache was rebuilt: both legacy-surrogate stable_ids inserted.
     assert len(inserted) == 2
     surrogate_ids = sorted(row["stable_id"] for row in inserted)
-    assert all(sid.startswith("legacy_") for sid in surrogate_ids), surrogate_ids
+    assert all(
+        sid.startswith("legacy_") for sid in surrogate_ids
+    ), surrogate_ids
 
     # Sync state was advanced to ok (not stuck on needs_resync).
     assert state_values.get("criteria_sync_state") == "ok"

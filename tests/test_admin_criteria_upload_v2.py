@@ -1,4 +1,5 @@
 """upload 라우터가 stable_id를 생성하고 alias_map에 entry 추가"""
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -21,9 +22,7 @@ def test_upload_generates_stable_id_and_alias_entry():
 
     Integration coverage lives in tests/test_e2e_criteria_meta_flow.py.
     """
-    pytest.skip(
-        "Structural test; covered by service-level units and e2e smoke"
-    )
+    pytest.skip("Structural test; covered by service-level units and e2e smoke")
 
 
 @pytest.mark.asyncio
@@ -35,13 +34,11 @@ async def test_upload_cloud_upload_failure_marks_resync():
     db = AsyncMock()
     current_admin = SimpleNamespace(username="admin")
 
-    with patch(
-        "app.routers.admin.criteria.FileValidator"
-    ) as validator_cls, patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.AppStateRepository"
-    ) as state_cls:
+    with (
+        patch("app.routers.admin.criteria.FileValidator") as validator_cls,
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as state_cls,
+    ):
         validator_cls.return_value.validate_file = AsyncMock(
             return_value={"valid": True}
         )
@@ -74,15 +71,14 @@ async def test_upload_alias_replace_failure_marks_resync():
     db = AsyncMock()
     current_admin = SimpleNamespace(username="admin")
 
-    with patch(
-        "app.routers.admin.criteria.FileValidator"
-    ) as validator_cls, patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.AppStateRepository"
-    ) as state_cls:
+    with (
+        patch("app.routers.admin.criteria.FileValidator") as validator_cls,
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as state_cls,
+    ):
         validator_cls.return_value.validate_file = AsyncMock(
             return_value={"valid": True}
         )
@@ -122,15 +118,14 @@ async def test_upload_corrupted_alias_map_marks_resync_without_replace():
     db = AsyncMock()
     current_admin = SimpleNamespace(username="admin")
 
-    with patch(
-        "app.routers.admin.criteria.FileValidator"
-    ) as validator_cls, patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.AppStateRepository"
-    ) as state_cls:
+    with (
+        patch("app.routers.admin.criteria.FileValidator") as validator_cls,
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as state_cls,
+    ):
         validator_cls.return_value.validate_file = AsyncMock(
             return_value={"valid": True}
         )
@@ -174,17 +169,15 @@ async def test_upload_db_commit_failure_after_cloud_writes_marks_resync():
     db.commit = AsyncMock(side_effect=[RuntimeError("commit failed"), None])
     current_admin = SimpleNamespace(username="admin")
 
-    with patch(
-        "app.routers.admin.criteria.FileValidator"
-    ) as validator_cls, patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as repo_cls, patch(
-        "app.routers.admin.criteria.AppStateRepository"
-    ) as state_cls:
+    with (
+        patch("app.routers.admin.criteria.FileValidator") as validator_cls,
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as state_cls,
+    ):
         validator_cls.return_value.validate_file = AsyncMock(
             return_value={"valid": True}
         )
@@ -226,15 +219,14 @@ async def test_upload_creates_active_entry():
     db = AsyncMock()
     current_admin = SimpleNamespace(username="admin")
 
-    with patch(
-        "app.routers.admin.criteria.FileValidator"
-    ) as validator_cls, patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as repo_cls:
+    with (
+        patch("app.routers.admin.criteria.FileValidator") as validator_cls,
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+    ):
         validator_cls.return_value.validate_file = AsyncMock(
             return_value={"valid": True}
         )

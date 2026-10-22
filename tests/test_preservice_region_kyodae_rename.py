@@ -5,6 +5,7 @@ issue #70: 기존 user_profiles.preservice_university_region의 옛 값
 (서울/경인/공주/광주/대구/부산/전주/진주/청주/춘천)을 '…교대' 새 값으로
 갱신하고, '한국교원대'는 '기타'로 매핑한다. 멱등성을 만족해야 한다.
 """
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
@@ -59,8 +60,16 @@ async def _insert_profile(engine, role, region):
 async def test_rename_mapping_covers_legacy_kyodae_values():
     """매핑 테이블이 옛 10개 시·도 값을 포함한다 ('한국교원대'는 제외)."""
     expected_keys = {
-        "서울", "경인", "공주", "광주", "대구", "부산",
-        "전주", "진주", "청주", "춘천",
+        "서울",
+        "경인",
+        "공주",
+        "광주",
+        "대구",
+        "부산",
+        "전주",
+        "진주",
+        "청주",
+        "춘천",
     }
     assert set(PRESERVICE_REGION_RENAME.keys()) == expected_keys
 
@@ -74,19 +83,14 @@ async def test_rename_mapping_does_not_include_kornu():
 @pytest.mark.asyncio
 async def test_rename_updates_legacy_region(memory_engine):
     """옛 값 '대구' → '대구교대'로 갱신된다."""
-    await _insert_profile(
-        memory_engine, "preservice_teacher", "대구"
-    )
+    await _insert_profile(memory_engine, "preservice_teacher", "대구")
 
     updated = await rename_preservice_university_regions(memory_engine)
 
     assert updated == 1
     async with memory_engine.connect() as conn:
         row = await conn.execute(
-            text(
-                "SELECT preservice_university_region "
-                "FROM user_profiles"
-            )
+            text("SELECT preservice_university_region " "FROM user_profiles")
         )
         assert row.scalar() == "대구교대"
 
@@ -94,19 +98,14 @@ async def test_rename_updates_legacy_region(memory_engine):
 @pytest.mark.asyncio
 async def test_rename_preserves_kornu(memory_engine):
     """'한국교원대'는 유효한 라벨이므로 마이그레이션이 건드리지 않는다."""
-    await _insert_profile(
-        memory_engine, "preservice_teacher", "한국교원대"
-    )
+    await _insert_profile(memory_engine, "preservice_teacher", "한국교원대")
 
     updated = await rename_preservice_university_regions(memory_engine)
 
     assert updated == 0
     async with memory_engine.connect() as conn:
         row = await conn.execute(
-            text(
-                "SELECT preservice_university_region "
-                "FROM user_profiles"
-            )
+            text("SELECT preservice_university_region " "FROM user_profiles")
         )
         assert row.scalar() == "한국교원대"
 
@@ -114,9 +113,7 @@ async def test_rename_preserves_kornu(memory_engine):
 @pytest.mark.asyncio
 async def test_rename_idempotent(memory_engine):
     """이미 새 값이면 두 번째 호출은 0 행을 갱신."""
-    await _insert_profile(
-        memory_engine, "preservice_teacher", "서울"
-    )
+    await _insert_profile(memory_engine, "preservice_teacher", "서울")
 
     first = await rename_preservice_university_regions(memory_engine)
     second = await rename_preservice_university_regions(memory_engine)
@@ -128,19 +125,14 @@ async def test_rename_idempotent(memory_engine):
 @pytest.mark.asyncio
 async def test_rename_leaves_unknown_values(memory_engine):
     """매핑에 없는 값(예: 이미 신규 값)은 건드리지 않는다."""
-    await _insert_profile(
-        memory_engine, "preservice_teacher", "서울교대"
-    )
+    await _insert_profile(memory_engine, "preservice_teacher", "서울교대")
 
     updated = await rename_preservice_university_regions(memory_engine)
 
     assert updated == 0
     async with memory_engine.connect() as conn:
         row = await conn.execute(
-            text(
-                "SELECT preservice_university_region "
-                "FROM user_profiles"
-            )
+            text("SELECT preservice_university_region " "FROM user_profiles")
         )
         assert row.scalar() == "서울교대"
 

@@ -1,5 +1,5 @@
 """Tests for Issue #80 — reconcile preserves local-only columns via upsert."""
-from datetime import datetime
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -55,7 +55,9 @@ async def test_reconcile_preserves_uploaded_by_for_existing_local_rows():
 
     state = MagicMock()
     state.get = AsyncMock(side_effect=lambda k: state_values.get(k))
-    state.set_many = AsyncMock(side_effect=lambda items: state_values.update(items))
+    state.set_many = AsyncMock(
+        side_effect=lambda items: state_values.update(items)
+    )
 
     alias = MagicMock()
     alias.fetch = AsyncMock(return_value=("doc/alias", alias_map))

@@ -2,10 +2,12 @@
 QnAService 리팩토링 테스트
 Phase 2에서 리팩토링된 get_dual_store_ids() 사용 검증
 """
+
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
+
 from app.services.qna_service import QnAService
-from app.config import settings
 
 
 class TestQnAServiceRefactored:
@@ -22,11 +24,7 @@ class TestQnAServiceRefactored:
     @pytest.fixture
     def mock_user(self):
         """Mock 사용자"""
-        return {
-            "id": 42,
-            "username": "testuser",
-            "email": "test@example.com"
-        }
+        return {"id": 42, "username": "testuser", "email": "test@example.com"}
 
     @pytest.fixture
     def mock_session(self):
@@ -39,21 +37,16 @@ class TestQnAServiceRefactored:
 
     @pytest.mark.asyncio
     async def test_answer_question_uses_get_dual_store_ids(
-        self,
-        mock_db,
-        mock_user,
-        mock_session
+        self, mock_db, mock_user, mock_session
     ):
         """
         ask_question()이 get_dual_store_ids() 사용 확인
         """
-        with patch('app.services.qna_service.genai.Client'):
+        with patch("app.services.qna_service.genai.Client"):
             service = QnAService(mock_db)
 
             # Mock _get_session
-            service._get_session = AsyncMock(
-                return_value=mock_session
-            )
+            service._get_session = AsyncMock(return_value=mock_session)
 
             # Mock prompt_loader
             service.prompt_loader.get_prompt = Mock(
@@ -61,9 +54,7 @@ class TestQnAServiceRefactored:
             )
 
             # Mock get_conversation_history
-            service.get_conversation_history = AsyncMock(
-                return_value=[]
-            )
+            service.get_conversation_history = AsyncMock(return_value=[])
 
             # Mock CriteriaContextService
             mock_criteria_service = AsyncMock()
@@ -71,19 +62,19 @@ class TestQnAServiceRefactored:
                 return_value={
                     "context_text": "평가기준 컨텍스트",
                     "criteria_ids": [1, 2],
-                    "criteria_metadata": []
+                    "criteria_metadata": [],
                 }
             )
 
             with patch(
-                'app.services.qna_service.CriteriaContextService',
-                return_value=mock_criteria_service
+                "app.services.qna_service.CriteriaContextService",
+                return_value=mock_criteria_service,
             ):
                 # Mock get_dual_store_ids (핵심 테스트)
                 service.file_search_service.get_dual_store_ids = Mock(
                     return_value=[
                         "fileSearchStores/rubric",
-                        "fileSearchStores/user42"
+                        "fileSearchStores/user42",
                     ]
                 )
 
@@ -100,17 +91,14 @@ class TestQnAServiceRefactored:
 
                 # When
                 result = await service.ask_question(
-                    session_id=1,
-                    question="테스트 질문",
-                    user_id=42
+                    session_id=1, question="테스트 질문", user_id=42
                 )
 
                 # Then
                 # get_dual_store_ids가 user_id로 호출되었는지 확인
-                service.file_search_service.get_dual_store_ids \
-                    .assert_called_once_with(
-                        user_id=42
-                    )
+                service.file_search_service.get_dual_store_ids.assert_called_once_with(
+                    user_id=42
+                )
 
                 # 결과 확인
                 assert result["answer"] == "답변입니다."
@@ -119,21 +107,16 @@ class TestQnAServiceRefactored:
 
     @pytest.mark.asyncio
     async def test_answer_question_store_error_handling(
-        self,
-        mock_db,
-        mock_user,
-        mock_session
+        self, mock_db, mock_user, mock_session
     ):
         """
         Store 조회 실패 시 에러 처리
         """
-        with patch('app.services.qna_service.genai.Client'):
+        with patch("app.services.qna_service.genai.Client"):
             service = QnAService(mock_db)
 
             # Mock _get_session
-            service._get_session = AsyncMock(
-                return_value=mock_session
-            )
+            service._get_session = AsyncMock(return_value=mock_session)
 
             # Mock prompt_loader
             service.prompt_loader.get_prompt = Mock(
@@ -141,9 +124,7 @@ class TestQnAServiceRefactored:
             )
 
             # Mock get_conversation_history
-            service.get_conversation_history = AsyncMock(
-                return_value=[]
-            )
+            service.get_conversation_history = AsyncMock(return_value=[])
 
             # Mock CriteriaContextService
             mock_criteria_service = AsyncMock()
@@ -151,28 +132,25 @@ class TestQnAServiceRefactored:
                 return_value={
                     "context_text": "",
                     "criteria_ids": [],
-                    "criteria_metadata": []
+                    "criteria_metadata": [],
                 }
             )
 
             with patch(
-                'app.services.qna_service.CriteriaContextService',
-                return_value=mock_criteria_service
+                "app.services.qna_service.CriteriaContextService",
+                return_value=mock_criteria_service,
             ):
                 # Mock get_dual_store_ids - ValueError 발생
                 service.file_search_service.get_dual_store_ids = Mock(
                     side_effect=ValueError(
-                        "평가기준 스토어(rubricstore)를 "
-                        "찾을 수 없습니다"
+                        "평가기준 스토어(rubricstore)를 " "찾을 수 없습니다"
                     )
                 )
 
                 # When & Then
                 with pytest.raises(Exception) as exc_info:
                     await service.ask_question(
-                        session_id=1,
-                        question="테스트 질문",
-                        user_id=42
+                        session_id=1, question="테스트 질문", user_id=42
                     )
 
                 # 에러 메시지 확인
@@ -180,21 +158,16 @@ class TestQnAServiceRefactored:
 
     @pytest.mark.asyncio
     async def test_answer_question_general_error_handling(
-        self,
-        mock_db,
-        mock_user,
-        mock_session
+        self, mock_db, mock_user, mock_session
     ):
         """
         일반 예외 발생 시 에러 처리
         """
-        with patch('app.services.qna_service.genai.Client'):
+        with patch("app.services.qna_service.genai.Client"):
             service = QnAService(mock_db)
 
             # Mock _get_session
-            service._get_session = AsyncMock(
-                return_value=mock_session
-            )
+            service._get_session = AsyncMock(return_value=mock_session)
 
             # Mock prompt_loader
             service.prompt_loader.get_prompt = Mock(
@@ -202,9 +175,7 @@ class TestQnAServiceRefactored:
             )
 
             # Mock get_conversation_history
-            service.get_conversation_history = AsyncMock(
-                return_value=[]
-            )
+            service.get_conversation_history = AsyncMock(return_value=[])
 
             # Mock CriteriaContextService
             mock_criteria_service = AsyncMock()
@@ -212,13 +183,13 @@ class TestQnAServiceRefactored:
                 return_value={
                     "context_text": "",
                     "criteria_ids": [],
-                    "criteria_metadata": []
+                    "criteria_metadata": [],
                 }
             )
 
             with patch(
-                'app.services.qna_service.CriteriaContextService',
-                return_value=mock_criteria_service
+                "app.services.qna_service.CriteriaContextService",
+                return_value=mock_criteria_service,
             ):
                 # Mock get_dual_store_ids - 일반 Exception 발생
                 service.file_search_service.get_dual_store_ids = Mock(
@@ -228,7 +199,5 @@ class TestQnAServiceRefactored:
                 # When & Then
                 with pytest.raises(Exception):
                     await service.ask_question(
-                        session_id=1,
-                        question="테스트 질문",
-                        user_id=42
+                        session_id=1, question="테스트 질문", user_id=42
                     )

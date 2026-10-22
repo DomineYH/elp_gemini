@@ -2,6 +2,7 @@
 관리자 사용자 관리 API 테스트
 통계, 세션 목록, 세션 상세 엔드포인트 검증
 """
+
 import os
 import time
 from datetime import datetime, timedelta, timezone
@@ -10,27 +11,28 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
-from fastapi import HTTPException, status as http_status
+from fastapi import HTTPException
+from fastapi import status as http_status
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.constants import USER_TYPES
 from app.db import Base, get_db
 from app.dependencies import get_current_admin
-from app.models.users import User
-from app.models.chat_sessions import ChatSession
+from app.main import app
+from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import (
     ChatMessage,
     MessageRole,
 )
-from app.models.analysis_reports import AnalysisReport
+from app.models.chat_sessions import ChatSession
+from app.models.users import User
 from app.routers.admin import users as admin_users_router
 from app.utils import timestamps
 from tests.conftest import (
     TestingSessionLocal,
-    override_get_db,
-    override_admin,
     engine,
+    override_admin,
+    override_get_db,
 )
 
 # 테스트용 관리자 (DB 미저장, 의존성 오버라이드용)
@@ -162,8 +164,9 @@ async def test_accounts_can_change_password_gated_by_id_login_capability():
     )
     db = _FakeDb(
         _ExecuteResult(scalar_value=3),
-        _ExecuteResult(scalars=[blocked_user, legacy_email_user, id_user],
-                       ),
+        _ExecuteResult(
+            scalars=[blocked_user, legacy_email_user, id_user],
+        ),
         _ExecuteResult(rows=[]),
         _ExecuteResult(rows=[]),
         _ExecuteResult(rows=[]),  # 시뮬레이션 수 (#188)
@@ -236,9 +239,7 @@ async def test_sessions_response_uses_username_identifier():
 def _override_deps():
     """의존성 오버라이드"""
     app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_current_admin] = (
-        override_admin(_admin)
-    )
+    app.dependency_overrides[get_current_admin] = override_admin(_admin)
     yield
     app.dependency_overrides.clear()
 
@@ -352,10 +353,7 @@ async def test_stats_returns_counts(seed_data):
         "미지정",
     }
 
-    grade1 = next(
-        s for s in data["stats"]
-        if s["user_type"] == "1학년"
-    )
+    grade1 = next(s for s in data["stats"] if s["user_type"] == "1학년")
     assert grade1["session_count"] == 1
     assert grade1["qna_count"] >= 1
 
@@ -415,10 +413,7 @@ async def test_stats_includes_unprofiled_segment(db_tables):
     assert resp.status_code == 200
 
     data = resp.json()
-    unprofiled = next(
-        s for s in data["stats"]
-        if s["user_type"] == "미지정"
-    )
+    unprofiled = next(s for s in data["stats"] if s["user_type"] == "미지정")
     assert unprofiled["session_count"] == 1
     assert unprofiled["qna_count"] == 1
     assert unprofiled["report_count"] == 1
@@ -495,10 +490,7 @@ async def test_stats_today_boundary_is_kst_midnight_on_non_utc_server(
 async def test_sessions_list_paginated(seed_data):
     """세션 목록 페이징"""
     with TestClient(app) as client:
-        resp = client.get(
-            "/admin/api/users/sessions"
-            "?page=1&page_size=10"
-        )
+        resp = client.get("/admin/api/users/sessions" "?page=1&page_size=10")
     assert resp.status_code == 200
 
     data = resp.json()
@@ -521,9 +513,7 @@ async def test_sessions_list_paginated(seed_data):
 async def test_sessions_filter_by_user_type(seed_data):
     """user_type 필터"""
     with TestClient(app) as client:
-        resp = client.get(
-            "/admin/api/users/sessions?user_type=1학년"
-        )
+        resp = client.get("/admin/api/users/sessions?user_type=1학년")
     assert resp.status_code == 200
 
     data = resp.json()
@@ -537,9 +527,7 @@ async def test_session_detail_with_messages(seed_data):
     """상세 API가 메시지+보고서 반환"""
     sid = seed_data["session1_id"]
     with TestClient(app) as client:
-        resp = client.get(
-            f"/admin/api/users/session/{sid}"
-        )
+        resp = client.get(f"/admin/api/users/session/{sid}")
     assert resp.status_code == 200
 
     data = resp.json()
@@ -565,9 +553,7 @@ async def test_session_detail_with_messages(seed_data):
 async def test_session_detail_not_found(db_tables):
     """존재하지 않는 세션 → 404"""
     with TestClient(app) as client:
-        resp = client.get(
-            "/admin/api/users/session/99999"
-        )
+        resp = client.get("/admin/api/users/session/99999")
     assert resp.status_code == 404
 
 
@@ -649,6 +635,7 @@ async def test_admin_report_detail_file_missing(db_tables):
 @pytest.mark.asyncio
 async def test_admin_report_detail_forbidden_for_non_admin(db_tables):
     """비관리자 호출 시 403"""
+
     def _deny_admin():
         raise HTTPException(
             status_code=http_status.HTTP_403_FORBIDDEN,
@@ -663,9 +650,7 @@ async def test_admin_report_detail_forbidden_for_non_admin(db_tables):
         assert resp.json()["detail"] == "관리자 권한이 필요합니다."
     finally:
         # 본 테스트 내 다른 단언이 추가되더라도 안전하도록 admin 오버라이드 복원
-        app.dependency_overrides[get_current_admin] = (
-            override_admin(_admin)
-        )
+        app.dependency_overrides[get_current_admin] = override_admin(_admin)
 
 
 @pytest.mark.asyncio
@@ -692,9 +677,7 @@ async def test_admin_user_sessions_returns_target_user_sessions(seed_data):
     """Admin per-user sessions endpoint returns only the target user's sessions, newest first."""
     target_user_id = seed_data["user_id"]
     with TestClient(app) as client:
-        resp = client.get(
-            f"/admin/api/users/{target_user_id}/sessions"
-        )
+        resp = client.get(f"/admin/api/users/{target_user_id}/sessions")
     assert resp.status_code == 200
     body = resp.json()
     assert body["user_id"] == target_user_id
@@ -739,9 +722,7 @@ async def test_admin_user_reports_returns_target_user_reports(seed_data):
     """Admin per-user reports endpoint returns only that user's reports, newest first."""
     target_user_id = seed_data["user_id"]
     with TestClient(app) as client:
-        resp = client.get(
-            f"/admin/api/users/{target_user_id}/reports"
-        )
+        resp = client.get(f"/admin/api/users/{target_user_id}/reports")
     assert resp.status_code == 200
     body = resp.json()
     assert body["user_id"] == target_user_id
@@ -752,7 +733,12 @@ async def test_admin_user_reports_returns_target_user_reports(seed_data):
         second = body["reports"][1]["created_at"]
         assert first >= second
     for item in body["reports"]:
-        assert {"id", "report_filename", "lessonplan_filename", "created_at"} <= set(item)
+        assert {
+            "id",
+            "report_filename",
+            "lessonplan_filename",
+            "created_at",
+        } <= set(item)
         assert item["created_at"].endswith("+00:00")
 
 
@@ -794,13 +780,16 @@ async def test_admin_user_detail_page_renders(seed_data):
     assert resp.status_code == 200
     html = resp.text
     # Page identifies the target user and hosts both lists
-    assert f"data-user-id=\"{target_user_id}\"" in html
-    assert "id=\"adminSessionList\"" in html
-    assert "id=\"adminReportList\"" in html
+    assert f'data-user-id="{target_user_id}"' in html
+    assert 'id="adminSessionList"' in html
+    assert 'id="adminReportList"' in html
     # Calls the three Task 1-3 endpoints
     assert f"/admin/api/users/{target_user_id}/sessions" in html
     assert f"/admin/api/users/{target_user_id}/reports" in html
-    assert f"/admin/api/users/{target_user_id}\"" in html or f"/admin/api/users/{target_user_id}'" in html
+    assert (
+        f'/admin/api/users/{target_user_id}"' in html
+        or f"/admin/api/users/{target_user_id}'" in html
+    )
     # The detail page must not silently truncate large per-user histories.
     assert "function loadMoreAdminSessions()" in html
     assert "function loadMoreAdminReports()" in html
@@ -833,23 +822,14 @@ def test_admin_users_delete_button_uses_data_attributes():
     assert "const safeLabel" not in source
     assert 'onclick="deleteUser' not in source
     assert (
-        "class=\"delete-user-btn bg-red-600 text-white px-3 py-1 "
-        "rounded-md text-sm hover:bg-red-700\""
-        in source
+        'class="delete-user-btn bg-red-600 text-white px-3 py-1 '
+        'rounded-md text-sm hover:bg-red-700"' in source
     )
     assert 'data-user-id="${account.user_id}"' in source
     assert (
-        'data-user-label="${escapeHtml(accountIdentifier || \'\')}"'
-        in source
+        "data-user-label=\"${escapeHtml(accountIdentifier || '')}\"" in source
     )
-    assert (
-        "account.user_identifier || account.username"
-        in source
-    )
-    assert (
-        "s.user_identifier || s.username"
-        in source
-    )
+    assert "account.user_identifier || account.username" in source
+    assert "s.user_identifier || s.username" in source
     assert "btn.addEventListener('click'" in source
     assert "deleteUser(userId, userLabel);" in source
-

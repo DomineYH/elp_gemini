@@ -2,24 +2,26 @@
 QnA API 통합 테스트
 실제 API 엔드포인트 호출 및 응답 검증
 """
-import pytest
-import pytest_asyncio
-from fastapi.testclient import TestClient
-from unittest.mock import patch, Mock
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import StaticPool
-
-from app.main import app
-from app.db import Base, get_db
-from app.models.users import User
-from app.models.documents import Document
-from app.models.prompts import SystemPrompt
-
 
 # 테스트용 임시 파일 DB 설정
 import tempfile
-import os
+from unittest.mock import Mock, patch
+
+import pytest
+import pytest_asyncio
+from app.models.documents import Document
+from app.models.prompts import SystemPrompt
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import StaticPool
+
+from app.db import Base, get_db
+from app.main import app
+from app.models.users import User
 
 # 임시 DB 파일 생성
 test_db_fd, test_db_path = tempfile.mkstemp(suffix=".db")
@@ -29,7 +31,7 @@ engine = create_async_engine(
     SQLALCHEMY_TEST_DATABASE_URL,
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
-    echo=False
+    echo=False,
 )
 TestingSessionLocal = async_sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
@@ -70,7 +72,7 @@ async def create_test_data():
             username="test_user",
             nickname="Test User",
             hashed_password="hashed_pw",
-            is_admin=False
+            is_admin=False,
         )
         db.add(test_user)
         await db.commit()
@@ -85,7 +87,7 @@ async def create_test_data():
             store_id="fileSearchStores/test-store",
             file_search_file_id="file-123",
             user_id=test_user.id,
-            status="ready"
+            status="ready",
         )
         db.add(test_doc)
         await db.commit()
@@ -97,7 +99,7 @@ async def create_test_data():
             version=1,
             content="You are a helpful QnA assistant.",
             is_active=True,
-            created_by=test_user.id
+            created_by=test_user.id,
         )
         db.add(test_prompt)
         await db.commit()
@@ -112,6 +114,7 @@ class TestQnAAPI:
         """QnA API 정상 호출 테스트"""
         # 테스트 데이터 생성
         import asyncio
+
         test_user_id, test_doc_id = asyncio.run(create_test_data())
 
         # Mock Gemini API 응답
@@ -128,13 +131,16 @@ class TestQnAAPI:
         class MockGroundingMetadata:
             def __init__(self, num_chunks=3):
                 self.grounding_chunks = [
-                    MockGroundingChunk(f"Chunk {i}")
-                    for i in range(num_chunks)
+                    MockGroundingChunk(f"Chunk {i}") for i in range(num_chunks)
                 ]
 
-        mock_response.candidates[0].grounding_metadata = MockGroundingMetadata(3)
+        mock_response.candidates[0].grounding_metadata = MockGroundingMetadata(
+            3
+        )
 
-        with patch('app.services.qna_service.genai.Client') as mock_client_class:
+        with patch(
+            "app.services.qna_service.genai.Client"
+        ) as mock_client_class:
             mock_client = Mock()
             mock_client.models.generate_content.return_value = mock_response
             mock_client_class.return_value = mock_client
@@ -143,14 +149,14 @@ class TestQnAAPI:
             login_response = test_client.post(
                 "/auth/login",
                 data={"username": "test_user", "nickname": "Test User"},
-                follow_redirects=False
+                follow_redirects=False,
             )
             assert login_response.status_code == 302
 
             # QnA 요청
             qna_response = test_client.post(
                 f"/qna/{test_doc_id}",
-                json={"question": "What is this document about?"}
+                json={"question": "What is this document about?"},
             )
 
             assert qna_response.status_code == 200
@@ -171,7 +177,9 @@ class TestQnAAPI:
         mock_response.text = "I don't have access to the document."
         mock_response.candidates = []
 
-        with patch('app.services.qna_service.genai.Client') as mock_client_class:
+        with patch(
+            "app.services.qna_service.genai.Client"
+        ) as mock_client_class:
             mock_client = Mock()
             mock_client.models.generate_content.return_value = mock_response
             mock_client_class.return_value = mock_client
@@ -180,13 +188,13 @@ class TestQnAAPI:
             test_client.post(
                 "/auth/login",
                 data={"username": "test_user", "nickname": "Test User"},
-                follow_redirects=False
+                follow_redirects=False,
             )
 
             # QnA 요청
             qna_response = test_client.post(
                 f"/qna/{self.test_doc_id}",
-                json={"question": "What is this document about?"}
+                json={"question": "What is this document about?"},
             )
 
             assert qna_response.status_code == 200
@@ -200,8 +208,7 @@ class TestQnAAPI:
     def test_qna_endpoint_unauthorized(self, test_client):
         """인증 없이 QnA 요청 시 401 에러"""
         qna_response = test_client.post(
-            f"/qna/{self.test_doc_id}",
-            json={"question": "Test question"}
+            f"/qna/{self.test_doc_id}", json={"question": "Test question"}
         )
 
         assert qna_response.status_code == 401
@@ -212,13 +219,12 @@ class TestQnAAPI:
         test_client.post(
             "/auth/login",
             data={"username": "test_user", "nickname": "Test User"},
-            follow_redirects=False
+            follow_redirects=False,
         )
 
         # 존재하지 않는 문서로 QnA 요청
         qna_response = test_client.post(
-            "/qna/999999",
-            json={"question": "Test question"}
+            "/qna/999999", json={"question": "Test question"}
         )
 
         assert qna_response.status_code == 404
@@ -229,35 +235,37 @@ class TestQnAAPI:
         test_client.post(
             "/auth/login",
             data={"username": "test_user", "nickname": "Test User"},
-            follow_redirects=False
+            follow_redirects=False,
         )
 
         # 빈 질문으로 QnA 요청
         qna_response = test_client.post(
-            f"/qna/{self.test_doc_id}",
-            json={"question": ""}
+            f"/qna/{self.test_doc_id}", json={"question": ""}
         )
 
         assert qna_response.status_code == 422
 
     def test_qna_endpoint_api_error(self, test_client):
         """Gemini API 에러 시 500 에러"""
-        with patch('app.services.qna_service.genai.Client') as mock_client_class:
+        with patch(
+            "app.services.qna_service.genai.Client"
+        ) as mock_client_class:
             mock_client = Mock()
-            mock_client.models.generate_content.side_effect = Exception("API Error")
+            mock_client.models.generate_content.side_effect = Exception(
+                "API Error"
+            )
             mock_client_class.return_value = mock_client
 
             # 로그인
             test_client.post(
                 "/auth/login",
                 data={"username": "test_user", "nickname": "Test User"},
-                follow_redirects=False
+                follow_redirects=False,
             )
 
             # QnA 요청
             qna_response = test_client.post(
-                f"/qna/{self.test_doc_id}",
-                json={"question": "Test question"}
+                f"/qna/{self.test_doc_id}", json={"question": "Test question"}
             )
 
             assert qna_response.status_code == 500
@@ -269,7 +277,9 @@ class TestQnAAPI:
         mock_response.text = "Test answer"
         mock_response.candidates = []
 
-        with patch('app.services.qna_service.genai.Client') as mock_client_class:
+        with patch(
+            "app.services.qna_service.genai.Client"
+        ) as mock_client_class:
             mock_client = Mock()
             mock_client.models.generate_content.return_value = mock_response
             mock_client_class.return_value = mock_client
@@ -278,21 +288,21 @@ class TestQnAAPI:
             test_client.post(
                 "/auth/login",
                 data={"username": "test_user", "nickname": "Test User"},
-                follow_redirects=False
+                follow_redirects=False,
             )
 
             # QnA 요청 (히스토리 생성)
             test_client.post(
-                f"/qna/{self.test_doc_id}",
-                json={"question": "Question 1"}
+                f"/qna/{self.test_doc_id}", json={"question": "Question 1"}
             )
             test_client.post(
-                f"/qna/{self.test_doc_id}",
-                json={"question": "Question 2"}
+                f"/qna/{self.test_doc_id}", json={"question": "Question 2"}
             )
 
             # 히스토리 조회
-            history_response = test_client.get(f"/qna/{self.test_doc_id}/history")
+            history_response = test_client.get(
+                f"/qna/{self.test_doc_id}/history"
+            )
 
             assert history_response.status_code == 200
             history = history_response.json()
@@ -310,7 +320,9 @@ class TestQnAAPI:
         mock_response.text = "Follow-up answer"
         mock_response.candidates = []
 
-        with patch('app.services.qna_service.genai.Client') as mock_client_class:
+        with patch(
+            "app.services.qna_service.genai.Client"
+        ) as mock_client_class:
             mock_client = Mock()
             mock_client.models.generate_content.return_value = mock_response
             mock_client_class.return_value = mock_client
@@ -319,7 +331,7 @@ class TestQnAAPI:
             test_client.post(
                 "/auth/login",
                 data={"username": "test_user", "nickname": "Test User"},
-                follow_redirects=False
+                follow_redirects=False,
             )
 
             # 대화 히스토리 포함 QnA 요청
@@ -329,9 +341,9 @@ class TestQnAAPI:
                     "question": "Follow-up question",
                     "conversation_history": [
                         {"question": "Q1", "answer": "A1"},
-                        {"question": "Q2", "answer": "A2"}
-                    ]
-                }
+                        {"question": "Q2", "answer": "A2"},
+                    ],
+                },
             )
 
             assert qna_response.status_code == 200

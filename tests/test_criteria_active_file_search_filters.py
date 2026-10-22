@@ -1,4 +1,5 @@
 """Active criteria metadata filters for rubric File Search call sites."""
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -130,9 +131,9 @@ def test_lessonplan_two_pass_retrieves_user_then_filters_only_rubric_store():
     assert _file_search_for_store(c2, "fileSearchStores/user") is None
 
     # 1패스에서 검색한 지도안 원문이 2패스 평가 프롬프트에 주입됨
-    pass2_contents = (
-        client.models.generate_content.call_args_list[1].kwargs["contents"]
-    )
+    pass2_contents = client.models.generate_content.call_args_list[1].kwargs[
+        "contents"
+    ]
     assert "EVAL_PROMPT_BODY" in pass2_contents
     assert "미래 인구 예측" in pass2_contents
 
@@ -146,11 +147,12 @@ async def test_lessonplan_analysis_skips_gemini_when_no_active_criteria():
     db = AsyncMock()
     client = MagicMock()
 
-    with patch(
-        "app.services.lessonplan_analysis_service.genai.Client",
-        return_value=client,
-    ), patch(
-        "app.services.lessonplan_analysis_service.FileSearchService"
+    with (
+        patch(
+            "app.services.lessonplan_analysis_service.genai.Client",
+            return_value=client,
+        ),
+        patch("app.services.lessonplan_analysis_service.FileSearchService"),
     ):
         service = LessonPlanAnalysisService(db)
 
@@ -172,15 +174,18 @@ async def test_lessonplan_analysis_skips_gemini_when_no_active_criteria():
         return_value={"filename": "report.md", "file_path": "/tmp/report.md"}
     )
 
-    with patch(
-        "app.services.criteria_vector_service."
-        "CriteriaVectorService.active_stable_id_filter",
-        new=AsyncMock(return_value=None),
-        create=True,
-    ), patch(
-        "app.services.lessonplan_analysis_service._call_gemini_with_file_search",
-        return_value=SimpleNamespace(text="report", candidates=[]),
-    ) as gemini_call:
+    with (
+        patch(
+            "app.services.criteria_vector_service."
+            "CriteriaVectorService.active_stable_id_filter",
+            new=AsyncMock(return_value=None),
+            create=True,
+        ),
+        patch(
+            "app.services.lessonplan_analysis_service._call_gemini_with_file_search",
+            return_value=SimpleNamespace(text="report", candidates=[]),
+        ) as gemini_call,
+    ):
         result = await service.analyze_lesson_plan(
             session_id=1,
             user_id=7,
@@ -202,15 +207,17 @@ async def test_lessonplan_analysis_continues_without_filter_when_active_filter_f
     db.flush = AsyncMock()
     client = MagicMock()
 
-    with patch(
-        "app.services.lessonplan_analysis_service.genai.Client",
-        return_value=client,
-    ), patch(
-        "app.services.lessonplan_analysis_service.FileSearchService"
-    ), patch(
-        "app.services.lessonplan_analysis_service.AppStateRepository",
-        create=True,
-    ) as state_cls:
+    with (
+        patch(
+            "app.services.lessonplan_analysis_service.genai.Client",
+            return_value=client,
+        ),
+        patch("app.services.lessonplan_analysis_service.FileSearchService"),
+        patch(
+            "app.services.lessonplan_analysis_service.AppStateRepository",
+            create=True,
+        ) as state_cls,
+    ):
         state = state_cls.return_value
         state.set = AsyncMock()
         service = LessonPlanAnalysisService(db)
@@ -228,22 +235,30 @@ async def test_lessonplan_analysis_continues_without_filter_when_active_filter_f
         service._get_store_ids = AsyncMock(
             return_value=["fileSearchStores/user", "fileSearchStores/rubric"]
         )
-        service.prompt_loader.get_prompt = MagicMock(return_value="{model_name}")
+        service.prompt_loader.get_prompt = MagicMock(
+            return_value="{model_name}"
+        )
         service.report_storage.save_report = MagicMock(
-            return_value={"filename": "report.md", "file_path": "/tmp/report.md"}
+            return_value={
+                "filename": "report.md",
+                "file_path": "/tmp/report.md",
+            }
         )
 
-        with patch(
-            "app.services.criteria_vector_service."
-            "CriteriaVectorService.active_stable_id_filter",
-            new=AsyncMock(side_effect=RuntimeError("alias map corrupt")),
-            create=True,
-        ), patch(
-            "app.services.lessonplan_analysis_service.asyncio.to_thread",
-            new=AsyncMock(
-                return_value=SimpleNamespace(text="report", candidates=[])
+        with (
+            patch(
+                "app.services.criteria_vector_service."
+                "CriteriaVectorService.active_stable_id_filter",
+                new=AsyncMock(side_effect=RuntimeError("alias map corrupt")),
+                create=True,
             ),
-        ) as gemini_call:
+            patch(
+                "app.services.lessonplan_analysis_service.asyncio.to_thread",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(text="report", candidates=[])
+                ),
+            ) as gemini_call,
+        ):
             result = await service.analyze_lesson_plan(
                 session_id=1,
                 user_id=7,
@@ -267,19 +282,22 @@ async def test_qna_evaluation_filters_rubric_store_by_active_stable_id():
     response.candidates = []
     client.models.generate_content.return_value = response
 
-    with patch(
-        "app.services.qna_service.genai.Client",
-        return_value=client,
-    ), patch(
-        "app.services.qna_service.FileSearchService"
-    ) as file_search_cls, patch(
-        "app.services.criteria_context_service.build_criteria_context_or_notice",
-        new=AsyncMock(return_value=(None, None)),
-    ), patch(
-        "app.services.criteria_vector_service."
-        "CriteriaVectorService.active_stable_id_filter",
-        new=AsyncMock(return_value='stable_id="01HACTIVE"'),
-        create=True,
+    with (
+        patch(
+            "app.services.qna_service.genai.Client",
+            return_value=client,
+        ),
+        patch("app.services.qna_service.FileSearchService") as file_search_cls,
+        patch(
+            "app.services.criteria_context_service.build_criteria_context_or_notice",
+            new=AsyncMock(return_value=(None, None)),
+        ),
+        patch(
+            "app.services.criteria_vector_service."
+            "CriteriaVectorService.active_stable_id_filter",
+            new=AsyncMock(return_value='stable_id="01HACTIVE"'),
+            create=True,
+        ),
     ):
         file_search = file_search_cls.return_value
         file_search.get_user_store_id = MagicMock(
@@ -330,19 +348,22 @@ async def test_qna_evaluation_skips_rubric_store_when_no_active_criteria():
     response.candidates = []
     client.models.generate_content.return_value = response
 
-    with patch(
-        "app.services.qna_service.genai.Client",
-        return_value=client,
-    ), patch(
-        "app.services.qna_service.FileSearchService"
-    ) as file_search_cls, patch(
-        "app.services.criteria_context_service.build_criteria_context_or_notice",
-        new=AsyncMock(return_value=(None, None)),
-    ), patch(
-        "app.services.criteria_vector_service."
-        "CriteriaVectorService.active_stable_id_filter",
-        new=AsyncMock(return_value=None),
-        create=True,
+    with (
+        patch(
+            "app.services.qna_service.genai.Client",
+            return_value=client,
+        ),
+        patch("app.services.qna_service.FileSearchService") as file_search_cls,
+        patch(
+            "app.services.criteria_context_service.build_criteria_context_or_notice",
+            new=AsyncMock(return_value=(None, None)),
+        ),
+        patch(
+            "app.services.criteria_vector_service."
+            "CriteriaVectorService.active_stable_id_filter",
+            new=AsyncMock(return_value=None),
+            create=True,
+        ),
     ):
         file_search = file_search_cls.return_value
         file_search.get_user_store_id = MagicMock(
@@ -390,21 +411,25 @@ async def test_qna_evaluation_continues_user_store_when_active_filter_fails():
     response.candidates = []
     client.models.generate_content.return_value = response
 
-    with patch(
-        "app.services.qna_service.genai.Client",
-        return_value=client,
-    ), patch(
-        "app.services.qna_service.FileSearchService"
-    ) as file_search_cls, patch(
-        "app.services.criteria_context_service.build_criteria_context_or_notice",
-        new=AsyncMock(return_value=(None, None)),
-    ), patch(
-        "app.repositories.app_state_repository.AppStateRepository"
-    ) as state_cls, patch(
-        "app.services.criteria_vector_service."
-        "CriteriaVectorService.active_stable_id_filter",
-        new=AsyncMock(side_effect=RuntimeError("alias map corrupt")),
-        create=True,
+    with (
+        patch(
+            "app.services.qna_service.genai.Client",
+            return_value=client,
+        ),
+        patch("app.services.qna_service.FileSearchService") as file_search_cls,
+        patch(
+            "app.services.criteria_context_service.build_criteria_context_or_notice",
+            new=AsyncMock(return_value=(None, None)),
+        ),
+        patch(
+            "app.repositories.app_state_repository.AppStateRepository"
+        ) as state_cls,
+        patch(
+            "app.services.criteria_vector_service."
+            "CriteriaVectorService.active_stable_id_filter",
+            new=AsyncMock(side_effect=RuntimeError("alias map corrupt")),
+            create=True,
+        ),
     ):
         state = state_cls.return_value
         state.set = AsyncMock()

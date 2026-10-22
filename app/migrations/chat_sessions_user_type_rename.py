@@ -1,6 +1,7 @@
 """
 chat_sessions.user_type 라벨 정규화: '현직교사' → '교사'
 """
+
 from __future__ import annotations
 
 import logging

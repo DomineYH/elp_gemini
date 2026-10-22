@@ -1,4 +1,5 @@
 """LessonPlanUpload 모델 및 마이그레이션 idempotency 테스트."""
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import inspect, select, text
@@ -28,7 +29,8 @@ async def test_upload_row_can_be_inserted_and_linked_to_report(engine):
     async_session = async_sessionmaker(engine, expire_on_commit=False)
     async with async_session() as s:
         user = User(
-            username="alice", nickname="alice",
+            username="alice",
+            nickname="alice",
             hashed_password="x",
         )
         s.add(user)
@@ -57,18 +59,14 @@ async def test_upload_row_can_be_inserted_and_linked_to_report(engine):
         # Round-trip
         row = (
             await s.execute(
-                select(AnalysisReport).where(
-                    AnalysisReport.upload_id == up.id
-                )
+                select(AnalysisReport).where(AnalysisReport.upload_id == up.id)
             )
         ).scalar_one()
         assert row.upload_id == up.id
 
 
 @pytest.mark.asyncio
-async def test_ensure_lessonplan_uploads_table_tolerates_fresh_db(
-    tmp_path
-):
+async def test_ensure_lessonplan_uploads_table_tolerates_fresh_db(tmp_path):
     """Migration should tolerate running before ORM tables exist."""
     db_path = tmp_path / "fresh.db"
     eng = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
@@ -106,34 +104,36 @@ async def test_ensure_lessonplan_uploads_table_is_idempotent(tmp_path):
     assert added2 is False
 
     def _columns(sync_conn):
-        return {c["name"] for c in inspect(sync_conn).get_columns(
-            "analysis_reports"
-        )}
+        return {
+            c["name"]
+            for c in inspect(sync_conn).get_columns("analysis_reports")
+        }
 
     def _upload_indexes(sync_conn):
-        return {ix["name"] for ix in inspect(sync_conn).get_indexes(
-            "lessonplan_uploads"
-        )}
+        return {
+            ix["name"]
+            for ix in inspect(sync_conn).get_indexes("lessonplan_uploads")
+        }
 
     async with eng.begin() as conn:
         cols = await conn.run_sync(_columns)
         upload_indexes = await conn.run_sync(_upload_indexes)
     assert "upload_id" in cols
-    assert (
-        "uq_lessonplan_uploads_synthetic_per_user" in upload_indexes
-    )
+    assert "uq_lessonplan_uploads_synthetic_per_user" in upload_indexes
     await eng.dispose()
 
 
 @pytest.mark.asyncio
 async def test_ensure_lessonplan_uploads_table_does_not_backfill_legacy_reports(
-    tmp_path
+    tmp_path,
 ):
     db_path = tmp_path / "legacy.db"
     eng = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
 
     async with eng.begin() as conn:
-        await conn.execute(text("""
+        await conn.execute(
+            text(
+                """
             CREATE TABLE users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username VARCHAR(255) NOT NULL UNIQUE,
@@ -147,8 +147,12 @@ async def test_ensure_lessonplan_uploads_table_does_not_backfill_legacy_reports(
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-        """))
-        await conn.execute(text("""
+        """
+            )
+        )
+        await conn.execute(
+            text(
+                """
             CREATE TABLE analysis_reports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL REFERENCES users(id),
@@ -159,14 +163,22 @@ async def test_ensure_lessonplan_uploads_table_does_not_backfill_legacy_reports(
                 latency_ms INTEGER,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-        """))
-        await conn.execute(text("""
+        """
+            )
+        )
+        await conn.execute(
+            text(
+                """
             INSERT INTO users (
                 username, nickname, email, hashed_password
             )
             VALUES ('alice', 'alice', 'a@a.com', 'x')
-        """))
-        await conn.execute(text("""
+        """
+            )
+        )
+        await conn.execute(
+            text(
+                """
             INSERT INTO analysis_reports (
                 user_id, lessonplan_filename, lessonplan_original_name,
                 report_filename, report_path, latency_ms, created_at
@@ -175,7 +187,9 @@ async def test_ensure_lessonplan_uploads_table_does_not_backfill_legacy_reports(
                 1, 'alice_plan.pdf', 'plan.pdf', 'report.md',
                 '/tmp/report.md', 123, '2026-05-13 12:34:56'
             )
-        """))
+        """
+            )
+        )
 
     added = await ensure_lessonplan_uploads_table(eng)
     added_again = await ensure_lessonplan_uploads_table(eng)
@@ -185,15 +199,17 @@ async def test_ensure_lessonplan_uploads_table_does_not_backfill_legacy_reports(
 
     async with eng.begin() as conn:
         upload_count = (
-            await conn.execute(text(
-                "SELECT COUNT(*) FROM lessonplan_uploads"
-            ))
+            await conn.execute(text("SELECT COUNT(*) FROM lessonplan_uploads"))
         ).scalar_one()
         report = (
-            await conn.execute(text(
-                "SELECT id, upload_id FROM analysis_reports"
-            ))
-        ).mappings().one()
+            (
+                await conn.execute(
+                    text("SELECT id, upload_id FROM analysis_reports")
+                )
+            )
+            .mappings()
+            .one()
+        )
 
     assert upload_count == 0
     assert report["upload_id"] is None

@@ -2,6 +2,7 @@
 분석 보고서 파일 저장 서비스
 app/static/reports/{user_id}/ 디렉토리에 분석 보고서 파일 관리
 """
+
 import logging
 import uuid
 from datetime import datetime
@@ -72,18 +73,13 @@ class ReportStorageService:
 
             # 파일명 생성:
             # {년월일시간}_{업로드파일명}_{unique8}_reports.md
-            filename = (
-                f"{timestamp}_{base_filename}_"
-                f"{unique8}_reports.md"
-            )
+            filename = f"{timestamp}_{base_filename}_" f"{unique8}_reports.md"
             file_path = user_dir / filename
 
             # 파일 저장
             file_path.write_text(report_content, encoding="utf-8")
 
-            logger.info(
-                f"보고서 저장 완료: user_id={user_id}, {filename}"
-            )
+            logger.info(f"보고서 저장 완료: user_id={user_id}, {filename}")
 
             return {
                 "filename": filename,
@@ -94,11 +90,7 @@ class ReportStorageService:
             logger.error(f"보고서 저장 실패: {str(e)}")
             raise
 
-    def get_report_path(
-        self,
-        user_id: int,
-        filename: str
-    ) -> Optional[str]:
+    def get_report_path(self, user_id: int, filename: str) -> Optional[str]:
         """
         보고서 파일 경로 반환
 
@@ -150,32 +142,29 @@ class ReportStorageService:
             reports = []
             for file_path in files:
                 stat = file_path.stat()
-                reports.append({
-                    "filename": file_path.name,
-                    "file_path": str(file_path),
-                    "size": stat.st_size,
-                    "created_at": datetime.fromtimestamp(
-                        stat.st_ctime
-                    ).isoformat(),
-                })
+                reports.append(
+                    {
+                        "filename": file_path.name,
+                        "file_path": str(file_path),
+                        "size": stat.st_size,
+                        "created_at": datetime.fromtimestamp(
+                            stat.st_ctime
+                        ).isoformat(),
+                    }
+                )
 
             # 생성 시간 기준 내림차순 정렬 (최신 순)
             reports.sort(key=lambda x: x["created_at"], reverse=True)
 
             logger.info(
-                f"보고서 목록 조회: user_id={user_id}, "
-                f"{len(reports)}개"
+                f"보고서 목록 조회: user_id={user_id}, " f"{len(reports)}개"
             )
             return reports
         except Exception as e:
             logger.error(f"보고서 목록 조회 실패: {str(e)}")
             raise
 
-    def delete_report(
-        self,
-        user_id: int,
-        filename: str
-    ) -> bool:
+    def delete_report(self, user_id: int, filename: str) -> bool:
         """
         보고서 파일 삭제
 
@@ -204,9 +193,7 @@ class ReportStorageService:
                 return False
 
             file_path.unlink()
-            logger.info(
-                f"보고서 삭제 완료: user_id={user_id}, {filename}"
-            )
+            logger.info(f"보고서 삭제 완료: user_id={user_id}, {filename}")
             return True
         except Exception as e:
             logger.error(f"보고서 삭제 실패: {str(e)}")

@@ -1,9 +1,10 @@
 """
 평가 프롬프트 구성 및 결과 파싱 유틸리티
 """
+
 import logging
 import re
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +35,10 @@ class EvaluationPromptBuilder:
         # 평가 기준 섹션 구성
         criteria_section = ""
         if criteria_contexts:
-            criteria_section = (
-                "\n\n**참고: 공식 평가 기준**:\n"
-            )
+            criteria_section = "\n\n**참고: 공식 평가 기준**:\n"
             for idx, ctx in enumerate(criteria_contexts, 1):
                 content = ctx.get("content", "")
-                criteria_section += (
-                    f"{idx}. {content}\n\n"
-                )
+                criteria_section += f"{idx}. {content}\n\n"
 
         prompt = f"""
 {system_prompt}
@@ -97,15 +94,11 @@ class EvaluationPromptBuilder:
                 r"종합 점수[:\s]*(\d+\.?\d*)", response_text
             )
             if overall_match:
-                result["overall_score"] = float(
-                    overall_match.group(1)
-                )
+                result["overall_score"] = float(overall_match.group(1))
 
             # 기준별 점수 추출
             criteria_pattern = r"-\s*(.+?):\s*(\d+\.?\d*)"
-            criteria_matches = re.finditer(
-                criteria_pattern, response_text
-            )
+            criteria_matches = re.finditer(criteria_pattern, response_text)
             for match in criteria_matches:
                 criterion = match.group(1).strip()
                 score = float(match.group(2))
@@ -118,9 +111,7 @@ class EvaluationPromptBuilder:
                 re.DOTALL,
             )
             if feedback_match:
-                result["feedback"] = (
-                    feedback_match.group(1).strip()
-                )
+                result["feedback"] = feedback_match.group(1).strip()
             else:
                 result["feedback"] = response_text
 
@@ -131,13 +122,12 @@ class EvaluationPromptBuilder:
                 re.DOTALL,
             )
             if suggestions_match:
-                result["improvement_suggestions"] = (
-                    suggestions_match.group(1).strip()
-                )
+                result["improvement_suggestions"] = suggestions_match.group(
+                    1
+                ).strip()
 
             logger.info(
-                f"평가 결과 파싱 완료: "
-                f"score={result['overall_score']}"
+                f"평가 결과 파싱 완료: " f"score={result['overall_score']}"
             )
             return result
 

@@ -1,4 +1,5 @@
 """display_alias 검증 스키마 테스트"""
+
 import pytest
 from pydantic import ValidationError
 
@@ -71,9 +72,7 @@ def test_rejects_control_characters():
 
 
 def test_accepts_mixed_korean_and_ascii():
-    req = UpdateDisplayAliasRequest(
-        display_alias="Math 수학 grade-6"
-    )
+    req = UpdateDisplayAliasRequest(display_alias="Math 수학 grade-6")
     assert req.display_alias == "Math 수학 grade-6"
 
 

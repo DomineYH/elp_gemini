@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from app.schemas.alias_map import AliasMap, AliasMapEntry
 from app.routers.admin.criteria import (
     activate_by_stable_id,
     delete_criteria_by_stable_id,
@@ -14,6 +13,7 @@ from app.routers.admin.criteria import (
     router,
     upload_criteria,
 )
+from app.schemas.alias_map import AliasMap, AliasMapEntry
 
 
 @pytest.mark.asyncio
@@ -22,11 +22,12 @@ async def test_reconcile_endpoint_returns_state():
         "R", (), {"ok": True, "skipped": False, "count": 2, "error": None}
     )()
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaReconciliationService"
-    ) as svc_cls, patch(
-        "app.routers.admin.criteria.AppStateRepository"
-    ) as repo_cls:
+    with (
+        patch(
+            "app.routers.admin.criteria.CriteriaReconciliationService"
+        ) as svc_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as repo_cls,
+    ):
         instance = svc_cls.return_value
         instance.reconcile = AsyncMock(return_value=mock_result)
         mock_state = AsyncMock()
@@ -41,11 +42,10 @@ async def test_reconcile_endpoint_returns_state():
 
 @pytest.mark.asyncio
 async def test_list_endpoint_includes_sync_metadata():
-    with patch(
-        "app.routers.admin.criteria.AppStateRepository"
-    ) as repo_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as crit_cls:
+    with (
+        patch("app.routers.admin.criteria.AppStateRepository") as repo_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as crit_cls,
+    ):
         mock_state = AsyncMock()
         mock_state.get = AsyncMock(
             side_effect=lambda k: {
@@ -77,11 +77,10 @@ async def test_list_criteria_json_includes_id_and_stable_id():
         document_id="fileSearchStores/s/documents/rubric",
     )
 
-    with patch(
-        "app.routers.admin.criteria.AppStateRepository"
-    ) as repo_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as crit_cls:
+    with (
+        patch("app.routers.admin.criteria.AppStateRepository") as repo_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as crit_cls,
+    ):
         mock_state = AsyncMock()
         mock_state.get = AsyncMock(return_value=None)
         repo_cls.return_value = mock_state
@@ -99,7 +98,8 @@ def test_upload_route_requires_sync_ready_dependency():
     from app.dependencies import require_criteria_sync_ready
 
     upload_route = next(
-        route for route in router.routes
+        route
+        for route in router.routes
         if getattr(route, "path", None) == "/api/admin/criteria/upload"
         and "POST" in getattr(route, "methods", set())
     )
@@ -114,26 +114,28 @@ async def test_activate_rejects_legacy_surrogate_stable_id():
     legacy_stable_id = "legacy_0123456789abcdef"
     db = AsyncMock()
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as repo_cls:
+    with (
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+    ):
         vector_cls.return_value.file_search_service.client = MagicMock()
-        alias_cls.return_value.fetch = AsyncMock(return_value=(
-            "docs/alias-map",
-            AliasMap(
-                schema_version=1,
-                updated_at="2026-05-15T00:00:00Z",
-                entries={
-                    legacy_stable_id: AliasMapEntry(
-                        alias=None, status="uploaded", activated_at=None
-                    ),
-                },
-            ),
-        ))
+        alias_cls.return_value.fetch = AsyncMock(
+            return_value=(
+                "docs/alias-map",
+                AliasMap(
+                    schema_version=1,
+                    updated_at="2026-05-15T00:00:00Z",
+                    entries={
+                        legacy_stable_id: AliasMapEntry(
+                            alias=None, status="uploaded", activated_at=None
+                        ),
+                    },
+                ),
+            )
+        )
         alias_cls.return_value.replace = AsyncMock()
         repo_cls.return_value.get_criteria_by_stable_id = AsyncMock(
             return_value=SimpleNamespace(
@@ -168,31 +170,33 @@ async def test_delete_legacy_surrogate_uses_real_document_id():
     )
     db = AsyncMock()
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as repo_cls, patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls:
+    with (
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+    ):
         repo_cls.return_value.get_criteria_by_stable_id = AsyncMock(
             return_value=row
         )
         vector = vector_cls.return_value
         vector.delete_criteria = AsyncMock(return_value=True)
         vector.file_search_service.client = MagicMock()
-        alias_cls.return_value.fetch = AsyncMock(return_value=(
-            "docs/alias-map",
-            AliasMap(
-                schema_version=1,
-                updated_at="2026-05-15T00:00:00Z",
-                entries={
-                    legacy_stable_id: AliasMapEntry(
-                        alias=None, status="uploaded", activated_at=None
-                    ),
-                },
-            ),
-        ))
+        alias_cls.return_value.fetch = AsyncMock(
+            return_value=(
+                "docs/alias-map",
+                AliasMap(
+                    schema_version=1,
+                    updated_at="2026-05-15T00:00:00Z",
+                    entries={
+                        legacy_stable_id: AliasMapEntry(
+                            alias=None, status="uploaded", activated_at=None
+                        ),
+                    },
+                ),
+            )
+        )
         alias_cls.return_value.replace = AsyncMock()
 
         body = await delete_criteria_by_stable_id(
@@ -212,7 +216,9 @@ async def test_delete_legacy_surrogate_uses_real_document_id():
 
 @pytest.mark.asyncio
 async def test_upload_does_not_publish_manifest_before_cloud_document_exists():
-    pytest.skip("Wave 5: replaced by new alias_map-based upload; assertions no longer apply")
+    pytest.skip(
+        "Wave 5: replaced by new alias_map-based upload; assertions no longer apply"
+    )
     file = SimpleNamespace(
         filename="rubric.pdf",
         read=AsyncMock(return_value=b"%PDF-1.4 rubric"),
@@ -221,16 +227,17 @@ async def test_upload_does_not_publish_manifest_before_cloud_document_exists():
     current_admin = SimpleNamespace(username="admin")
     criteria = SimpleNamespace(id=123, file_path="temp")
 
-    with patch(
-        "app.routers.admin.criteria.FileValidator"
-    ) as validator_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as repo_cls, patch(
-        "app.services.file_storage_service.FileStorageService"
-    ) as storage_cls, patch(
-        "app.routers.admin.criteria._publish_or_mark_resync",
-        new_callable=AsyncMock,
-    ) as publish:
+    with (
+        patch("app.routers.admin.criteria.FileValidator") as validator_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+        patch(
+            "app.services.file_storage_service.FileStorageService"
+        ) as storage_cls,
+        patch(
+            "app.routers.admin.criteria._publish_or_mark_resync",
+            new_callable=AsyncMock,
+        ) as publish,
+    ):
         validator_cls.return_value.validate_file = AsyncMock(
             return_value={"valid": True}
         )

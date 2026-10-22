@@ -2,42 +2,28 @@
 Criteria Pipeline 통합 테스트: 활성화 → 평가
 Active 기준을 사용한 평가 시나리오 검증
 """
+
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
 import pytest
 import pytest_asyncio
-from fastapi.testclient import TestClient
-from unittest.mock import (
-    patch,
-    Mock,
-    AsyncMock,
-    MagicMock,
-    call
-)
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import (
-    create_async_engine,
-    AsyncSession,
-    async_sessionmaker
-)
-from sqlalchemy.pool import StaticPool
-import tempfile
-from io import BytesIO
-
-from app.main import app
-from app.db import Base, get_db
-from app.models.users import User
 from app.models.documents import Document
 from app.models.evaluations import EvaluationTemplate
-from app.models.criteria import CriteriaDocument, ActiveCriteria
-from app.routers.auth import get_current_user
 
+from app.main import app
+from app.models.criteria import ActiveCriteria, CriteriaDocument
+from app.models.users import User
+from app.routers.auth import get_current_user
 
 # conftest.py의 픽스처 사용 (pytest가 자동 발견)
 
 
 def override_user(user):
     """사용자 인증 오버라이드"""
+
     def _override():
         return user
+
     return _override
 
 
@@ -49,7 +35,7 @@ async def test_user():
             username="test_user",
             nickname="Test User",
             hashed_password="hashed",
-            is_admin=False
+            is_admin=False,
         )
         db.add(user)
         await db.commit()
@@ -69,7 +55,7 @@ async def test_document(test_user):
             store_id="store-123",
             file_search_file_id="file-123",
             user_id=test_user.id,
-            status="ready"
+            status="ready",
         )
         db.add(doc)
         await db.commit()
@@ -85,7 +71,7 @@ async def test_template():
             name="Test Template",
             description="Test",
             criteria={"clarity": "high"},
-            is_active=True
+            is_active=True,
         )
         db.add(template)
         await db.commit()
@@ -104,16 +90,13 @@ async def active_criteria():
             mime_type="application/pdf",
             file_size=2048,
             vector_store_id="vector-store-active",
-            status="active"
+            status="active",
         )
         db.add(criteria)
         await db.flush()
 
         # Active 설정
-        active = ActiveCriteria(
-            id=1,
-            criteria_document_id=criteria.id
-        )
+        active = ActiveCriteria(id=1, criteria_document_id=criteria.id)
         db.add(active)
         await db.commit()
         await db.refresh(criteria)
@@ -133,7 +116,7 @@ class TestCriteriaPipelineEvaluation:
         test_user,
         test_document,
         test_template,
-        active_criteria
+        active_criteria,
     ):
         """
         Active 기준 있을 때 평가 성공
@@ -142,29 +125,22 @@ class TestCriteriaPipelineEvaluation:
         mock_context = [
             {
                 "content": "기준: 명확성 우선",
-                "metadata": {
-                    "criteria_id": active_criteria.id
-                }
+                "metadata": {"criteria_id": active_criteria.id},
             }
         ]
 
         with patch(
-            "app.services.eval_service."
-            "CriteriaContextService.get_context",
+            "app.services.eval_service." "CriteriaContextService.get_context",
             new_callable=AsyncMock,
-            return_value=mock_context
+            return_value=mock_context,
         ) as mock_get_context:
 
             # Gemini API 모킹
             mock_gemini_response = Mock()
-            mock_gemini_response.text = (
-                "평가 결과: 우수\n"
-                "개선 제안: 없음"
-            )
+            mock_gemini_response.text = "평가 결과: 우수\n" "개선 제안: 없음"
 
             with patch(
-                "app.services.eval_service."
-                "genai.GenerativeModel"
+                "app.services.eval_service." "genai.GenerativeModel"
             ) as mock_model:
                 mock_instance = MagicMock()
                 mock_instance.generate_content = AsyncMock(
@@ -173,40 +149,28 @@ class TestCriteriaPipelineEvaluation:
                 mock_model.return_value = mock_instance
 
                 # 평가 실행
-                app.dependency_overrides[
-                    get_current_user
-                ] = override_user(test_user)
+                app.dependency_overrides[get_current_user] = override_user(
+                    test_user
+                )
 
                 response = test_client.post(
-                    "/eval/run",
-                    json={
-                        "template_id": test_template.id
-                    }
+                    "/eval/run", json={"template_id": test_template.id}
                 )
 
-                app.dependency_overrides.pop(
-                    get_current_user, None
-                )
+                app.dependency_overrides.pop(get_current_user, None)
 
         # 검증
         assert response.status_code == 200
         result = response.json()
         assert "id" in result
-        assert result["status"] in [
-            "running",
-            "completed"
-        ]
+        assert result["status"] in ["running", "completed"]
 
         # CriteriaContextService 호출 확인
         assert mock_get_context.called
 
     @pytest.mark.asyncio
     async def test_evaluation_without_active_criteria(
-        self,
-        test_client,
-        test_user,
-        test_document,
-        test_template
+        self, test_client, test_user, test_document, test_template
     ):
         """
         Active 기준 없을 때 평가 실패 (ValueError)
@@ -214,12 +178,9 @@ class TestCriteriaPipelineEvaluation:
         # Active 기준 없음 (fixture 사용 안 함)
 
         # 평가 실행
-        app.dependency_overrides[get_current_user] = (
-            override_user(test_user)
-        )
+        app.dependency_overrides[get_current_user] = override_user(test_user)
         response = test_client.post(
-            "/eval/run",
-            json={"template_id": test_template.id}
+            "/eval/run", json={"template_id": test_template.id}
         )
         app.dependency_overrides.pop(get_current_user, None)
 
@@ -234,26 +195,21 @@ class TestCriteriaPipelineEvaluation:
         test_user,
         test_document,
         test_template,
-        active_criteria
+        active_criteria,
     ):
         """
         CriteriaContextService.get_context() 호출 검증
         """
-        mock_context = [
-            {"content": "기준 1"},
-            {"content": "기준 2"}
-        ]
+        mock_context = [{"content": "기준 1"}, {"content": "기준 2"}]
 
         with patch(
-            "app.services.eval_service."
-            "CriteriaContextService.get_context",
+            "app.services.eval_service." "CriteriaContextService.get_context",
             new_callable=AsyncMock,
-            return_value=mock_context
+            return_value=mock_context,
         ) as mock_get_context:
 
             with patch(
-                "app.services.eval_service."
-                "genai.GenerativeModel"
+                "app.services.eval_service." "genai.GenerativeModel"
             ) as mock_model:
                 mock_instance = MagicMock()
                 mock_response = Mock()
@@ -263,20 +219,15 @@ class TestCriteriaPipelineEvaluation:
                 )
                 mock_model.return_value = mock_instance
 
-                app.dependency_overrides[
-                    get_current_user
-                ] = override_user(test_user)
+                app.dependency_overrides[get_current_user] = override_user(
+                    test_user
+                )
 
                 test_client.post(
-                    "/eval/run",
-                    json={
-                        "template_id": test_template.id
-                    }
+                    "/eval/run", json={"template_id": test_template.id}
                 )
 
-                app.dependency_overrides.pop(
-                    get_current_user, None
-                )
+                app.dependency_overrides.pop(get_current_user, None)
 
         # get_context() 호출 확인
         assert mock_get_context.called

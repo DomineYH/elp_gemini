@@ -9,6 +9,7 @@
       중앙값이 통계적으로 구분되지 않는다
       (issue #6 사용자 명시 요구: status/body/timing 모두 일치)
 """
+
 from __future__ import annotations
 
 import re
@@ -205,15 +206,11 @@ async def test_all_failure_paths_return_identical_response(
         ("locked", r4),
         ("no_password", r5),
     ]:
-        assert r.status_code == 401, (
-            f"{label}: expected 401, got {r.status_code}"
-        )
-        assert "ID 또는 비밀번호" in r.text, (
-            f"{label}: unified message missing"
-        )
-        assert "잠시" not in r.text, (
-            f"{label}: lockout message leaked (#6)"
-        )
+        assert (
+            r.status_code == 401
+        ), f"{label}: expected 401, got {r.status_code}"
+        assert "ID 또는 비밀번호" in r.text, f"{label}: unified message missing"
+        assert "잠시" not in r.text, f"{label}: lockout message leaked (#6)"
 
     bodies = {
         "missing_user": r1.text,
@@ -293,9 +290,7 @@ async def test_dummy_bcrypt_and_db_touch_called_in_non_admin_path(
     ):
         async with session_factory() as session:
             svc = AuthService(session)
-            result = await svc.authenticate_admin(
-                "regular_for_timing", "x"
-            )
+            result = await svc.authenticate_admin("regular_for_timing", "x")
         assert result.user is None
         dummy.assert_called_once_with("x")
         touch.assert_awaited_once_with()
@@ -389,16 +384,16 @@ async def test_audit_log_distinguishes_locked_vs_invalid(
 
     joined = "\n".join(r.getMessage() for r in caplog.records)
     # locked 경로는 service/router 양쪽에서 별도 audit 이벤트를 남긴다
-    assert "lockout_attempt_blocked" in joined, (
-        "service 의 lockout 이벤트가 audit 에 남아야 함"
-    )
-    assert "lockout_attempt_external_blocked" in joined, (
-        "router 의 외부 응답 통일 이벤트가 audit 에 남아야 함"
-    )
+    assert (
+        "lockout_attempt_blocked" in joined
+    ), "service 의 lockout 이벤트가 audit 에 남아야 함"
+    assert (
+        "lockout_attempt_external_blocked" in joined
+    ), "router 의 외부 응답 통일 이벤트가 audit 에 남아야 함"
     # invalid 경로는 일반 'Invalid credentials' 이벤트만 남는다
-    assert "Invalid credentials" in joined, (
-        "invalid 경로의 audit 이벤트가 보존되어야 함"
-    )
+    assert (
+        "Invalid credentials" in joined
+    ), "invalid 경로의 audit 이벤트가 보존되어야 함"
 
 
 # ---------------------------------------------------------------------
@@ -440,9 +435,7 @@ async def test_failure_paths_wallclock_parity(
             u = await s.get(User, admin_user.id)
             u.failed_login_count = 0
             u.locked_until = (
-                datetime.utcnow() + timedelta(minutes=5)
-                if locked
-                else None
+                datetime.utcnow() + timedelta(minutes=5) if locked else None
             )
             u.hashed_password = hashed_password
             await s.commit()
@@ -463,9 +456,7 @@ async def test_failure_paths_wallclock_parity(
             "locked",
             ADMIN,
             "wrong",
-            lambda: set_admin_state(
-                hashed_password=original_hash, locked=True
-            ),
+            lambda: set_admin_state(hashed_password=original_hash, locked=True),
         ),
         (
             "no_password",
@@ -474,6 +465,7 @@ async def test_failure_paths_wallclock_parity(
             lambda: set_admin_state(hashed_password=None),
         ),
     ]
+
     async def collect_timings() -> tuple[float, dict, dict]:
         timings = {label: [] for label, *_ in paths}
 
@@ -519,8 +511,7 @@ async def test_failure_paths_wallclock_parity(
         attempts, key=lambda item: item[0]
     )
     best_medians_ms = {
-        key: round(value * 1000, 1)
-        for key, value in best_medians.items()
+        key: round(value * 1000, 1) for key, value in best_medians.items()
     }
     best_samples_ms = {
         key: [round(timing * 1000, 1) for timing in values]

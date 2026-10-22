@@ -1,4 +1,5 @@
 """upload_criteria가 stable_id와 original_title_b64 메타데이터를 포함"""
+
 import base64
 from unittest.mock import MagicMock, patch
 
@@ -34,7 +35,9 @@ async def test_upload_criteria_preserves_raw_list_metadata_in_sdk_call():
 
     assert result["document_id"] == "docs/abc"
 
-    upload_call = client.file_search_stores.upload_to_file_search_store.call_args
+    upload_call = (
+        client.file_search_stores.upload_to_file_search_store.call_args
+    )
     custom_metadata = upload_call.kwargs["config"]["custom_metadata"]
     meta = {entry["key"]: entry for entry in custom_metadata}
 

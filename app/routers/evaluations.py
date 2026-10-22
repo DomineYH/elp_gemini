@@ -2,30 +2,27 @@
 평가 라우터
 지도안 평가 실행 및 결과 조회 엔드포인트
 """
+
+import logging
+
 from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
     status,
 )
-import logging
 
 from app.dependencies import get_current_user
 from app.models.users import User
 from app.schemas.evaluations import (
+    GetEvaluationResponse,
     RunEvaluationRequest,
     RunEvaluationResponse,
-    GetEvaluationResponse,
 )
+from app.services.analysis_storage_service import AnalysisStorageService
 from app.services.eval_service import EvaluationService
-from app.services.analysis_storage_service import (
-    AnalysisStorageService
-)
 
-router = APIRouter(
-    prefix="/api/evaluations",
-    tags=["평가"]
-)
+router = APIRouter(prefix="/api/evaluations", tags=["평가"])
 logger = logging.getLogger(__name__)
 
 
@@ -71,9 +68,7 @@ async def run_evaluation(
         )
 
         # 결과 파일명 생성
-        analysis_filename = (
-            f"{request.lessonplan_filename}.md"
-        )
+        analysis_filename = f"{request.lessonplan_filename}.md"
 
         return RunEvaluationResponse(
             username=current_user.username,
@@ -85,21 +80,15 @@ async def run_evaluation(
         )
 
     except ValueError as e:
-        logger.warning(
-            f"평가 실행 실패 (잘못된 요청): {e}"
-        )
+        logger.warning(f"평가 실행 실패 (잘못된 요청): {e}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
         )
     except Exception as e:
-        logger.error(
-            f"평가 실행 실패: {str(e)}",
-            exc_info=True
-        )
+        logger.error(f"평가 실행 실패: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="평가 실행 중 오류가 발생했습니다."
+            detail="평가 실행 중 오류가 발생했습니다.",
         )
 
 
@@ -138,11 +127,11 @@ async def get_evaluation(
         if not content:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="평가 결과를 찾을 수 없습니다."
+                detail="평가 결과를 찾을 수 없습니다.",
             )
 
         # 파일 크기 계산
-        file_size = len(content.encode('utf-8'))
+        file_size = len(content.encode("utf-8"))
 
         return GetEvaluationResponse(
             filename=filename,
@@ -153,11 +142,8 @@ async def get_evaluation(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"평가 결과 조회 실패: {str(e)}",
-            exc_info=True
-        )
+        logger.error(f"평가 결과 조회 실패: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="결과 조회 중 오류가 발생했습니다."
+            detail="결과 조회 중 오류가 발생했습니다.",
         )

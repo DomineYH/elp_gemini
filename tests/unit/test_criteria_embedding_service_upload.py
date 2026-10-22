@@ -2,9 +2,10 @@
 CriteriaEmbeddingService 업로드 관련 테스트
 기본 업로드 기능 검증
 """
-import pytest
+
 from unittest.mock import MagicMock, patch
 
+import pytest
 from app.services.criteria_embedding_service import (
     CriteriaEmbeddingService,
 )
@@ -14,15 +15,9 @@ from app.services.criteria_embedding_service import (
 class TestCriteriaEmbeddingServiceUpload:
     """기본 업로드 테스트"""
 
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
-    async def test_upload_and_embed_success(
-        self, mock_genai, mock_settings
-    ):
+    @patch("app.services.criteria_embedding_service.settings")
+    @patch("app.services.criteria_embedding_service.genai")
+    async def test_upload_and_embed_success(self, mock_genai, mock_settings):
         """정상 업로드 및 임베딩 (고유 스토어 생성)"""
         # Arrange
         mock_settings.GOOGLE_API_KEY = "test-key"
@@ -38,24 +33,16 @@ class TestCriteriaEmbeddingServiceUpload:
         # Mock Client
         mock_client = MagicMock()
         fss = mock_client.file_search_stores
-        fss.create.return_value = (
-            mock_new_store
-        )
+        fss.create.return_value = mock_new_store
 
         # Mock Operation (완료 상태)
         mock_operation = MagicMock()
         mock_operation.done = True
-        mock_operation.response.parent = (
-            "stores/vector-unique-123"
-        )
-        mock_operation.response.document_name = (
-            "docs/test-doc"
-        )
+        mock_operation.response.parent = "stores/vector-unique-123"
+        mock_operation.response.document_name = "docs/test-doc"
 
         upload_mock = fss.upload_to_file_search_store
-        upload_mock.return_value = (
-            mock_operation
-        )
+        upload_mock.return_value = mock_operation
 
         mock_genai.Client.return_value = mock_client
 
@@ -80,15 +67,9 @@ class TestCriteriaEmbeddingServiceUpload:
         fss.create.assert_called_once()
         upload_mock.assert_called_once()
 
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
-    async def test_upload_and_embed_timeout(
-        self, mock_genai, mock_settings
-    ):
+    @patch("app.services.criteria_embedding_service.settings")
+    @patch("app.services.criteria_embedding_service.genai")
+    async def test_upload_and_embed_timeout(self, mock_genai, mock_settings):
         """업로드 타임아웃 (고유 스토어 생성)"""
         # Arrange
         mock_settings.GOOGLE_API_KEY = "test-key"
@@ -104,21 +85,15 @@ class TestCriteriaEmbeddingServiceUpload:
         # Mock Client
         mock_client = MagicMock()
         fss = mock_client.file_search_stores
-        fss.create.return_value = (
-            mock_new_store
-        )
+        fss.create.return_value = mock_new_store
 
         # Mock Operation (완료되지 않음)
         mock_operation = MagicMock()
         mock_operation.done = False
 
         upload_mock = fss.upload_to_file_search_store
-        upload_mock.return_value = (
-            mock_operation
-        )
-        mock_client.operations.get.return_value = (
-            mock_operation
-        )
+        upload_mock.return_value = mock_operation
+        mock_client.operations.get.return_value = mock_operation
 
         mock_genai.Client.return_value = mock_client
 
@@ -134,12 +109,8 @@ class TestCriteriaEmbeddingServiceUpload:
 
         assert "타임아웃" in str(exc.value)
 
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
+    @patch("app.services.criteria_embedding_service.settings")
+    @patch("app.services.criteria_embedding_service.genai")
     async def test_multiple_uploads_different_store_ids(
         self, mock_genai, mock_settings
     ):
@@ -160,9 +131,7 @@ class TestCriteriaEmbeddingServiceUpload:
         mock_store_1.name = "stores/criteria-1000-aaa1"
         mock_operation_1 = MagicMock()
         mock_operation_1.done = True
-        mock_operation_1.response.parent = (
-            "stores/vector-id-111"
-        )
+        mock_operation_1.response.parent = "stores/vector-id-111"
         mock_operation_1.response.document_name = "docs/doc-1"
 
         # 두 번째 업로드
@@ -170,9 +139,7 @@ class TestCriteriaEmbeddingServiceUpload:
         mock_store_2.name = "stores/criteria-2000-bbb2"
         mock_operation_2 = MagicMock()
         mock_operation_2.done = True
-        mock_operation_2.response.parent = (
-            "stores/vector-id-222"
-        )
+        mock_operation_2.response.parent = "stores/vector-id-222"
         mock_operation_2.response.document_name = "docs/doc-2"
 
         fss = mock_client.file_search_stores

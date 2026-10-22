@@ -1,24 +1,30 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from app.models.documents import Document
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db import get_db
 from app.main import app
 from app.models.users import User
-from app.models.documents import Document
 from app.routers.auth import get_current_user
-from app.db import get_db
+
 
 # Mock FileSearchService
 @pytest.fixture
 def mock_fs_service():
     with patch("app.routers.user_docs.FileSearchService") as mock:
         service_instance = mock.return_value
-        service_instance.upload_document = AsyncMock(return_value={
-            "document_id": "test_doc_id",
-            "store_id": "test_store_id"
-        })
+        service_instance.upload_document = AsyncMock(
+            return_value={
+                "document_id": "test_doc_id",
+                "store_id": "test_store_id",
+            }
+        )
         service_instance.delete_document = AsyncMock()
         yield service_instance
+
 
 # Mock DB and User
 @pytest.fixture
@@ -26,9 +32,11 @@ def mock_db_session():
     session = AsyncMock(spec=AsyncSession)
     return session
 
+
 @pytest.fixture
 def mock_user():
     return User(id=1, username="testuser", nickname="Test User")
+
 
 @pytest.mark.asyncio
 async def test_upload_enforces_single_document_policy(
@@ -43,9 +51,9 @@ async def test_upload_enforces_single_document_policy(
         user_id=mock_user.id,
         title="Old Doc",
         status="ready",
-        file_search_file_id="old_fs_id"
+        file_search_file_id="old_fs_id",
     )
-    
+
     # Mock DB execute result
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = [existing_doc]
@@ -65,20 +73,19 @@ async def test_upload_enforces_single_document_policy(
         response = client.post(
             "/docs/upload",
             data={"title": "New Doc"},
-            files={"file": ("dummy.pdf", f, "application/pdf")}
+            files={"file": ("dummy.pdf", f, "application/pdf")},
         )
 
     # Verify existing doc was cleaned up
     # 1. Verify delete_document was called for old_fs_id
     mock_fs_service.delete_document.assert_called_with("old_fs_id")
-    
+
     # 2. Verify status was updated to deleted
     assert existing_doc.status == "deleted"
 
+
 @pytest.mark.asyncio
-async def test_session_cleanup(
-    mock_fs_service, mock_db_session, mock_user
-):
+async def test_session_cleanup(mock_fs_service, mock_db_session, mock_user):
     """
     Test that cleanup endpoint deletes active documents
     """
@@ -88,7 +95,7 @@ async def test_session_cleanup(
         user_id=mock_user.id,
         title="Active Doc",
         status="ready",
-        file_search_file_id="active_fs_id"
+        file_search_file_id="active_fs_id",
     )
 
     # Mock DB execute result

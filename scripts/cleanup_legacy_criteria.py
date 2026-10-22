@@ -12,24 +12,24 @@
 옵션:
     --dry-run: 실제 삭제 없이 삭제 대상만 출력
 """
-import asyncio
 import argparse
+import asyncio
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 # 프로젝트 루트를 sys.path에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import (
-    create_async_engine,
     AsyncSession,
+    create_async_engine,
 )
 from sqlalchemy.orm import sessionmaker
 
-from app.models.criteria import CriteriaDocument
 from app.config import settings
+from app.models.criteria import CriteriaDocument
 
 
 async def get_legacy_records(
@@ -118,9 +118,7 @@ async def main(dry_run: bool = False):
         # 2. 삭제 대상 출력
         print("[2/3] 삭제 대상 목록:")
         print("-" * 70)
-        print(
-            f"{'ID':<5} {'제목':<30} {'스토어 ID':<35}"
-        )
+        print(f"{'ID':<5} {'제목':<30} {'스토어 ID':<35}")
         print("-" * 70)
 
         for record in legacy_records:
@@ -140,9 +138,7 @@ async def main(dry_run: bool = False):
 
         # 3. 사용자 확인
         if not dry_run:
-            print(
-                "⚠️  경고: DB에서 레코드가 영구 삭제됩니다."
-            )
+            print("⚠️  경고: DB에서 레코드가 영구 삭제됩니다.")
             print(
                 "   Google API 리소스(스토어/문서)는 "
                 "수동으로 정리해야 합니다.\n"
@@ -155,9 +151,7 @@ async def main(dry_run: bool = False):
 
         # 4. 삭제 실행
         print("\n[3/3] 삭제 실행 중...")
-        deleted_count = await delete_legacy_records(
-            session, dry_run
-        )
+        deleted_count = await delete_legacy_records(session, dry_run)
 
         # 5. 결과 출력
         print("\n" + "=" * 70)
@@ -167,25 +161,18 @@ async def main(dry_run: bool = False):
                 "레코드가 삭제될 예정입니다."
             )
         else:
-            print(
-                f"✅ {deleted_count}개 레코드가 삭제되었습니다."
-            )
+            print(f"✅ {deleted_count}개 레코드가 삭제되었습니다.")
         print("=" * 70)
 
         # 6. 후속 작업 안내
         if not dry_run and deleted_count > 0:
             print("\n📋 후속 작업:")
-            print(
-                "1. Google API Console에서 스토어/문서 "
-                "수동 정리 (선택)"
-            )
+            print("1. Google API Console에서 스토어/문서 " "수동 정리 (선택)")
             print(
                 "2. 필요한 평가기준 재업로드 "
                 "(docs/legacy_criteria_migration.md 참조)"
             )
-            print(
-                f"3. 삭제 로그: {datetime.now().isoformat()}"
-            )
+            print(f"3. 삭제 로그: {datetime.now().isoformat()}")
 
     await engine.dispose()
 

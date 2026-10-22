@@ -2,9 +2,10 @@
 CriteriaEmbeddingService 폴링 관련 테스트
 LRO 폴링 및 operation.name 사용 검증
 """
-import pytest
+
 from unittest.mock import MagicMock, patch
 
+import pytest
 from app.services.criteria_embedding_service import (
     CriteriaEmbeddingService,
 )
@@ -14,12 +15,8 @@ from app.services.criteria_embedding_service import (
 class TestCriteriaEmbeddingServicePolling:
     """폴링 및 operation.name 사용 테스트"""
 
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
+    @patch("app.services.criteria_embedding_service.genai")
+    @patch("app.services.criteria_embedding_service.settings")
     async def test_operations_get_uses_operation_name(
         self, mock_settings, mock_genai
     ):
@@ -38,9 +35,7 @@ class TestCriteriaEmbeddingServicePolling:
         mock_store = MagicMock()
         mock_store.name = "stores/test-store-123"
         fss = mock_client.file_search_stores
-        fss.create.return_value = (
-            mock_store
-        )
+        fss.create.return_value = mock_store
 
         # Mock Operation (초기: 미완료)
         mock_operation = MagicMock()
@@ -51,26 +46,21 @@ class TestCriteriaEmbeddingServicePolling:
         mock_complete_op = MagicMock()
         mock_complete_op.name = "operations/test-op-123"
         mock_complete_op.done = True
-        mock_complete_op.response.parent = (
-            "stores/test-store-123"
-        )
+        mock_complete_op.response.parent = "stores/test-store-123"
         mock_complete_op.response.document_name = "docs/test"
 
         upload_mock = fss.upload_to_file_search_store
         upload_mock.return_value = mock_operation
 
         # operations.get()이 완료 상태 반환
-        mock_client.operations.get.return_value = (
-            mock_complete_op
-        )
+        mock_client.operations.get.return_value = mock_complete_op
 
         service = CriteriaEmbeddingService()
         service.client = mock_client
 
         # Act
         result = await service.upload_and_embed(
-            file_path="/test.pdf",
-            title="test"
+            file_path="/test.pdf", title="test"
         )
 
         # Assert

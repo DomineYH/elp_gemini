@@ -4,7 +4,6 @@ import pytest
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-
 from app.migrations.criteria_schema import (
     ensure_criteria_file_path_column,
 )
@@ -30,11 +29,7 @@ def _create_legacy_criteria_table(db_path: Path, with_file_path: bool):
 
     sync_engine = create_engine(f"sqlite:///{db_path}")
     with sync_engine.begin() as conn:
-        conn.execute(
-            text(
-                f"CREATE TABLE criteria ({', '.join(ddl_parts)})"
-            )
-        )
+        conn.execute(text(f"CREATE TABLE criteria ({', '.join(ddl_parts)})"))
         if with_file_path:
             conn.execute(
                 text(
@@ -69,9 +64,7 @@ async def test_schema_patch_adds_missing_file_path(tmp_path):
 
         async with engine.begin() as conn:
             columns = await conn.run_sync(
-                lambda sync_conn: inspect(
-                    sync_conn
-                ).get_columns("criteria")
+                lambda sync_conn: inspect(sync_conn).get_columns("criteria")
             )
             column_names = [col["name"] for col in columns]
             assert "file_path" in column_names
@@ -102,4 +95,3 @@ async def test_schema_patch_is_idempotent(tmp_path):
             assert result.scalar_one() == "/tmp/existing.pdf"
     finally:
         await engine.dispose()
-

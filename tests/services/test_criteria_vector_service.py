@@ -1,4 +1,5 @@
 """CriteriaVectorService.active_stable_id_filter OR 결합 테스트."""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

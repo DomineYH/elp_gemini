@@ -2,11 +2,12 @@
 데이터베이스 정리 스크립트
 중복 사용자 계정 및 문서 정리
 """
+
 import asyncio
-import sqlite3
-from app.services.file_search_service import FileSearchService
-from app.config import settings
 import logging
+import sqlite3
+
+from app.services.file_search_service import FileSearchService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,15 +18,17 @@ async def cleanup_vector_db():
     logger.info("=== Vector DB 정리 시작 ===")
 
     # Local DB에서 삭제할 문서 ID 조회
-    conn = sqlite3.connect('data/app.db')
+    conn = sqlite3.connect("data/app.db")
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT id, title, file_search_file_id, store_id, user_id
         FROM documents
         WHERE file_search_file_id IS NOT NULL
         ORDER BY id
-    """)
+    """
+    )
 
     documents = cursor.fetchall()
     conn.close()
@@ -38,11 +41,15 @@ async def cleanup_vector_db():
 
     for doc_id, title, file_search_file_id, store_id, user_id in documents:
         try:
-            logger.info(f"문서 삭제 시도: id={doc_id}, title={title}, user_id={user_id}")
+            logger.info(
+                f"문서 삭제 시도: id={doc_id}, title={title}, user_id={user_id}"
+            )
             await fs_service.delete_document(file_id=file_search_file_id)
             logger.info(f"✅ 문서 삭제 완료: {title}")
         except Exception as e:
-            logger.warning(f"⚠️ 문서 삭제 실패 (이미 삭제되었을 수 있음): {str(e)}")
+            logger.warning(
+                f"⚠️ 문서 삭제 실패 (이미 삭제되었을 수 있음): {str(e)}"
+            )
 
     logger.info("=== Vector DB 정리 완료 ===\n")
 
@@ -51,7 +58,7 @@ def cleanup_local_db():
     """Local DB에서 중복 사용자 및 문서 삭제"""
     logger.info("=== Local DB 정리 시작 ===")
 
-    conn = sqlite3.connect('data/app.db')
+    conn = sqlite3.connect("data/app.db")
     cursor = conn.cursor()
 
     # 1. 현재 상태 확인
@@ -65,7 +72,9 @@ def cleanup_local_db():
     logger.info(f"전체 문서: {documents_count}개")
 
     # 2. QA 로그 삭제 (외래키 제약)
-    cursor.execute("DELETE FROM qa_logs WHERE document_id IN (SELECT id FROM documents)")
+    cursor.execute(
+        "DELETE FROM qa_logs WHERE document_id IN (SELECT id FROM documents)"
+    )
     deleted_qa_logs = cursor.rowcount
     logger.info(f"QA 로그 삭제: {deleted_qa_logs}개")
 
@@ -85,7 +94,7 @@ def cleanup_local_db():
     # 6. 최종 상태 확인
     cursor.execute("SELECT id, username, nickname FROM users ORDER BY id")
     remaining_users = cursor.fetchall()
-    logger.info(f"\n남은 사용자:")
+    logger.info("\n남은 사용자:")
     for user in remaining_users:
         logger.info(f"  - id={user[0]}, username={user[1]}, nickname={user[2]}")
 

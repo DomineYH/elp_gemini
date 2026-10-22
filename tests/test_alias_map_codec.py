@@ -1,14 +1,17 @@
 """alias-map 페이로드 base64 청크 인/디코딩"""
 
 from app.services.alias_map_codec import (
-    encode_alias_map_payload,
-    decode_alias_map_payload,
     ALIAS_MAP_PAYLOAD_KEY,
+    decode_alias_map_payload,
+    encode_alias_map_payload,
 )
 
 
 def test_roundtrip_korean_text():
-    data = {"schema_version": 1, "entries": {"id1": {"alias": "한글", "status": "active"}}}
+    data = {
+        "schema_version": 1,
+        "entries": {"id1": {"alias": "한글", "status": "active"}},
+    }
     chunks = encode_alias_map_payload(data)
     assert isinstance(chunks, list)
     assert all(isinstance(c, str) for c in chunks)
@@ -22,7 +25,10 @@ def test_chunks_are_bounded():
     big = {"entries": {"id1": {"alias": "한" * 10_000, "status": "uploaded"}}}
     chunks = encode_alias_map_payload(big)
     assert all(len(c) <= 256 for c in chunks)
-    assert decode_alias_map_payload(chunks)["entries"]["id1"]["alias"] == "한" * 10_000
+    assert (
+        decode_alias_map_payload(chunks)["entries"]["id1"]["alias"]
+        == "한" * 10_000
+    )
 
 
 def test_payload_key_is_stable():

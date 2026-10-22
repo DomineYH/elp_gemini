@@ -10,6 +10,7 @@ failures:
 After max attempts, raises the mapped exception so the caller can return a
 friendly "busy, retry later" response instead of a generic 500 (issue #120).
 """
+
 import functools
 import logging
 from typing import Callable, TypeVar
@@ -66,15 +67,18 @@ def retry_on_resource_exhausted(
     (429 RESOURCE_EXHAUSTED or 5xx server overload) with exponential backoff
     (initial_wait, 2x, 4x ... capped at max_wait).
     """
+
     def decorator(fn: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(fn)
         def wrapper(*args, **kwargs) -> T:
             tenacity_retry = retry(
                 retry=retry_if_exception(_is_retryable),
                 stop=stop_after_attempt(max_attempts),
-                wait=wait_exponential(
-                    multiplier=initial_wait, max=max_wait
-                ) if initial_wait > 0 else wait_exponential(multiplier=0, max=0),
+                wait=(
+                    wait_exponential(multiplier=initial_wait, max=max_wait)
+                    if initial_wait > 0
+                    else wait_exponential(multiplier=0, max=0)
+                ),
                 reraise=True,
             )
             try:
@@ -83,7 +87,8 @@ def retry_on_resource_exhausted(
                 if _is_resource_exhausted(e):
                     logger.error(
                         "Gemini 429 RESOURCE_EXHAUSTED after %d attempts: %s",
-                        max_attempts, e,
+                        max_attempts,
+                        e,
                     )
                     raise GeminiQuotaExhausted(str(e)) from e
                 raise
@@ -91,9 +96,12 @@ def retry_on_resource_exhausted(
                 if _is_server_overloaded(e):
                     logger.error(
                         "Gemini 5xx server overload after %d attempts: %s",
-                        max_attempts, e,
+                        max_attempts,
+                        e,
                     )
                     raise GeminiServerOverloaded(str(e)) from e
                 raise
+
         return wrapper
+
     return decorator

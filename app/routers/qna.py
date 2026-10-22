@@ -2,6 +2,7 @@
 QnA 라우터
 세션 기반 질문답변 엔드포인트
 """
+
 import logging
 from datetime import datetime
 from typing import Optional, cast
@@ -151,13 +152,10 @@ async def create_session(
 
     except Exception as e:
         await db.rollback()
-        logger.error(
-            f"QnA 세션 생성 실패: {str(e)}",
-            exc_info=True
-        )
+        logger.error(f"QnA 세션 생성 실패: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="세션 생성 중 오류가 발생했습니다."
+            detail="세션 생성 중 오류가 발생했습니다.",
         )
 
 
@@ -229,18 +227,14 @@ async def ask_question(
         await db.rollback()
         logger.warning(f"QnA 질문 처리 실패 (잘못된 요청): {e}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(e)
         )
     except Exception as e:
         await db.rollback()
-        logger.error(
-            f"QnA 질문 처리 실패: {str(e)}",
-            exc_info=True
-        )
+        logger.error(f"QnA 질문 처리 실패: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="질문 처리 중 오류가 발생했습니다."
+            detail="질문 처리 중 오류가 발생했습니다.",
         )
 
 
@@ -340,13 +334,10 @@ async def list_my_sessions(
         )
 
     except Exception as e:
-        logger.error(
-            f"내 QnA 세션 목록 조회 실패: {str(e)}",
-            exc_info=True
-        )
+        logger.error(f"내 QnA 세션 목록 조회 실패: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="세션 목록 조회 중 오류가 발생했습니다."
+            detail="세션 목록 조회 중 오류가 발생했습니다.",
         )
 
 
@@ -392,7 +383,7 @@ async def get_chat_history(
         if session is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="세션을 찾을 수 없습니다."
+                detail="세션을 찾을 수 없습니다.",
             )
 
         total_result = await db.execute(
@@ -450,13 +441,10 @@ async def get_chat_history(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"대화 히스토리 조회 실패: {str(e)}",
-            exc_info=True
-        )
+        logger.error(f"대화 히스토리 조회 실패: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="히스토리 조회 중 오류가 발생했습니다."
+            detail="히스토리 조회 중 오류가 발생했습니다.",
         )
 
 
@@ -495,10 +483,13 @@ async def chat_with_document(
 
         # 1. 해당 문서에 대한 기존 세션 찾기
         result = await db.execute(
-            select(ChatSession).where(
+            select(ChatSession)
+            .where(
                 ChatSession.user_id == _model_int(current_user.id),
-                ChatSession.document_id == document_id
-            ).order_by(ChatSession.updated_at.desc()).limit(1)
+                ChatSession.document_id == document_id,
+            )
+            .order_by(ChatSession.updated_at.desc())
+            .limit(1)
         )
         session = result.scalar_one_or_none()
 
@@ -544,10 +535,7 @@ async def chat_with_document(
 
     except Exception as e:
         await db.rollback()
-        logger.error(
-            f"문서 대화 처리 실패: {str(e)}",
-            exc_info=True
-        )
+        logger.error(f"문서 대화 처리 실패: {str(e)}", exc_info=True)
         # 질문 실패로 빈 세션이 목록에 남지 않게 보상 삭제한다
         if created_session is not None:
             try:
@@ -563,5 +551,5 @@ async def chat_with_document(
             )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="대화 처리 중 오류가 발생했습니다."
+            detail="대화 처리 중 오류가 발생했습니다.",
         )

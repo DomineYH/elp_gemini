@@ -2,6 +2,7 @@
 데이터베이스 백업 스크립트
 SQLite 데이터베이스를 백업합니다
 """
+
 import shutil
 from datetime import datetime
 from pathlib import Path

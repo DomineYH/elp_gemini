@@ -2,9 +2,10 @@
 평가 기준 감사 로그 서비스
 관리자 작업 추적 및 감사
 """
+
 import logging
-from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.criteria import CriteriaAuditLog
@@ -64,8 +65,7 @@ class CriteriaAuditService:
         )
 
         logger.info(
-            f"[AUDIT] 업로드: criteria_id={criteria_id}, "
-            f"actor={actor_id}"
+            f"[AUDIT] 업로드: criteria_id={criteria_id}, " f"actor={actor_id}"
         )
 
     async def log_activate(
@@ -96,8 +96,7 @@ class CriteriaAuditService:
         )
 
         logger.info(
-            f"[AUDIT] 활성화: criteria_id={criteria_id}, "
-            f"actor={actor_id}"
+            f"[AUDIT] 활성화: criteria_id={criteria_id}, " f"actor={actor_id}"
         )
 
     async def log_deactivate(
@@ -124,8 +123,7 @@ class CriteriaAuditService:
         )
 
         logger.info(
-            f"[AUDIT] 비활성화: criteria_id={criteria_id}, "
-            f"actor={actor_id}"
+            f"[AUDIT] 비활성화: criteria_id={criteria_id}, " f"actor={actor_id}"
         )
 
     async def log_search(
@@ -145,14 +143,9 @@ class CriteriaAuditService:
             actor_id: 작업자 ID (선택)
         """
         # 쿼리가 너무 길면 잘라내기
-        truncated_query = (
-            query[:100] + "..." if len(query) > 100 else query
-        )
+        truncated_query = query[:100] + "..." if len(query) > 100 else query
 
-        detail = (
-            f"쿼리: {truncated_query}, "
-            f"결과: {result_count}개"
-        )
+        detail = f"쿼리: {truncated_query}, " f"결과: {result_count}개"
 
         await self._create_log(
             action=self.ACTION_SEARCH,
@@ -190,8 +183,7 @@ class CriteriaAuditService:
         )
 
         logger.info(
-            f"[AUDIT] 삭제: criteria_id={criteria_id}, "
-            f"actor={actor_id}"
+            f"[AUDIT] 삭제: criteria_id={criteria_id}, " f"actor={actor_id}"
         )
 
     async def log_delete_all(
@@ -216,8 +208,7 @@ class CriteriaAuditService:
         )
 
         logger.info(
-            f"[AUDIT] 전체 삭제: count={deleted_count}, "
-            f"actor={actor_id}"
+            f"[AUDIT] 전체 삭제: count={deleted_count}, " f"actor={actor_id}"
         )
 
     async def log_action(
@@ -244,8 +235,7 @@ class CriteriaAuditService:
         )
 
         logger.info(
-            f"[AUDIT] {action}: criteria_id={criteria_id}, "
-            f"actor={actor_id}"
+            f"[AUDIT] {action}: criteria_id={criteria_id}, " f"actor={actor_id}"
         )
 
     async def _create_log(

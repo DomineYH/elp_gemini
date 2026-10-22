@@ -78,16 +78,16 @@ async def test_collect_includes_sessions_and_messages(db_session):
     s = ChatSession(user_id=1, title="t1")
     db_session.add(s)
     await db_session.flush()
-    db_session.add_all([
-        ChatMessage(
-            session_id=s.id, role=MessageRole.USER, content="hi"
-        ),
-        ChatMessage(
-            session_id=s.id,
-            role=MessageRole.ASSISTANT,
-            content="hello",
-        ),
-    ])
+    db_session.add_all(
+        [
+            ChatMessage(session_id=s.id, role=MessageRole.USER, content="hi"),
+            ChatMessage(
+                session_id=s.id,
+                role=MessageRole.ASSISTANT,
+                content="hello",
+            ),
+        ]
+    )
     await db_session.commit()
     svc = AdminExportService(db_session)
     plan = await svc.collect(ExportFilters())
@@ -99,7 +99,10 @@ async def test_collect_includes_sessions_and_messages(db_session):
 async def test_collect_excludes_admin_users(db_session):
     await _seed_user(db_session, user_id=1)
     admin = User(
-        id=2, username="adm", nickname="adm", is_admin=True,
+        id=2,
+        username="adm",
+        nickname="adm",
+        is_admin=True,
     )
     db_session.add(admin)
     await db_session.commit()
@@ -113,7 +116,10 @@ async def test_collect_excludes_admin_users(db_session):
 async def test_collect_excludes_admin_even_in_user_ids(db_session):
     await _seed_user(db_session, user_id=1)
     admin = User(
-        id=2, username="adm", nickname="adm", is_admin=True,
+        id=2,
+        username="adm",
+        nickname="adm",
+        is_admin=True,
     )
     db_session.add(admin)
     await db_session.commit()
@@ -286,14 +292,16 @@ async def test_collect_lessonplan_mtime_uses_kst_midnight(db_session, tmp_path):
 @pytest.mark.asyncio
 async def test_manifest_csv_shape(db_session):
     await _seed_user(db_session, user_id=42)
-    db_session.add(AnalysisReport(
-        user_id=42,
-        lessonplan_filename="42_lp.pdf",
-        lessonplan_original_name="1학년_수업지도안.pdf",
-        report_filename="42_lp_reports.md",
-        report_path="/tmp/r.md",
-        created_at=datetime(2026, 3, 1, 10, 22, 5),
-    ))
+    db_session.add(
+        AnalysisReport(
+            user_id=42,
+            lessonplan_filename="42_lp.pdf",
+            lessonplan_original_name="1학년_수업지도안.pdf",
+            report_filename="42_lp_reports.md",
+            report_path="/tmp/r.md",
+            created_at=datetime(2026, 3, 1, 10, 22, 5),
+        )
+    )
     await db_session.commit()
     svc = AdminExportService(db_session)
     plan = await svc.collect(ExportFilters())
@@ -315,22 +323,22 @@ async def test_manifest_csv_shape(db_session):
 @pytest.mark.asyncio
 async def test_users_csv_counts(db_session, tmp_path):
     await _seed_user(db_session, user_id=1)
-    db_session.add(AnalysisReport(
-        user_id=1,
-        lessonplan_filename="u1_a.pdf",
-        lessonplan_original_name="a.pdf",
-        report_filename="1_a_reports.md",
-        report_path="/tmp/a.md",
-        created_at=datetime(2026, 3, 1),
-    ))
+    db_session.add(
+        AnalysisReport(
+            user_id=1,
+            lessonplan_filename="u1_a.pdf",
+            lessonplan_original_name="a.pdf",
+            report_filename="1_a_reports.md",
+            report_path="/tmp/a.md",
+            created_at=datetime(2026, 3, 1),
+        )
+    )
     await db_session.commit()
     # Seed lessonplan under new per-user layout: {user_id}/filename
     user_dir = tmp_path / "1"
     user_dir.mkdir()
     (user_dir / "a.pdf").write_bytes(b"x")
-    svc = AdminExportService(
-        db_session, lessonplan_base_dir=str(tmp_path)
-    )
+    svc = AdminExportService(db_session, lessonplan_base_dir=str(tmp_path))
     plan = await svc.collect(ExportFilters())
     raw = build_users_csv(plan)
     rows = list(csv.DictReader(io.StringIO(raw.decode("utf-8"))))
@@ -370,16 +378,22 @@ async def test_session_messages_stable_order_on_tied_timestamps(
     db_session.add(s)
     await db_session.flush()
     same_ts = datetime(2026, 3, 1, 10, 0, 0)
-    db_session.add_all([
-        ChatMessage(
-            session_id=s.id, role=MessageRole.USER,
-            content="질문", created_at=same_ts,
-        ),
-        ChatMessage(
-            session_id=s.id, role=MessageRole.ASSISTANT,
-            content="답변", created_at=same_ts,
-        ),
-    ])
+    db_session.add_all(
+        [
+            ChatMessage(
+                session_id=s.id,
+                role=MessageRole.USER,
+                content="질문",
+                created_at=same_ts,
+            ),
+            ChatMessage(
+                session_id=s.id,
+                role=MessageRole.ASSISTANT,
+                content="답변",
+                created_at=same_ts,
+            ),
+        ]
+    )
     await db_session.commit()
 
     svc = AdminExportService(db_session)
@@ -396,21 +410,23 @@ async def test_session_messages_stable_order_on_tied_timestamps(
 @pytest.mark.asyncio
 async def test_manifest_csv_neutralizes_formula_filenames(db_session):
     await _seed_user(db_session, user_id=1)
-    db_session.add(AnalysisReport(
-        user_id=1,
-        lessonplan_filename="1_evil.pdf",
-        lessonplan_original_name="=cmd|' /C calc'!A0",
-        report_filename="1_evil_reports.md",
-        report_path="/tmp/evil.md",
-        created_at=datetime(2026, 3, 1),
-    ))
+    db_session.add(
+        AnalysisReport(
+            user_id=1,
+            lessonplan_filename="1_evil.pdf",
+            lessonplan_original_name="=cmd|' /C calc'!A0",
+            report_filename="1_evil_reports.md",
+            report_path="/tmp/evil.md",
+            created_at=datetime(2026, 3, 1),
+        )
+    )
     await db_session.commit()
 
     svc = AdminExportService(db_session)
     plan = await svc.collect(ExportFilters())
-    rows = list(csv.DictReader(
-        io.StringIO(build_manifest_csv(plan).decode("utf-8"))
-    ))
+    rows = list(
+        csv.DictReader(io.StringIO(build_manifest_csv(plan).decode("utf-8")))
+    )
     report_row = next(r for r in rows if r["kind"] == "report")
     assert report_row["original_name"].startswith("'=")
 
@@ -419,9 +435,7 @@ async def test_manifest_csv_neutralizes_formula_filenames(db_session):
 
 
 @pytest.mark.asyncio
-async def test_collect_lessonplans_per_user_subdirectory(
-    db_session, tmp_path
-):
+async def test_collect_lessonplans_per_user_subdirectory(db_session, tmp_path):
     """Lessonplans live under data/lessonplan/{user_id}/* now."""
     await _seed_user(db_session, user_id=7)
     await db_session.commit()
@@ -429,18 +443,14 @@ async def test_collect_lessonplans_per_user_subdirectory(
     user_dir.mkdir()
     (user_dir / "orphan_지도안.pdf").write_bytes(b"data")
     (user_dir / "another.pdf").write_bytes(b"more")
-    svc = AdminExportService(
-        db_session, lessonplan_base_dir=str(tmp_path)
-    )
+    svc = AdminExportService(db_session, lessonplan_base_dir=str(tmp_path))
     plan = await svc.collect(ExportFilters())
     originals = {entry.original_name for entry in plan.lessonplans}
     assert originals == {"orphan_지도안.pdf", "another.pdf"}
 
 
 @pytest.mark.asyncio
-async def test_collect_lessonplans_per_user_isolation(
-    db_session, tmp_path
-):
+async def test_collect_lessonplans_per_user_isolation(db_session, tmp_path):
     """User 1's files must not appear under user 2."""
     await _seed_user(db_session, user_id=1)
     await _seed_user(db_session, user_id=2)
@@ -449,27 +459,19 @@ async def test_collect_lessonplans_per_user_isolation(
     (tmp_path / "1" / "mine.pdf").write_bytes(b"x")
     (tmp_path / "2").mkdir()
     (tmp_path / "2" / "yours.pdf").write_bytes(b"y")
-    svc = AdminExportService(
-        db_session, lessonplan_base_dir=str(tmp_path)
-    )
+    svc = AdminExportService(db_session, lessonplan_base_dir=str(tmp_path))
     plan = await svc.collect(ExportFilters(user_ids=[1]))
-    assert {
-        entry.original_name for entry in plan.lessonplans
-    } == {"mine.pdf"}
+    assert {entry.original_name for entry in plan.lessonplans} == {"mine.pdf"}
 
 
 @pytest.mark.asyncio
-async def test_collect_lessonplans_skipped_when_excluded(
-    db_session, tmp_path
-):
+async def test_collect_lessonplans_skipped_when_excluded(db_session, tmp_path):
     await _seed_user(db_session, user_id=1)
     await db_session.commit()
     user_dir = tmp_path / "1"
     user_dir.mkdir()
     (user_dir / "x.pdf").write_bytes(b"x")
-    svc = AdminExportService(
-        db_session, lessonplan_base_dir=str(tmp_path)
-    )
+    svc = AdminExportService(db_session, lessonplan_base_dir=str(tmp_path))
     plan = await svc.collect(
         ExportFilters(include=frozenset({"reports", "meta"}))
     )
@@ -478,7 +480,7 @@ async def test_collect_lessonplans_skipped_when_excluded(
 
 @pytest.mark.asyncio
 async def test_collect_lessonplans_marks_deleted_report_source_missing(
-    tmp_path
+    tmp_path,
 ):
     class Result:
         def __init__(self, rows):
@@ -518,13 +520,13 @@ async def test_collect_lessonplans_marks_deleted_report_source_missing(
     result = svc._collect_lessonplans([user], ExportFilters())
     lessonplans = await result if inspect.isawaitable(result) else result
     plan = ExportPlan(users=[user], lessonplans=lessonplans)
-    rows = list(csv.DictReader(
-        io.StringIO(build_manifest_csv(plan).decode("utf-8"))
-    ))
+    rows = list(
+        csv.DictReader(io.StringIO(build_manifest_csv(plan).decode("utf-8")))
+    )
     lessonplan_row = next(
-        r for r in rows
-        if r["kind"] == "lessonplan"
-        and r["original_name"] == "deleted.pdf"
+        r
+        for r in rows
+        if r["kind"] == "lessonplan" and r["original_name"] == "deleted.pdf"
     )
     assert lessonplan_row["source_status"] == "MISSING"
 
@@ -550,23 +552,24 @@ async def test_collect_lessonplans_resolves_dashboard_upload_source(
     )
     db_session.add(upload)
     await db_session.flush()
-    db_session.add(AnalysisReport(
-        user_id=1,
-        lessonplan_filename=filename,
-        lessonplan_original_name="plan.pdf",
-        report_filename="r.md",
-        report_path=str(tmp_path / "r.md"),
-        upload_id=upload.id,
-        created_at=datetime(2026, 3, 1),
-    ))
+    db_session.add(
+        AnalysisReport(
+            user_id=1,
+            lessonplan_filename=filename,
+            lessonplan_original_name="plan.pdf",
+            report_filename="r.md",
+            report_path=str(tmp_path / "r.md"),
+            upload_id=upload.id,
+            created_at=datetime(2026, 3, 1),
+        )
+    )
     await db_session.commit()
 
     svc = AdminExportService(db_session)
     plan = await svc.collect(ExportFilters())
 
     matches = [
-        entry for entry in plan.lessonplans
-        if entry.original_name == "plan.pdf"
+        entry for entry in plan.lessonplans if entry.original_name == "plan.pdf"
     ]
     assert len(matches) == 1
     lessonplan = matches[0]
@@ -597,15 +600,17 @@ async def test_collect_lessonplans_resolves_synthetic_upload_legacy_source(
     )
     db_session.add(upload)
     await db_session.flush()
-    db_session.add(AnalysisReport(
-        user_id=1,
-        lessonplan_filename=filename,
-        lessonplan_original_name="legacy.pdf",
-        report_filename="r.md",
-        report_path=str(tmp_path / "r.md"),
-        upload_id=upload.id,
-        created_at=datetime(2026, 3, 1),
-    ))
+    db_session.add(
+        AnalysisReport(
+            user_id=1,
+            lessonplan_filename=filename,
+            lessonplan_original_name="legacy.pdf",
+            report_filename="r.md",
+            report_path=str(tmp_path / "r.md"),
+            upload_id=upload.id,
+            created_at=datetime(2026, 3, 1),
+        )
+    )
     await db_session.commit()
 
     svc = AdminExportService(
@@ -621,7 +626,8 @@ async def test_collect_lessonplans_resolves_synthetic_upload_legacy_source(
     )
 
     matches = [
-        entry for entry in plan.lessonplans
+        entry
+        for entry in plan.lessonplans
         if entry.original_name == "legacy.pdf"
     ]
     assert len(matches) == 1
@@ -631,9 +637,7 @@ async def test_collect_lessonplans_resolves_synthetic_upload_legacy_source(
 
 
 @pytest.mark.asyncio
-async def test_collect_lessonplans_includes_upload_without_report(
-    tmp_path
-):
+async def test_collect_lessonplans_includes_upload_without_report(tmp_path):
     class Result:
         def __init__(self, rows):
             self._rows = rows
@@ -671,13 +675,12 @@ async def test_collect_lessonplans_includes_upload_without_report(
         created_at=datetime(2026, 3, 2),
     )
 
-    svc = AdminExportService(
-        Db([upload]), static_uploads_dir=str(upload_dir)
-    )
+    svc = AdminExportService(Db([upload]), static_uploads_dir=str(upload_dir))
     lessonplans = await svc._collect_lessonplans([user], ExportFilters())
 
     matches = [
-        entry for entry in lessonplans
+        entry
+        for entry in lessonplans
         if entry.original_name == "unanalyzed.pdf"
     ]
     assert len(matches) == 1

@@ -7,6 +7,7 @@ Usage:
 Prints PASS/FAIL per check. Exits 0 only if all pass.
 Creates and tears down a sandbox store; safe to run repeatedly.
 """
+
 import base64
 import os
 import sys
@@ -14,7 +15,6 @@ import tempfile
 import time
 
 from google import genai
-
 
 SANDBOX_STORE = "sdk-verify-sandbox"
 
@@ -44,9 +44,13 @@ def main():
     # Clean up any prior sandbox
     existing = _find_store(client, SANDBOX_STORE)
     if existing:
-        client.file_search_stores.delete(name=existing.name, config={"force": True})
+        client.file_search_stores.delete(
+            name=existing.name, config={"force": True}
+        )
 
-    store = client.file_search_stores.create(config={"display_name": SANDBOX_STORE})
+    store = client.file_search_stores.create(
+        config={"display_name": SANDBOX_STORE}
+    )
     print(f"Sandbox store: {store.name}")
 
     results = {}
@@ -67,7 +71,11 @@ def main():
                     {
                         "key": "original_title_b64",
                         "string_list_value": {
-                            "values": [base64.b64encode("한글 파일명.pdf".encode()).decode()]
+                            "values": [
+                                base64.b64encode(
+                                    "한글 파일명.pdf".encode()
+                                ).decode()
+                            ]
                         },
                     },
                 ],
@@ -80,7 +88,9 @@ def main():
         results["upload_with_metadata"] = True
 
         # Check 2: documents.list returns custom_metadata
-        listed = list(client.file_search_stores.documents.list(parent=store.name))
+        listed = list(
+            client.file_search_stores.documents.list(parent=store.name)
+        )
         doc = next((d for d in listed if d.name == doc_name), None)
         if doc is None:
             raise RuntimeError("document not in list")
@@ -89,13 +99,22 @@ def main():
 
         # Check 3: base64-chunked Korean round-trips
         b64_entry = next(
-            (m for m in meta if (getattr(m, "key", None) or m.get("key")) == "original_title_b64"),
+            (
+                m
+                for m in meta
+                if (getattr(m, "key", None) or m.get("key"))
+                == "original_title_b64"
+            ),
             None,
         )
         decoded_ok = False
         if b64_entry is not None:
-            slv = getattr(b64_entry, "string_list_value", None) or b64_entry.get("string_list_value")
-            values = getattr(slv, "values", None) or (slv.get("values") if isinstance(slv, dict) else [])
+            slv = getattr(
+                b64_entry, "string_list_value", None
+            ) or b64_entry.get("string_list_value")
+            values = getattr(slv, "values", None) or (
+                slv.get("values") if isinstance(slv, dict) else []
+            )
             joined = "".join(values)
             decoded_ok = base64.b64decode(joined).decode() == "한글 파일명.pdf"
         results["base64_korean_roundtrip"] = decoded_ok
@@ -103,11 +122,17 @@ def main():
         # Check 4: documents.delete(name) actually deletes
         client.file_search_stores.documents.delete(name=doc_name)
         time.sleep(2)
-        listed_after = list(client.file_search_stores.documents.list(parent=store.name))
-        results["delete_by_name"] = all(d.name != doc_name for d in listed_after)
+        listed_after = list(
+            client.file_search_stores.documents.list(parent=store.name)
+        )
+        results["delete_by_name"] = all(
+            d.name != doc_name for d in listed_after
+        )
 
     finally:
-        client.file_search_stores.delete(name=store.name, config={"force": True})
+        client.file_search_stores.delete(
+            name=store.name, config={"force": True}
+        )
         try:
             os.unlink(sample_path)
         except Exception:

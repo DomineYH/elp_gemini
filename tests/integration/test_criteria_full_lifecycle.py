@@ -3,21 +3,16 @@
 업로드 → 조회 → 삭제 전체 흐름 검증
 Phase 2-3 변경사항 포함
 """
+
+from unittest.mock import AsyncMock, patch
+
 import pytest
-import pytest_asyncio
-from fastapi.testclient import TestClient
-from unittest.mock import patch, AsyncMock
+from conftest import TestingSessionLocal, create_test_pdf, override_admin
 from sqlalchemy import select
 
 from app.main import app
 from app.models.criteria import CriteriaDocument
 from app.routers.auth import get_current_admin
-
-from conftest import (
-    create_test_pdf,
-    override_admin,
-    TestingSessionLocal
-)
 
 
 class TestCriteriaFullLifecycle:
@@ -25,9 +20,7 @@ class TestCriteriaFullLifecycle:
 
     @pytest.mark.asyncio
     async def test_full_lifecycle_with_document_id(
-        self,
-        test_client,
-        admin_user
+        self, test_client, admin_user
     ):
         """
         전체 흐름 검증:
@@ -39,19 +32,11 @@ class TestCriteriaFullLifecycle:
 
         # 업로드 준비
         pdf_file = create_test_pdf()
-        files = {
-            "file": (
-                "lifecycle_test.pdf",
-                pdf_file,
-                "application/pdf"
-            )
-        }
+        files = {"file": ("lifecycle_test.pdf", pdf_file, "application/pdf")}
         data = {"title": "Full Lifecycle Test Criteria"}
 
         # Admin 인증 오버라이드
-        app.dependency_overrides[get_current_admin] = (
-            override_admin(admin_user)
-        )
+        app.dependency_overrides[get_current_admin] = override_admin(admin_user)
 
         # Phase 2: upload_and_embed가 튜플 반환
         mock_vector_id = "stores/lifecycle-vector-123"
@@ -62,19 +47,14 @@ class TestCriteriaFullLifecycle:
             "criteria_embedding_service."
             "CriteriaEmbeddingService."
             "upload_and_embed",
-            new_callable=AsyncMock
+            new_callable=AsyncMock,
         ) as mock_embed:
             # Phase 2 변경: 튜플 반환
-            mock_embed.return_value = (
-                mock_vector_id,
-                mock_document_id
-            )
+            mock_embed.return_value = (mock_vector_id, mock_document_id)
 
             # 업로드 API 호출
             upload_response = test_client.post(
-                "/admin/criteria/upload",
-                files=files,
-                data=data
+                "/admin/criteria/upload", files=files, data=data
             )
 
         # 업로드 응답 검증
@@ -105,19 +85,22 @@ class TestCriteriaFullLifecycle:
         # === 3. 삭제 단계 ===
 
         # Phase 3: 순차 삭제 모킹
-        with patch(
-            "app.services."
-            "criteria_embedding_service."
-            "CriteriaEmbeddingService."
-            "delete_document",
-            new_callable=AsyncMock
-        ) as mock_delete_doc, patch(
-            "app.services."
-            "criteria_embedding_service."
-            "CriteriaEmbeddingService."
-            "delete_store",
-            new_callable=AsyncMock
-        ) as mock_delete_store:
+        with (
+            patch(
+                "app.services."
+                "criteria_embedding_service."
+                "CriteriaEmbeddingService."
+                "delete_document",
+                new_callable=AsyncMock,
+            ) as mock_delete_doc,
+            patch(
+                "app.services."
+                "criteria_embedding_service."
+                "CriteriaEmbeddingService."
+                "delete_store",
+                new_callable=AsyncMock,
+            ) as mock_delete_store,
+        ):
 
             # 삭제 성공으로 설정
             mock_delete_doc.return_value = True
@@ -138,12 +121,11 @@ class TestCriteriaFullLifecycle:
         mock_delete_doc.assert_called_once_with(
             vector_store_id=mock_vector_id,
             document_id=mock_document_id,
-            ignore_errors=False
+            ignore_errors=False,
         )
         # 스토어 나중에 삭제
         mock_delete_store.assert_called_once_with(
-            mock_vector_id,
-            ignore_errors=False
+            mock_vector_id, ignore_errors=False
         )
 
         # 호출 순서 검증 (문서 → 스토어)

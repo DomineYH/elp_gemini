@@ -2,6 +2,7 @@
 관리자 - 평가기준 관리 라우터
 평가기준 업로드 및 삭제 엔드포인트
 """
+
 import logging
 import os
 import tempfile
@@ -48,10 +49,7 @@ from app.services.criteria_reconciliation_service import (
 from app.services.criteria_vector_service import CriteriaVectorService
 from app.services.file_validator import FileValidator
 
-router = APIRouter(
-    prefix="/api/admin/criteria",
-    tags=["관리자-평가기준"]
-)
+router = APIRouter(prefix="/api/admin/criteria", tags=["관리자-평가기준"])
 logger = logging.getLogger(__name__)
 
 
@@ -60,6 +58,7 @@ def _new_stable_id() -> str:
     import base64
     import secrets
     import time
+
     ts = int(time.time() * 1000).to_bytes(6, "big")
     rand = secrets.token_bytes(10)
     return base64.b32encode(ts + rand).decode("ascii").rstrip("=")
@@ -67,6 +66,7 @@ def _new_stable_id() -> str:
 
 def _now_iso_utc() -> str:
     from datetime import datetime, timezone
+
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
@@ -213,8 +213,7 @@ async def _recover_status_mutation_from_cloud(
     "/upload",
     status_code=status.HTTP_201_CREATED,
     summary="평가기준 업로드",
-    description="평가기준 파일을 Vector DB에 업로드합니다. "
-    "(관리자 전용)",
+    description="평가기준 파일을 Vector DB에 업로드합니다. " "(관리자 전용)",
 )
 async def upload_criteria(
     file: UploadFile = File(...),
@@ -252,12 +251,10 @@ async def upload_criteria(
             validation_result = await validator.validate_file(file)
 
             if not validation_result["valid"]:
-                logger.warning(
-                    f"파일 검증 실패: {validation_result['error']}"
-                )
+                logger.warning(f"파일 검증 실패: {validation_result['error']}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=validation_result["error"]
+                    detail=validation_result["error"],
                 )
             logger.debug("1단계: 파일 검증 완료")
 
@@ -267,8 +264,7 @@ async def upload_criteria(
             suffix = os.path.splitext(file.filename)[1]
 
             with tempfile.NamedTemporaryFile(
-                delete=False,
-                suffix=suffix
+                delete=False, suffix=suffix
             ) as temp_file:
                 temp_file.write(file_content)
                 temp_file_path = temp_file.name
@@ -362,7 +358,7 @@ async def upload_criteria(
                 f"평가기준 업로드 실패 - "
                 f"유형: {error_type}, "
                 f"메시지: {error_msg}",
-                exc_info=True
+                exc_info=True,
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -377,9 +373,7 @@ async def upload_criteria(
                 try:
                     os.remove(temp_file_path)
                 except Exception as e:
-                    logger.warning(
-                        f"임시 파일 삭제 실패: {e}"
-                    )
+                    logger.warning(f"임시 파일 삭제 실패: {e}")
 
 
 @router.delete(
@@ -572,7 +566,10 @@ async def replace_legacy_criteria(
             logger.info(
                 "평가기준 교체: legacy_stable_id=%s → new_stable_id=%s "
                 "old_document_id=%s new_document_id=%s",
-                stable_id, new_stable_id, old_document_id, new_document_id,
+                stable_id,
+                new_stable_id,
+                old_document_id,
+                new_document_id,
             )
             return {
                 "old_stable_id": stable_id,
@@ -583,7 +580,9 @@ async def replace_legacy_criteria(
             raise
         except Exception as e:
             await _raise_criteria_mutation_failed(
-                db, e, cloud_write_started=cloud_write_started,
+                db,
+                e,
+                cloud_write_started=cloud_write_started,
             )
         finally:
             if temp_file_path and os.path.exists(temp_file_path):
@@ -661,9 +660,7 @@ async def patch_criteria_alias(
                 row.display_alias = body.alias
                 await db.commit()
 
-            logger.info(
-                f"alias 변경: stable_id={stable_id} alias={body.alias}"
-            )
+            logger.info(f"alias 변경: stable_id={stable_id} alias={body.alias}")
             return {"stable_id": stable_id, "alias": body.alias}
         except HTTPException:
             raise
@@ -750,12 +747,14 @@ async def _set_status_by_stable_id(
             new_entries: dict = {}
             for sid, entry in alias_map.entries.items():
                 if sid == stable_id:
-                    new_entries[sid] = entry.model_copy(update={
-                        "status": target_status,
-                        "activated_at": (
-                            now if target_status == "active" else None
-                        ),
-                    })
+                    new_entries[sid] = entry.model_copy(
+                        update={
+                            "status": target_status,
+                            "activated_at": (
+                                now if target_status == "active" else None
+                            ),
+                        }
+                    )
                 else:
                     new_entries[sid] = entry
 
@@ -802,6 +801,7 @@ async def _set_status_by_stable_id(
 def _parse_iso(value):
     """ISO-8601 string → datetime; None on failure."""
     from datetime import datetime
+
     if not value:
         return None
     try:

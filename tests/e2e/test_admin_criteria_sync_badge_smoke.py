@@ -1,16 +1,20 @@
 """T8: criteria_list 템플릿 동기화 배지 렌더링 검증"""
+
+from unittest.mock import AsyncMock, patch
+
 import pytest
 import pytest_asyncio
-from unittest.mock import patch, AsyncMock
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import (
-    create_async_engine, AsyncSession, async_sessionmaker,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
 )
 from sqlalchemy.pool import StaticPool
 
-from app.main import app
 from app.db import Base, get_db
 from app.dependencies import get_current_admin
+from app.main import app
 from app.models.users import User
 
 
@@ -25,7 +29,9 @@ async def admin_client(tmp_path):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     session_factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False,
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
     )
 
     async def override_get_db():
@@ -40,7 +46,8 @@ async def admin_client(tmp_path):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(
-        transport=transport, base_url="http://test",
+        transport=transport,
+        base_url="http://test",
     ) as client:
         yield client
 

@@ -2,54 +2,35 @@
 평가기준 스키마
 Vector DB 기반 평가기준 관리
 """
-from typing import Optional, List
+
+from typing import Optional
+
 from pydantic import BaseModel, Field, field_validator
 
 
 class UploadCriteriaResponse(BaseModel):
     """평가기준 업로드 응답"""
 
-    file_id: str = Field(
-        ..., description="Gemini File ID"
-    )
-    display_name: str = Field(
-        ..., description="파일 표시 이름"
-    )
-    file_size: int = Field(
-        ..., description="파일 크기 (bytes)"
-    )
-    upload_status: str = Field(
-        ..., description="업로드 상태"
-    )
+    file_id: str = Field(..., description="Gemini File ID")
+    display_name: str = Field(..., description="파일 표시 이름")
+    file_size: int = Field(..., description="파일 크기 (bytes)")
+    upload_status: str = Field(..., description="업로드 상태")
 
 
 class DeleteCriteriaResponse(BaseModel):
     """평가기준 삭제 응답"""
 
-    success: bool = Field(
-        ..., description="삭제 성공 여부"
-    )
-    message: str = Field(
-        ..., description="결과 메시지"
-    )
-    deleted_count: int = Field(
-        default=0,
-        description="삭제된 문서 수"
-    )
+    success: bool = Field(..., description="삭제 성공 여부")
+    message: str = Field(..., description="결과 메시지")
+    deleted_count: int = Field(default=0, description="삭제된 문서 수")
 
 
 class DeleteSingleCriteriaResponse(BaseModel):
     """개별 평가기준 삭제 응답"""
-    
-    success: bool = Field(
-        ..., description="삭제 성공 여부"
-    )
-    message: str = Field(
-        ..., description="결과 메시지"
-    )
-    criteria_id: int = Field(
-        ..., description="삭제된 평가기준 ID"
-    )
+
+    success: bool = Field(..., description="삭제 성공 여부")
+    message: str = Field(..., description="결과 메시지")
+    criteria_id: int = Field(..., description="삭제된 평가기준 ID")
 
 
 def _is_allowed_alias_char(ch: str) -> bool:
@@ -59,7 +40,11 @@ def _is_allowed_alias_char(ch: str) -> bool:
     거부: 제어 문자, 이모지, 그 외 모든 스크립트.
     """
     code = ord(ch)
-    if code in {0x115F, 0x1160, 0x3164}:  # Hangul filler characters render blank
+    if code in {
+        0x115F,
+        0x1160,
+        0x3164,
+    }:  # Hangul filler characters render blank
         return False
     if code == 0x09:  # tab
         return True
@@ -111,4 +96,6 @@ class UpdateDisplayAliasResponse(BaseModel):
 
     success: bool = Field(description="성공 여부")
     criteria_id: int = Field(description="평가기준 ID")
-    display_alias: Optional[str] = Field(description="업데이트 후 alias (None 가능)")
+    display_alias: Optional[str] = Field(
+        description="업데이트 후 alias (None 가능)"
+    )

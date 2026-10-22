@@ -2,31 +2,28 @@
 관리자 - 평가기준 관리 뷰 라우터
 평가기준 목록, 업로드, 상세 페이지 렌더링
 """
-from fastapi import APIRouter, Request, Depends, HTTPException
+
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-import logging
 
 from app.config import settings
 from app.db import get_db
 from app.dependencies import get_current_admin
 from app.models.users import User
 from app.repositories.app_state_repository import (
-    AppStateRepository,
     KEY_LAST_SYNCED_AT,
     KEY_SYNC_ERROR,
     KEY_SYNC_STATE,
+    AppStateRepository,
 )
-from app.repositories.criteria_repository import (
-    CriteriaRepository
-)
+from app.repositories.criteria_repository import CriteriaRepository
 from app.services.criteria_freshness import ensure_criteria_cache_fresh
 from app.templating import templates
 
-router = APIRouter(
-    prefix="/admin/criteria",
-    tags=["관리자-평가기준-뷰"]
-)
+router = APIRouter(prefix="/admin/criteria", tags=["관리자-평가기준-뷰"])
 logger = logging.getLogger(__name__)
 
 
@@ -45,6 +42,7 @@ def _criteria_items_from_rows(all_criteria) -> list[dict]:
     from app.services.criteria_reconciliation_service import (
         is_legacy_surrogate_stable_id,
     )
+
     return [
         {
             "id": c.id,
@@ -65,7 +63,7 @@ def _criteria_items_from_rows(all_criteria) -> list[dict]:
     "",
     response_class=HTMLResponse,
     summary="평가기준 목록",
-    description="평가기준 목록 페이지"
+    description="평가기준 목록 페이지",
 )
 async def criteria_list(
     request: Request,
@@ -100,7 +98,7 @@ async def criteria_list(
                 "user": current_admin,
                 "criteria_items": criteria_items,
                 "sync": sync,
-            }
+            },
         )
     except Exception as e:
         logger.error(f"평가기준 목록 조회 실패: {str(e)}", exc_info=True)
@@ -112,7 +110,7 @@ async def criteria_list(
                 "user": current_admin,
                 "criteria_items": [],
                 "sync": {"state": None, "last_synced_at": None, "error": None},
-            }
+            },
         )
 
 
@@ -120,7 +118,7 @@ async def criteria_list(
     "/upload",
     response_class=HTMLResponse,
     summary="평가기준 업로드 페이지",
-    description="평가기준 업로드 페이지"
+    description="평가기준 업로드 페이지",
 )
 async def criteria_upload_page(
     request: Request,
@@ -144,7 +142,7 @@ async def criteria_upload_page(
             "request": request,
             "user": current_admin,
             "max_upload_size": settings.MAX_UPLOAD_SIZE,
-        }
+        },
     )
 
 
@@ -152,7 +150,7 @@ async def criteria_upload_page(
     "/{criteria_id}",
     response_class=HTMLResponse,
     summary="평가기준 상세",
-    description="평가기준 상세 페이지"
+    description="평가기준 상세 페이지",
 )
 async def criteria_detail(
     criteria_id: int,
@@ -179,17 +177,12 @@ async def criteria_detail(
     try:
         # DB에서 평가기준 데이터 조회
         criteria_repo = CriteriaRepository(db)
-        criteria = await criteria_repo.get_criteria_by_id(
-            criteria_id
-        )
+        criteria = await criteria_repo.get_criteria_by_id(criteria_id)
 
         if not criteria:
-            logger.warning(
-                f"평가기준 없음: id={criteria_id}"
-            )
+            logger.warning(f"평가기준 없음: id={criteria_id}")
             raise HTTPException(
-                status_code=404,
-                detail="평가기준을 찾을 수 없습니다."
+                status_code=404, detail="평가기준을 찾을 수 없습니다."
             )
 
         return templates.TemplateResponse(
@@ -198,16 +191,12 @@ async def criteria_detail(
                 "request": request,
                 "user": current_admin,
                 "criteria": criteria,
-            }
+            },
         )
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"평가기준 상세 조회 실패: {str(e)}",
-            exc_info=True
-        )
+        logger.error(f"평가기준 상세 조회 실패: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500,
-            detail="평가기준 조회 중 오류가 발생했습니다."
+            status_code=500, detail="평가기준 조회 중 오류가 발생했습니다."
         )

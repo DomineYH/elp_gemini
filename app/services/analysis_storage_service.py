@@ -2,10 +2,11 @@
 분석 결과 마크다운 파일 저장 서비스
 data/analys/{user_id}/ 디렉토리에 사용자별 분석 결과 관리
 """
+
 import logging
-from pathlib import Path
-from typing import List, Optional, Dict
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -105,9 +106,7 @@ class AnalysisStorageService:
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(full_content)
 
-            logger.info(
-                f"분석 결과 저장 완료: user_id={user_id}, {filename}"
-            )
+            logger.info(f"분석 결과 저장 완료: user_id={user_id}, {filename}")
 
             return {
                 "file_path": str(file_path),
@@ -138,8 +137,7 @@ class AnalysisStorageService:
 
             if not file_path.exists():
                 logger.warning(
-                    f"분석 결과 파일 없음: user_id={user_id}, "
-                    f"{filename}"
+                    f"분석 결과 파일 없음: user_id={user_id}, " f"{filename}"
                 )
                 return None
 
@@ -147,9 +145,7 @@ class AnalysisStorageService:
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            logger.debug(
-                f"분석 결과 조회: user_id={user_id}, {filename}"
-            )
+            logger.debug(f"분석 결과 조회: user_id={user_id}, {filename}")
             return content
         except Exception as e:
             logger.error(f"분석 결과 조회 실패: {str(e)}")
@@ -197,17 +193,14 @@ class AnalysisStorageService:
                 )
 
             logger.info(
-                f"분석 결과 목록 조회: user_id={user_id}, "
-                f"{len(analyses)}개"
+                f"분석 결과 목록 조회: user_id={user_id}, " f"{len(analyses)}개"
             )
             return analyses
         except Exception as e:
             logger.error(f"분석 결과 목록 조회 실패: {str(e)}")
             raise
 
-    def delete_analysis(
-        self, user_id: int, lessonplan_filename: str
-    ) -> bool:
+    def delete_analysis(self, user_id: int, lessonplan_filename: str) -> bool:
         """
         분석 결과 삭제
 
@@ -230,9 +223,7 @@ class AnalysisStorageService:
                 return False
 
             file_path.unlink()
-            logger.info(
-                f"분석 결과 삭제 완료: user_id={user_id}, {filename}"
-            )
+            logger.info(f"분석 결과 삭제 완료: user_id={user_id}, {filename}")
             return True
         except Exception as e:
             logger.error(f"분석 결과 삭제 실패: {str(e)}")

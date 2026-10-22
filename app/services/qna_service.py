@@ -3,29 +3,31 @@ QnA 서비스
 Gemini API를 사용한 질문답변 처리 (FileSearch RAG)
 세션 기반 대화 관리 및 ChatMessage 저장
 """
+
 import asyncio
 import logging
 import re
 import time
 from typing import Any, List, Optional
+
 from google import genai
 from google.genai import types
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.chat_sessions import ChatSession
 from app.models.chat_messages import ChatMessage, MessageRole
+from app.models.chat_sessions import ChatSession
 from app.repositories.app_state_repository import (
     KEY_SYNC_ERROR,
     KEY_SYNC_STATE,
     SYNC_STATE_NEEDS_RESYNC,
 )
-from app.services.prompt_loader_service import PromptLoaderService
 from app.services.file_search_service import FileSearchService
 from app.services.lessonplan_analysis_service import (
     _LESSONPLAN_RETRIEVE_QUERY,
 )
+from app.services.prompt_loader_service import PromptLoaderService
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +66,7 @@ _RUBRIC_STORE_RE = re.compile(
 )
 _INTERNAL_ID_RE = re.compile(
     "|".join(
-        p.pattern
-        for p in (_STORE_PATH_RE, _USER_STORE_RE, _RUBRIC_STORE_RE)
+        p.pattern for p in (_STORE_PATH_RE, _USER_STORE_RE, _RUBRIC_STORE_RE)
     ),
     re.IGNORECASE,
 )
@@ -167,9 +168,7 @@ class QnAService:
             # 세션 존재 확인
             session = await self._get_session(session_id, user_id)
             if not session:
-                raise ValueError(
-                    f"세션을 찾을 수 없습니다: {session_id}"
-                )
+                raise ValueError(f"세션을 찾을 수 없습니다: {session_id}")
 
             # QnA 시스템 프롬프트 로드
             system_prompt = self.prompt_loader.get_prompt("qna")
@@ -177,18 +176,16 @@ class QnAService:
                 raise ValueError("QnA 프롬프트를 찾을 수 없습니다")
 
             # 대화 히스토리 가져오기
-            conversation_history = (
-                await self.get_conversation_history(
-                    session_id, limit=5
-                )
+            conversation_history = await self.get_conversation_history(
+                session_id, limit=5
             )
 
             # 평가 기준 컨텍스트 검색
+            from app.repositories.app_state_repository import AppStateRepository
             from app.services.criteria_context_service import (
                 CriteriaContextService,
                 build_criteria_context_or_notice,
             )
-            from app.repositories.app_state_repository import AppStateRepository
 
             criteria_service = CriteriaContextService(db=self.db)
             app_state_repo = AppStateRepository(db=self.db)
@@ -209,7 +206,9 @@ class QnAService:
                 if criteria_result:
                     context_text = criteria_result.get("context_text", "")
                     criteria_ids = criteria_result.get("criteria_ids", [])
-                    criteria_metadata = criteria_result.get("criteria_metadata", [])
+                    criteria_metadata = criteria_result.get(
+                        "criteria_metadata", []
+                    )
 
                     if context_text:
                         # Vector Search 참고 자료만 포함 (시스템 규칙은 prompt.md에 있음)
@@ -224,12 +223,11 @@ class QnAService:
                             f"{len(criteria_ids)}개 평가기준"
                         )
             except Exception as e:
-                logger.warning(
-                    f"평가 기준 검색 중 오류 (무시): {e}"
-                )
+                logger.warning(f"평가 기준 검색 중 오류 (무시): {e}")
 
             # 질문 유형 분석 및 메타데이터 필터 결정
             from app.services.question_analyzer import QuestionAnalyzer
+
             analyzer = QuestionAnalyzer()
             question_analysis = analyzer.analyze_question(question)
             metadata_filter = question_analysis["metadata_filter"]
@@ -242,8 +240,8 @@ class QnAService:
                 )
 
                 try:
-                    active_rubric_filter = await (
-                        CriteriaVectorService.active_stable_id_filter(
+                    active_rubric_filter = (
+                        await CriteriaVectorService.active_stable_id_filter(
                             client=self.client,
                             store_display_name=settings.FS_RUBRIC_STORE_NAME,
                         )
@@ -254,9 +252,7 @@ class QnAService:
                         exc_info=True,
                     )
                     criteria_notice = "평가기준 동기화가 필요합니다."
-                    await _mark_criteria_filter_needs_resync(
-                        app_state_repo, e
-                    )
+                    await _mark_criteria_filter_needs_resync(app_state_repo, e)
                 if not criteria_notice and not active_rubric_filter:
                     criteria_notice = "활성 평가기준이 없습니다."
 
@@ -299,8 +295,7 @@ class QnAService:
             except ValueError as e:
                 logger.error(f"❌ Store 조회 실패: {e}")
                 raise Exception(
-                    "문서 스토어를 찾을 수 없습니다. "
-                    "관리자에게 문의하세요."
+                    "문서 스토어를 찾을 수 없습니다. " "관리자에게 문의하세요."
                 )
             except Exception as e:
                 logger.error(f"❌ 예상치 못한 오류: {e}")
@@ -344,9 +339,7 @@ class QnAService:
                     )
 
             # Contents 구성: Store 역할 명시 + 평가기준 컨텍스트 + 히스토리 + 질문
-            notice_text = (
-                f"\n\n[{criteria_notice}]" if criteria_notice else ""
-            )
+            notice_text = f"\n\n[{criteria_notice}]" if criteria_notice else ""
             contents = (
                 f"{store_role_prompt}"
                 f"{criteria_context}"
@@ -439,8 +432,8 @@ class QnAService:
                 config=types.GenerateContentConfig(
                     system_instruction=system_prompt,  # 시스템 프롬프트를 별도로 분리
                     tools=file_search_tools,
-                    temperature=settings.QNA_TEMPERATURE
-                )
+                    temperature=settings.QNA_TEMPERATURE,
+                ),
             )
 
             answer = strip_internal_store_ids(response.text)
@@ -453,9 +446,7 @@ class QnAService:
                 response.candidates
                 and response.candidates[0].grounding_metadata
             ):
-                grounding = (
-                    response.candidates[0].grounding_metadata
-                )
+                grounding = response.candidates[0].grounding_metadata
                 citations = self._extract_citations(grounding)
 
             if two_pass:
@@ -474,11 +465,9 @@ class QnAService:
             if citations:
                 if (
                     isinstance(citations, dict)
-                    and 'grounding_chunks' in citations
+                    and "grounding_chunks" in citations
                 ):
-                    sources_count = len(
-                        citations.get('grounding_chunks', [])
-                    )
+                    sources_count = len(citations.get("grounding_chunks", []))
                 elif isinstance(citations, dict):
                     sources_count = len(citations)
                 else:
@@ -521,17 +510,15 @@ class QnAService:
                 "criteria_notice": criteria_notice,
                 "grounding_metadata": {
                     "search_performed": bool(citations),
-                    "sources_count": sources_count
-                }
+                    "sources_count": sources_count,
+                },
             }
 
         except Exception as e:
             logger.error(f"QnA 처리 실패: {str(e)}")
             raise
 
-    def _extract_citations(
-        self, grounding_metadata: Any
-    ) -> Optional[dict]:
+    def _extract_citations(self, grounding_metadata: Any) -> Optional[dict]:
         """
         Citation 정보 추출
 
@@ -542,20 +529,19 @@ class QnAService:
             직렬화된 Citation 딕셔너리
         """
         try:
+
             def to_serializable(obj):
-                if hasattr(obj, 'to_dict'):
+                if hasattr(obj, "to_dict"):
                     return obj.to_dict()
-                elif hasattr(obj, '__dict__'):
+                elif hasattr(obj, "__dict__"):
                     result = {}
                     for key, value in vars(obj).items():
                         if isinstance(value, list):
                             result[key] = [
-                                to_serializable(item)
-                                for item in value
+                                to_serializable(item) for item in value
                             ]
-                        elif (
-                            hasattr(value, '__dict__')
-                            or hasattr(value, 'to_dict')
+                        elif hasattr(value, "__dict__") or hasattr(
+                            value, "to_dict"
                         ):
                             result[key] = to_serializable(value)
                         else:
@@ -570,9 +556,7 @@ class QnAService:
             return None
 
     def _extend_citations(
-        self,
-        citations: Optional[dict],
-        criteria_metadata: list[dict[str, Any]]
+        self, citations: Optional[dict], criteria_metadata: list[dict[str, Any]]
     ) -> dict:
         """
         Citations에 평가기준 출처 추가
@@ -585,18 +569,17 @@ class QnAService:
             확장된 citations (문서 + 평가기준 출처)
         """
         try:
-            result = {
-                "documents": citations or {},
-                "criteria": []
-            }
+            result = {"documents": citations or {}, "criteria": []}
 
             # 평가기준 출처 추가
             for criteria in criteria_metadata:
-                result["criteria"].append({
-                    "id": criteria.get("id"),
-                    "title": criteria.get("title"),
-                    "type": "criteria"
-                })
+                result["criteria"].append(
+                    {
+                        "id": criteria.get("id"),
+                        "title": criteria.get("title"),
+                        "type": "criteria",
+                    }
+                )
 
             return result
         except Exception as e:
@@ -711,10 +694,12 @@ class QnAService:
                     messages[i].role == MessageRole.USER
                     and messages[i + 1].role == MessageRole.ASSISTANT
                 ):
-                    history.append({
-                        "question": messages[i].content,
-                        "answer": messages[i + 1].content,
-                    })
+                    history.append(
+                        {
+                            "question": messages[i].content,
+                            "answer": messages[i + 1].content,
+                        }
+                    )
 
         return history[-limit:]  # 최근 limit개만
 

@@ -184,9 +184,7 @@ async def test_delete_user_cascades_lessonplan_upload_rows(seeded):
 
     async with TestingSessionLocal() as db:
         remaining = await db.execute(
-            select(LessonPlanUpload).where(
-                LessonPlanUpload.id == upload_id
-            )
+            select(LessonPlanUpload).where(LessonPlanUpload.id == upload_id)
         )
         assert remaining.scalar_one_or_none() is None
 
@@ -682,6 +680,7 @@ async def test_delete_chat_session_cascades_messages(seeded):
         from sqlalchemy import select
 
         from app.models.chat_messages import ChatMessage
+
         msg_rows = await db.execute(select(ChatMessage))
         assert msg_rows.scalars().all() == []
 
@@ -775,8 +774,7 @@ async def test_delete_analysis_report_removes_synthetic_upload_legacy_file(
     tmp_path,
 ):
     legacy_file = (
-        seeded["lessonplan_file"].parent
-        / "stu1_20260102000000_legacy.pdf"
+        seeded["lessonplan_file"].parent / "stu1_20260102000000_legacy.pdf"
     )
     legacy_file.write_bytes(b"%PDF-1.4\n")
     assert not (seeded["static_uploads_dir"] / legacy_file.name).exists()
@@ -849,11 +847,14 @@ def test_resolve_lessonplan_path_prefers_dashboard_upload(
 
     service = AdminDeletionService(db=None)
 
-    assert service._resolve_lessonplan_path(
-        filename,
-        user_id=1,
-        upload_id=1,
-    ) == upload_file
+    assert (
+        service._resolve_lessonplan_path(
+            filename,
+            user_id=1,
+            upload_id=1,
+        )
+        == upload_file
+    )
 
 
 @pytest.mark.asyncio
@@ -863,6 +864,7 @@ async def test_bulk_delete_sessions_requires_ownership(seeded):
         # 두 번째 사용자 + 세션 생성
         from app.models.chat_sessions import ChatSession
         from app.models.users import User
+
         other = User(
             username="stu2",
             nickname="S2",
@@ -892,6 +894,7 @@ async def test_bulk_delete_sessions_happy(seeded):
     async with TestingSessionLocal() as db:
         # 두 번째 세션 추가
         from app.models.chat_sessions import ChatSession
+
         s2 = ChatSession(
             user_id=seeded["user_id"], user_type="2학년", title="B"
         )
@@ -915,6 +918,7 @@ async def test_bulk_delete_sessions_happy(seeded):
 async def test_bulk_delete_reports_happy(seeded, tmp_path):
     async with TestingSessionLocal() as db:
         from app.models.analysis_reports import AnalysisReport
+
         f2 = tmp_path / "report2.md"
         f2.write_text("# r2", encoding="utf-8")
         r2 = AnalysisReport(

@@ -5,6 +5,7 @@
 - 활성화/비활성화 토글 기능
 - deactivate_criteria 메서드 추가
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -13,14 +14,13 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.db import async_session_maker
-from app.repositories.criteria_repository import CriteriaRepository
 import logging
 
+from app.db import async_session_maker
+from app.repositories.criteria_repository import CriteriaRepository
+
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -64,9 +64,7 @@ async def test_criteria_toggle():
 
             # 2. 활성화
             logger.info("\n[2단계] 활성화")
-            activated = await criteria_repo.activate_criteria(
-                criteria.id
-            )
+            activated = await criteria_repo.activate_criteria(criteria.id)
             await session.commit()
 
             if activated and activated.status == "active":
@@ -81,9 +79,7 @@ async def test_criteria_toggle():
 
             # 3. 비활성화
             logger.info("\n[3단계] 비활성화")
-            deactivated = await criteria_repo.deactivate_criteria(
-                criteria.id
-            )
+            deactivated = await criteria_repo.deactivate_criteria(criteria.id)
             await session.commit()
 
             if deactivated and deactivated.status == "uploaded":
@@ -98,9 +94,7 @@ async def test_criteria_toggle():
 
             # 4. 재활성화
             logger.info("\n[4단계] 재활성화")
-            reactivated = await criteria_repo.activate_criteria(
-                criteria.id
-            )
+            reactivated = await criteria_repo.activate_criteria(criteria.id)
             await session.commit()
 
             if reactivated and reactivated.status == "active":
@@ -115,16 +109,11 @@ async def test_criteria_toggle():
 
             # 5. 상태 이력 확인
             logger.info("\n[5단계] 상태 이력 확인")
+            logger.info(f"첫 활성화: {activated.activated_at}")
             logger.info(
-                f"첫 활성화: {activated.activated_at}"
+                f"비활성화 후: {deactivated.activated_at} " f"(이력 보존됨)"
             )
-            logger.info(
-                f"비활성화 후: {deactivated.activated_at} "
-                f"(이력 보존됨)"
-            )
-            logger.info(
-                f"재활성화: {reactivated.activated_at}"
-            )
+            logger.info(f"재활성화: {reactivated.activated_at}")
 
             # 6. 삭제
             logger.info("\n[6단계] 테스트 데이터 삭제")

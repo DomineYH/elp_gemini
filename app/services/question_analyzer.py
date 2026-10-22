@@ -2,6 +2,7 @@
 질문 분석 서비스
 질문 유형을 판단하여 메타데이터 필터 적용 여부 결정
 """
+
 import re
 from typing import Optional
 
@@ -17,12 +18,10 @@ class QuestionAnalyzer:
         "검토",
         "점검",
         "진단",
-
         # 기준 관련 질문
         "기준",
         "루브릭",
         "채점",
-
         # 판단 요청
         "어떤가요",
         "어떤가",
@@ -32,17 +31,14 @@ class QuestionAnalyzer:
         "타당한가",
         "괜찮은가",
         "괜찮나",
-
         # 비교/측정 요청
         "비교",
         "측정",
         "수준",
-
         # 개선 관련
         "개선",
         "보완",
         "수정",
-
         # 강점/약점 분석
         "강점",
         "약점",
@@ -128,5 +124,5 @@ class QuestionAnalyzer:
         return {
             "is_evaluation": is_eval,
             "metadata_filter": self.get_filter_strategy(question),
-            "question_type": "evaluation" if is_eval else "content"
+            "question_type": "evaluation" if is_eval else "content",
         }

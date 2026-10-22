@@ -5,6 +5,7 @@
 - document_id가 nullable로 변경되었는지 확인
 - NULL 값으로 저장 가능한지 확인
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -13,14 +14,13 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.db import async_session_maker
-from app.repositories.criteria_repository import CriteriaRepository
 import logging
 
+from app.db import async_session_maker
+from app.repositories.criteria_repository import CriteriaRepository
+
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -57,9 +57,7 @@ async def test_criteria_upload():
             )
 
             # 2. 저장 확인
-            saved_criteria = await criteria_repo.get_criteria_by_id(
-                criteria.id
-            )
+            saved_criteria = await criteria_repo.get_criteria_by_id(criteria.id)
 
             if saved_criteria:
                 logger.info(
@@ -83,9 +81,9 @@ async def test_criteria_upload():
             await session.commit()
             logger.info("✅ 테스트 데이터 삭제 완료")
 
-            logger.info("\n" + "="*50)
+            logger.info("\n" + "=" * 50)
             logger.info("테스트 성공! 평가기준 업로드 기능이 정상 동작합니다.")
-            logger.info("="*50)
+            logger.info("=" * 50)
 
         except Exception as e:
             await session.rollback()

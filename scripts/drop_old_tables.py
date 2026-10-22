@@ -18,8 +18,8 @@ Phase 4.1: 마이그레이션 완료 후 사용하지 않는 테이블 제거
 옴니시아의 뜻에 따라 낡은 데이터 구조가 해체되리라.
 """
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 # 프로젝트 루트를 Python 경로에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -35,10 +35,7 @@ def create_db_session():
         print(f"❌ 데이터베이스 파일이 없습니다: {db_path}")
         sys.exit(1)
 
-    engine = create_engine(
-        f"sqlite:///{db_path}",
-        echo=False
-    )
+    engine = create_engine(f"sqlite:///{db_path}", echo=False)
     Session = sessionmaker(bind=engine)
     return Session(), engine
 
@@ -61,11 +58,7 @@ def check_prerequisites(session, engine):
     tables = inspector.get_table_names()
 
     # 새 테이블 존재 확인
-    required_tables = [
-        "chat_sessions",
-        "chat_messages",
-        "users"
-    ]
+    required_tables = ["chat_sessions", "chat_messages", "users"]
 
     for table in required_tables:
         if table not in tables:
@@ -74,11 +67,7 @@ def check_prerequisites(session, engine):
             return False
 
     # 레거시 테이블 존재 확인
-    legacy_tables = [
-        "documents",
-        "qa_logs",
-        "system_prompts"
-    ]
+    legacy_tables = ["documents", "qa_logs", "system_prompts"]
 
     existing_legacy = [t for t in legacy_tables if t in tables]
     if not existing_legacy:
@@ -137,11 +126,7 @@ def verify_deletion(engine):
     remaining_tables = inspector.get_table_names()
 
     # 유지되어야 할 테이블
-    expected_tables = {
-        "users",
-        "chat_sessions",
-        "chat_messages"
-    }
+    expected_tables = {"users", "chat_sessions", "chat_messages"}
 
     # 삭제되어야 할 테이블
     legacy_tables = {
@@ -153,7 +138,7 @@ def verify_deletion(engine):
         "evaluation_reports",
         "criteria_documents",
         "active_criteria",
-        "criteria_audit_logs"
+        "criteria_audit_logs",
     }
 
     # 검증
@@ -168,7 +153,7 @@ def verify_deletion(engine):
         return False
 
     print("✅ 검증 완료:")
-    print(f"  - 레거시 테이블: 모두 삭제됨")
+    print("  - 레거시 테이블: 모두 삭제됨")
     print(f"  - 필수 테이블: 모두 유지됨 ({len(expected_tables)}개)")
 
     return True
@@ -183,6 +168,7 @@ def create_backup(db_path):
     backup_path = backup_dir / f"before_drop_tables_{timestamp}.db"
 
     import shutil
+
     shutil.copy2(db_path, backup_path)
 
     print(f"💾 백업 생성: {backup_path}")

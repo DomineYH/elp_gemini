@@ -1,6 +1,7 @@
 """
 관리자 - 프롬프트 관리 뷰 라우터
 """
+
 import logging
 from dataclasses import dataclass
 
@@ -23,10 +24,7 @@ from app.services.prompt_loader_service import (
 )
 from app.templating import templates
 
-router = APIRouter(
-    prefix="/admin",
-    tags=["관리자-프롬프트"]
-)
+router = APIRouter(prefix="/admin", tags=["관리자-프롬프트"])
 logger = logging.getLogger(__name__)
 
 _prompt_loader = None
@@ -51,19 +49,14 @@ class PromptDisplay:
     "/prompts",
     response_class=HTMLResponse,
     summary="프롬프트 관리",
-    description="프롬프트 관리 페이지"
+    description="프롬프트 관리 페이지",
 )
 async def admin_prompts(
     request: Request,
-    current_admin: User = Depends(
-        get_current_admin
-    ),
+    current_admin: User = Depends(get_current_admin),
 ):
     """프롬프트 관리 페이지"""
-    logger.info(
-        "프롬프트 관리 접근: "
-        f"admin={current_admin.username}"
-    )
+    logger.info("프롬프트 관리 접근: " f"admin={current_admin.username}")
     loader = _get_prompt_loader()
     prompt_types = loader.list_available_prompts()
 
@@ -78,7 +71,7 @@ async def admin_prompts(
             "request": request,
             "user": current_admin,
             "prompts": prompts,
-        }
+        },
     )
 
 
@@ -88,9 +81,7 @@ async def admin_prompts(
 )
 async def create_prompt(
     request_data: SystemPromptCreateRequest,
-    current_admin: User = Depends(
-        get_current_admin
-    ),
+    current_admin: User = Depends(get_current_admin),
 ):
     """프롬프트 생성 API"""
     try:
@@ -108,9 +99,7 @@ async def create_prompt(
             "message": "프롬프트가 생성되었습니다",
         }
     except ValueError as e:
-        raise HTTPException(
-            status_code=400, detail=str(e)
-        )
+        raise HTTPException(status_code=400, detail=str(e))
     except (IOError, OSError) as e:
         logger.error(f"프롬프트 저장 실패: {e}")
         raise HTTPException(
@@ -126,16 +115,12 @@ async def create_prompt(
 async def update_prompt(
     prompt_type: str,
     request_data: SystemPromptUpdateRequest,
-    current_admin: User = Depends(
-        get_current_admin
-    ),
+    current_admin: User = Depends(get_current_admin),
 ):
     """프롬프트 수정 API"""
     try:
         loader = _get_prompt_loader()
-        loader.update_prompt(
-            prompt_type, request_data.content
-        )
+        loader.update_prompt(prompt_type, request_data.content)
         logger.info(
             f"프롬프트 수정: type={prompt_type}, "
             f"admin={current_admin.username}"
@@ -145,9 +130,7 @@ async def update_prompt(
             "message": "프롬프트가 수정되었습니다",
         }
     except ValueError as e:
-        raise HTTPException(
-            status_code=400, detail=str(e)
-        )
+        raise HTTPException(status_code=400, detail=str(e))
     except (IOError, OSError) as e:
         logger.error(f"프롬프트 저장 실패: {e}")
         raise HTTPException(
@@ -162,9 +145,7 @@ async def update_prompt(
 )
 async def delete_prompt_api(
     prompt_type: str,
-    current_admin: User = Depends(
-        get_current_admin
-    ),
+    current_admin: User = Depends(get_current_admin),
 ):
     """프롬프트 삭제 API"""
     try:
@@ -179,9 +160,7 @@ async def delete_prompt_api(
             "message": "프롬프트가 삭제되었습니다",
         }
     except ValueError as e:
-        raise HTTPException(
-            status_code=400, detail=str(e)
-        )
+        raise HTTPException(status_code=400, detail=str(e))
     except (IOError, OSError) as e:
         logger.error(f"프롬프트 저장 실패: {e}")
         raise HTTPException(

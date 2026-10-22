@@ -3,6 +3,7 @@ check_no_emojis_in_reports CLI 단위 테스트
 
 이모지 재유입 차단 정적 점검 스크립트의 검출 규칙·예외 처리·종료 코드 검증.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -211,11 +212,7 @@ class TestSchemaHeuristic:
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """일반 .py 파일의 이모지는 (예외 없이) 모두 검출된다."""
-        content = (
-            '"""docstring"""\n'
-            "x = '📑 보고서 헤더'\n"
-            "y = 2\n"
-        )
+        content = '"""docstring"""\n' "x = '📑 보고서 헤더'\n" "y = 2\n"
         schema = _write(tmp_path, "lessonplan_analysis.py", content)
 
         rc = main([str(schema)])
@@ -230,11 +227,7 @@ class TestReportHeuristic:
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """*_reports.md 본문(인용이 아닌 줄)의 이모지는 검출된다."""
-        content = (
-            "# 보고서\n"
-            "\n"
-            "본문 ✅ 강점\n"
-        )
+        content = "# 보고서\n" "\n" "본문 ✅ 강점\n"
         report = _write(tmp_path, "1_x_reports.md", content)
 
         rc = main([str(report)])
@@ -267,11 +260,7 @@ class TestReportHeuristic:
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """키캡 결합 문자(1️⃣)도 본문에 등장하면 검출된다."""
-        content = (
-            "# 보고서\n"
-            "\n"
-            "1️⃣ 첫 번째 항목\n"
-        )
+        content = "# 보고서\n" "\n" "1️⃣ 첫 번째 항목\n"
         report = _write(tmp_path, "1_x_reports.md", content)
 
         rc = main([str(report)])
@@ -287,9 +276,7 @@ class TestAccumulationAndArgs:
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """여러 발견이 누적되어 모두 stderr 로 보고되어야 한다."""
-        report1 = _write(
-            tmp_path, "1_a_reports.md", "본문 📊 첫 번째\n"
-        )
+        report1 = _write(tmp_path, "1_a_reports.md", "본문 📊 첫 번째\n")
         report2 = _write(
             tmp_path,
             "2_b_reports.md",
@@ -300,9 +287,7 @@ class TestAccumulationAndArgs:
 
         captured = capsys.readouterr()
         assert rc == 1
-        err_lines = [
-            line for line in captured.err.splitlines() if line.strip()
-        ]
+        err_lines = [line for line in captured.err.splitlines() if line.strip()]
         # 첫 파일 1건 + 두 번째 파일 2건 = 총 3건이 모두 보고되어야 함
         assert len(err_lines) == 3
         assert any("📊" in line for line in err_lines)
@@ -391,9 +376,15 @@ def test_script_runs_as_cli_subprocess(tmp_path):
     from pathlib import Path as _Path
 
     clean_file = tmp_path / "clean.md"
-    clean_file.write_text("# Plain title\n\nNo emojis here.\n", encoding="utf-8")
+    clean_file.write_text(
+        "# Plain title\n\nNo emojis here.\n", encoding="utf-8"
+    )
 
-    script = _Path(__file__).resolve().parent.parent.parent / "scripts" / "check_no_emojis_in_reports.py"
+    script = (
+        _Path(__file__).resolve().parent.parent.parent
+        / "scripts"
+        / "check_no_emojis_in_reports.py"
+    )
     result = subprocess.run(
         [_sys.executable, str(script), str(clean_file)],
         capture_output=True,

@@ -4,6 +4,7 @@ Ensures the lesson-plan analysis call orders the file_search tools so the
 user-document store is searched first; reversing the order caused the model
 to ignore the uploaded lesson plan and respond as if no document existed.
 """
+
 from unittest.mock import MagicMock
 
 from app.services.lessonplan_analysis_service import (

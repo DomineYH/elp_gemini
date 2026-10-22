@@ -6,6 +6,7 @@ Covers issue #25 dashboard history contracts:
 - cross-user history lookups return 404 to avoid session existence leaks;
 - owners can read the full ordered message transcript.
 """
+
 from datetime import datetime, timedelta
 
 import pytest
@@ -107,47 +108,51 @@ async def seeded_history(db_tables):
             created_at=base_time + timedelta(hours=2),
             updated_at=base_time + timedelta(hours=2, minutes=5),
         )
-        db.add_all([
-            session_a_old,
-            session_a_new,
-            session_a_recent_message,
-            session_b,
-        ])
+        db.add_all(
+            [
+                session_a_old,
+                session_a_new,
+                session_a_recent_message,
+                session_b,
+            ]
+        )
         await db.flush()
 
-        db.add_all([
-            ChatMessage(
-                session_id=session_a_new.id,
-                role=MessageRole.USER,
-                content="첫 번째 질문",
-                created_at=base_time + timedelta(hours=1, minutes=1),
-            ),
-            ChatMessage(
-                session_id=session_a_new.id,
-                role=MessageRole.ASSISTANT,
-                content="첫 번째 답변",
-                model_name="gemini-test",
-                created_at=base_time + timedelta(hours=1, minutes=2),
-            ),
-            ChatMessage(
-                session_id=session_a_new.id,
-                role=MessageRole.USER,
-                content="두 번째 질문",
-                created_at=base_time + timedelta(hours=1, minutes=3),
-            ),
-            ChatMessage(
-                session_id=session_b.id,
-                role=MessageRole.USER,
-                content="다른 사용자 질문",
-                created_at=base_time + timedelta(hours=2, minutes=1),
-            ),
-            ChatMessage(
-                session_id=session_a_recent_message.id,
-                role=MessageRole.USER,
-                content="가장 최근 활동 질문",
-                created_at=base_time + timedelta(hours=3),
-            ),
-        ])
+        db.add_all(
+            [
+                ChatMessage(
+                    session_id=session_a_new.id,
+                    role=MessageRole.USER,
+                    content="첫 번째 질문",
+                    created_at=base_time + timedelta(hours=1, minutes=1),
+                ),
+                ChatMessage(
+                    session_id=session_a_new.id,
+                    role=MessageRole.ASSISTANT,
+                    content="첫 번째 답변",
+                    model_name="gemini-test",
+                    created_at=base_time + timedelta(hours=1, minutes=2),
+                ),
+                ChatMessage(
+                    session_id=session_a_new.id,
+                    role=MessageRole.USER,
+                    content="두 번째 질문",
+                    created_at=base_time + timedelta(hours=1, minutes=3),
+                ),
+                ChatMessage(
+                    session_id=session_b.id,
+                    role=MessageRole.USER,
+                    content="다른 사용자 질문",
+                    created_at=base_time + timedelta(hours=2, minutes=1),
+                ),
+                ChatMessage(
+                    session_id=session_a_recent_message.id,
+                    role=MessageRole.USER,
+                    content="가장 최근 활동 질문",
+                    created_at=base_time + timedelta(hours=3),
+                ),
+            ]
+        )
         await db.commit()
 
         return {
@@ -230,7 +235,8 @@ async def test_list_my_sessions_only_returns_current_user_sessions(
         assert isinstance(item["message_count"], int)
 
     session_with_messages = next(
-        item for item in sessions
+        item
+        for item in sessions
         if item["session_id"] == seeded_history["session_a_new"].id
     )
     assert session_with_messages["title"] == "A new lesson"
@@ -241,7 +247,8 @@ async def test_list_my_sessions_only_returns_current_user_sessions(
     assert session_with_messages["last_message_at"].endswith("+00:00")
 
     empty_session = next(
-        item for item in sessions
+        item
+        for item in sessions
         if item["session_id"] == seeded_history["session_a_old"].id
     )
     assert empty_session["message_count"] == 0

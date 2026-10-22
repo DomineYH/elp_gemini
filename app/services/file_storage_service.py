@@ -2,10 +2,9 @@
 파일 저장 서비스
 로컬 파일 시스템에 파일 저장/삭제
 """
-import os
+
 import logging
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +23,7 @@ class FileStorageService:
         self.base_dir.mkdir(exist_ok=True)
 
     def save_file(
-        self,
-        file_content: bytes,
-        criteria_id: int,
-        filename: str
+        self, file_content: bytes, criteria_id: int, filename: str
     ) -> str:
         """
         파일을 로컬에 저장
@@ -49,16 +45,14 @@ class FileStorageService:
                 f.write(file_content)
 
             logger.info(
-                f"파일 저장 완료: {file_path} "
-                f"({len(file_content)} bytes)"
+                f"파일 저장 완료: {file_path} " f"({len(file_content)} bytes)"
             )
             return str(file_path)
 
         except Exception as e:
             logger.error(
-                f"파일 저장 실패: {file_path}, "
-                f"오류: {str(e)}",
-                exc_info=True
+                f"파일 저장 실패: {file_path}, " f"오류: {str(e)}",
+                exc_info=True,
             )
             raise
 
@@ -76,9 +70,7 @@ class FileStorageService:
             path = Path(file_path)
 
             if not path.exists():
-                logger.warning(
-                    f"파일이 존재하지 않음: {file_path}"
-                )
+                logger.warning(f"파일이 존재하지 않음: {file_path}")
                 return False
 
             path.unlink()
@@ -87,15 +79,12 @@ class FileStorageService:
 
         except Exception as e:
             logger.error(
-                f"파일 삭제 실패: {file_path}, "
-                f"오류: {str(e)}",
-                exc_info=True
+                f"파일 삭제 실패: {file_path}, " f"오류: {str(e)}",
+                exc_info=True,
             )
             return False
 
-    def get_file_path(
-        self, criteria_id: int, filename: str
-    ) -> str:
+    def get_file_path(self, criteria_id: int, filename: str) -> str:
         """
         파일 경로 생성
 

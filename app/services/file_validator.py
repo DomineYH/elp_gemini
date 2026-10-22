@@ -2,11 +2,12 @@
 파일 검증 서비스
 업로드된 파일의 보안 및 유효성 검증
 """
-import re
+
 import logging
-from pathlib import Path
+import re
 from typing import Dict, Optional, Tuple
-from fastapi import UploadFile, HTTPException
+
+from fastapi import HTTPException, UploadFile
 
 from app.config import settings
 
@@ -48,9 +49,7 @@ class FileValidator:
         else:
             self.max_file_size = settings.MAX_UPLOAD_SIZE
 
-    async def validate_file(
-        self, file: UploadFile
-    ) -> Dict[str, any]:
+    async def validate_file(self, file: UploadFile) -> Dict[str, any]:
         """
         파일 검증 (async 래퍼)
 
@@ -125,8 +124,7 @@ class FileValidator:
         metadata = self._extract_metadata(contents, warnings)
 
         logger.info(
-            f"파일 검증 완료: "
-            f"size={file_size}, warnings={len(warnings)}"
+            f"파일 검증 완료: " f"size={file_size}, warnings={len(warnings)}"
         )
 
         return file_size, metadata
@@ -134,9 +132,7 @@ class FileValidator:
     def _validate_mime_type(self, file: UploadFile) -> None:
         """MIME type 검증"""
         if file.content_type not in self.ALLOWED_PDF_MIMES:
-            logger.warning(
-                f"잘못된 MIME type: {file.content_type}"
-            )
+            logger.warning(f"잘못된 MIME type: {file.content_type}")
             raise HTTPException(
                 status_code=400,
                 detail="PDF 파일만 업로드 가능합니다",
@@ -156,10 +152,7 @@ class FileValidator:
             max_mb = self.max_file_size / (1024 * 1024)
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    f"파일 크기는 {max_mb:.0f}MB를 "
-                    "초과할 수 없습니다"
-                ),
+                detail=(f"파일 크기는 {max_mb:.0f}MB를 " "초과할 수 없습니다"),
             )
 
         return file_size
@@ -175,22 +168,16 @@ class FileValidator:
             )
 
         # PDF 버전 추출 및 검증
-        version_match = re.search(
-            rb"%PDF-(\d)\.(\d)", contents[:20]
-        )
+        version_match = re.search(rb"%PDF-(\d)\.(\d)", contents[:20])
         if version_match:
             major, minor = (
                 int(version_match.group(1)),
                 int(version_match.group(2)),
             )
             if major > 2 or (major == 2 and minor > 0):
-                logger.warning(
-                    f"높은 PDF 버전: {major}.{minor}"
-                )
+                logger.warning(f"높은 PDF 버전: {major}.{minor}")
 
-    def _scan_suspicious_content(
-        self, contents: bytes
-    ) -> list[str]:
+    def _scan_suspicious_content(self, contents: bytes) -> list[str]:
         """악성 콘텐츠 패턴 검사"""
         warnings = []
 
@@ -211,8 +198,7 @@ class FileValidator:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "외부 프로그램 실행이 포함된 PDF는 "
-                    "업로드할 수 없습니다"
+                    "외부 프로그램 실행이 포함된 PDF는 " "업로드할 수 없습니다"
                 ),
             )
 
@@ -234,13 +220,9 @@ class FileValidator:
         metadata = {}
 
         # PDF 버전
-        version_match = re.search(
-            rb"%PDF-(\d\.\d)", contents[:20]
-        )
+        version_match = re.search(rb"%PDF-(\d\.\d)", contents[:20])
         if version_match:
-            metadata["pdf_version"] = version_match.group(
-                1
-            ).decode("ascii")
+            metadata["pdf_version"] = version_match.group(1).decode("ascii")
 
         # 페이지 수 추정 (정확하지 않을 수 있음)
         page_matches = re.findall(rb"/Type\s*/Page[^s]", contents)

@@ -9,6 +9,7 @@
     T5  POST /auth/login/admin (잘못된 자격증명) → 401 + 관리자 폼 재렌더
     T9  GET /login          응답에 'login/admin' 문자열 미노출
 """
+
 import base64
 import json
 import re
@@ -140,12 +141,12 @@ async def test_admin_login_paths_bypass_auth_middleware_with_browser_headers(
             },
             follow_redirects=True,
         )
-    assert response.status_code == 200, (
-        f"{url}: status {response.status_code} — 미들웨어 가로채기 회귀 의심"
-    )
-    assert 'name="admin_id"' in response.text, (
-        f"{url}: 관리자 폼 미노출. 사용자 로그인 폼으로 흐른 정황"
-    )
+    assert (
+        response.status_code == 200
+    ), f"{url}: status {response.status_code} — 미들웨어 가로채기 회귀 의심"
+    assert (
+        'name="admin_id"' in response.text
+    ), f"{url}: 관리자 폼 미노출. 사용자 로그인 폼으로 흐른 정황"
     assert 'action="/auth/login/admin"' in response.text
 
 

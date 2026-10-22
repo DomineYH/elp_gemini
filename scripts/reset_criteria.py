@@ -4,18 +4,19 @@
 모든 평가 기준 데이터를 안전하게 삭제합니다.
 """
 import asyncio
-import sys
 import os
+import sys
 from pathlib import Path
 
 # 프로젝트 루트를 Python path에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from app.services.criteria_embedding_service import CriteriaEmbeddingService
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+
 from app.config import settings
 from app.repositories.criteria_repository import CriteriaRepository
-from app.services.criteria_embedding_service import CriteriaEmbeddingService
 
 
 async def reset_all_criteria():
@@ -51,7 +52,9 @@ async def reset_all_criteria():
 
         for i, doc in enumerate(documents, 1):
             print(f"   {i}. ID: {doc.id}, 제목: {doc.title}")
-            print(f"      상태: {doc.status}, Vector Store ID: {doc.vector_store_id}")
+            print(
+                f"      상태: {doc.status}, Vector Store ID: {doc.vector_store_id}"
+            )
             print(f"      파일: {doc.file_path}\n")
 
         # 2. 확인 요청
@@ -62,7 +65,7 @@ async def reset_all_criteria():
         print()
 
         response = input("계속하시겠습니까? (yes/no): ")
-        if response.lower() not in ['yes', 'y']:
+        if response.lower() not in ["yes", "y"]:
             print("❌ 취소되었습니다.")
             return
 
@@ -78,13 +81,19 @@ async def reset_all_criteria():
         for i, doc in enumerate(documents, 1):
             if doc.vector_store_id:
                 try:
-                    print(f"   [{i}/{total}] Vector Store 삭제: {doc.vector_store_id}")
-                    success = await embedding_service.delete_store(doc.vector_store_id)
+                    print(
+                        f"   [{i}/{total}] Vector Store 삭제: {doc.vector_store_id}"
+                    )
+                    success = await embedding_service.delete_store(
+                        doc.vector_store_id
+                    )
                     if not success:
-                        failed_vectors.append(f"{doc.title} (ID: {doc.vector_store_id})")
+                        failed_vectors.append(
+                            f"{doc.title} (ID: {doc.vector_store_id})"
+                        )
                         print(f"      ⚠️  실패: {doc.title}")
                     else:
-                        print(f"      ✅ 성공")
+                        print("      ✅ 성공")
                 except Exception as e:
                     failed_vectors.append(f"{doc.title} (오류: {str(e)})")
                     print(f"      ❌ 오류: {e}")
@@ -96,7 +105,7 @@ async def reset_all_criteria():
                 print(f"   - {failed}")
             print()
             response = input("계속하시겠습니까? (yes/no): ")
-            if response.lower() not in ['yes', 'y']:
+            if response.lower() not in ["yes", "y"]:
                 print("❌ 취소되었습니다. (데이터베이스는 변경되지 않았습니다)")
                 return
 
@@ -142,7 +151,9 @@ async def reset_all_criteria():
         print("=" * 60)
         print()
         print("요약:")
-        print(f"   - Vector DB: {total - len(failed_vectors)}/{total} 삭제 성공")
+        print(
+            f"   - Vector DB: {total - len(failed_vectors)}/{total} 삭제 성공"
+        )
         print(f"   - 데이터베이스: {deleted_count}개 레코드 삭제")
         print(f"   - 파일 시스템: {deleted_files}개 파일 삭제")
         print()
@@ -157,5 +168,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n\n❌ 오류 발생: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

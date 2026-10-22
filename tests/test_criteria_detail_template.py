@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-
 TEMPLATE_DIR = Path("app/templates")
 
 

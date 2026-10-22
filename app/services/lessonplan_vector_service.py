@@ -2,11 +2,12 @@
 지도안 임시 Vector DB 관리 서비스
 사용자별/세션별 임시 저장 및 자동 삭제 지원
 """
+
 import logging
-from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
 from app.services.file_search_service import FileSearchService
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +49,7 @@ class LessonPlanVectorService:
             upload_metadata = metadata or {}
             upload_metadata["type"] = "lessonplan"
             upload_metadata["user_id"] = str(user_id)
-            upload_metadata["uploaded_at"] = (
-                datetime.now().isoformat()
-            )
+            upload_metadata["uploaded_at"] = datetime.now().isoformat()
 
             if session_id:
                 upload_metadata["session_id"] = session_id
@@ -89,19 +88,13 @@ class LessonPlanVectorService:
         """
         try:
             await self._delete_user_store(user_id)
-            logger.info(
-                f"로그아웃 시 임시 지도안 삭제 완료: user_id={user_id}"
-            )
+            logger.info(f"로그아웃 시 임시 지도안 삭제 완료: user_id={user_id}")
             return True
         except Exception as e:
-            logger.error(
-                f"로그아웃 시 임시 지도안 삭제 실패: {str(e)}"
-            )
+            logger.error(f"로그아웃 시 임시 지도안 삭제 실패: {str(e)}")
             raise
 
-    async def delete_on_session_close(
-        self, session_id: str
-    ) -> bool:
+    async def delete_on_session_close(self, session_id: str) -> bool:
         """
         세션 종료 시 임시 지도안 삭제
         (세션 ID로 필터링하여 삭제)
@@ -126,9 +119,7 @@ class LessonPlanVectorService:
             )
             return True
         except Exception as e:
-            logger.error(
-                f"세션 종료 시 임시 지도안 삭제 실패: {str(e)}"
-            )
+            logger.error(f"세션 종료 시 임시 지도안 삭제 실패: {str(e)}")
             raise
 
     async def delete_user_documents(self, user_id: int) -> bool:
@@ -144,14 +135,10 @@ class LessonPlanVectorService:
         """
         try:
             await self._delete_user_store(user_id)
-            logger.info(
-                f"사용자 임시 지도안 삭제 완료: user_id={user_id}"
-            )
+            logger.info(f"사용자 임시 지도안 삭제 완료: user_id={user_id}")
             return True
         except Exception as e:
-            logger.error(
-                f"사용자 임시 지도안 삭제 실패: {str(e)}"
-            )
+            logger.error(f"사용자 임시 지도안 삭제 실패: {str(e)}")
             raise
 
     async def _delete_user_store(self, user_id: int) -> None:
@@ -164,9 +151,7 @@ class LessonPlanVectorService:
         try:
             store_name = f"user-{user_id}-store"
             await self._delete_store(store_name)
-            logger.info(
-                f"사용자 Store 삭제 완료: {store_name}"
-            )
+            logger.info(f"사용자 Store 삭제 완료: {store_name}")
         except Exception as e:
             logger.error(f"사용자 Store 삭제 실패: {str(e)}")
             raise
@@ -185,25 +170,18 @@ class LessonPlanVectorService:
             for store in client.file_search_stores.list():
                 if store.display_name == store_name:
                     logger.info(
-                        f"Store 삭제 중: {store_name} "
-                        f"(ID: {store.name})"
+                        f"Store 삭제 중: {store_name} " f"(ID: {store.name})"
                     )
                     client.file_search_stores.delete(name=store.name)
-                    logger.info(
-                        f"Store 삭제 완료: {store_name}"
-                    )
+                    logger.info(f"Store 삭제 완료: {store_name}")
                     return
 
-            logger.warning(
-                f"Store를 찾을 수 없습니다: {store_name}"
-            )
+            logger.warning(f"Store를 찾을 수 없습니다: {store_name}")
         except Exception as e:
             logger.error(f"Store 삭제 실패: {str(e)}")
             raise
 
-    async def cleanup_expired_sessions(
-        self, expiry_hours: int = 24
-    ) -> int:
+    async def cleanup_expired_sessions(self, expiry_hours: int = 24) -> int:
         """
         만료된 세션의 임시 지도안 정리
         (업로드 후 일정 시간 경과한 Store 삭제)
@@ -217,9 +195,7 @@ class LessonPlanVectorService:
         try:
             client = self.file_search_service.client
             deleted_count = 0
-            cutoff_time = (
-                datetime.now() - timedelta(hours=expiry_hours)
-            )
+            cutoff_time = datetime.now() - timedelta(hours=expiry_hours)
 
             # 모든 사용자 Store 확인
             for store in client.file_search_stores.list():
@@ -236,13 +212,9 @@ class LessonPlanVectorService:
 
                     if not docs:
                         # 빈 Store는 삭제
-                        client.file_search_stores.delete(
-                            name=store.name
-                        )
+                        client.file_search_stores.delete(name=store.name)
                         deleted_count += 1
-                        logger.info(
-                            f"빈 Store 삭제: {store.display_name}"
-                        )
+                        logger.info(f"빈 Store 삭제: {store.display_name}")
                         continue
 
                     # TODO: 문서 메타데이터에서 uploaded_at 확인
@@ -255,17 +227,13 @@ class LessonPlanVectorService:
                         f"{store.display_name} - {doc_err}"
                     )
 
-            logger.info(
-                f"만료 세션 정리 완료: {deleted_count}개 Store 삭제"
-            )
+            logger.info(f"만료 세션 정리 완료: {deleted_count}개 Store 삭제")
             return deleted_count
         except Exception as e:
             logger.error(f"만료 세션 정리 실패: {str(e)}")
             raise
 
-    async def list_user_documents(
-        self, user_id: int
-    ) -> List[Dict[str, str]]:
+    async def list_user_documents(self, user_id: int) -> List[Dict[str, str]]:
         """
         특정 사용자의 임시 지도안 목록 조회
 
@@ -290,8 +258,7 @@ class LessonPlanVectorService:
 
             if not store:
                 logger.info(
-                    f"사용자 Store를 찾을 수 없습니다: "
-                    f"{store_name}"
+                    f"사용자 Store를 찾을 수 없습니다: " f"{store_name}"
                 )
                 return []
 
@@ -303,9 +270,11 @@ class LessonPlanVectorService:
                 documents.append(
                     {
                         "document_id": doc.name,
-                        "display_name": doc.display_name
-                        if hasattr(doc, "display_name")
-                        else "Unknown",
+                        "display_name": (
+                            doc.display_name
+                            if hasattr(doc, "display_name")
+                            else "Unknown"
+                        ),
                     }
                 )
 

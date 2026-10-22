@@ -1,7 +1,6 @@
 # tests/test_admin_exports_endpoint.py
 import io
 import json
-import os
 import zipfile
 
 import pytest
@@ -21,7 +20,6 @@ from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage, MessageRole
 from app.models.chat_sessions import ChatSession
 from app.models.users import User
-
 
 # ----- fixtures -----
 
@@ -107,26 +105,28 @@ async def test_export_returns_valid_zip(client_admin, db_session, tmp_path):
     db_session.add(user)
     report_md = tmp_path / "report.md"
     report_md.write_text("# Report\nHello", encoding="utf-8")
-    db_session.add(AnalysisReport(
-        user_id=42,
-        lessonplan_filename="42_lp.pdf",
-        lessonplan_original_name="1학년_수업지도안.pdf",
-        report_filename="42_lp_reports.md",
-        report_path=str(report_md),
-    ))
+    db_session.add(
+        AnalysisReport(
+            user_id=42,
+            lessonplan_filename="42_lp.pdf",
+            lessonplan_original_name="1학년_수업지도안.pdf",
+            report_filename="42_lp_reports.md",
+            report_path=str(report_md),
+        )
+    )
     s = ChatSession(user_id=42, title="t1")
     db_session.add(s)
     await db_session.flush()
-    db_session.add_all([
-        ChatMessage(
-            session_id=s.id, role=MessageRole.USER, content="안녕"
-        ),
-        ChatMessage(
-            session_id=s.id,
-            role=MessageRole.ASSISTANT,
-            content="hello",
-        ),
-    ])
+    db_session.add_all(
+        [
+            ChatMessage(session_id=s.id, role=MessageRole.USER, content="안녕"),
+            ChatMessage(
+                session_id=s.id,
+                role=MessageRole.ASSISTANT,
+                content="hello",
+            ),
+        ]
+    )
     await db_session.commit()
 
     resp = await client_admin.get("/admin/api/exports/all.zip")
@@ -159,13 +159,15 @@ async def test_export_missing_report_file_marks_in_manifest(
 ):
     """원본 보고서 .md 파일이 사라진 경우 manifest에 MISSING으로 표시."""
     db_session.add(User(id=1, username="t", nickname="t"))
-    db_session.add(AnalysisReport(
-        user_id=1,
-        lessonplan_filename="does_not_exist.pdf",
-        lessonplan_original_name="missing.pdf",
-        report_filename="x.md",
-        report_path="/no/such/path.md",
-    ))
+    db_session.add(
+        AnalysisReport(
+            user_id=1,
+            lessonplan_filename="does_not_exist.pdf",
+            lessonplan_original_name="missing.pdf",
+            report_filename="x.md",
+            report_path="/no/such/path.md",
+        )
+    )
     await db_session.commit()
 
     resp = await client_admin.get("/admin/api/exports/all.zip")
@@ -179,18 +181,18 @@ async def test_export_include_meta_only_skips_data_dirs(
     client_admin, db_session
 ):
     db_session.add(User(id=1, username="t", nickname="t"))
-    db_session.add(AnalysisReport(
-        user_id=1,
-        lessonplan_filename="1_lp.pdf",
-        lessonplan_original_name="lp.pdf",
-        report_filename="1_lp_reports.md",
-        report_path="/tmp/lp.md",
-    ))
+    db_session.add(
+        AnalysisReport(
+            user_id=1,
+            lessonplan_filename="1_lp.pdf",
+            lessonplan_original_name="lp.pdf",
+            report_filename="1_lp_reports.md",
+            report_path="/tmp/lp.md",
+        )
+    )
     await db_session.commit()
 
-    resp = await client_admin.get(
-        "/admin/api/exports/all.zip?include=meta"
-    )
+    resp = await client_admin.get("/admin/api/exports/all.zip?include=meta")
     assert resp.status_code == 200
     zf = zipfile.ZipFile(io.BytesIO(resp.content))
     names = zf.namelist()

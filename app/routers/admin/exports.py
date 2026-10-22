@@ -11,7 +11,6 @@ from app.models.users import User
 from app.schemas.admin_export import ExportFilters, parse_filters
 from app.services.admin_export_service import AdminExportService
 
-
 router = APIRouter(tags=["admin-exports"])
 
 
@@ -23,15 +22,11 @@ async def export_all(
 ):
     service = AdminExportService(db)
     plan = await service.collect(filters)
-    filename = (
-        f"elp_export_{datetime.utcnow():%Y%m%d_%H%M%S}.zip"
-    )
+    filename = f"elp_export_{datetime.utcnow():%Y%m%d_%H%M%S}.zip"
     return StreamingResponse(
         service.stream_zip(plan),
         media_type="application/zip",
         headers={
-            "Content-Disposition": (
-                f'attachment; filename="{filename}"'
-            ),
+            "Content-Disposition": (f'attachment; filename="{filename}"'),
         },
     )

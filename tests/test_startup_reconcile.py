@@ -11,9 +11,7 @@ async def test_startup_schedules_reconcile_when_enabled(monkeypatch):
     monkeypatch.setattr(
         main_module.settings, "CRITERIA_CLOUD_RECONCILE_ENABLED", True
     )
-    with patch(
-        "app.main._run_criteria_reconcile_in_background"
-    ) as run:
+    with patch("app.main._run_criteria_reconcile_in_background") as run:
         await main_module.startup_event()
     run.assert_called_once()
 
@@ -25,8 +23,6 @@ async def test_startup_skips_reconcile_when_disabled(monkeypatch):
     monkeypatch.setattr(
         main_module.settings, "CRITERIA_CLOUD_RECONCILE_ENABLED", False
     )
-    with patch(
-        "app.main._run_criteria_reconcile_in_background"
-    ) as run:
+    with patch("app.main._run_criteria_reconcile_in_background") as run:
         await main_module.startup_event()
     run.assert_not_called()

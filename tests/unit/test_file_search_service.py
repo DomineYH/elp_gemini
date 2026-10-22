@@ -2,10 +2,13 @@
 FileSearchService 단위 테스트
 반환값 키, 환경 변수, 에러 처리 검증
 """
+
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
-from app.services.file_search_service import FileSearchService
+
 from app.config import settings
+from app.services.file_search_service import FileSearchService
 
 
 class TestFileSearchService:
@@ -15,21 +18,25 @@ class TestFileSearchService:
         """
         API 키 없이 초기화 시 ValueError 발생 확인
         """
-        with patch.object(settings, 'GOOGLE_API_KEY', ''):
+        with patch.object(settings, "GOOGLE_API_KEY", ""):
             with pytest.raises(ValueError) as exc_info:
                 FileSearchService()
 
-            assert "GOOGLE_API_KEY 환경 변수가 설정되지 않았습니다" in str(exc_info.value)
+            assert "GOOGLE_API_KEY 환경 변수가 설정되지 않았습니다" in str(
+                exc_info.value
+            )
 
     def test_init_with_api_key(self):
         """
         정상적인 API 키로 초기화 성공 확인
         """
-        with patch.object(settings, 'GOOGLE_API_KEY', 'test-api-key'):
-            with patch('app.services.file_search_service.genai.Client'):
+        with patch.object(settings, "GOOGLE_API_KEY", "test-api-key"):
+            with patch("app.services.file_search_service.genai.Client"):
                 service = FileSearchService()
                 assert service.main_store_name == settings.FS_MAIN_STORE_NAME
-                assert service.rubric_store_name == settings.FS_RUBRIC_STORE_NAME
+                assert (
+                    service.rubric_store_name == settings.FS_RUBRIC_STORE_NAME
+                )
 
     @pytest.mark.asyncio
     async def test_upload_document_returns_correct_keys(self):
@@ -39,8 +46,8 @@ class TestFileSearchService:
         - store_id 키 존재 확인
         - 각 값의 형식 검증
         """
-        with patch.object(settings, 'GOOGLE_API_KEY', 'test-api-key'):
-            with patch('app.services.file_search_service.genai.Client'):
+        with patch.object(settings, "GOOGLE_API_KEY", "test-api-key"):
+            with patch("app.services.file_search_service.genai.Client"):
                 service = FileSearchService()
 
                 # Mock store 생성
@@ -55,16 +62,18 @@ class TestFileSearchService:
                 mock_operation.response.name = "documents/test-doc-456"
 
                 # Mock 메서드 설정
-                with patch.object(service, '_get_or_create_store', return_value=mock_store):
+                with patch.object(
+                    service, "_get_or_create_store", return_value=mock_store
+                ):
                     with patch.object(
                         service.client.file_search_stores,
-                        'upload_to_file_search_store',
-                        return_value=mock_operation
+                        "upload_to_file_search_store",
+                        return_value=mock_operation,
                     ):
                         result = await service.upload_document(
                             file_path="/tmp/test.pdf",
                             display_name="Test Document",
-                            metadata={"user_id": "123", "random_key": "abc"}
+                            metadata={"user_id": "123", "random_key": "abc"},
                         )
 
                 # 검증: 올바른 키 반환
@@ -84,8 +93,8 @@ class TestFileSearchService:
         """
         타임아웃 발생 시 TimeoutError 발생 확인
         """
-        with patch.object(settings, 'GOOGLE_API_KEY', 'test-api-key'):
-            with patch('app.services.file_search_service.genai.Client'):
+        with patch.object(settings, "GOOGLE_API_KEY", "test-api-key"):
+            with patch("app.services.file_search_service.genai.Client"):
                 service = FileSearchService()
 
                 # Mock store 생성
@@ -96,26 +105,32 @@ class TestFileSearchService:
                 mock_operation = Mock()
                 mock_operation.done = False
 
-                with patch.object(service, '_get_or_create_store', return_value=mock_store):
+                with patch.object(
+                    service, "_get_or_create_store", return_value=mock_store
+                ):
                     with patch.object(
                         service.client.file_search_stores,
-                        'upload_to_file_search_store',
-                        return_value=mock_operation
+                        "upload_to_file_search_store",
+                        return_value=mock_operation,
                     ):
                         # operations.get()도 Mock 처리
                         with patch.object(
                             service.client.operations,
-                            'get',
-                            return_value=mock_operation
+                            "get",
+                            return_value=mock_operation,
                         ):
                             # 타임아웃 설정을 짧게 조정
-                            with patch.object(settings, 'FS_UPLOAD_TIMEOUT', 1):
-                                with patch.object(settings, 'FS_POLL_INTERVAL', 1):
-                                    with pytest.raises(TimeoutError) as exc_info:
+                            with patch.object(settings, "FS_UPLOAD_TIMEOUT", 1):
+                                with patch.object(
+                                    settings, "FS_POLL_INTERVAL", 1
+                                ):
+                                    with pytest.raises(
+                                        TimeoutError
+                                    ) as exc_info:
                                         await service.upload_document(
                                             file_path="/tmp/test.pdf",
                                             display_name="Test Document",
-                                            metadata={"user_id": "123"}
+                                            metadata={"user_id": "123"},
                                         )
 
                                     assert "타임아웃" in str(exc_info.value)
@@ -125,25 +140,27 @@ class TestFileSearchService:
         """
         업로드 중 예외 발생 시 에러 처리 확인
         """
-        with patch.object(settings, 'GOOGLE_API_KEY', 'test-api-key'):
-            with patch('app.services.file_search_service.genai.Client'):
+        with patch.object(settings, "GOOGLE_API_KEY", "test-api-key"):
+            with patch("app.services.file_search_service.genai.Client"):
                 service = FileSearchService()
 
                 # Mock store 생성
                 mock_store = Mock()
                 mock_store.name = "fileSearchStores/test-store-123"
 
-                with patch.object(service, '_get_or_create_store', return_value=mock_store):
+                with patch.object(
+                    service, "_get_or_create_store", return_value=mock_store
+                ):
                     with patch.object(
                         service.client.file_search_stores,
-                        'upload_to_file_search_store',
-                        side_effect=Exception("API Error")
+                        "upload_to_file_search_store",
+                        side_effect=Exception("API Error"),
                     ):
                         with pytest.raises(Exception) as exc_info:
                             await service.upload_document(
                                 file_path="/tmp/test.pdf",
                                 display_name="Test Document",
-                                metadata={"user_id": "123"}
+                                metadata={"user_id": "123"},
                             )
 
                         assert "API Error" in str(exc_info.value)

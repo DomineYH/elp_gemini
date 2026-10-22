@@ -7,6 +7,7 @@ alias-map.txt 문서 관리 서비스
 
 설계: docs/superpowers/specs/2026-05-15-criteria-cloud-metadata-design.md §4-§6
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -129,11 +130,13 @@ class CriteriaAliasMapService:
             try:
                 payload = decode_alias_map_payload(chunks)
                 alias_map = AliasMap.model_validate(payload)
-                parsed_docs.append(_ParsedAliasMapDoc(
-                    name=doc.name,
-                    alias_map=alias_map,
-                    updated_at=_parse_updated_at(alias_map.updated_at),
-                ))
+                parsed_docs.append(
+                    _ParsedAliasMapDoc(
+                        name=doc.name,
+                        alias_map=alias_map,
+                        updated_at=_parse_updated_at(alias_map.updated_at),
+                    )
+                )
             except Exception as e:
                 logger.warning(
                     "alias_map parse failed for %s: %s",
@@ -146,11 +149,13 @@ class CriteriaAliasMapService:
                     if isinstance(payload, dict)
                     else None
                 )
-                unparseable_docs.append(_UnparseableAliasMapDoc(
-                    name=doc.name,
-                    error=e,
-                    updated_at=updated_at,
-                ))
+                unparseable_docs.append(
+                    _UnparseableAliasMapDoc(
+                        name=doc.name,
+                        error=e,
+                        updated_at=updated_at,
+                    )
+                )
 
         if not alias_doc_names:
             return None

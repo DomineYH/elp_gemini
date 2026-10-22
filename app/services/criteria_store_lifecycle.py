@@ -2,9 +2,11 @@
 평가 기준 Vector Store 수명 관리 서비스
 고아 스토어 정리 및 자동 삭제 정책 구현
 """
+
 import logging
 from datetime import datetime, timedelta
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,9 +31,7 @@ class CriteriaStoreLifecycleService:
         self.db = db
         self.embedding_service = CriteriaEmbeddingService()
 
-    async def cleanup_old_stores(
-        self, days: int = 30
-    ) -> Dict[str, Any]:
+    async def cleanup_old_stores(self, days: int = 30) -> Dict[str, Any]:
         """
         N일 이상 비활성 스토어 자동 삭제
 
@@ -60,8 +60,7 @@ class CriteriaStoreLifecycleService:
         old_docs = result.scalars().all()
 
         logger.info(
-            f"자동 정리 시작: {len(old_docs)}개 문서 "
-            f"({days}일 이상 비활성)"
+            f"자동 정리 시작: {len(old_docs)}개 문서 " f"({days}일 이상 비활성)"
         )
 
         deleted = []
@@ -89,15 +88,13 @@ class CriteriaStoreLifecycleService:
                     {"store_id": doc.vector_store_id, "error": str(e)}
                 )
                 logger.error(
-                    f"스토어 삭제 실패: "
-                    f"{doc.vector_store_id} - {e}"
+                    f"스토어 삭제 실패: " f"{doc.vector_store_id} - {e}"
                 )
 
         await self.db.commit()
 
         logger.info(
-            f"자동 정리 완료: {len(deleted)}개 삭제, "
-            f"{len(failed)}개 실패"
+            f"자동 정리 완료: {len(deleted)}개 삭제, " f"{len(failed)}개 실패"
         )
 
         return {
@@ -123,9 +120,7 @@ class CriteriaStoreLifecycleService:
         result = await self.db.execute(stmt)
         valid_ids = set(result.scalars().all())
 
-        logger.info(
-            f"DB에 등록된 스토어: {len(valid_ids)}개"
-        )
+        logger.info(f"DB에 등록된 스토어: {len(valid_ids)}개")
 
         # Google의 모든 스토어 조회
         client = self.embedding_service.client
@@ -138,15 +133,9 @@ class CriteriaStoreLifecycleService:
             store_name = store.display_name
             store_id = store.name
 
-            if (
-                store_name.startswith("criteria-")
-                and store_id not in valid_ids
-            ):
+            if store_name.startswith("criteria-") and store_id not in valid_ids:
                 orphaned.append(store_id)
-                logger.debug(
-                    f"고아 스토어 발견: {store_id} "
-                    f"({store_name})"
-                )
+                logger.debug(f"고아 스토어 발견: {store_id} " f"({store_name})")
 
         logger.info(f"고아 스토어 {len(orphaned)}개 발견")
 
@@ -183,25 +172,17 @@ class CriteriaStoreLifecycleService:
                 }
 
             # 상태별 집계
-            active = sum(
-                1 for doc in all_docs if doc.status == "active"
-            )
-            uploaded = sum(
-                1 for doc in all_docs if doc.status == "uploaded"
-            )
+            active = sum(1 for doc in all_docs if doc.status == "active")
+            uploaded = sum(1 for doc in all_docs if doc.status == "uploaded")
 
             # 가장 오래된 스토어
-            oldest = min(
-                (doc.created_at for doc in all_docs), default=None
-            )
+            oldest = min((doc.created_at for doc in all_docs), default=None)
 
             stats = {
                 "total_stores": len(all_docs),
                 "active_stores": active,
                 "uploaded_stores": uploaded,
-                "oldest_store_date": (
-                    oldest.isoformat() if oldest else None
-                ),
+                "oldest_store_date": (oldest.isoformat() if oldest else None),
             }
 
             logger.info(

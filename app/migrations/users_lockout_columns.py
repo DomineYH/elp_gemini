@@ -6,6 +6,7 @@
 - locked_until: 잠금 만료 시각 (NULL=잠금 없음)
 - last_failed_login_at: 마지막 실패 시각
 """
+
 from __future__ import annotations
 
 import logging
@@ -38,9 +39,7 @@ async def ensure_users_lockout_columns(engine: AsyncEngine) -> bool:
         columns = await conn.run_sync(_collect_users_columns)
 
         if columns is None:
-            logger.warning(
-                "users 테이블이 없어 lockout 컬럼 패치를 건너뜀"
-            )
+            logger.warning("users 테이블이 없어 lockout 컬럼 패치를 건너뜀")
             return False
 
         added = False
@@ -59,8 +58,7 @@ async def ensure_users_lockout_columns(engine: AsyncEngine) -> bool:
         if "locked_until" not in columns:
             await conn.execute(
                 text(
-                    "ALTER TABLE users "
-                    "ADD COLUMN locked_until DATETIME NULL"
+                    "ALTER TABLE users " "ADD COLUMN locked_until DATETIME NULL"
                 )
             )
             added = True

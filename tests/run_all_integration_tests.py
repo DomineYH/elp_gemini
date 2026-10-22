@@ -4,27 +4,19 @@
 모든 통합 테스트 시나리오를 순차적으로 실행하고
 결과를 리포트로 생성합니다.
 """
+
 import asyncio
 import sys
 from datetime import datetime
 from pathlib import Path
 
-
 # 테스트 시나리오 임포트
 sys.path.insert(0, str(Path(__file__).parent))
 
-from test_integration_scenario_1 import (
-    run_integration_test_scenario_1
-)
-from test_integration_scenario_2 import (
-    run_integration_test_scenario_2
-)
-from test_integration_scenario_3 import (
-    run_integration_test_scenario_3
-)
-from test_integration_scenario_4 import (
-    run_integration_test_scenario_4
-)
+from test_integration_scenario_1 import run_integration_test_scenario_1
+from test_integration_scenario_2 import run_integration_test_scenario_2
+from test_integration_scenario_3 import run_integration_test_scenario_3
+from test_integration_scenario_4 import run_integration_test_scenario_4
 
 
 async def run_all_integration_tests():
@@ -43,69 +35,85 @@ async def run_all_integration_tests():
     print("\n\n")
     try:
         success = await run_integration_test_scenario_1()
-        results.append({
-            "scenario": "시나리오 1",
-            "description": "지도안 업로드 → QnA → 분석 → 결과 저장",
-            "success": success
-        })
+        results.append(
+            {
+                "scenario": "시나리오 1",
+                "description": "지도안 업로드 → QnA → 분석 → 결과 저장",
+                "success": success,
+            }
+        )
     except Exception as e:
         print(f"\n❌ 시나리오 1 실행 중 예외 발생: {e}")
-        results.append({
-            "scenario": "시나리오 1",
-            "description": "지도안 업로드 → QnA → 분석 → 결과 저장",
-            "success": False
-        })
+        results.append(
+            {
+                "scenario": "시나리오 1",
+                "description": "지도안 업로드 → QnA → 분석 → 결과 저장",
+                "success": False,
+            }
+        )
 
     # 시나리오 2: 평가기준 업로드 → 분석 → Store 삭제
     print("\n\n")
     try:
         success = await run_integration_test_scenario_2()
-        results.append({
-            "scenario": "시나리오 2",
-            "description": "평가기준 업로드 → 분석 → Store 삭제",
-            "success": success
-        })
+        results.append(
+            {
+                "scenario": "시나리오 2",
+                "description": "평가기준 업로드 → 분석 → Store 삭제",
+                "success": success,
+            }
+        )
     except Exception as e:
         print(f"\n❌ 시나리오 2 실행 중 예외 발생: {e}")
-        results.append({
-            "scenario": "시나리오 2",
-            "description": "평가기준 업로드 → 분석 → Store 삭제",
-            "success": False
-        })
+        results.append(
+            {
+                "scenario": "시나리오 2",
+                "description": "평가기준 업로드 → 분석 → Store 삭제",
+                "success": False,
+            }
+        )
 
     # 시나리오 3: 세션 종료 → 임시 지도안 삭제
     print("\n\n")
     try:
         success = await run_integration_test_scenario_3()
-        results.append({
-            "scenario": "시나리오 3",
-            "description": "세션 종료 → 임시 지도안 삭제",
-            "success": success
-        })
+        results.append(
+            {
+                "scenario": "시나리오 3",
+                "description": "세션 종료 → 임시 지도안 삭제",
+                "success": success,
+            }
+        )
     except Exception as e:
         print(f"\n❌ 시나리오 3 실행 중 예외 발생: {e}")
-        results.append({
-            "scenario": "시나리오 3",
-            "description": "세션 종료 → 임시 지도안 삭제",
-            "success": False
-        })
+        results.append(
+            {
+                "scenario": "시나리오 3",
+                "description": "세션 종료 → 임시 지도안 삭제",
+                "success": False,
+            }
+        )
 
     # 시나리오 4: 프롬프트 로드 → QnA
     print("\n\n")
     try:
         success = await run_integration_test_scenario_4()
-        results.append({
-            "scenario": "시나리오 4",
-            "description": "프롬프트 로드 → QnA",
-            "success": success
-        })
+        results.append(
+            {
+                "scenario": "시나리오 4",
+                "description": "프롬프트 로드 → QnA",
+                "success": success,
+            }
+        )
     except Exception as e:
         print(f"\n❌ 시나리오 4 실행 중 예외 발생: {e}")
-        results.append({
-            "scenario": "시나리오 4",
-            "description": "프롬프트 로드 → QnA",
-            "success": False
-        })
+        results.append(
+            {
+                "scenario": "시나리오 4",
+                "description": "프롬프트 로드 → QnA",
+                "success": False,
+            }
+        )
 
     # 최종 결과 출력
     print("\n\n" + "=" * 70)
@@ -229,7 +237,7 @@ Phase 4의 통합 테스트 단계를 통과했으며,
 """
 
     # 파일 저장
-    report_file.write_text(report_content, encoding='utf-8')
+    report_file.write_text(report_content, encoding="utf-8")
 
     print(f"\n📄 테스트 리포트 생성: {report_file}")
 

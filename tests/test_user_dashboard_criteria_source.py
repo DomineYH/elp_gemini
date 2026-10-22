@@ -8,17 +8,17 @@ from app.routers.views import _criteria_documents_from_active
 
 
 def test_dashboard_uses_alias_when_set():
-    docs = _criteria_documents_from_active([
-        SimpleNamespace(id=1, title="orig.pdf", display_alias="readable-name")
-    ])
+    docs = _criteria_documents_from_active(
+        [SimpleNamespace(id=1, title="orig.pdf", display_alias="readable-name")]
+    )
 
     assert docs == [{"id": 1, "name": "readable-name"}]
 
 
 def test_dashboard_falls_back_to_title_when_alias_null():
-    docs = _criteria_documents_from_active([
-        SimpleNamespace(id=1, title="fallback-doc.pdf", display_alias=None)
-    ])
+    docs = _criteria_documents_from_active(
+        [SimpleNamespace(id=1, title="fallback-doc.pdf", display_alias=None)]
+    )
 
     assert docs == [{"id": 1, "name": "fallback-doc.pdf"}]
 

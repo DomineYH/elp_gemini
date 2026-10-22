@@ -1,8 +1,11 @@
 """
 CriteriaVectorService 단위 테스트
 """
+
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+
 from app.schemas.alias_map import AliasMap, AliasMapEntry
 from app.services.criteria_vector_service import (
     CriteriaVectorService,
@@ -32,7 +35,9 @@ def service(mock_file_search_service):
 @pytest.mark.asyncio
 async def test_upload_criteria_success(service):
     """평가기준 업로드 성공 테스트"""
-    pytest.skip("Rewritten in Wave 5 / Task 14 for new upload_criteria signature; see plan 2026-05-15-criteria-cloud-metadata.md")
+    pytest.skip(
+        "Rewritten in Wave 5 / Task 14 for new upload_criteria signature; see plan 2026-05-15-criteria-cloud-metadata.md"
+    )
     # Given
     file_path = "test_criteria.pdf"
     display_name = "Test Criteria"
@@ -46,14 +51,10 @@ async def test_upload_criteria_success(service):
         "document_id": "doc123",
         "store_id": "store456",
     }
-    service.file_search_service.upload_document.return_value = (
-        expected_result
-    )
+    service.file_search_service.upload_document.return_value = expected_result
 
     # When
-    result = await service.upload_criteria(
-        file_path, display_name, metadata
-    )
+    result = await service.upload_criteria(file_path, display_name, metadata)
 
     # Then
     assert result == expected_result
@@ -61,9 +62,7 @@ async def test_upload_criteria_success(service):
     service.file_search_service.upload_document.assert_called_once()
 
     # 메타데이터에 type='criteria' 추가 확인
-    call_args = (
-        service.file_search_service.upload_document.call_args
-    )
+    call_args = service.file_search_service.upload_document.call_args
     assert call_args[1]["metadata"]["type"] == "criteria"
     assert call_args[1]["metadata"]["subject"] == "math"
 
@@ -81,28 +80,30 @@ async def test_search_criteria_uses_active_stable_id(service, monkeypatch):
     mock_store.name = "store123"
 
     # Mock list() 메서드
-    mock_client.file_search_stores.list.return_value = [
-        mock_store
-    ]
+    mock_client.file_search_stores.list.return_value = [mock_store]
 
     fake_alias = MagicMock()
-    fake_alias.fetch = AsyncMock(return_value=(
-        "docs/alias-map",
-        AliasMap(
-            schema_version=1,
-            updated_at="2026-05-15T00:00:00Z",
-            entries={
-                "01HA": AliasMapEntry(
-                    alias=None, status="uploaded", activated_at=None,
-                ),
-                "01HB": AliasMapEntry(
-                    alias=None,
-                    status="active",
-                    activated_at="2026-05-15T00:00:00Z",
-                ),
-            },
-        ),
-    ))
+    fake_alias.fetch = AsyncMock(
+        return_value=(
+            "docs/alias-map",
+            AliasMap(
+                schema_version=1,
+                updated_at="2026-05-15T00:00:00Z",
+                entries={
+                    "01HA": AliasMapEntry(
+                        alias=None,
+                        status="uploaded",
+                        activated_at=None,
+                    ),
+                    "01HB": AliasMapEntry(
+                        alias=None,
+                        status="active",
+                        activated_at="2026-05-15T00:00:00Z",
+                    ),
+                },
+            ),
+        )
+    )
 
     from app.services import criteria_alias_map_service
 
@@ -118,9 +119,7 @@ async def test_search_criteria_uses_active_stable_id(service, monkeypatch):
         "citations": [],
         "sources_count": 1,
     }
-    service.file_search_service.search_in_store.return_value = (
-        expected_result
-    )
+    service.file_search_service.search_in_store.return_value = expected_result
 
     # When
     result = await service.search_criteria(query)
@@ -130,9 +129,7 @@ async def test_search_criteria_uses_active_stable_id(service, monkeypatch):
     service.file_search_service.search_in_store.assert_called_once()
 
     # metadata_filter 확인
-    call_args = (
-        service.file_search_service.search_in_store.call_args
-    )
+    call_args = service.file_search_service.search_in_store.call_args
     assert call_args[1]["metadata_filter"] == 'stable_id="01HB"'
 
 
@@ -148,18 +145,22 @@ async def test_search_criteria_returns_empty_when_no_active_criteria(
     mock_client.file_search_stores.list.return_value = [mock_store]
 
     fake_alias = MagicMock()
-    fake_alias.fetch = AsyncMock(return_value=(
-        "docs/alias-map",
-        AliasMap(
-            schema_version=1,
-            updated_at="2026-05-15T00:00:00Z",
-            entries={
-                "01HA": AliasMapEntry(
-                    alias=None, status="uploaded", activated_at=None,
-                ),
-            },
-        ),
-    ))
+    fake_alias.fetch = AsyncMock(
+        return_value=(
+            "docs/alias-map",
+            AliasMap(
+                schema_version=1,
+                updated_at="2026-05-15T00:00:00Z",
+                entries={
+                    "01HA": AliasMapEntry(
+                        alias=None,
+                        status="uploaded",
+                        activated_at=None,
+                    ),
+                },
+            ),
+        )
+    )
 
     from app.services import criteria_alias_map_service
 
@@ -197,7 +198,9 @@ async def test_search_criteria_store_not_found(service):
 @pytest.mark.asyncio
 async def test_list_criteria_documents_success(service):
     """평가기준 문서 목록 조회 성공 테스트"""
-    pytest.skip("Updated in Task 11 for new metadata-aware list_criteria_documents signature")
+    pytest.skip(
+        "Updated in Task 11 for new metadata-aware list_criteria_documents signature"
+    )
     # Given
     mock_client = service.file_search_service.client
     mock_store = Mock()
@@ -205,9 +208,7 @@ async def test_list_criteria_documents_success(service):
     mock_store.name = "store123"
 
     # Mock list() 메서드
-    mock_client.file_search_stores.list.return_value = [
-        mock_store
-    ]
+    mock_client.file_search_stores.list.return_value = [mock_store]
 
     # Mock 문서 목록
     mock_doc1 = Mock()
@@ -251,7 +252,9 @@ async def test_list_criteria_documents_store_not_found(service):
 @pytest.mark.asyncio
 async def test_upload_criteria_with_default_metadata(service):
     """메타데이터 없이 평가기준 업로드 테스트"""
-    pytest.skip("Rewritten in Wave 5 / Task 14 for new upload_criteria signature; see plan 2026-05-15-criteria-cloud-metadata.md")
+    pytest.skip(
+        "Rewritten in Wave 5 / Task 14 for new upload_criteria signature; see plan 2026-05-15-criteria-cloud-metadata.md"
+    )
     # Given
     file_path = "test_criteria.pdf"
     display_name = "Test Criteria"
@@ -264,9 +267,7 @@ async def test_upload_criteria_with_default_metadata(service):
         "document_id": "doc123",
         "store_id": "store456",
     }
-    service.file_search_service.upload_document.return_value = (
-        expected_result
-    )
+    service.file_search_service.upload_document.return_value = expected_result
 
     # When
     result = await service.upload_criteria(file_path, display_name)
@@ -275,7 +276,5 @@ async def test_upload_criteria_with_default_metadata(service):
     assert result == expected_result
 
     # 메타데이터에 type='criteria' 자동 추가 확인
-    call_args = (
-        service.file_search_service.upload_document.call_args
-    )
+    call_args = service.file_search_service.upload_document.call_args
     assert call_args[1]["metadata"]["type"] == "criteria"

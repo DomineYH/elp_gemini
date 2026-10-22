@@ -14,9 +14,9 @@ def _raw(val):
     return None if isinstance(val, FieldInfo) else val
 
 
-INCLUDE_KINDS = frozenset(
-    {"reports", "conversations", "lessonplans", "meta"}
-)
+INCLUDE_KINDS = frozenset({"reports", "conversations", "lessonplans", "meta"})
+
+
 class ExportFilters(BaseModel):
     model_config = ConfigDict(frozen=True)
 

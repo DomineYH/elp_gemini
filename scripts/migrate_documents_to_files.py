@@ -7,26 +7,24 @@ documents 테이블의 파일들을 lessonplan/ 폴더로 이동하고
 
 기계령의 데이터가 새로운 저장소로 이동합니다.
 """
-import sys
 import shutil
+import sys
 from pathlib import Path
 
 # 프로젝트 루트를 Python 경로에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.models.documents import Document
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.models.documents import Document
+
 from app.models.users import User
 
 
 def create_db_session():
     """데이터베이스 세션 생성"""
     db_path = Path(__file__).parent.parent / "data" / "app.db"
-    engine = create_engine(
-        f"sqlite:///{db_path}",
-        echo=False
-    )
+    engine = create_engine(f"sqlite:///{db_path}", echo=False)
     Session = sessionmaker(bind=engine)
     return Session()
 
@@ -78,19 +76,13 @@ def migrate_document_files(session, lessonplan_dir):
                 old_path = project_root / old_path
 
             if not old_path.exists():
-                print(
-                    f"⚠️  파일 누락: "
-                    f"{doc.title} (ID: {doc.id})"
-                )
+                print(f"⚠️  파일 누락: " f"{doc.title} (ID: {doc.id})")
                 fail_count += 1
                 continue
 
             # 새 파일명 생성
             username = doc.user.username
-            new_filename = get_new_filename(
-                username,
-                old_path.name
-            )
+            new_filename = get_new_filename(username, old_path.name)
 
             # 새 파일 경로
             new_path = lessonplan_dir / new_filename
@@ -100,18 +92,12 @@ def migrate_document_files(session, lessonplan_dir):
 
             file_mapping.append((old_path, new_path))
 
-            print(
-                f"✅ 복사 완료: "
-                f"{username} - {old_path.name[:30]}..."
-            )
+            print(f"✅ 복사 완료: " f"{username} - {old_path.name[:30]}...")
 
             success_count += 1
 
         except Exception as e:
-            print(
-                f"❌ 오류: {doc.title} (ID: {doc.id}) "
-                f"- {e}"
-            )
+            print(f"❌ 오류: {doc.title} (ID: {doc.id}) " f"- {e}")
             fail_count += 1
 
     return success_count, fail_count, file_mapping
@@ -148,15 +134,9 @@ def verify_migration(lessonplan_dir, file_mapping):
         new_size = new_path.stat().st_size
 
         if old_size == new_size:
-            print(
-                f"  ✅ {new_path.name[:40]}... "
-                f"({new_size} bytes)"
-            )
+            print(f"  ✅ {new_path.name[:40]}... " f"({new_size} bytes)")
         else:
-            print(
-                f"  ❌ {new_path.name[:40]}... "
-                f"크기 불일치"
-            )
+            print(f"  ❌ {new_path.name[:40]}... " f"크기 불일치")
             return False
 
     print("\n✅ 모든 검증 통과")
@@ -184,8 +164,7 @@ def main():
         # 문서 파일 마이그레이션
         print("\n2️⃣  문서 파일 복사 중...")
         success, fail, file_mapping = migrate_document_files(
-            db_session,
-            lessonplan_dir
+            db_session, lessonplan_dir
         )
         print(f"✅ 성공: {success}개")
         if fail > 0:
@@ -207,6 +186,7 @@ def main():
     except Exception as e:
         print(f"\n❌ 오류 발생: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
     finally:

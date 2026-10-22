@@ -2,9 +2,10 @@
 CriteriaEmbeddingService 스토어 관련 테스트
 Vector Store 생성 및 삭제 검증
 """
-import pytest
+
 from unittest.mock import MagicMock, patch
 
+import pytest
 from app.services.criteria_embedding_service import (
     CriteriaEmbeddingService,
 )
@@ -14,12 +15,8 @@ from app.services.criteria_embedding_service import (
 class TestCriteriaEmbeddingServiceStore:
     """스토어 생성 및 삭제 테스트"""
 
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
+    @patch("app.services.criteria_embedding_service.settings")
+    @patch("app.services.criteria_embedding_service.genai")
     def test_init_success(self, mock_genai, mock_settings):
         """정상 초기화 테스트"""
         # Arrange
@@ -30,13 +27,9 @@ class TestCriteriaEmbeddingServiceStore:
 
         # Assert
         assert service.client is not None
-        mock_genai.Client.assert_called_once_with(
-            api_key="test-api-key"
-        )
+        mock_genai.Client.assert_called_once_with(api_key="test-api-key")
 
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
+    @patch("app.services.criteria_embedding_service.settings")
     def test_init_no_api_key(self, mock_settings):
         """API Key 없을 때 초기화 실패"""
         # Arrange
@@ -46,16 +39,10 @@ class TestCriteriaEmbeddingServiceStore:
         with pytest.raises(ValueError) as exc:
             CriteriaEmbeddingService()
 
-        assert (
-            "GOOGLE_API_KEY" in str(exc.value)
-        )
+        assert "GOOGLE_API_KEY" in str(exc.value)
 
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
+    @patch("app.services.criteria_embedding_service.settings")
+    @patch("app.services.criteria_embedding_service.genai")
     def test_create_unique_store_generates_unique_names(
         self, mock_genai, mock_settings
     ):
@@ -95,23 +82,15 @@ class TestCriteriaEmbeddingServiceStore:
         assert "criteria-" in store_1.name
         assert "criteria-" in store_2.name
 
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
-    def test_create_unique_store_failure(
-        self, mock_genai, mock_settings
-    ):
+    @patch("app.services.criteria_embedding_service.settings")
+    @patch("app.services.criteria_embedding_service.genai")
+    def test_create_unique_store_failure(self, mock_genai, mock_settings):
         """스토어 생성 실패 시 예외 발생 확인"""
         # Arrange
         mock_settings.GOOGLE_API_KEY = "test-key"
         mock_client = MagicMock()
         fss = mock_client.file_search_stores
-        fss.create.side_effect = (
-            Exception("API Error: Rate limit exceeded")
-        )
+        fss.create.side_effect = Exception("API Error: Rate limit exceeded")
 
         mock_genai.Client.return_value = mock_client
 
@@ -124,15 +103,9 @@ class TestCriteriaEmbeddingServiceStore:
 
         assert "API Error" in str(exc.value)
 
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
-    async def test_delete_store_success(
-        self, mock_settings, mock_genai
-    ):
+    @patch("app.services.criteria_embedding_service.genai")
+    @patch("app.services.criteria_embedding_service.settings")
+    async def test_delete_store_success(self, mock_settings, mock_genai):
         """스토어 삭제 성공"""
         # Arrange
         mock_settings.GOOGLE_API_KEY = "test-key"
@@ -144,21 +117,15 @@ class TestCriteriaEmbeddingServiceStore:
         service.client = mock_client
 
         # Act
-        result = await service.delete_store(
-            "stores/test-store-123"
-        )
+        result = await service.delete_store("stores/test-store-123")
 
         # Assert
         assert result is True
         fss = mock_client.file_search_stores
         fss.delete.assert_called_once()
 
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
+    @patch("app.services.criteria_embedding_service.genai")
+    @patch("app.services.criteria_embedding_service.settings")
     async def test_delete_store_failure_ignored(
         self, mock_settings, mock_genai
     ):
@@ -171,31 +138,22 @@ class TestCriteriaEmbeddingServiceStore:
 
         # 삭제 실패 시뮬레이션
         fss = mock_client.file_search_stores
-        fss.delete.side_effect = (
-            Exception("Not found")
-        )
+        fss.delete.side_effect = Exception("Not found")
 
         service = CriteriaEmbeddingService()
         service.client = mock_client
 
         # Act
         result = await service.delete_store(
-            "stores/nonexistent",
-            ignore_errors=True
+            "stores/nonexistent", ignore_errors=True
         )
 
         # Assert
         assert result is False
 
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
-    async def test_delete_store_failure_raises(
-        self, mock_settings, mock_genai
-    ):
+    @patch("app.services.criteria_embedding_service.genai")
+    @patch("app.services.criteria_embedding_service.settings")
+    async def test_delete_store_failure_raises(self, mock_settings, mock_genai):
         """삭제 실패 시 예외 재발생 (ignore_errors=False)"""
         # Arrange
         mock_settings.GOOGLE_API_KEY = "test-key"
@@ -205,9 +163,7 @@ class TestCriteriaEmbeddingServiceStore:
 
         # 삭제 실패 시뮬레이션
         fss = mock_client.file_search_stores
-        fss.delete.side_effect = (
-            Exception("Not found")
-        )
+        fss.delete.side_effect = Exception("Not found")
 
         service = CriteriaEmbeddingService()
         service.client = mock_client
@@ -215,6 +171,5 @@ class TestCriteriaEmbeddingServiceStore:
         # Act & Assert
         with pytest.raises(Exception, match="Not found"):
             await service.delete_store(
-                "stores/nonexistent",
-                ignore_errors=False
+                "stores/nonexistent", ignore_errors=False
             )

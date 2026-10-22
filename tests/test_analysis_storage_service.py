@@ -1,11 +1,13 @@
 """
 AnalysisStorageService 단위 테스트
 """
-import os
-import pytest
-import tempfile
+
 import shutil
+import tempfile
 from pathlib import Path
+
+import pytest
+
 from app.services.analysis_storage_service import (
     AnalysisStorageService,
 )
@@ -72,9 +74,7 @@ def test_get_analysis_exists(service):
     username = "testuser"
     lessonplan_filename = "lesson1.pdf"
     analysis_content = "분석 내용"
-    service.save_analysis(
-        username, lessonplan_filename, analysis_content
-    )
+    service.save_analysis(username, lessonplan_filename, analysis_content)
 
     # When
     content = service.get_analysis(username, lessonplan_filename)
@@ -115,9 +115,7 @@ def test_list_analyses(service):
     # Then
     assert len(result) == 3
     assert all("filename" in item for item in result)
-    assert all(
-        "lessonplan_filename" in item for item in result
-    )
+    assert all("lessonplan_filename" in item for item in result)
     assert all("file_path" in item for item in result)
     assert all("size" in item for item in result)
     assert all("created_at" in item for item in result)
@@ -141,21 +139,14 @@ def test_delete_analysis_exists(service):
     username = "testuser"
     lessonplan_filename = "lesson1.pdf"
     analysis_content = "분석 내용"
-    service.save_analysis(
-        username, lessonplan_filename, analysis_content
-    )
+    service.save_analysis(username, lessonplan_filename, analysis_content)
 
     # When
-    result = service.delete_analysis(
-        username, lessonplan_filename
-    )
+    result = service.delete_analysis(username, lessonplan_filename)
 
     # Then
     assert result is True
-    assert (
-        service.get_analysis(username, lessonplan_filename)
-        is None
-    )
+    assert service.get_analysis(username, lessonplan_filename) is None
 
 
 def test_delete_analysis_not_exists(service):
@@ -165,9 +156,7 @@ def test_delete_analysis_not_exists(service):
     lessonplan_filename = "nonexistent.pdf"
 
     # When
-    result = service.delete_analysis(
-        username, lessonplan_filename
-    )
+    result = service.delete_analysis(username, lessonplan_filename)
 
     # Then
     assert result is False
@@ -259,9 +248,7 @@ def test_utf8_encoding(service):
     analysis_content = "한글 분석 결과입니다. 🎓"
 
     # When
-    service.save_analysis(
-        username, lessonplan_filename, analysis_content
-    )
+    service.save_analysis(username, lessonplan_filename, analysis_content)
     content = service.get_analysis(username, lessonplan_filename)
 
     # Then

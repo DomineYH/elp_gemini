@@ -2,6 +2,7 @@
 애플리케이션 구성 관리
 Pydantic Settings를 사용한 환경 변수 관리
 """
+
 from typing import List
 
 from pydantic import Field
@@ -17,9 +18,7 @@ class Settings(BaseSettings):
 
     # 애플리케이션
     DEBUG: bool = Field(default=False, description="디버그 모드")
-    SECRET_KEY: str = Field(
-        ..., min_length=32, description="세션 암호화 키"
-    )
+    SECRET_KEY: str = Field(..., min_length=32, description="세션 암호화 키")
     ALLOWED_ORIGINS: List[str] = Field(
         default=["http://localhost:3000"],
         description="CORS 허용 오리진",

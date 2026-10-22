@@ -1,4 +1,5 @@
 """delete_criteria가 documents.delete(name=..., config={"force": True})를 호출"""
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -13,9 +14,13 @@ async def test_delete_criteria_calls_documents_delete_with_force():
     svc.file_search_service = MagicMock()
     svc.file_search_service.client = MagicMock()
     delete_mock = MagicMock()
-    svc.file_search_service.client.file_search_stores.documents.delete = delete_mock
+    svc.file_search_service.client.file_search_stores.documents.delete = (
+        delete_mock
+    )
 
-    ok = await svc.delete_criteria(document_id="fileSearchStores/x/documents/foo")
+    ok = await svc.delete_criteria(
+        document_id="fileSearchStores/x/documents/foo"
+    )
 
     assert ok is True
     delete_mock.assert_called_once_with(

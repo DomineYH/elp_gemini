@@ -1,4 +1,5 @@
 """Criteria 모델에 stable_id 필드가 추가되었는지 확인"""
+
 from app.models.criteria import Criteria
 
 

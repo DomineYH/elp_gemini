@@ -2,6 +2,7 @@
 Google File Search 서비스
 문서 업로드, 인덱싱, RAG 쿼리
 """
+
 import asyncio
 import base64
 import logging
@@ -11,9 +12,11 @@ import tempfile
 import time
 import unicodedata
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 from google import genai
 from google.genai import types
+
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -38,10 +41,11 @@ def _sanitize_display_name(name: str) -> str:
         ASCII 안전한 문자열
     """
     # 1. 유니코드 정규화 후 ASCII 문자만 유지
-    normalized = unicodedata.normalize('NFD', name)
-    ascii_safe = ''.join(
-        c for c in normalized
-        if unicodedata.category(c) != 'Mn' and ord(c) < 128
+    normalized = unicodedata.normalize("NFD", name)
+    ascii_safe = "".join(
+        c
+        for c in normalized
+        if unicodedata.category(c) != "Mn" and ord(c) < 128
     )
 
     # 2. 빈 문자열이면 타임스탬프로 대체
@@ -49,10 +53,10 @@ def _sanitize_display_name(name: str) -> str:
         ascii_safe = f"doc_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     # 3. 특수문자를 underscore로 치환
-    sanitized = re.sub(r'[^\w\.\-]', '_', ascii_safe)
+    sanitized = re.sub(r"[^\w\.\-]", "_", ascii_safe)
 
     # 4. 연속 underscore 정리
-    sanitized = re.sub(r'_+', '_', sanitized).strip('_')
+    sanitized = re.sub(r"_+", "_", sanitized).strip("_")
 
     logger.debug(f"display_name 변환: {name} -> {sanitized}")
     return sanitized
@@ -67,7 +71,7 @@ def _metadata_value(entry, field_name: str):
 def _manifest_payload_metadata(content: bytes) -> list[dict]:
     encoded = base64.b64encode(content).decode("ascii")
     chunks = [
-        encoded[i:i + _MANIFEST_PAYLOAD_CHUNK_SIZE]
+        encoded[i : i + _MANIFEST_PAYLOAD_CHUNK_SIZE]
         for i in range(0, len(encoded), _MANIFEST_PAYLOAD_CHUNK_SIZE)
     ] or [""]
     return [
@@ -132,9 +136,7 @@ class FileSearchService:
         - 클라이언트 초기화
         """
         if not settings.GOOGLE_API_KEY:
-            raise ValueError(
-                "GOOGLE_API_KEY 환경 변수가 설정되지 않았습니다"
-            )
+            raise ValueError("GOOGLE_API_KEY 환경 변수가 설정되지 않았습니다")
 
         self.client = self.get_client()
         self.main_store_name = settings.FS_MAIN_STORE_NAME
@@ -149,12 +151,8 @@ class FileSearchService:
         """
         try:
             # 메인 스토어 생성 또는 가져오기
-            main_store = self._get_or_create_store(
-                self.main_store_name
-            )
-            rubric_store = self._get_or_create_store(
-                self.rubric_store_name
-            )
+            main_store = self._get_or_create_store(self.main_store_name)
+            rubric_store = self._get_or_create_store(self.rubric_store_name)
 
             logger.info(
                 f"File Search 스토어 초기화 완료: "
@@ -180,12 +178,14 @@ class FileSearchService:
             # 기존 스토어 찾기 (sanitized name으로 검색)
             for store in self.client.file_search_stores.list():
                 if store.display_name == safe_store_name:
-                    logger.info(f"기존 스토어 발견: {safe_store_name} (ID: {store.name})")
+                    logger.info(
+                        f"기존 스토어 발견: {safe_store_name} (ID: {store.name})"
+                    )
                     return store
 
             # 없으면 새로 생성
             store = self.client.file_search_stores.create(
-                config={'display_name': safe_store_name}
+                config={"display_name": safe_store_name}
             )
             logger.info(f"새 스토어 생성: {safe_store_name} (ID: {store.name})")
             return store
@@ -212,22 +212,20 @@ class FileSearchService:
 
         # 1. 캐시 확인 (60초 TTL)
         cache_key = f"dual_store_{user_key}"
-        if not hasattr(self, '_store_cache'):
+        if not hasattr(self, "_store_cache"):
             self._store_cache = {}
 
         cached = self._store_cache.get(cache_key)
-        if cached and time.time() - cached['time'] < 60:
+        if cached and time.time() - cached["time"] < 60:
             logger.debug(f"캐시에서 Store ID 조회: {user_key}")
-            return cached['ids']
+            return cached["ids"]
 
         # 2. rubricstore 조회
         rubric_store_id = None
         for store in self.client.file_search_stores.list():
             # 하이픈, 언더스코어 제거 후 비교
             normalized_name = (
-                store.display_name.lower()
-                .replace("-", "")
-                .replace("_", "")
+                store.display_name.lower().replace("-", "").replace("_", "")
             )
             if "rubricstore" in normalized_name:
                 rubric_store_id = store.name
@@ -264,23 +262,16 @@ class FileSearchService:
             logger.info(
                 f"📦 사용자 스토어 생성 시작: {user_store_name} -> {safe_user_store_name}"
             )
-            created_store = self._get_or_create_store(
-                user_store_name
-            )
+            created_store = self._get_or_create_store(user_store_name)
             user_store_id = created_store.name
-            logger.info(
-                f"✅ 사용자 스토어 생성 완료: {user_store_id}"
-            )
+            logger.info(f"✅ 사용자 스토어 생성 완료: {user_store_id}")
 
         # 사용자 문서 우선 검색을 위해 user store를 먼저 추가
         store_ids.append(user_store_id)
         store_ids.append(rubric_store_id)
 
         # 4. 캐싱
-        self._store_cache[cache_key] = {
-            'ids': store_ids,
-            'time': time.time()
-        }
+        self._store_cache[cache_key] = {"ids": store_ids, "time": time.time()}
 
         logger.info(
             f"🎯 Store ID 조회 완료 (우선순위 순): "
@@ -305,13 +296,13 @@ class FileSearchService:
 
         # 1. 캐시 확인 (60초 TTL)
         cache_key = f"user_store_{user_key}"
-        if not hasattr(self, '_store_cache'):
+        if not hasattr(self, "_store_cache"):
             self._store_cache = {}
 
         cached = self._store_cache.get(cache_key)
-        if cached and time.time() - cached['time'] < 60:
+        if cached and time.time() - cached["time"] < 60:
             logger.debug(f"캐시에서 사용자 Store ID 조회: {user_key}")
-            return cached['id']
+            return cached["id"]
 
         # 2. 사용자 스토어 조회 또는 생성
         user_store_name = f"user-{user_key}-store"
@@ -333,23 +324,17 @@ class FileSearchService:
             logger.info(
                 f"📦 사용자 스토어 생성 시작: {user_store_name} -> {safe_user_store_name}"
             )
-            created_store = self._get_or_create_store(
-                user_store_name
-            )
+            created_store = self._get_or_create_store(user_store_name)
             user_store_id = created_store.name
-            logger.info(
-                f"✅ 사용자 스토어 생성 완료: {user_store_id}"
-            )
+            logger.info(f"✅ 사용자 스토어 생성 완료: {user_store_id}")
 
         # 3. 캐싱
         self._store_cache[cache_key] = {
-            'id': user_store_id,
-            'time': time.time()
+            "id": user_store_id,
+            "time": time.time(),
         }
 
-        logger.info(
-            f"🎯 사용자 Store ID 조회 완료: {safe_user_store_name}"
-        )
+        logger.info(f"🎯 사용자 Store ID 조회 완료: {safe_user_store_name}")
         return user_store_id
 
     async def upload_document(
@@ -377,14 +362,16 @@ class FileSearchService:
                 store_name = self.rubric_store_name
             elif isinstance(metadata, dict):
                 # 메인 스토어 대신 사용자별 스토어 사용
-                user_key = metadata.get("user_id")  # user_id 키에 User.id 저장됨
+                user_key = metadata.get(
+                    "user_id"
+                )  # user_id 키에 User.id 저장됨
                 if user_key:
                     store_name = f"user-{user_key}-store"
                 else:
                     store_name = self.main_store_name
             else:
                 store_name = self.main_store_name
-            
+
             store = self._get_or_create_store(store_name)
 
             document_type = (
@@ -397,10 +384,12 @@ class FileSearchService:
                     for entry in custom_metadata
                 )
                 if not has_document_type:
-                    custom_metadata.append({
-                        "key": "document_type",
-                        "string_value": document_type,
-                    })
+                    custom_metadata.append(
+                        {
+                            "key": "document_type",
+                            "string_value": document_type,
+                        }
+                    )
             else:
                 metadata = dict(metadata)
                 metadata["document_type"] = document_type
@@ -409,17 +398,15 @@ class FileSearchService:
                 custom_metadata = []
                 for key, value in metadata.items():
                     if isinstance(value, (int, float)):
-                        custom_metadata.append({
-                            "key": key,
-                            "numeric_value": value
-                        })
+                        custom_metadata.append(
+                            {"key": key, "numeric_value": value}
+                        )
                     else:
                         # string_value도 ASCII 안전하게 변환 (HTTP 헤더 호환)
                         safe_value = _sanitize_display_name(str(value))
-                        custom_metadata.append({
-                            "key": key,
-                            "string_value": safe_value
-                        })
+                        custom_metadata.append(
+                            {"key": key, "string_value": safe_value}
+                        )
 
             # display_name을 ASCII 안전하게 변환 (HTTP 헤더 호환)
             safe_display_name = _sanitize_display_name(display_name)
@@ -430,15 +417,15 @@ class FileSearchService:
                 file_search_store_name=store.name,
                 file=file_path,
                 config={
-                    'display_name': safe_display_name,  # ASCII 안전한 이름 사용
-                    'chunking_config': {
-                        'white_space_config': {
-                            'max_tokens_per_chunk': settings.FS_CHUNKING_MAX_TOKENS,
-                            'max_overlap_tokens': settings.FS_CHUNKING_OVERLAP_TOKENS
+                    "display_name": safe_display_name,  # ASCII 안전한 이름 사용
+                    "chunking_config": {
+                        "white_space_config": {
+                            "max_tokens_per_chunk": settings.FS_CHUNKING_MAX_TOKENS,
+                            "max_overlap_tokens": settings.FS_CHUNKING_OVERLAP_TOKENS,
                         }
                     },
-                    'custom_metadata': custom_metadata
-                }
+                    "custom_metadata": custom_metadata,
+                },
             )
 
             # Polling 루프 (타임아웃 설정값 사용)
@@ -498,7 +485,9 @@ class FileSearchService:
             self.client.files.delete(name=file_id)
             logger.info(f"문서 삭제 완료: {file_id}")
         except Exception as e:
-            logger.warning(f"문서 삭제 실패 (이미 삭제되었을 수 있음): {str(e)}")
+            logger.warning(
+                f"문서 삭제 실패 (이미 삭제되었을 수 있음): {str(e)}"
+            )
 
     async def delete_store_by_display_name(self, display_name: str) -> None:
         """
@@ -523,9 +512,11 @@ class FileSearchService:
                 # Store 삭제 (force=True로 내부 문서와 함께 삭제)
                 self.client.file_search_stores.delete(
                     name=target_store.name,
-                    config={'force': True}  # 내부 문서와 함께 강제 삭제
+                    config={"force": True},  # 내부 문서와 함께 강제 삭제
                 )
-                logger.info(f"스토어 삭제 완료: {display_name} ({target_store.name})")
+                logger.info(
+                    f"스토어 삭제 완료: {display_name} ({target_store.name})"
+                )
             else:
                 logger.info(f"삭제할 스토어를 찾지 못함 (무시): {display_name}")
         except Exception as e:
@@ -557,10 +548,8 @@ class FileSearchService:
         try:
             if model is None:
                 model = settings.GEMINI_QNA_MODEL
-            
-            file_search_config = {
-                "file_search_store_names": [store_name]
-            }
+
+            file_search_config = {"file_search_store_names": [store_name]}
             if metadata_filter:
                 file_search_config["metadata_filter"] = metadata_filter
 
@@ -572,9 +561,7 @@ class FileSearchService:
                 config=types.GenerateContentConfig(
                     tools=[
                         types.Tool(
-                            file_search=types.FileSearch(
-                                **file_search_config
-                            )
+                            file_search=types.FileSearch(**file_search_config)
                         )
                     ],
                     temperature=temperature,
@@ -601,9 +588,7 @@ class FileSearchService:
             logger.error(f"검색 실패: {str(e)}")
             raise
 
-    async def get_or_create_store(
-        self, store_name: str
-    ) -> tuple[str, bool]:
+    async def get_or_create_store(self, store_name: str) -> tuple[str, bool]:
         """스토어를 찾거나 생성하여 (store_id, created) 반환."""
         safe_name = _sanitize_display_name(store_name)
         for store in self.client.file_search_stores.list():
@@ -624,15 +609,11 @@ class FileSearchService:
         self, store_id: str, document_name: str
     ) -> bytes:
         """문서의 원본 바이트 다운로드."""
-        doc = self.client.file_search_stores.documents.get(
-            name=document_name
-        )
+        doc = self.client.file_search_stores.documents.get(name=document_name)
         if hasattr(doc, "content") and doc.content:
             return doc.content
 
-        payload = _payload_from_metadata(
-            getattr(doc, "custom_metadata", None)
-        )
+        payload = _payload_from_metadata(getattr(doc, "custom_metadata", None))
         if payload is not None:
             return payload
 
@@ -655,9 +636,7 @@ class FileSearchService:
             parent=store_id
         ):
             if getattr(doc, "display_name", "") == safe_name:
-                self.client.file_search_stores.documents.delete(
-                    name=doc.name
-                )
+                self.client.file_search_stores.documents.delete(name=doc.name)
                 break
         # 새 문서 업로드 (임시 파일 경유)
         tmp_path = None
@@ -680,9 +659,7 @@ class FileSearchService:
                                 "max_tokens_per_chunk": 512,
                             }
                         },
-                        "custom_metadata": _manifest_payload_metadata(
-                            content
-                        ),
+                        "custom_metadata": _manifest_payload_metadata(content),
                     },
                 )
             )
@@ -696,9 +673,7 @@ class FileSearchService:
                 operation = self.client.operations.get(operation)
             doc_id = getattr(operation.response, "document_name", None)
             if not doc_id:
-                raise RuntimeError(
-                    "manifest upload returned no document_name"
-                )
+                raise RuntimeError("manifest upload returned no document_name")
             return doc_id
         finally:
             if tmp_path:
@@ -707,9 +682,7 @@ class FileSearchService:
                 except OSError:
                     pass
 
-    def _extract_citations(
-        self, response
-    ) -> list[Dict[str, Any]]:
+    def _extract_citations(self, response) -> list[Dict[str, Any]]:
         """
         응답에서 Citation 정보 추출
 
@@ -759,16 +732,12 @@ class FileSearchService:
                             citation_info["source"] = "file_search"
                             citation_info["uri"] = (
                                 chunk.retrieved_context.uri
-                                if hasattr(
-                                    chunk.retrieved_context, "uri"
-                                )
+                                if hasattr(chunk.retrieved_context, "uri")
                                 else None
                             )
                             citation_info["title"] = (
                                 chunk.retrieved_context.title
-                                if hasattr(
-                                    chunk.retrieved_context, "title"
-                                )
+                                if hasattr(chunk.retrieved_context, "title")
                                 else None
                             )
 

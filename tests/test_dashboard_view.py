@@ -12,12 +12,7 @@ client = TestClient(app)
 
 @pytest.fixture
 def mock_current_user():
-    user = User(
-        id=1,
-        username="testuser",
-        nickname="Test User",
-        is_admin=False
-    )
+    user = User(id=1, username="testuser", nickname="Test User", is_admin=False)
     return user
 
 

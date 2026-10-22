@@ -2,6 +2,7 @@
 채팅 테이블 생성 스크립트
 chat_sessions, chat_messages 테이블 생성
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -9,8 +10,8 @@ from pathlib import Path
 # 프로젝트 루트를 sys.path에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import app.models  # noqa: F401  (create_all에 모델 등록)
 from app.db import Base, engine
-from app.models import ChatSession, ChatMessage
 
 
 async def create_tables():
@@ -74,6 +75,7 @@ async def main():
     except Exception as e:
         print(f"\n❌ 오류 발생: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

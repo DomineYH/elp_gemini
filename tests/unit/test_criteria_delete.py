@@ -1,12 +1,13 @@
 """
 평가 기준 삭제 기능 단위 테스트
 """
-import pytest
-from unittest.mock import Mock, AsyncMock, patch
-from pathlib import Path
 
-from app.repositories.criteria_repository import CriteriaRepository
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+
 from app.models.criteria import CriteriaDocument
+from app.repositories.criteria_repository import CriteriaRepository
 
 
 @pytest.mark.asyncio
@@ -33,9 +34,7 @@ class TestCriteriaDelete:
         repo = CriteriaRepository(mock_db)
 
         # get_by_id 모킹
-        with patch.object(
-            repo, "get_by_id", return_value=mock_doc
-        ):
+        with patch.object(repo, "get_by_id", return_value=mock_doc):
             # 삭제 실행
             deleted_doc = await repo.delete_by_id(1)
 
@@ -73,9 +72,7 @@ class TestCriteriaDelete:
 
         repo = CriteriaRepository(mock_db)
 
-        with patch.object(
-            repo, "get_by_id", return_value=mock_doc
-        ):
+        with patch.object(repo, "get_by_id", return_value=mock_doc):
             deleted_doc = await repo.delete_by_id(1)
 
             # 검증
@@ -130,8 +127,6 @@ class TestCriteriaDeleteAPI:
 
     async def test_delete_criteria_endpoint(self):
         """DELETE /admin/criteria/{id} 엔드포인트 테스트"""
-        from fastapi.testclient import TestClient
-        from app.main import app
 
         # TestClient는 동기 방식이므로 주의
         # 실제 통합 테스트는 별도 파일에서 수행

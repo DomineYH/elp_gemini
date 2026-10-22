@@ -2,25 +2,30 @@
 채팅 메시지 모델
 대화 메시지 저장
 """
+
+import enum
+
 from sqlalchemy import (
+    JSON,
     Column,
+    DateTime,
+    ForeignKey,
     Integer,
     String,
     Text,
-    DateTime,
-    ForeignKey,
-    JSON,
+)
+from sqlalchemy import (
     Enum as SQLEnum,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-import enum
 
 from app.db import Base
 
 
 class MessageRole(str, enum.Enum):
     """메시지 역할"""
+
     USER = "user"
     ASSISTANT = "assistant"
 
@@ -30,55 +35,34 @@ class ChatMessage(Base):
 
     __tablename__ = "chat_messages"
 
-    id = Column(
-        Integer,
-        primary_key=True,
-        autoincrement=True
-    )
+    id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(
-        Integer,
-        ForeignKey("chat_sessions.id"),
-        nullable=False,
-        index=True
+        Integer, ForeignKey("chat_sessions.id"), nullable=False, index=True
     )
     role = Column(
         SQLEnum(MessageRole),
         nullable=False,
-        comment="메시지 역할 (user/assistant)"
+        comment="메시지 역할 (user/assistant)",
     )
-    content = Column(
-        Text,
-        nullable=False,
-        comment="메시지 내용"
-    )
+    content = Column(Text, nullable=False, comment="메시지 내용")
     model_name = Column(
-        String(100),
-        nullable=True,
-        comment="사용된 모델 이름 (assistant만)"
+        String(100), nullable=True, comment="사용된 모델 이름 (assistant만)"
     )
     citations = Column(
-        JSON,
-        nullable=True,
-        comment="Citation 정보 (assistant만)"
+        JSON, nullable=True, comment="Citation 정보 (assistant만)"
     )
     used_criteria_ids = Column(
         Text,
         nullable=True,
         server_default="'[]'",
-        comment="사용된 평가기준 ID 목록 (JSON 배열)"
+        comment="사용된 평가기준 ID 목록 (JSON 배열)",
     )
     created_at = Column(
-        DateTime,
-        nullable=False,
-        server_default=func.now(),
-        index=True
+        DateTime, nullable=False, server_default=func.now(), index=True
     )
 
     # 관계
-    session = relationship(
-        "ChatSession",
-        back_populates="messages"
-    )
+    session = relationship("ChatSession", back_populates="messages")
 
     def __repr__(self):
         return (

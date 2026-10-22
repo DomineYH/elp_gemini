@@ -2,26 +2,20 @@
 문서 평가 서비스 (리팩토링)
 파일 기반 평가 결과 저장 및 Vector DB 검색
 """
+
 import asyncio
 import logging
-from typing import Dict, Any, Optional, List
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 from google import genai
 from google.genai import types
 
 from app.config import settings
-from app.services.analysis_storage_service import (
-    AnalysisStorageService
-)
-from app.services.criteria_vector_service import (
-    CriteriaVectorService
-)
-from app.services.prompt_loader_service import (
-    PromptLoaderService
-)
-from app.services.eval_prompt_builder import (
-    EvaluationPromptBuilder
-)
+from app.services.analysis_storage_service import AnalysisStorageService
+from app.services.criteria_vector_service import CriteriaVectorService
+from app.services.eval_prompt_builder import EvaluationPromptBuilder
+from app.services.prompt_loader_service import PromptLoaderService
 
 logger = logging.getLogger(__name__)
 
@@ -73,25 +67,19 @@ class EvaluationService:
 
         try:
             # 평가 프롬프트 로드
-            eval_prompt = self.prompt_loader.get_prompt(
-                "evaluation"
-            )
+            eval_prompt = self.prompt_loader.get_prompt("evaluation")
             if not eval_prompt:
-                raise ValueError(
-                    "평가 프롬프트를 찾을 수 없습니다"
-                )
+                raise ValueError("평가 프롬프트를 찾을 수 없습니다")
 
             # 평가기준 검색
             try:
-                criteria_result = (
-                    await self.criteria_vector.search_criteria(
-                        query=lessonplan_filename,
-                        model=self.eval_model_name,
-                        temperature=0.3,
-                    )
+                criteria_result = await self.criteria_vector.search_criteria(
+                    query=lessonplan_filename,
+                    model=self.eval_model_name,
+                    temperature=0.3,
                 )
 
-                if criteria_result['sources_count'] == 0:
+                if criteria_result["sources_count"] == 0:
                     raise ValueError(
                         "활성화된 평가 기준이 없습니다. "
                         "관리자에게 문의하세요."
@@ -107,24 +95,18 @@ class EvaluationService:
                 raise
 
             # 평가 프롬프트 구성
-            evaluation_prompt = (
-                self.prompt_builder.build_evaluation_prompt(
-                    document_title=lessonplan_filename,
-                    rubric_content="",
-                    system_prompt=eval_prompt,
-                    criteria_contexts=[criteria_result],
-                )
+            evaluation_prompt = self.prompt_builder.build_evaluation_prompt(
+                document_title=lessonplan_filename,
+                rubric_content="",
+                system_prompt=eval_prompt,
+                criteria_contexts=[criteria_result],
             )
 
             # Gemini API로 평가 실행
-            report_data = await self._execute_evaluation(
-                evaluation_prompt
-            )
+            report_data = await self._execute_evaluation(evaluation_prompt)
 
             # 평가 보고서 마크다운 생성
-            markdown_content = self._generate_markdown_report(
-                report_data
-            )
+            markdown_content = self._generate_markdown_report(report_data)
 
             # 분석 결과 저장
             save_result = self.analysis_storage.save_analysis(
@@ -135,13 +117,11 @@ class EvaluationService:
             )
 
             elapsed_ms = int(
-                (datetime.now() - start_time).total_seconds()
-                * 1000
+                (datetime.now() - start_time).total_seconds() * 1000
             )
 
             logger.info(
-                f"평가 완료: {lessonplan_filename}, "
-                f"elapsed={elapsed_ms}ms"
+                f"평가 완료: {lessonplan_filename}, " f"elapsed={elapsed_ms}ms"
             )
 
             return {
@@ -159,9 +139,7 @@ class EvaluationService:
             logger.error(f"평가 실행 실패: {str(e)}")
             raise
 
-    async def _execute_evaluation(
-        self, prompt: str
-    ) -> Dict[str, Any]:
+    async def _execute_evaluation(self, prompt: str) -> Dict[str, Any]:
         """
         Gemini API로 평가 실행
 
@@ -183,19 +161,13 @@ class EvaluationService:
             )
 
             # 응답 파싱
-            return (
-                self.prompt_builder.parse_evaluation_response(
-                    response.text
-                )
-            )
+            return self.prompt_builder.parse_evaluation_response(response.text)
 
         except Exception as e:
             logger.error(f"Gemini API 호출 실패: {str(e)}")
             raise
 
-    def _generate_markdown_report(
-        self, report_data: Dict[str, Any]
-    ) -> str:
+    def _generate_markdown_report(self, report_data: Dict[str, Any]) -> str:
         """
         평가 결과를 마크다운 형식으로 변환
 
@@ -208,9 +180,7 @@ class EvaluationService:
         overall_score = report_data.get("overall_score", "N/A")
         criteria_scores = report_data.get("criteria_scores", {})
         feedback = report_data.get("feedback", "")
-        suggestions = report_data.get(
-            "improvement_suggestions", []
-        )
+        suggestions = report_data.get("improvement_suggestions", [])
 
         markdown = f"""## 평가 결과
 
@@ -277,13 +247,9 @@ class EvaluationService:
         """
         if user_id is None:
             return []
-        return self.analysis_storage.list_analyses(
-            user_id=user_id
-        )
+        return self.analysis_storage.list_analyses(user_id=user_id)
 
-    def delete_analysis(
-        self, user_id: int, lessonplan_filename: str
-    ) -> bool:
+    def delete_analysis(self, user_id: int, lessonplan_filename: str) -> bool:
         """
         분석 결과 삭제
 

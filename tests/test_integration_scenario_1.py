@@ -8,11 +8,11 @@
 4. 평가 실행
 5. 평가 결과 조회
 """
-import asyncio
-import httpx
-import io
-from pathlib import Path
 
+import asyncio
+import io
+
+import httpx
 
 # 테스트 설정
 BASE_URL = "http://localhost:8000"
@@ -44,7 +44,7 @@ async def get_auth_token(client: httpx.AsyncClient) -> str:
         data={
             "username": TEST_USERNAME,
             "password": TEST_PASSWORD,
-        }
+        },
     )
 
     if response.status_code != 200:
@@ -52,27 +52,24 @@ async def get_auth_token(client: httpx.AsyncClient) -> str:
 
     data = response.json()
     token = data["access_token"]
-    print(f"✅ 인증 토큰 획득 완료")
+    print("✅ 인증 토큰 획득 완료")
     return token
 
 
 async def upload_lessonplan(
-    client: httpx.AsyncClient,
-    token: str
+    client: httpx.AsyncClient, token: str
 ) -> str | None:
     """지도안 업로드"""
     print("\n📤 지도안 업로드 중...")
 
     # 테스트 파일 생성
-    file_content = TEST_LESSONPLAN_CONTENT.encode('utf-8')
-    files = {
-        'file': ('test_lessonplan.txt', io.BytesIO(file_content))
-    }
+    file_content = TEST_LESSONPLAN_CONTENT.encode("utf-8")
+    files = {"file": ("test_lessonplan.txt", io.BytesIO(file_content))}
 
     response = await client.post(
         f"{BASE_URL}/dashboard/upload",
         files=files,
-        headers={"Authorization": f"Bearer {token}"}
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     if response.status_code != 200:
@@ -83,9 +80,7 @@ async def upload_lessonplan(
 
 
 async def create_qna_session(
-    client: httpx.AsyncClient,
-    token: str,
-    lessonplan_filename: str
+    client: httpx.AsyncClient, token: str, lessonplan_filename: str
 ) -> int:
     """QnA 세션 생성"""
     print("\n🔄 QnA 세션 생성 중...")
@@ -93,7 +88,7 @@ async def create_qna_session(
     response = await client.post(
         f"{BASE_URL}/api/qna/sessions",
         json={"lessonplan_filename": lessonplan_filename},
-        headers={"Authorization": f"Bearer {token}"}
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     if response.status_code != 201:
@@ -106,10 +101,7 @@ async def create_qna_session(
 
 
 async def ask_question(
-    client: httpx.AsyncClient,
-    token: str,
-    session_id: int,
-    question: str
+    client: httpx.AsyncClient, token: str, session_id: int, question: str
 ) -> dict:
     """질문하기"""
     print(f"\n💬 질문: {question}")
@@ -117,7 +109,7 @@ async def ask_question(
     response = await client.post(
         f"{BASE_URL}/api/qna/sessions/{session_id}/ask",
         json={"question": question},
-        headers={"Authorization": f"Bearer {token}"}
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     if response.status_code != 200:
@@ -133,9 +125,7 @@ async def ask_question(
 
 
 async def run_evaluation(
-    client: httpx.AsyncClient,
-    token: str,
-    lessonplan_filename: str
+    client: httpx.AsyncClient, token: str, lessonplan_filename: str
 ) -> str:
     """평가 실행"""
     print("\n🔍 평가 실행 중...")
@@ -144,9 +134,9 @@ async def run_evaluation(
         f"{BASE_URL}/api/evaluations",
         json={
             "lessonplan_filename": lessonplan_filename,
-            "evaluation_type": "comprehensive"
+            "evaluation_type": "comprehensive",
         },
-        headers={"Authorization": f"Bearer {token}"}
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     if response.status_code != 201:
@@ -162,16 +152,14 @@ async def run_evaluation(
 
 
 async def get_evaluation_result(
-    client: httpx.AsyncClient,
-    token: str,
-    filename: str
+    client: httpx.AsyncClient, token: str, filename: str
 ) -> str:
     """평가 결과 조회"""
     print(f"\n📄 평가 결과 조회 중: {filename}")
 
     response = await client.get(
         f"{BASE_URL}/api/evaluations/{filename}",
-        headers={"Authorization": f"Bearer {token}"}
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     if response.status_code != 200:
@@ -181,7 +169,7 @@ async def get_evaluation_result(
     content = data["content"]
     file_size = data["file_size"]
 
-    print(f"✅ 평가 결과 조회 완료")
+    print("✅ 평가 결과 조회 완료")
     print(f"   파일 크기: {file_size} bytes")
     print(f"   내용 미리보기: {content[:200]}...")
     return content
@@ -201,9 +189,7 @@ async def run_integration_test_scenario_1():
             token = await get_auth_token(client)
 
             # 2. 지도안 업로드
-            lessonplan_filename = await upload_lessonplan(
-                client, token
-            )
+            lessonplan_filename = await upload_lessonplan(client, token)
             if lessonplan_filename is None:
                 return None
 
@@ -214,13 +200,11 @@ async def run_integration_test_scenario_1():
 
             # 4. QnA 질문 (2회)
             await ask_question(
-                client, token, session_id,
-                "이 지도안의 학습 목표는 무엇인가요?"
+                client, token, session_id, "이 지도안의 학습 목표는 무엇인가요?"
             )
 
             await ask_question(
-                client, token, session_id,
-                "수업은 총 몇 분 동안 진행되나요?"
+                client, token, session_id, "수업은 총 몇 분 동안 진행되나요?"
             )
 
             # 5. 평가 실행
@@ -239,7 +223,7 @@ async def run_integration_test_scenario_1():
             print("\n결과 요약:")
             print(f"- 지도안: {lessonplan_filename}")
             print(f"- QnA 세션: {session_id}")
-            print(f"- 질문 수: 2개")
+            print("- 질문 수: 2개")
             print(f"- 평가 결과: {analysis_filename}")
             print(f"- 결과 크기: {len(content)} bytes")
 
@@ -248,6 +232,7 @@ async def run_integration_test_scenario_1():
         except Exception as e:
             print(f"\n❌ 테스트 실패: {str(e)}")
             import traceback
+
             traceback.print_exc()
             return False
 

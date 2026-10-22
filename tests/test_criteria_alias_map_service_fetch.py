@@ -1,8 +1,13 @@
 """alias-map 문서 fetch & parse — type=alias_map 만 인식"""
-import pytest
+
 from unittest.mock import MagicMock
 
-from app.services.alias_map_codec import encode_alias_map_payload, ALIAS_MAP_PAYLOAD_KEY
+import pytest
+
+from app.services.alias_map_codec import (
+    ALIAS_MAP_PAYLOAD_KEY,
+    encode_alias_map_payload,
+)
 from app.services.criteria_alias_map_service import (
     AliasMapParseError,
     CriteriaAliasMapService,
@@ -14,7 +19,11 @@ def _meta(key, *, string_value=None, string_list_value=None):
     m = MagicMock()
     m.key = key
     m.string_value = string_value
-    m.string_list_value = MagicMock(values=string_list_value) if string_list_value is not None else None
+    m.string_list_value = (
+        MagicMock(values=string_list_value)
+        if string_list_value is not None
+        else None
+    )
     return m
 
 
@@ -26,27 +35,31 @@ def _doc(name, metas):
 
 
 def _alias_map_chunks(updated_at, alias):
-    return encode_alias_map_payload({
-        "schema_version": 1,
-        "updated_at": updated_at,
-        "entries": {
-            "01HID": {
-                "alias": alias,
-                "status": "uploaded",
-                "activated_at": None,
+    return encode_alias_map_payload(
+        {
+            "schema_version": 1,
+            "updated_at": updated_at,
+            "entries": {
+                "01HID": {
+                    "alias": alias,
+                    "status": "uploaded",
+                    "activated_at": None,
+                },
             },
-        },
-    })
+        }
+    )
 
 
 def test_read_metadata_kv_accepts_dict_string_list_value():
-    kv = _read_metadata_kv([
-        {
-            "key": "payload",
-            "string_value": "a",
-            "string_list_value": {"values": ["a", "b"]},
-        }
-    ])
+    kv = _read_metadata_kv(
+        [
+            {
+                "key": "payload",
+                "string_value": "a",
+                "string_list_value": {"values": ["a", "b"]},
+            }
+        ]
+    )
 
     assert kv["payload"] == ("a", ["a", "b"])
 
@@ -58,19 +71,28 @@ async def test_fetch_returns_none_when_no_alias_map_doc():
     store.name = "stores/x"
     store.display_name = "rubric-store"
     client.file_search_stores.list.return_value = iter([store])
-    client.file_search_stores.documents.list.return_value = iter([
-        _doc("docs/a", [_meta("type", string_value="criteria")]),
-    ])
+    client.file_search_stores.documents.list.return_value = iter(
+        [
+            _doc("docs/a", [_meta("type", string_value="criteria")]),
+        ]
+    )
 
-    svc = CriteriaAliasMapService(client=client, store_display_name="rubric-store")
+    svc = CriteriaAliasMapService(
+        client=client, store_display_name="rubric-store"
+    )
     result = await svc.fetch()
     assert result is None
 
 
 @pytest.mark.asyncio
 async def test_fetch_parses_payload_chunks():
-    payload = {"schema_version": 1, "updated_at": "2026-05-15T00:00:00Z",
-               "entries": {"01HID": {"alias": "한글", "status": "active", "activated_at": None}}}
+    payload = {
+        "schema_version": 1,
+        "updated_at": "2026-05-15T00:00:00Z",
+        "entries": {
+            "01HID": {"alias": "한글", "status": "active", "activated_at": None}
+        },
+    }
     chunks = encode_alias_map_payload(payload)
 
     client = MagicMock()
@@ -78,14 +100,21 @@ async def test_fetch_parses_payload_chunks():
     store.name = "stores/x"
     store.display_name = "rubric-store"
     client.file_search_stores.list.return_value = iter([store])
-    client.file_search_stores.documents.list.return_value = iter([
-        _doc("docs/alias-map", [
-            _meta("type", string_value="alias_map"),
-            _meta(ALIAS_MAP_PAYLOAD_KEY, string_list_value=chunks),
-        ]),
-    ])
+    client.file_search_stores.documents.list.return_value = iter(
+        [
+            _doc(
+                "docs/alias-map",
+                [
+                    _meta("type", string_value="alias_map"),
+                    _meta(ALIAS_MAP_PAYLOAD_KEY, string_list_value=chunks),
+                ],
+            ),
+        ]
+    )
 
-    svc = CriteriaAliasMapService(client=client, store_display_name="rubric-store")
+    svc = CriteriaAliasMapService(
+        client=client, store_display_name="rubric-store"
+    )
     fetched = await svc.fetch()
     assert fetched is not None
     doc_name, alias_map = fetched
@@ -101,29 +130,41 @@ async def test_fetch_returns_newest_alias_map_when_duplicates_exist(caplog):
     store.display_name = "rubric-store"
     client.file_search_stores.list.return_value = iter([store])
     client.file_search_stores.documents.delete = MagicMock()
-    client.file_search_stores.documents.list.return_value = iter([
-        _doc("docs/alias-map-old", [
-            _meta("type", string_value="alias_map"),
-            _meta(
-                ALIAS_MAP_PAYLOAD_KEY,
-                string_list_value=_alias_map_chunks(
-                    "2026-05-15T00:00:00Z", "old"
-                ),
+    client.file_search_stores.documents.list.return_value = iter(
+        [
+            _doc(
+                "docs/alias-map-old",
+                [
+                    _meta("type", string_value="alias_map"),
+                    _meta(
+                        ALIAS_MAP_PAYLOAD_KEY,
+                        string_list_value=_alias_map_chunks(
+                            "2026-05-15T00:00:00Z", "old"
+                        ),
+                    ),
+                ],
             ),
-        ]),
-        _doc("docs/alias-map-new", [
-            _meta("type", string_value="alias_map"),
-            _meta(
-                ALIAS_MAP_PAYLOAD_KEY,
-                string_list_value=_alias_map_chunks(
-                    "2026-05-15T00:01:00Z", "new"
-                ),
+            _doc(
+                "docs/alias-map-new",
+                [
+                    _meta("type", string_value="alias_map"),
+                    _meta(
+                        ALIAS_MAP_PAYLOAD_KEY,
+                        string_list_value=_alias_map_chunks(
+                            "2026-05-15T00:01:00Z", "new"
+                        ),
+                    ),
+                ],
             ),
-        ]),
-    ])
+        ]
+    )
 
-    caplog.set_level("WARNING", logger="app.services.criteria_alias_map_service")
-    svc = CriteriaAliasMapService(client=client, store_display_name="rubric-store")
+    caplog.set_level(
+        "WARNING", logger="app.services.criteria_alias_map_service"
+    )
+    svc = CriteriaAliasMapService(
+        client=client, store_display_name="rubric-store"
+    )
 
     fetched = await svc.fetch()
 
@@ -141,17 +182,19 @@ async def test_fetch_returns_newest_alias_map_when_duplicates_exist(caplog):
 @pytest.mark.asyncio
 async def test_fetch_raises_when_newest_alias_map_is_unparseable(caplog):
     old_chunks = _alias_map_chunks("2026-05-15T00:00:00Z", "old")
-    newer_invalid_chunks = encode_alias_map_payload({
-        "schema_version": 1,
-        "updated_at": "2026-05-15T00:01:00Z",
-        "entries": {
-            "01HID": {
-                "alias": "new",
-                "status": "garbage",
-                "activated_at": None,
+    newer_invalid_chunks = encode_alias_map_payload(
+        {
+            "schema_version": 1,
+            "updated_at": "2026-05-15T00:01:00Z",
+            "entries": {
+                "01HID": {
+                    "alias": "new",
+                    "status": "garbage",
+                    "activated_at": None,
+                },
             },
-        },
-    })
+        }
+    )
 
     client = MagicMock()
     store = MagicMock()
@@ -159,19 +202,34 @@ async def test_fetch_raises_when_newest_alias_map_is_unparseable(caplog):
     store.display_name = "rubric-store"
     client.file_search_stores.list.return_value = iter([store])
     client.file_search_stores.documents.delete = MagicMock()
-    client.file_search_stores.documents.list.return_value = iter([
-        _doc("docs/alias-map-old", [
-            _meta("type", string_value="alias_map"),
-            _meta(ALIAS_MAP_PAYLOAD_KEY, string_list_value=old_chunks),
-        ]),
-        _doc("docs/alias-map-new", [
-            _meta("type", string_value="alias_map"),
-            _meta(ALIAS_MAP_PAYLOAD_KEY, string_list_value=newer_invalid_chunks),
-        ]),
-    ])
+    client.file_search_stores.documents.list.return_value = iter(
+        [
+            _doc(
+                "docs/alias-map-old",
+                [
+                    _meta("type", string_value="alias_map"),
+                    _meta(ALIAS_MAP_PAYLOAD_KEY, string_list_value=old_chunks),
+                ],
+            ),
+            _doc(
+                "docs/alias-map-new",
+                [
+                    _meta("type", string_value="alias_map"),
+                    _meta(
+                        ALIAS_MAP_PAYLOAD_KEY,
+                        string_list_value=newer_invalid_chunks,
+                    ),
+                ],
+            ),
+        ]
+    )
 
-    caplog.set_level("WARNING", logger="app.services.criteria_alias_map_service")
-    svc = CriteriaAliasMapService(client=client, store_display_name="rubric-store")
+    caplog.set_level(
+        "WARNING", logger="app.services.criteria_alias_map_service"
+    )
+    svc = CriteriaAliasMapService(
+        client=client, store_display_name="rubric-store"
+    )
 
     with pytest.raises(AliasMapParseError) as exc_info:
         await svc.fetch()
@@ -191,18 +249,30 @@ async def test_fetch_raises_when_unparseable_duplicate_has_unknown_updated_at():
     store.display_name = "rubric-store"
     client.file_search_stores.list.return_value = iter([store])
     client.file_search_stores.documents.delete = MagicMock()
-    client.file_search_stores.documents.list.return_value = iter([
-        _doc("docs/alias-map-old", [
-            _meta("type", string_value="alias_map"),
-            _meta(ALIAS_MAP_PAYLOAD_KEY, string_list_value=old_chunks),
-        ]),
-        _doc("docs/alias-map-corrupt", [
-            _meta("type", string_value="alias_map"),
-            _meta(ALIAS_MAP_PAYLOAD_KEY, string_list_value=["not-base64"]),
-        ]),
-    ])
+    client.file_search_stores.documents.list.return_value = iter(
+        [
+            _doc(
+                "docs/alias-map-old",
+                [
+                    _meta("type", string_value="alias_map"),
+                    _meta(ALIAS_MAP_PAYLOAD_KEY, string_list_value=old_chunks),
+                ],
+            ),
+            _doc(
+                "docs/alias-map-corrupt",
+                [
+                    _meta("type", string_value="alias_map"),
+                    _meta(
+                        ALIAS_MAP_PAYLOAD_KEY, string_list_value=["not-base64"]
+                    ),
+                ],
+            ),
+        ]
+    )
 
-    svc = CriteriaAliasMapService(client=client, store_display_name="rubric-store")
+    svc = CriteriaAliasMapService(
+        client=client, store_display_name="rubric-store"
+    )
 
     with pytest.raises(AliasMapParseError) as exc_info:
         await svc.fetch()
@@ -218,14 +288,24 @@ async def test_fetch_raises_parse_error_for_corrupted_payload():
     store.name = "stores/x"
     store.display_name = "rubric-store"
     client.file_search_stores.list.return_value = iter([store])
-    client.file_search_stores.documents.list.return_value = iter([
-        _doc("docs/alias-map", [
-            _meta("type", string_value="alias_map"),
-            _meta(ALIAS_MAP_PAYLOAD_KEY, string_list_value=["e2ludmFsaWQ="]),
-        ]),
-    ])
+    client.file_search_stores.documents.list.return_value = iter(
+        [
+            _doc(
+                "docs/alias-map",
+                [
+                    _meta("type", string_value="alias_map"),
+                    _meta(
+                        ALIAS_MAP_PAYLOAD_KEY,
+                        string_list_value=["e2ludmFsaWQ="],
+                    ),
+                ],
+            ),
+        ]
+    )
 
-    svc = CriteriaAliasMapService(client=client, store_display_name="rubric-store")
+    svc = CriteriaAliasMapService(
+        client=client, store_display_name="rubric-store"
+    )
 
     with pytest.raises(AliasMapParseError) as exc_info:
         await svc.fetch()

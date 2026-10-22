@@ -2,6 +2,7 @@
 인증 서비스
 사용자 인증 및 비밀번호 관리
 """
+
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -102,9 +103,7 @@ class AuthService:
         """
         now = datetime.utcnow()
         stmt = (
-            update(User)
-            .where(User.id == -1)
-            .values(last_failed_login_at=now)
+            update(User).where(User.id == -1).values(last_failed_login_at=now)
         )
         await self.db.execute(stmt)
         await self.db.commit()
@@ -288,9 +287,7 @@ class AuthService:
         # 하위 호환성을 위해 username으로만 조회
         return await self.get_user_by_username(username)
 
-    async def get_user_by_username(
-        self, username: str
-    ) -> Optional[User]:
+    async def get_user_by_username(self, username: str) -> Optional[User]:
         """
         사용자 ID로 사용자 조회
 
@@ -327,9 +324,7 @@ class AuthService:
         Returns:
             User 객체 또는 None
         """
-        result = await self.db.execute(
-            select(User).where(User.id == user_id)
-        )
+        result = await self.db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
 
     async def create_user(self, user_data: UserCreate) -> User:
@@ -378,9 +373,7 @@ class AuthService:
         )
         return result.scalar_one_or_none()
 
-    async def register_regular_user(
-        self, user_id: str, password: str
-    ) -> User:
+    async def register_regular_user(self, user_id: str, password: str) -> User:
         """일반 사용자 등록 (Issue #90, id+비밀번호).
 
         - id 는 영문/숫자 9자 이하, 대소문자 무시 고유, 예약어 금지
@@ -513,9 +506,7 @@ class AuthService:
         return pwd_context.hash(password)
 
     @staticmethod
-    def verify_password(
-        plain_password: str, hashed_password: str
-    ) -> bool:
+    def verify_password(plain_password: str, hashed_password: str) -> bool:
         """
         비밀번호 검증
 

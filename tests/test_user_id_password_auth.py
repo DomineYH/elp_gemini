@@ -7,6 +7,7 @@ Task 2 — 로그인 식별자를 email → 사용자 지정 id 로 전환.
 
 공개 HTTP 흐름 + DB 상태를 함께 검증한다.
 """
+
 from __future__ import annotations
 
 import base64
@@ -222,9 +223,9 @@ async def test_register_page_collects_id_password_only(client):
 
 
 def test_register_password_confirm_form_field_is_required():
-    param = inspect.signature(
-        auth_router.register_user
-    ).parameters["password_confirm"]
+    param = inspect.signature(auth_router.register_user).parameters[
+        "password_confirm"
+    ]
 
     assert param.annotation is str
     assert param.default.is_required()
@@ -252,9 +253,7 @@ async def test_register_creates_id_user_without_profile(
     if profile_model is not None:
         async with session_factory() as session:
             result = await session.execute(
-                select(profile_model).where(
-                    profile_model.user_id == user.id
-                )
+                select(profile_model).where(profile_model.user_id == user.id)
             )
             assert result.scalar_one_or_none() is None
 
@@ -341,7 +340,8 @@ async def test_register_rejects_existing_admin_username(
     async with session_factory() as session:
         result = await session.execute(select(User))
         rows = [
-            user for user in result.scalars().all()
+            user
+            for user in result.scalars().all()
             if user.username.lower() == "teacher5"
         ]
     assert len(rows) == 1
@@ -443,9 +443,7 @@ async def test_register_matching_password_confirm_succeeds_directly(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("weak", ["short1", "nodigitshere", "12345678", "Ab1"])
-async def test_register_weak_password_rejected(
-    client, session_factory, weak
-):
+async def test_register_weak_password_rejected(client, session_factory, weak):
     response = await _register(client, user_id="weakpw", password=weak)
     _assert_form_error(response)
     assert await _fetch_user_by_username(session_factory, "weakpw") is None
@@ -493,9 +491,7 @@ async def test_login_page_uses_id_not_email(client):
 
 
 def test_login_template_allows_legacy_email_identifier_submission():
-    source = (TEMPLATE_DIR / "user/login.html").read_text(
-        encoding="utf-8"
-    )
+    source = (TEMPLATE_DIR / "user/login.html").read_text(encoding="utf-8")
 
     assert 'name="user_id"' in source
     assert 'type="email"' not in source
@@ -686,9 +682,7 @@ async def test_legacy_username_login_no_longer_creates_session(
 
     assert response.status_code == 410
     assert settings.SESSION_COOKIE_NAME not in response.cookies
-    assert (
-        await _fetch_user_by_username(session_factory, "legacy_user") is None
-    )
+    assert await _fetch_user_by_username(session_factory, "legacy_user") is None
 
 
 # ===== id-only 사용자 표시/분석 세그먼트 =====
@@ -895,9 +889,7 @@ async def test_admin_can_change_password_for_login_capable_users(
 
 
 @pytest.mark.asyncio
-async def test_admin_can_change_id_only_user_password(
-    client, session_factory
-):
+async def test_admin_can_change_id_only_user_password(client, session_factory):
     """email 이 없는 id 기반 사용자도 관리자 비밀번호 재설정이 가능해야 한다."""
     admin = await _create_user(
         session_factory,
@@ -973,9 +965,7 @@ async def test_admin_password_change_requires_csrf_token(
 
     assert response.status_code == 403
     unchanged = await _fetch_user_by_username(session_factory, "csrftgt")
-    assert AuthService.verify_password(
-        USER_PASSWORD, unchanged.hashed_password
-    )
+    assert AuthService.verify_password(USER_PASSWORD, unchanged.hashed_password)
 
 
 @pytest.mark.asyncio
@@ -1011,15 +1001,11 @@ async def test_admin_password_change_uses_shared_password_policy(
 
     assert response.status_code == 400
     unchanged = await _fetch_user_by_username(session_factory, "weaktgt")
-    assert AuthService.verify_password(
-        USER_PASSWORD, unchanged.hashed_password
-    )
+    assert AuthService.verify_password(USER_PASSWORD, unchanged.hashed_password)
 
 
 @pytest.mark.asyncio
-async def test_non_admin_cannot_change_user_password(
-    client, session_factory
-):
+async def test_non_admin_cannot_change_user_password(client, session_factory):
     actor = await _create_user(
         session_factory, username="actor1", password=USER_PASSWORD
     )
@@ -1044,6 +1030,4 @@ async def test_non_admin_cannot_change_user_password(
 
     assert response.status_code in {401, 403}
     unchanged = await _fetch_user_by_username(session_factory, "target1")
-    assert AuthService.verify_password(
-        USER_PASSWORD, unchanged.hashed_password
-    )
+    assert AuthService.verify_password(USER_PASSWORD, unchanged.hashed_password)

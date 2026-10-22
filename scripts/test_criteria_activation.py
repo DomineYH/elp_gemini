@@ -5,23 +5,23 @@
 - activated_at 컬럼 추가
 - activate_criteria 메서드에서 activated_at 설정
 """
+
 import asyncio
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 # 프로젝트 루트를 sys.path에 추가
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.db import async_session_maker
-from app.repositories.criteria_repository import CriteriaRepository
 import logging
 
+from app.db import async_session_maker
+from app.repositories.criteria_repository import CriteriaRepository
+
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -61,17 +61,13 @@ async def test_criteria_activation():
             )
 
             if criteria.activated_at is not None:
-                logger.error(
-                    "❌ 초기 상태에서 activated_at이 None이 아님!"
-                )
+                logger.error("❌ 초기 상태에서 activated_at이 None이 아님!")
             else:
                 logger.info("✅ 초기 activated_at=None 확인")
 
             # 2. 활성화
             logger.info("\n2단계: 평가기준 활성화")
-            activated = await criteria_repo.activate_criteria(
-                criteria.id
-            )
+            activated = await criteria_repo.activate_criteria(criteria.id)
             await session.commit()
 
             if not activated:
@@ -87,9 +83,7 @@ async def test_criteria_activation():
             # 3. activated_at 확인
             logger.info("\n3단계: activated_at 검증")
             if activated.status != "active":
-                logger.error(
-                    f"❌ 상태가 active가 아님: {activated.status}"
-                )
+                logger.error(f"❌ 상태가 active가 아님: {activated.status}")
             else:
                 logger.info("✅ 상태가 active로 변경됨")
 
@@ -97,8 +91,7 @@ async def test_criteria_activation():
                 logger.error("❌ activated_at이 None입니다!")
             else:
                 logger.info(
-                    f"✅ activated_at 설정됨: "
-                    f"{activated.activated_at}"
+                    f"✅ activated_at 설정됨: " f"{activated.activated_at}"
                 )
 
                 # 시간 확인 (최근 1분 이내)
@@ -121,9 +114,7 @@ async def test_criteria_activation():
             if not active_list:
                 logger.error("❌ 활성 기준 조회 실패!")
             else:
-                logger.info(
-                    f"✅ 활성 기준 {len(active_list)}개 조회됨"
-                )
+                logger.info(f"✅ 활성 기준 {len(active_list)}개 조회됨")
                 for item in active_list:
                     logger.info(
                         f"  - {item.title}: "
@@ -136,9 +127,9 @@ async def test_criteria_activation():
             await session.commit()
             logger.info("✅ 테스트 데이터 삭제 완료")
 
-            logger.info("\n" + "="*50)
+            logger.info("\n" + "=" * 50)
             logger.info("테스트 성공! 평가기준 활성화 기능이 정상 동작합니다.")
-            logger.info("="*50)
+            logger.info("=" * 50)
 
         except Exception as e:
             await session.rollback()

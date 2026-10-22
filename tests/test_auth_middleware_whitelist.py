@@ -8,6 +8,7 @@ WHITELIST_PREFIXES 에서 /auth/ 를 제거하고,
 - 보호 경로(/auth/me)는 세션 없으면 HTML → 302, JSON → 통과 후 401
 - 알 수 없는 /auth/* 경로는 HTML → 302 리다이렉트
 """
+
 from __future__ import annotations
 
 import re

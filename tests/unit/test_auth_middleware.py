@@ -63,9 +63,7 @@ def test_whitelist_login_path_no_auth_required(client):
     """
     화이트리스트 경로 (/login)는 인증 없이 통과
     """
-    response = client.get(
-        "/login", headers={"accept": "text/html"}
-    )
+    response = client.get("/login", headers={"accept": "text/html"})
 
     assert response.status_code == 200
     assert "<h1>Login</h1>" in response.text
@@ -78,9 +76,7 @@ def test_whitelist_auth_prefix_no_auth_required(client):
     # /auth/ 경로는 실제 엔드포인트가 없어도
     # 미들웨어에서 통과시켜야 함
     # 404는 엔드포인트가 없어서 발생
-    response = client.get(
-        "/auth/logout", headers={"accept": "text/html"}
-    )
+    response = client.get("/auth/logout", headers={"accept": "text/html"})
 
     # 미들웨어를 통과하면 404 (엔드포인트 없음)
     # 리다이렉트되면 302
@@ -117,9 +113,7 @@ def test_admin_html_request_without_session_redirects_to_admin_login(
     assert response.headers["location"] == "/login/admin"
 
 
-@pytest.mark.skip(
-    reason="세션 쿠키 설정이 복잡하여 통합 테스트로 이동"
-)
+@pytest.mark.skip(reason="세션 쿠키 설정이 복잡하여 통합 테스트로 이동")
 def test_html_request_with_session_passes(client):
     """
     HTML 요청이고 세션 있으면 통과
@@ -146,9 +140,7 @@ def test_api_request_without_session_passes(client):
     API 요청은 세션 없어도 통과
     (401 처리는 각 엔드포인트에서 수행)
     """
-    response = client.get(
-        "/api/data", headers={"accept": "application/json"}
-    )
+    response = client.get("/api/data", headers={"accept": "application/json"})
 
     # 미들웨어를 통과하여 엔드포인트 실행
     assert response.status_code == 200
@@ -208,9 +200,7 @@ def test_middleware_is_html_request(app):
     html_request = MockRequest("text/html")
     assert middleware._is_html_request(html_request)
 
-    html_request2 = MockRequest(
-        "text/html,application/xhtml+xml"
-    )
+    html_request2 = MockRequest("text/html,application/xhtml+xml")
     assert middleware._is_html_request(html_request2)
 
     # API 요청
@@ -242,10 +232,7 @@ async def test_validate_session_user_exists_and_admin_match():
 
     # Mock user
     mock_user = User(
-        id=1,
-        username="test",
-        nickname="Test User",
-        is_admin=False
+        id=1, username="test", nickname="Test User", is_admin=False
     )
 
     # Mock DB session
@@ -310,10 +297,7 @@ async def test_validate_session_is_admin_mismatch():
 
     # Mock user (is_admin=True in DB)
     mock_user = User(
-        id=1,
-        username="admin",
-        nickname="Admin User",
-        is_admin=True
+        id=1, username="admin", nickname="Admin User", is_admin=True
     )
 
     # Mock DB session
@@ -351,9 +335,7 @@ async def test_validate_session_db_error():
         "app.middleware.auth_middleware.async_session_maker"
     ) as mock_session_maker:
         mock_session = AsyncMock()
-        mock_session.execute.side_effect = Exception(
-            "DB connection error"
-        )
+        mock_session.execute.side_effect = Exception("DB connection error")
         mock_session.__aenter__.return_value = mock_session
         mock_session.__aexit__.return_value = None
         mock_session_maker.return_value = mock_session

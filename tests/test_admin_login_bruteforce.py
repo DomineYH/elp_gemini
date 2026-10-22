@@ -14,6 +14,7 @@ Issue #5: 관리자 로그인 brute-force 방어 회귀 테스트
     +    동시 실패 요청에서 failed_login_count cap lost-update 없음
          (Codex P2 후속)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -168,9 +169,7 @@ async def _post_login(client: AsyncClient, admin_id: str, password: str):
     )
 
 
-async def _post_login_from_ip(
-    ip_address: str, admin_id: str, password: str
-):
+async def _post_login_from_ip(ip_address: str, admin_id: str, password: str):
     """IP-rotated login attempt helper for rate-limit/DoS regressions."""
     transport = ASGITransport(app=app, client=(ip_address, 123))
     async with AsyncClient(
@@ -191,13 +190,9 @@ async def test_ip_rate_limit_returns_429(
     limiter.enabled = True
     statuses = []
     for _ in range(8):
-        resp = await _post_login(
-            http_client, ADMIN_USERNAME, "wrong"
-        )
+        resp = await _post_login(http_client, ADMIN_USERNAME, "wrong")
         statuses.append(resp.status_code)
-    assert 429 in statuses, (
-        f"6번째 이후 요청이 429를 반환해야 함: {statuses}"
-    )
+    assert 429 in statuses, f"6번째 이후 요청이 429를 반환해야 함: {statuses}"
 
 
 @pytest.mark.asyncio
@@ -285,9 +280,7 @@ async def test_lockout_expires_allows_login(
         user.locked_until = datetime.utcnow() - timedelta(seconds=1)
         await session.commit()
 
-    resp = await _post_login(
-        http_client, ADMIN_USERNAME, ADMIN_PASSWORD
-    )
+    resp = await _post_login(http_client, ADMIN_USERNAME, ADMIN_PASSWORD)
     assert resp.status_code == 302
     assert resp.headers["location"] == "/admin/dashboard"
 
@@ -307,18 +300,14 @@ async def test_successful_login_resets_counter(
 ):
     # 임계치 미만 실패 누적
     for _ in range(3):
-        resp = await _post_login(
-            http_client, ADMIN_USERNAME, "wrong"
-        )
+        resp = await _post_login(http_client, ADMIN_USERNAME, "wrong")
         assert resp.status_code == 401
 
     async with session_factory() as session:
         user = await session.get(User, admin_user.id)
         assert user.failed_login_count == 3
 
-    resp = await _post_login(
-        http_client, ADMIN_USERNAME, ADMIN_PASSWORD
-    )
+    resp = await _post_login(http_client, ADMIN_USERNAME, ADMIN_PASSWORD)
     assert resp.status_code == 302
 
     async with session_factory() as session:
@@ -360,9 +349,7 @@ async def test_locked_account_skips_password_verification(
         "app.services.auth_service.AuthService.verify_password"
     ) as verify:
         verify.return_value = True
-        resp = await _post_login(
-            http_client, ADMIN_USERNAME, ADMIN_PASSWORD
-        )
+        resp = await _post_login(http_client, ADMIN_USERNAME, ADMIN_PASSWORD)
         assert resp.status_code == 401
         # issue #6: 외부 메시지는 invalid 와 동일, 단 real verify_password 는
         # 호출되지 않아 timing 절약 + 사이드이펙트 차단 (AC6 의도 유지).
@@ -377,12 +364,8 @@ async def test_locked_account_skips_password_verification(
 async def test_unknown_admin_returns_generic_message(
     http_client, admin_user, disable_rate_limit
 ):
-    resp_unknown = await _post_login(
-        http_client, "no_such_admin", "wrong"
-    )
-    resp_known = await _post_login(
-        http_client, ADMIN_USERNAME, "wrong"
-    )
+    resp_unknown = await _post_login(http_client, "no_such_admin", "wrong")
+    resp_known = await _post_login(http_client, ADMIN_USERNAME, "wrong")
     assert resp_unknown.status_code == resp_known.status_code == 401
     # 동일한 일반 실패 메시지가 노출되어야 함
     assert "ID 또는 비밀번호" in resp_unknown.text
@@ -442,9 +425,7 @@ async def test_concurrent_failed_logins_no_lost_updates(
     async def fail_once() -> None:
         async with session_factory() as session:
             service = AuthService(session)
-            result = await service.authenticate_admin(
-                ADMIN_USERNAME, "wrong"
-            )
+            result = await service.authenticate_admin(ADMIN_USERNAME, "wrong")
             # 공개 wrong-password 실패는 hard lockout 으로 승격되지 않는다.
             assert result.user is None
             assert result.locked is False
@@ -484,9 +465,7 @@ async def test_expired_lockout_resets_window(
     # when: 만료 후 잘못된 비밀번호로 로그인 시도
     async with session_factory() as session:
         service = AuthService(session)
-        result = await service.authenticate_admin(
-            ADMIN_USERNAME, "wrong"
-        )
+        result = await service.authenticate_admin(ADMIN_USERNAME, "wrong")
         assert result.user is None
         assert result.locked is False
 
@@ -514,13 +493,11 @@ async def test_rate_limit_disabled_returns_no_429(
 ):
     statuses = []
     for _ in range(15):
-        resp = await _post_login(
-            http_client, ADMIN_USERNAME, "wrong"
-        )
+        resp = await _post_login(http_client, ADMIN_USERNAME, "wrong")
         statuses.append(resp.status_code)
-    assert 429 not in statuses, (
-        f"rate limit 비활성화 시 429 가 나오면 안 됨: {statuses}"
-    )
+    assert (
+        429 not in statuses
+    ), f"rate limit 비활성화 시 429 가 나오면 안 됨: {statuses}"
 
 
 # ---------------------------------------------------------------------
@@ -585,14 +562,12 @@ async def test_admin_id_rate_limit_via_http_returns_429(
 
     statuses: list[int] = []
     for _ in range(limit_count + 3):
-        resp = await _post_login(
-            http_client, ADMIN_USERNAME, "wrong"
-        )
+        resp = await _post_login(http_client, ADMIN_USERNAME, "wrong")
         statuses.append(resp.status_code)
 
-    assert 429 in statuses, (
-        f"admin_id 한도 초과 시 429 가 응답에 포함되어야 함: {statuses}"
-    )
-    assert 500 not in statuses, (
-        f"HTTPException(429) 가 500 으로 변환되면 안 됨: {statuses}"
-    )
+    assert (
+        429 in statuses
+    ), f"admin_id 한도 초과 시 429 가 응답에 포함되어야 함: {statuses}"
+    assert (
+        500 not in statuses
+    ), f"HTTPException(429) 가 500 으로 변환되면 안 됨: {statuses}"

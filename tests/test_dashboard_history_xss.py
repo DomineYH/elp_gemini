@@ -1,4 +1,5 @@
 """Regression coverage for stored chat history rendering safety."""
+
 import shutil
 import subprocess
 from pathlib import Path
@@ -28,7 +29,7 @@ def _extract_js_function(source: str, name: str) -> str:
         elif character == "}":
             depth -= 1
             if depth == 0:
-                return source[start:index + 1]
+                return source[start : index + 1]
     raise AssertionError(f"Could not extract JavaScript function: {name}")
 
 
@@ -84,7 +85,8 @@ def test_safe_markdown_url_policy_rejects_executable_protocols():
     source = _safe_markdown_source()
     function_source = _extract_js_function(source, "isSafeMarkdownUrl")
 
-    _run_node_script(f"""
+    _run_node_script(
+        f"""
         const assert = require('node:assert/strict');
         global.window = {{ location: {{ origin: 'https://example.test' }} }};
         {function_source}
@@ -96,14 +98,16 @@ def test_safe_markdown_url_policy_rejects_executable_protocols():
         assert.equal(isSafeMarkdownUrl('https://example.test/report'), true);
         assert.equal(isSafeMarkdownUrl('/api/qna/sessions'), true);
         assert.equal(isSafeMarkdownUrl('mailto:teacher@example.test'), true);
-    """)
+    """
+    )
 
 
 def test_escape_html_helper_encodes_raw_html_payloads():
     source = _dashboard_source()
     function_source = _extract_js_function(source, "escapeHtml")
 
-    _run_node_script(f"""
+    _run_node_script(
+        f"""
         const assert = require('node:assert/strict');
         function encodeHtml(value) {{
             return String(value)
@@ -137,14 +141,16 @@ def test_escape_html_helper_encodes_raw_html_payloads():
         assert.match(escaped, /&lt;script&gt;/);
         assert.equal(escapeHtml(null), '');
         assert.equal(escapeHtml(undefined), '');
-    """)
+    """
+    )
 
 
 def test_escape_html_attribute_helper_blocks_quote_breakout_payloads():
     source = _dashboard_source()
     function_source = _extract_js_function(source, "escapeHtmlAttribute")
 
-    _run_node_script(f"""
+    _run_node_script(
+        f"""
         const assert = require('node:assert/strict');
         {function_source}
 
@@ -159,7 +165,8 @@ def test_escape_html_attribute_helper_blocks_quote_breakout_payloads():
         assert.match(escaped, /&#39; autofocus=&#39;x/);
         assert.equal(escapeHtmlAttribute(null), '');
         assert.equal(escapeHtmlAttribute(undefined), '');
-    """)
+    """
+    )
 
 
 def test_answer_and_history_render_sources_line():
@@ -177,7 +184,8 @@ def test_sources_line_escapes_titles_and_skips_empty():
     escape_source = _extract_js_function(source, "escapeHtml")
     sources_source = _extract_js_function(source, "renderSourcesLine")
 
-    _run_node_script(f"""
+    _run_node_script(
+        f"""
         const assert = require('node:assert/strict');
         global.document = {{
             createElement() {{
@@ -200,4 +208,5 @@ def test_sources_line_escapes_titles_and_skips_empty():
         const html = renderSourcesLine(['기준 A', '<img src=x onerror=1>']);
         assert.match(html, /참고 문서: 기준 A · &lt;img/);
         assert.equal(html.includes('<img'), false);
-    """)
+    """
+    )

@@ -1,6 +1,7 @@
 """
 분석 보고서 스키마
 """
+
 from datetime import datetime
 from typing import List, Optional
 
@@ -11,6 +12,7 @@ from app.utils.timestamps import utc_iso
 
 class AnalysisReportItem(BaseModel):
     """분석 보고서 항목 스키마"""
+
     id: int = Field(..., description="보고서 ID")
     lessonplan_filename: str = Field(..., description="지도안 파일명")
     lessonplan_original_name: Optional[str] = Field(
@@ -31,6 +33,7 @@ class AnalysisReportItem(BaseModel):
 
 class AnalysisReportListResponse(BaseModel):
     """분석 보고서 목록 응답 스키마"""
+
     username: str = Field(..., description="사용자명")
     reports: List[AnalysisReportItem] = Field(
         default_factory=list, description="보고서 목록"
@@ -55,9 +58,9 @@ class AnalysisReportListResponse(BaseModel):
                             "수업지도안_a1b2c3d4_reports.md"
                         ),
                         "latency_ms": 45000,
-                        "created_at": "2025-11-28T18:25:30+00:00"
+                        "created_at": "2025-11-28T18:25:30+00:00",
                     }
                 ],
-                "total_count": 1
+                "total_count": 1,
             }
         }

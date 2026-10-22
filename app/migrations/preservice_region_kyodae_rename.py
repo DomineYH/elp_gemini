@@ -5,6 +5,7 @@ user_profiles.preservice_university_region 라벨 정규화.
 교육대학교 단위 라벨로 갱신한다. '한국교원대' 값은 '기타'로 흡수한다.
 멱등(idempotent)하다.
 """
+
 from __future__ import annotations
 
 import logging

@@ -5,6 +5,7 @@ SQLite < 3.35 cannot DROP UNIQUE columns; this migration falls back to
 a table rebuild (create new → copy data → drop old → rename) when the
 simple ALTER TABLE fails.
 """
+
 from __future__ import annotations
 
 import logging
@@ -84,7 +85,9 @@ async def _rebuild_users_without_email(engine: AsyncEngine) -> None:
             await conn.execute(text("DROP TABLE IF EXISTS users_new"))
 
             # 1. Create bare table (no secondary indexes yet)
-            await conn.execute(text("""
+            await conn.execute(
+                text(
+                    """
                 CREATE TABLE users_new (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username VARCHAR(255) NOT NULL UNIQUE,
@@ -97,13 +100,18 @@ async def _rebuild_users_without_email(engine: AsyncEngine) -> None:
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """))
+            """
+                )
+            )
 
             # 2. Copy data
-            await conn.execute(text(
-                "INSERT INTO users_new ({cols}) SELECT {cols} FROM users"
-                .format(cols=_USERS_COLUMNS_NO_EMAIL)
-            ))
+            await conn.execute(
+                text(
+                    "INSERT INTO users_new ({cols}) SELECT {cols} FROM users".format(  # noqa: E501
+                        cols=_USERS_COLUMNS_NO_EMAIL
+                    )
+                )
+            )
 
             # 3. Drop old table — frees global index names
             await conn.execute(text("DROP TABLE users"))
@@ -112,13 +120,15 @@ async def _rebuild_users_without_email(engine: AsyncEngine) -> None:
             await conn.execute(text("ALTER TABLE users_new RENAME TO users"))
 
             # 5. NOW create secondary indexes on the renamed table
-            await conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS ix_users_id ON users (id)"
-            ))
-            await conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS "
-                "ix_users_username ON users (username)"
-            ))
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_users_id ON users (id)")
+            )
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS "
+                    "ix_users_username ON users (username)"
+                )
+            )
 
             # 6. Restore inbound FK indexes (only for tables that exist)
             existing_tables = await conn.run_sync(
@@ -165,9 +175,7 @@ async def drop_users_email_column(engine: AsyncEngine) -> bool:
         )
 
         if not has_email:
-            logger.debug(
-                "users.email 컬럼이 없어 제거 마이그레이션을 건너뜀"
-            )
+            logger.debug("users.email 컬럼이 없어 제거 마이그레이션을 건너뜀")
             return False
 
         logger.info("users.email 컬럼 제거 진행")
@@ -175,19 +183,13 @@ async def drop_users_email_column(engine: AsyncEngine) -> bool:
         # Try simple DROP COLUMN first (works on SQLite >= 3.35.0
         # for non-UNIQUE columns)
         try:
-            await conn.execute(
-                text("DROP INDEX IF EXISTS ix_users_email")
-            )
-            await conn.execute(
-                text("ALTER TABLE users DROP COLUMN email")
-            )
+            await conn.execute(text("DROP INDEX IF EXISTS ix_users_email"))
+            await conn.execute(text("ALTER TABLE users DROP COLUMN email"))
             logger.info("users.email 컬럼 제거 완료 (ALTER TABLE)")
             return True
         except Exception:
             # UNIQUE constraint prevents simple DROP; rebuild table instead
-            logger.info(
-                "ALTER TABLE DROP COLUMN 실패 → 테이블 재구성으로 전환"
-            )
+            logger.info("ALTER TABLE DROP COLUMN 실패 → 테이블 재구성으로 전환")
 
     # Rebuild uses its own transaction
     await _rebuild_users_without_email(engine)

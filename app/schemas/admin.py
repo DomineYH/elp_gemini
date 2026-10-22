@@ -1,6 +1,8 @@
 """관리자 스키마"""
+
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import List, Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -13,9 +15,7 @@ class AdminDashboardResponse(BaseModel):
         ..., description="최근 7일 문서 업로드 수"
     )
     total_qna_logs: int = Field(..., description="전체 QnA 요청 수")
-    qna_logs_last_7days: int = Field(
-        ..., description="최근 7일 QnA 요청 수"
-    )
+    qna_logs_last_7days: int = Field(..., description="최근 7일 QnA 요청 수")
     total_evaluation_runs: int = Field(..., description="전체 평가 실행 수")
     evaluation_runs_last_7days: int = Field(
         ..., description="최근 7일 평가 실행 수"
@@ -29,9 +29,7 @@ class AdminUserResponse(BaseModel):
     id: int
     is_admin: bool
     created_at: datetime
-    document_count: int = Field(
-        ..., description="사용자가 업로드한 문서 수"
-    )
+    document_count: int = Field(..., description="사용자가 업로드한 문서 수")
     qna_count: int = Field(..., description="사용자의 QnA 요청 수")
 
     model_config = {"from_attributes": True}
@@ -44,12 +42,8 @@ class AdminUserDetailResponse(BaseModel):
     is_admin: bool
     created_at: datetime
     documents: list = Field(..., description="사용자 문서 목록")
-    recent_qna_logs: list = Field(
-        ..., description="최근 QnA 로그 (최대 10개)"
-    )
-    evaluation_runs: list = Field(
-        ..., description="평가 실행 목록"
-    )
+    recent_qna_logs: list = Field(..., description="최근 QnA 로그 (최대 10개)")
+    evaluation_runs: list = Field(..., description="평가 실행 목록")
 
     model_config = {"from_attributes": True}
 

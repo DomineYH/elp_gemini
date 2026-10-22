@@ -9,6 +9,7 @@
 - activated_at 컬럼을 nullable로 추가
 - active 상태일 때만 값 존재
 """
+
 import asyncio
 import logging
 import sys
@@ -19,11 +20,11 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from sqlalchemy import text
+
 from app.db import engine
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -38,10 +39,12 @@ async def add_activated_at_column():
         logger.info("마이그레이션 시작: criteria.activated_at 컬럼 추가")
 
         # 컬럼 존재 확인
-        result = await conn.execute(text(
-            "SELECT COUNT(*) FROM pragma_table_info('criteria') "
-            "WHERE name = 'activated_at'"
-        ))
+        result = await conn.execute(
+            text(
+                "SELECT COUNT(*) FROM pragma_table_info('criteria') "
+                "WHERE name = 'activated_at'"
+            )
+        )
         exists = result.scalar() > 0
 
         if exists:
@@ -50,10 +53,9 @@ async def add_activated_at_column():
 
         # 컬럼 추가
         logger.info("activated_at 컬럼 추가 중...")
-        await conn.execute(text(
-            "ALTER TABLE criteria "
-            "ADD COLUMN activated_at DATETIME"
-        ))
+        await conn.execute(
+            text("ALTER TABLE criteria " "ADD COLUMN activated_at DATETIME")
+        )
 
         logger.info("✅ activated_at 컬럼 추가 완료!")
 
@@ -71,10 +73,12 @@ async def verify_migration():
         logger.info("\n검증 시작...")
 
         # 컬럼 존재 확인
-        result = await conn.execute(text(
-            "SELECT COUNT(*) FROM pragma_table_info('criteria') "
-            "WHERE name = 'activated_at'"
-        ))
+        result = await conn.execute(
+            text(
+                "SELECT COUNT(*) FROM pragma_table_info('criteria') "
+                "WHERE name = 'activated_at'"
+            )
+        )
         exists = result.scalar() > 0
 
         if exists:
@@ -84,10 +88,12 @@ async def verify_migration():
             raise Exception("마이그레이션 실패")
 
         # 컬럼 정보 확인
-        result = await conn.execute(text(
-            "SELECT * FROM pragma_table_info('criteria') "
-            "WHERE name = 'activated_at'"
-        ))
+        result = await conn.execute(
+            text(
+                "SELECT * FROM pragma_table_info('criteria') "
+                "WHERE name = 'activated_at'"
+            )
+        )
         column_info = result.fetchone()
         logger.info(f"컬럼 정보: {column_info}")
 
@@ -101,9 +107,9 @@ async def main():
         # 검증
         await verify_migration()
 
-        logger.info("\n" + "="*50)
+        logger.info("\n" + "=" * 50)
         logger.info("마이그레이션이 성공적으로 완료되었습니다!")
-        logger.info("="*50)
+        logger.info("=" * 50)
 
     except Exception as e:
         logger.error(f"\n마이그레이션 실패: {e}", exc_info=True)

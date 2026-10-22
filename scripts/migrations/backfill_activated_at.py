@@ -9,6 +9,7 @@
 - active 상태인데 activated_at이 NULL인 레코드를
 - created_at 값으로 activated_at 설정
 """
+
 import asyncio
 import logging
 import sys
@@ -19,11 +20,11 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from sqlalchemy import text
+
 from app.db import engine
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -39,10 +40,12 @@ async def backfill_activated_at():
         logger.info("백필 시작: active 상태의 activated_at")
 
         # 대상 레코드 확인
-        result = await conn.execute(text(
-            "SELECT COUNT(*) FROM criteria "
-            "WHERE status = 'active' AND activated_at IS NULL"
-        ))
+        result = await conn.execute(
+            text(
+                "SELECT COUNT(*) FROM criteria "
+                "WHERE status = 'active' AND activated_at IS NULL"
+            )
+        )
         count = result.scalar()
 
         if count == 0:
@@ -52,21 +55,25 @@ async def backfill_activated_at():
         logger.info(f"백필 대상: {count}건")
 
         # 백필 실행
-        result = await conn.execute(text(
-            "UPDATE criteria "
-            "SET activated_at = created_at "
-            "WHERE status = 'active' AND activated_at IS NULL"
-        ))
+        result = await conn.execute(
+            text(
+                "UPDATE criteria "
+                "SET activated_at = created_at "
+                "WHERE status = 'active' AND activated_at IS NULL"
+            )
+        )
 
         updated = result.rowcount
         logger.info(f"✅ {updated}건 업데이트 완료!")
 
         # 결과 확인
-        result = await conn.execute(text(
-            "SELECT id, title, status, activated_at "
-            "FROM criteria "
-            "WHERE status = 'active'"
-        ))
+        result = await conn.execute(
+            text(
+                "SELECT id, title, status, activated_at "
+                "FROM criteria "
+                "WHERE status = 'active'"
+            )
+        )
 
         logger.info("\n활성 평가기준 목록:")
         for row in result:
@@ -83,9 +90,9 @@ async def main():
     try:
         await backfill_activated_at()
 
-        logger.info("\n" + "="*50)
+        logger.info("\n" + "=" * 50)
         logger.info("백필이 성공적으로 완료되었습니다!")
-        logger.info("="*50)
+        logger.info("=" * 50)
 
     except Exception as e:
         logger.error(f"\n백필 실패: {e}", exc_info=True)

@@ -3,15 +3,17 @@
 - 테스트 DB 연결 확인
 - 테스트용 Vector DB Store 생성 및 접근 확인
 """
+
 import asyncio
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.db import engine, async_session_maker
-from app.services.file_search_service import FileSearchService
 from sqlalchemy import text
+
+from app.db import async_session_maker, engine
+from app.services.file_search_service import FileSearchService
 
 
 async def test_database_connection():
@@ -20,9 +22,7 @@ async def test_database_connection():
     try:
         async with engine.connect() as conn:
             # 간단한 쿼리 실행
-            result = await conn.execute(
-                text("SELECT 1 as test")
-            )
+            result = await conn.execute(text("SELECT 1 as test"))
             test_value = result.scalar()
 
             if test_value == 1:
@@ -55,6 +55,7 @@ async def test_database_connection():
     except Exception as e:
         print(f"❌ DB 연결 실패: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -90,6 +91,7 @@ async def test_vector_store_access():
     except Exception as e:
         print(f"❌ Vector Store 접근 실패: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -98,26 +100,24 @@ async def test_session_creation():
     """세션 생성 및 쿼리 테스트"""
     print("\n3. 세션 생성 및 쿼리 테스트...")
     try:
-        from app.models import User, ChatSession, ChatMessage
 
         async with async_session_maker() as session:
             # 테스트 사용자 조회
-            result = await session.execute(
-                text("SELECT * FROM users LIMIT 1")
-            )
+            result = await session.execute(text("SELECT * FROM users LIMIT 1"))
             user = result.fetchone()
 
             if not user:
                 print("⚠️  테스트 사용자가 없습니다")
                 return True  # 경고만 표시하고 통과
 
-            print(f"✅ 세션 생성 성공")
+            print("✅ 세션 생성 성공")
             print(f"  - 테스트 사용자: {user[1]}")  # username
             return True
 
     except Exception as e:
         print(f"❌ 세션 테스트 실패: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

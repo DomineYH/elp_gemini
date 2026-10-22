@@ -2,6 +2,7 @@
 
 Mocks Gemini File Search client; exercises real DB + alias_map + router stack.
 """
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -141,11 +142,13 @@ async def test_search_filter_uses_or_expression_for_multi_active():
         updated_at="2026-05-17T00:00:00Z",
         entries={
             "sid_a": AliasMapEntry(
-                alias=None, status="active",
+                alias=None,
+                status="active",
                 activated_at="2026-05-17T00:00:00Z",
             ),
             "sid_b": AliasMapEntry(
-                alias=None, status="active",
+                alias=None,
+                status="active",
                 activated_at="2026-05-17T00:01:00Z",
             ),
         },
@@ -185,11 +188,13 @@ async def test_reconcile_demotes_only_legacy_surrogate_actives(
         updated_at="2026-05-17T00:00:00Z",
         entries={
             legacy_sid: AliasMapEntry(
-                alias=None, status="active",
+                alias=None,
+                status="active",
                 activated_at="2026-05-17T00:00:00Z",
             ),
             "sid_real": AliasMapEntry(
-                alias=None, status="active",
+                alias=None,
+                status="active",
                 activated_at="2026-05-17T00:01:00Z",
             ),
         },

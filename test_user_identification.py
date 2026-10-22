@@ -2,17 +2,21 @@
 사용자 식별 로직 테스트
 username + nickname 조합으로 사용자 식별
 """
-import requests
+
 import sqlite3
+
+import requests
 
 BASE_URL = "http://localhost:8001"
 
 
 def check_users():
     """DB에서 사용자 목록 확인"""
-    conn = sqlite3.connect('data/app.db')
+    conn = sqlite3.connect("data/app.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT id, username, nickname FROM users WHERE username LIKE 'user%' ORDER BY id")
+    cursor.execute(
+        "SELECT id, username, nickname FROM users WHERE username LIKE 'user%' ORDER BY id"
+    )
     users = cursor.fetchall()
     conn.close()
 
@@ -36,7 +40,7 @@ def test_scenario():
     response = session.post(
         f"{BASE_URL}/auth/login",
         data={"username": "user1", "nickname": "nick1"},
-        allow_redirects=False
+        allow_redirects=False,
     )
     print(f"  응답: {response.status_code}")
     check_users()
@@ -47,7 +51,7 @@ def test_scenario():
     response = session2.post(
         f"{BASE_URL}/auth/login",
         data={"username": "user1", "nickname": "nick1"},
-        allow_redirects=False
+        allow_redirects=False,
     )
     print(f"  응답: {response.status_code}")
     users = check_users()
@@ -55,15 +59,19 @@ def test_scenario():
     if len(users) == expected:
         print(f"  ✅ 동일 조합 인식 성공! (사용자 수: {len(users)})")
     else:
-        print(f"  ❌ 실패! 새 사용자 생성됨 (예상: {expected}, 실제: {len(users)})")
+        print(
+            f"  ❌ 실패! 새 사용자 생성됨 (예상: {expected}, 실제: {len(users)})"
+        )
 
     # 시나리오 3: 같은 username, 다른 nickname (user1 + nick2)
-    print("\n[시나리오 3] 다른 사용자: username=user1, nickname=nick2 (nickname 다름)")
+    print(
+        "\n[시나리오 3] 다른 사용자: username=user1, nickname=nick2 (nickname 다름)"
+    )
     session3 = requests.Session()
     response = session3.post(
         f"{BASE_URL}/auth/login",
         data={"username": "user1", "nickname": "nick2"},
-        allow_redirects=False
+        allow_redirects=False,
     )
     print(f"  응답: {response.status_code}")
     users = check_users()
@@ -74,12 +82,14 @@ def test_scenario():
         print(f"  ❌ 실패! (예상: {expected}, 실제: {len(users)})")
 
     # 시나리오 4: 다른 username, 같은 nickname (user2 + nick1)
-    print("\n[시나리오 4] 다른 사용자: username=user2, nickname=nick1 (username 다름)")
+    print(
+        "\n[시나리오 4] 다른 사용자: username=user2, nickname=nick1 (username 다름)"
+    )
     session4 = requests.Session()
     response = session4.post(
         f"{BASE_URL}/auth/login",
         data={"username": "user2", "nickname": "nick1"},
-        allow_redirects=False
+        allow_redirects=False,
     )
     print(f"  응답: {response.status_code}")
     users = check_users()
@@ -90,12 +100,14 @@ def test_scenario():
         print(f"  ❌ 실패! (예상: {expected}, 실제: {len(users)})")
 
     # 시나리오 5: 기존 조합 재확인 (user1 + nick2)
-    print("\n[시나리오 5] 재로그인: username=user1, nickname=nick2 (시나리오 3과 동일)")
+    print(
+        "\n[시나리오 5] 재로그인: username=user1, nickname=nick2 (시나리오 3과 동일)"
+    )
     session5 = requests.Session()
     response = session5.post(
         f"{BASE_URL}/auth/login",
         data={"username": "user1", "nickname": "nick2"},
-        allow_redirects=False
+        allow_redirects=False,
     )
     print(f"  응답: {response.status_code}")
     users = check_users()
@@ -103,18 +115,22 @@ def test_scenario():
     if len(users) == expected:
         print(f"  ✅ 기존 사용자 인식 성공! (사용자 수: {len(users)})")
     else:
-        print(f"  ❌ 실패! 새 사용자 생성됨 (예상: {expected}, 실제: {len(users)})")
+        print(
+            f"  ❌ 실패! 새 사용자 생성됨 (예상: {expected}, 실제: {len(users)})"
+        )
 
     # 최종 검증
     print("\n" + "=" * 60)
     print("최종 검증")
     print("=" * 60)
 
-    conn = sqlite3.connect('data/app.db')
+    conn = sqlite3.connect("data/app.db")
     cursor = conn.cursor()
 
     # user1 관련 사용자 확인
-    cursor.execute("SELECT id, username, nickname FROM users WHERE username LIKE 'user1%' ORDER BY id")
+    cursor.execute(
+        "SELECT id, username, nickname FROM users WHERE username LIKE 'user1%' ORDER BY id"
+    )
     user1_accounts = cursor.fetchall()
     print(f"\n[user1 관련 계정] (총 {len(user1_accounts)}개)")
     for user in user1_accounts:

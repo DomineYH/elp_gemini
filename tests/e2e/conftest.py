@@ -1,4 +1,5 @@
 """E2E test fixtures for criteria multi-active tests."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -30,7 +31,9 @@ async def e2e_client(tmp_path):
         await conn.run_sync(Base.metadata.create_all)
 
     sf = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False,
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
     )
 
     async def override_get_db():
@@ -45,7 +48,8 @@ async def e2e_client(tmp_path):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(
-        transport=transport, base_url="http://test",
+        transport=transport,
+        base_url="http://test",
     ) as client:
         yield client
 
@@ -64,7 +68,9 @@ async def db_session(e2e_client, tmp_path):
         poolclass=StaticPool,
     )
     sf = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False,
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
     )
     async with sf() as session:
         yield session

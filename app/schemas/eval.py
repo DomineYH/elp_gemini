@@ -1,6 +1,8 @@
 """평가 스키마"""
+
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from pydantic import BaseModel, Field
 
 

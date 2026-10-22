@@ -3,12 +3,12 @@ alias-map.txt 의 페이로드(base64로 청크 인코딩되는 JSON) 스키마
 
 설계: docs/superpowers/specs/2026-05-15-criteria-cloud-metadata-design.md §5.2
 """
+
 from __future__ import annotations
 
 from typing import Dict, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 CURRENT_SCHEMA_VERSION = 1
 
@@ -32,4 +32,6 @@ class AliasMap(BaseModel):
 
 
 def empty_alias_map(now_iso: str) -> AliasMap:
-    return AliasMap(schema_version=CURRENT_SCHEMA_VERSION, updated_at=now_iso, entries={})
+    return AliasMap(
+        schema_version=CURRENT_SCHEMA_VERSION, updated_at=now_iso, entries={}
+    )

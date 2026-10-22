@@ -7,24 +7,19 @@ document_id가 NULL인 기존 데이터 삭제 시나리오 테스트:
 3. FAILED_PRECONDITION 오류 핸들링
 """
 
-import pytest
 import logging
-from unittest.mock import AsyncMock, patch, MagicMock
-from google.api_core.exceptions import FailedPrecondition
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.criteria_embedding_service import (
-    CriteriaEmbeddingService
-)
+import pytest
+from app.services.criteria_embedding_service import CriteriaEmbeddingService
+from google.api_core.exceptions import FailedPrecondition
 
 
 class TestLegacyDataHandling:
     """레거시 데이터(document_id NULL) 삭제 처리 검증"""
 
     @pytest.mark.asyncio
-    async def test_legacy_delete_without_document_id(
-        self,
-        caplog
-    ):
+    async def test_legacy_delete_without_document_id(self, caplog):
         """
         레거시 데이터 삭제: document_id가 없는 경우
         - 문서 삭제 건너뛰기
@@ -41,9 +36,7 @@ class TestLegacyDataHandling:
         with caplog.at_level(logging.WARNING):
             # Mock: delete_store만 호출
             with patch.object(
-                service,
-                "delete_store",
-                new_callable=AsyncMock
+                service, "delete_store", new_callable=AsyncMock
             ) as mock_delete_store:
 
                 # Phase 3 삭제 라우터 로직 시뮬레이션
@@ -59,9 +52,7 @@ class TestLegacyDataHandling:
                     )
 
                 # 스토어 삭제 시도
-                await service.delete_store(
-                    vector_store_id=vector_store_id
-                )
+                await service.delete_store(vector_store_id=vector_store_id)
 
                 # 검증: 스토어 삭제만 호출됨
                 mock_delete_store.assert_called_once_with(
@@ -73,10 +64,7 @@ class TestLegacyDataHandling:
         assert "document_id가 없습니다" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_failed_precondition_error_handling(
-        self,
-        caplog
-    ):
+    async def test_failed_precondition_error_handling(self, caplog):
         """
         FAILED_PRECONDITION 오류 핸들링 검증
         - 스토어 내부에 문서가 남아있는 경우
@@ -89,15 +77,12 @@ class TestLegacyDataHandling:
 
         # Mock: Google API 호출 시 400 에러 발생
         error = Exception(
-            "400 FAILED_PRECONDITION: "
-            "Store contains documents"
+            "400 FAILED_PRECONDITION: " "Store contains documents"
         )
 
         # 올바른 경로로 Mock
         with patch.object(
-            service.client.file_search_stores,
-            "delete",
-            side_effect=error
+            service.client.file_search_stores, "delete", side_effect=error
         ):
 
             # 로그 캡처
@@ -105,9 +90,7 @@ class TestLegacyDataHandling:
                 # Phase 3: 에러 핸들링
                 # ignore_errors=False (기본값) → ValueError 발생
                 try:
-                    await service.delete_store(
-                        vector_store_id=vector_store_id
-                    )
+                    await service.delete_store(vector_store_id=vector_store_id)
                     pytest.fail("ValueError 예외가 발생해야 함")
 
                 except ValueError as e:
@@ -135,16 +118,14 @@ class TestLegacyDataHandling:
 
         service = CriteriaEmbeddingService()
 
-        with patch.object(
-            service,
-            "delete_document",
-            new_callable=AsyncMock
-        ) as mock_delete_doc, \
-        patch.object(
-            service,
-            "delete_store",
-            new_callable=AsyncMock
-        ) as mock_delete_store:
+        with (
+            patch.object(
+                service, "delete_document", new_callable=AsyncMock
+            ) as mock_delete_doc,
+            patch.object(
+                service, "delete_store", new_callable=AsyncMock
+            ) as mock_delete_store,
+        ):
 
             # Phase 3 삭제 라우터 로직
             delete_errors = []
@@ -154,12 +135,10 @@ class TestLegacyDataHandling:
                 try:
                     await service.delete_document(
                         vector_store_id=criteria.vector_store_id,
-                        document_id=criteria.document_id
+                        document_id=criteria.document_id,
                     )
                 except Exception as e:
-                    delete_errors.append(
-                        f"문서 삭제 실패: {str(e)}"
-                    )
+                    delete_errors.append(f"문서 삭제 실패: {str(e)}")
             else:
                 # 레거시 데이터: 경고만 출력
                 logging.getLogger(__name__).warning(
@@ -175,9 +154,7 @@ class TestLegacyDataHandling:
                         vector_store_id=criteria.vector_store_id
                     )
                 except Exception as e:
-                    delete_errors.append(
-                        f"스토어 삭제 실패: {str(e)}"
-                    )
+                    delete_errors.append(f"스토어 삭제 실패: {str(e)}")
 
             # 검증: 문서 삭제는 호출되지 않음
             mock_delete_doc.assert_not_called()
@@ -191,10 +168,7 @@ class TestLegacyDataHandling:
             assert len(delete_errors) == 0
 
     @pytest.mark.asyncio
-    async def test_partial_deletion_scenario(
-        self,
-        caplog
-    ):
+    async def test_partial_deletion_scenario(self, caplog):
         """
         부분 삭제 시나리오 검증
         - 문서 삭제 성공, 스토어 삭제 실패
@@ -206,15 +180,15 @@ class TestLegacyDataHandling:
         document_id = "partial_delete_doc"
 
         # Mock 설정
-        with patch.object(
-            service,
-            "delete_document",
-            new_callable=AsyncMock
-        ) as mock_delete_doc, \
-        patch.object(
-            service,
-            "delete_store",
-            side_effect=FailedPrecondition("Store error")
+        with (
+            patch.object(
+                service, "delete_document", new_callable=AsyncMock
+            ) as mock_delete_doc,
+            patch.object(
+                service,
+                "delete_store",
+                side_effect=FailedPrecondition("Store error"),
+            ),
         ):
 
             # 로그 캡처
@@ -222,38 +196,31 @@ class TestLegacyDataHandling:
                 delete_results = {
                     "document_deleted": False,
                     "store_deleted": False,
-                    "errors": []
+                    "errors": [],
                 }
 
                 # 1. 문서 삭제
                 try:
                     await service.delete_document(
-                        vector_store_id=vector_store_id,
-                        document_id=document_id
+                        vector_store_id=vector_store_id, document_id=document_id
                     )
                     delete_results["document_deleted"] = True
-                    logging.getLogger(__name__).info(
-                        "문서 삭제 성공"
-                    )
+                    logging.getLogger(__name__).info("문서 삭제 성공")
                 except Exception as e:
-                    delete_results["errors"].append(
-                        f"문서 삭제 실패: {str(e)}"
-                    )
+                    delete_results["errors"].append(f"문서 삭제 실패: {str(e)}")
 
                 # 2. 스토어 삭제
                 try:
-                    await service.delete_store(
-                        vector_store_id=vector_store_id
-                    )
+                    await service.delete_store(vector_store_id=vector_store_id)
                     delete_results["store_deleted"] = True
                 except Exception as e:
                     delete_results["errors"].append(
                         f"스토어 삭제 실패: {str(e)}"
                     )
                     logging.getLogger(__name__).error(
-                        f"부분 삭제 발생: "
-                        f"문서는 삭제되었으나 "
-                        f"스토어 삭제 실패"
+                        "부분 삭제 발생: "
+                        "문서는 삭제되었으나 "
+                        "스토어 삭제 실패"
                     )
 
                 # 검증

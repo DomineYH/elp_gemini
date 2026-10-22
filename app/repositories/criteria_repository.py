@@ -2,11 +2,13 @@
 평가기준 레포지토리
 Criteria 데이터 액세스 레이어
 """
-from typing import Optional, List
-from datetime import datetime
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, func
+
 import logging
+from datetime import datetime
+from typing import List, Optional
+
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.criteria import Criteria
 
@@ -74,8 +76,7 @@ class CriteriaRepository:
             Criteria 리스트
         """
         result = await self.db.execute(
-            select(Criteria)
-            .order_by(Criteria.created_at.desc())
+            select(Criteria).order_by(Criteria.created_at.desc())
         )
         return list(result.scalars().all())
 
@@ -93,9 +94,7 @@ class CriteriaRepository:
         )
         return list(result.scalars().all())
 
-    async def get_criteria_by_id(
-        self, criteria_id: int
-    ) -> Optional[Criteria]:
+    async def get_criteria_by_id(self, criteria_id: int) -> Optional[Criteria]:
         """
         ID로 평가기준 조회
 
@@ -106,8 +105,7 @@ class CriteriaRepository:
             Criteria 객체 또는 None
         """
         result = await self.db.execute(
-            select(Criteria)
-            .where(Criteria.id == criteria_id)
+            select(Criteria).where(Criteria.id == criteria_id)
         )
         return result.scalar_one_or_none()
 
@@ -124,8 +122,7 @@ class CriteriaRepository:
             Criteria 객체 또는 None
         """
         result = await self.db.execute(
-            select(Criteria)
-            .where(Criteria.document_id == document_id)
+            select(Criteria).where(Criteria.document_id == document_id)
         )
         return result.scalar_one_or_none()
 
@@ -142,14 +139,11 @@ class CriteriaRepository:
             Criteria 객체 또는 None
         """
         result = await self.db.execute(
-            select(Criteria)
-            .where(Criteria.stable_id == stable_id)
+            select(Criteria).where(Criteria.stable_id == stable_id)
         )
         return result.scalar_one_or_none()
 
-    async def delete_criteria(
-        self, criteria_id: int
-    ) -> bool:
+    async def delete_criteria(self, criteria_id: int) -> bool:
         """
         평가기준 삭제
 
@@ -160,20 +154,15 @@ class CriteriaRepository:
             삭제 성공 여부
         """
         result = await self.db.execute(
-            delete(Criteria)
-            .where(Criteria.id == criteria_id)
+            delete(Criteria).where(Criteria.id == criteria_id)
         )
         deleted_count = result.rowcount
 
         if deleted_count > 0:
-            logger.info(
-                f"평가기준 삭제: id={criteria_id}"
-            )
+            logger.info(f"평가기준 삭제: id={criteria_id}")
             return True
         else:
-            logger.warning(
-                f"평가기준 삭제 실패 (없음): id={criteria_id}"
-            )
+            logger.warning(f"평가기준 삭제 실패 (없음): id={criteria_id}")
             return False
 
     async def delete_all_criteria(self) -> int:
@@ -186,9 +175,7 @@ class CriteriaRepository:
         result = await self.db.execute(delete(Criteria))
         deleted_count = result.rowcount
 
-        logger.info(
-            f"모든 평가기준 삭제: {deleted_count}개"
-        )
+        logger.info(f"모든 평가기준 삭제: {deleted_count}개")
         return deleted_count
 
     async def update_status(
@@ -208,8 +195,7 @@ class CriteriaRepository:
 
         if not criteria:
             logger.warning(
-                f"평가기준 상태 업데이트 실패 (없음): "
-                f"id={criteria_id}"
+                f"평가기준 상태 업데이트 실패 (없음): " f"id={criteria_id}"
             )
             return None
 
@@ -217,14 +203,11 @@ class CriteriaRepository:
         await self.db.flush()
 
         logger.info(
-            f"평가기준 상태 업데이트: "
-            f"id={criteria_id}, status={status}"
+            f"평가기준 상태 업데이트: " f"id={criteria_id}, status={status}"
         )
         return criteria
 
-    async def activate_criteria(
-        self, criteria_id: int
-    ) -> Optional[Criteria]:
+    async def activate_criteria(self, criteria_id: int) -> Optional[Criteria]:
         """
         평가기준 활성화 (상태를 active로 변경 및 activated_at 설정)
 
@@ -237,10 +220,7 @@ class CriteriaRepository:
         criteria = await self.get_criteria_by_id(criteria_id)
 
         if not criteria:
-            logger.warning(
-                f"평가기준 활성화 실패 (없음): "
-                f"id={criteria_id}"
-            )
+            logger.warning(f"평가기준 활성화 실패 (없음): " f"id={criteria_id}")
             return None
 
         criteria.status = "active"
@@ -253,9 +233,7 @@ class CriteriaRepository:
         )
         return criteria
 
-    async def deactivate_criteria(
-        self, criteria_id: int
-    ) -> Optional[Criteria]:
+    async def deactivate_criteria(self, criteria_id: int) -> Optional[Criteria]:
         """
         평가기준 비활성화 (상태를 uploaded로 변경)
 
@@ -269,8 +247,7 @@ class CriteriaRepository:
 
         if not criteria:
             logger.warning(
-                f"평가기준 비활성화 실패 (없음): "
-                f"id={criteria_id}"
+                f"평가기준 비활성화 실패 (없음): " f"id={criteria_id}"
             )
             return None
 
@@ -278,10 +255,7 @@ class CriteriaRepository:
         # activated_at은 유지 (이력 보존)
         await self.db.flush()
 
-        logger.info(
-            f"평가기준 비활성화: "
-            f"id={criteria_id}"
-        )
+        logger.info(f"평가기준 비활성화: " f"id={criteria_id}")
         return criteria
 
     async def update_document_id(
@@ -333,8 +307,7 @@ class CriteriaRepository:
         criteria = await self.get_criteria_by_id(criteria_id)
         if criteria is None:
             logger.warning(
-                f"display_alias 업데이트 실패 (없음): "
-                f"id={criteria_id}"
+                f"display_alias 업데이트 실패 (없음): " f"id={criteria_id}"
             )
             return None
         criteria.display_alias = alias
@@ -362,9 +335,7 @@ class CriteriaRepository:
         """
         if not doc_ids:
             return {}
-        stmt = select(Criteria).where(
-            Criteria.document_id.in_(doc_ids)
-        )
+        stmt = select(Criteria).where(Criteria.document_id.in_(doc_ids))
         result = await self.db.execute(stmt)
         return {c.document_id: c for c in result.scalars().all()}
 

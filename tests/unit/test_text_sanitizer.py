@@ -2,7 +2,6 @@
 text_sanitizer 단위 테스트
 보고서 텍스트에서 이모지를 제거하는 유틸리티 검증
 """
-import pytest
 
 from app.utils.text_sanitizer import strip_emojis
 

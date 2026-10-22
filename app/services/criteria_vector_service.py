@@ -2,6 +2,7 @@
 평가기준 Vector DB 관리 서비스
 Gemini File Search API를 사용한 평가기준 임베딩 저장 및 검색
 """
+
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def _string_list_metadata(key: str, value: str) -> dict:
     chunks = [
-        value[i:i + _MANIFEST_PAYLOAD_CHUNK_SIZE]
+        value[i : i + _MANIFEST_PAYLOAD_CHUNK_SIZE]
         for i in range(0, len(value), _MANIFEST_PAYLOAD_CHUNK_SIZE)
     ] or [""]
     return {"key": key, "string_list_value": {"values": chunks}}
@@ -52,9 +53,9 @@ class CriteriaVectorService:
         import base64
         from datetime import datetime, timezone
 
-        original_title_b64 = base64.b64encode(
-            title.encode("utf-8")
-        ).decode("ascii")
+        original_title_b64 = base64.b64encode(title.encode("utf-8")).decode(
+            "ascii"
+        )
         created_at = (
             datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         )
@@ -126,8 +127,7 @@ class CriteriaVectorService:
 
             if not store:
                 raise ValueError(
-                    f"평가기준 Store를 찾을 수 없습니다: "
-                    f"{self.store_name}"
+                    f"평가기준 Store를 찾을 수 없습니다: " f"{self.store_name}"
                 )
 
             metadata_filter = await self.active_stable_id_filter(

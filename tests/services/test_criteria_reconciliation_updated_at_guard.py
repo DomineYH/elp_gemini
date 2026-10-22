@@ -48,19 +48,25 @@ def _make_service(state_values, alias_map, list_docs):
     db.begin.return_value.__aenter__ = AsyncMock()
     db.begin.return_value.__aexit__ = AsyncMock()
 
-    return CriteriaReconciliationService(
-        db=db,
-        vector_service=vec,
-        alias_map_service=alias,
-        criteria_repo=repo,
-        app_state_repo=state,
-    ), vec, alias, repo
+    return (
+        CriteriaReconciliationService(
+            db=db,
+            vector_service=vec,
+            alias_map_service=alias,
+            criteria_repo=repo,
+            app_state_repo=state,
+        ),
+        vec,
+        alias,
+        repo,
+    )
 
 
 def test_key_last_alias_map_updated_at_constant_exists():
     from app.repositories.app_state_repository import (
         KEY_LAST_ALIAS_MAP_UPDATED_AT,
     )
+
     assert KEY_LAST_ALIAS_MAP_UPDATED_AT == "criteria_last_alias_map_updated_at"
 
 

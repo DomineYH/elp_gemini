@@ -6,8 +6,8 @@ DB 마이그레이션 실행 스크립트
 """
 import sqlite3
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 
 def get_db_path() -> Path:
@@ -26,24 +26,18 @@ def get_migration_files() -> list[Path]:
     """마이그레이션 파일 목록 반환 (번호순 정렬)"""
     migrations_dir = Path(__file__).parent / "migrations"
     if not migrations_dir.exists():
-        raise FileNotFoundError(
-            f"마이그레이션 디렉터리 없음: {migrations_dir}"
-        )
+        raise FileNotFoundError(f"마이그레이션 디렉터리 없음: {migrations_dir}")
 
     # .sql 파일만 선택하고 이름순 정렬
     sql_files = sorted(migrations_dir.glob("*.sql"))
 
     if not sql_files:
-        raise FileNotFoundError(
-            f"마이그레이션 파일 없음: {migrations_dir}"
-        )
+        raise FileNotFoundError(f"마이그레이션 파일 없음: {migrations_dir}")
 
     return sql_files
 
 
-def run_migration(
-    db_path: Path, migration_file: Path
-) -> None:
+def run_migration(db_path: Path, migration_file: Path) -> None:
     """
     단일 마이그레이션 파일 실행
 
@@ -92,28 +86,28 @@ def create_migration_log_table(db_path: Path) -> None:
     conn = sqlite3.connect(db_path)
     try:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS migration_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 migration_file TEXT NOT NULL UNIQUE,
                 applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
         conn.commit()
     finally:
         conn.close()
 
 
-def is_migration_applied(
-    db_path: Path, migration_file: Path
-) -> bool:
+def is_migration_applied(db_path: Path, migration_file: Path) -> bool:
     """마이그레이션이 이미 적용되었는지 확인"""
     conn = sqlite3.connect(db_path)
     try:
         cursor = conn.cursor()
         cursor.execute(
             "SELECT 1 FROM migration_logs WHERE migration_file = ?",
-            (migration_file.name,)
+            (migration_file.name,),
         )
         return cursor.fetchone() is not None
     finally:
@@ -127,7 +121,7 @@ def log_migration(db_path: Path, migration_file: Path) -> None:
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO migration_logs (migration_file) VALUES (?)",
-            (migration_file.name,)
+            (migration_file.name,),
         )
         conn.commit()
     finally:

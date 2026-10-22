@@ -1,5 +1,3 @@
-from unittest.mock import AsyncMock, patch
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -13,7 +11,9 @@ client = TestClient(app)
 @pytest.fixture
 def mock_current_user():
     return User(
-        id=1, username="testuser", nickname="Test",
+        id=1,
+        username="testuser",
+        nickname="Test",
         is_admin=False,
     )
 

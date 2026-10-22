@@ -1,6 +1,7 @@
 """
 레거시 user_profiles 테이블 제거 마이그레이션 도우미
 """
+
 from __future__ import annotations
 
 import logging

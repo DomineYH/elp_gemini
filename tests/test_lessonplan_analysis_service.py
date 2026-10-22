@@ -1,8 +1,11 @@
 """
 LessonPlanAnalysisService 테스트
 """
+
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+
 from app.services.lessonplan_analysis_service import LessonPlanAnalysisService
 
 
@@ -27,8 +30,12 @@ class TestLessonPlanAnalysisService:
         # Given
         user_id = 123
         mock_stores = [
-            MagicMock(display_name="rubricstore", name="fileSearchStores/rubric123"),
-            MagicMock(display_name="user-123-store", name="fileSearchStores/user123"),
+            MagicMock(
+                display_name="rubricstore", name="fileSearchStores/rubric123"
+            ),
+            MagicMock(
+                display_name="user-123-store", name="fileSearchStores/user123"
+            ),
         ]
         service.file_search_service.client.file_search_stores.list = MagicMock(
             return_value=mock_stores
@@ -48,7 +55,9 @@ class TestLessonPlanAnalysisService:
         # Given
         user_id = 999
         mock_stores = [
-            MagicMock(display_name="other-store", name="fileSearchStores/other"),
+            MagicMock(
+                display_name="other-store", name="fileSearchStores/other"
+            ),
         ]
         service.file_search_service.client.file_search_stores.list = MagicMock(
             return_value=mock_stores
@@ -99,7 +108,10 @@ class TestLessonPlanAnalysisService:
         assert result is not None
         assert len(result["grounding_chunks"]) == 1
         assert result["grounding_chunks"][0]["source"] == "file_search"
-        assert result["grounding_chunks"][0]["uri"] == "fileSearchStores/xxx/documents/yyy"
+        assert (
+            result["grounding_chunks"][0]["uri"]
+            == "fileSearchStores/xxx/documents/yyy"
+        )
 
     def test_extract_citations_no_grounding(self, service):
         """Citation 없을 시 빈 딕셔너리 반환"""
@@ -137,6 +149,7 @@ class TestLessonPlanAnalysisService:
         user_id = 123
 
         import asyncio
+
         async def slow_store_ids(*args, **kwargs):
             await asyncio.sleep(200)  # 180초 초과
             return []

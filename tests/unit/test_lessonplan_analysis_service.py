@@ -2,6 +2,7 @@
 LessonPlanAnalysisService 단위 테스트
 Phase 3에서 구현된 수업 지도안 분석 기능 검증
 """
+
 import asyncio
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -29,24 +30,17 @@ class TestLessonPlanAnalysisService:
     @pytest.fixture
     def service(self, mock_db):
         """Service 인스턴스 생성"""
-        with patch('app.services.lessonplan_analysis_service'
-                   '.genai.Client'):
+        with patch("app.services.lessonplan_analysis_service" ".genai.Client"):
             return LessonPlanAnalysisService(mock_db)
 
     @pytest.mark.asyncio
-    async def test_get_store_ids_success(
-        self,
-        service
-    ):
+    async def test_get_store_ids_success(self, service):
         """
         Store 조회 성공 - get_dual_store_ids() 사용
         """
         # Mock get_dual_store_ids
         service.file_search_service.get_dual_store_ids = Mock(
-            return_value=[
-                "fileSearchStores/rubric",
-                "fileSearchStores/user123"
-            ]
+            return_value=["fileSearchStores/rubric", "fileSearchStores/user123"]
         )
 
         # When
@@ -58,18 +52,13 @@ class TestLessonPlanAnalysisService:
         assert "fileSearchStores/user123" in result
 
     @pytest.mark.asyncio
-    async def test_get_store_ids_not_found(
-        self,
-        service
-    ):
+    async def test_get_store_ids_not_found(self, service):
         """
         Store 조회 실패 시 빈 리스트 반환
         """
         # Mock get_dual_store_ids - ValueError 발생
         service.file_search_service.get_dual_store_ids = Mock(
-            side_effect=ValueError(
-                "rubricstore를 찾을 수 없습니다"
-            )
+            side_effect=ValueError("rubricstore를 찾을 수 없습니다")
         )
 
         # When
@@ -78,10 +67,7 @@ class TestLessonPlanAnalysisService:
         # Then
         assert result == []
 
-    def test_build_analysis_prompt(
-        self,
-        service
-    ):
+    def test_build_analysis_prompt(self, service):
         """
         프롬프트 구성 확인
         """
@@ -110,8 +96,7 @@ class TestLessonPlanAnalysisService:
         #         경우에도 치환되지 않고, 동시에 빌더가 self.model_name 을
         #         본문에 끼워넣지도 않아야 한다.
         system_prompt = (
-            "수업 지도안 평가 시스템 프롬프트\n"
-            "분석 모델: {model_name}"
+            "수업 지도안 평가 시스템 프롬프트\n" "분석 모델: {model_name}"
         )
 
         # When
@@ -124,10 +109,7 @@ class TestLessonPlanAnalysisService:
         #   해당 토큰을 더 이상 치환하지 않음을 보장하기 위한 검사)
         assert "{model_name}" in result
 
-    def test_extract_citations_success(
-        self,
-        service
-    ):
+    def test_extract_citations_success(self, service):
         """
         Citation 추출 성공
         """
@@ -153,14 +135,9 @@ class TestLessonPlanAnalysisService:
         assert "grounding_chunks" in result
         assert len(result["grounding_chunks"]) == 1
         assert result["grounding_chunks"][0]["uri"] == "file://doc1"
-        assert (
-            result["grounding_chunks"][0]["title"] == "평가기준1"
-        )
+        assert result["grounding_chunks"][0]["title"] == "평가기준1"
 
-    def test_extract_citations_no_grounding(
-        self,
-        service
-    ):
+    def test_extract_citations_no_grounding(self, service):
         """
         Grounding 없을 시 빈 딕셔너리 반환
         """
@@ -176,19 +153,13 @@ class TestLessonPlanAnalysisService:
         assert len(result["grounding_chunks"]) == 0
 
     @pytest.mark.asyncio
-    async def test_analyze_lesson_plan_success(
-        self,
-        service
-    ):
+    async def test_analyze_lesson_plan_success(self, service):
         """
         전체 프로세스 성공
         """
         # Mock _get_store_ids
         service._get_store_ids = AsyncMock(
-            return_value=[
-                "fileSearchStores/rubric",
-                "fileSearchStores/user123"
-            ]
+            return_value=["fileSearchStores/rubric", "fileSearchStores/user123"]
         )
 
         # Mock prompt_loader
@@ -208,9 +179,7 @@ class TestLessonPlanAnalysisService:
         service._find_existing_report_for_latest_upload = AsyncMock(
             return_value=(None, None)
         )
-        service._user_file_search_store_has_documents = Mock(
-            return_value=True
-        )
+        service._user_file_search_store_has_documents = Mock(return_value=True)
         service.lessonplan_storage.list_lessonplans = Mock(return_value=[])
         # 보고서 저장 모킹 — 파일 시스템 회피
         service.report_storage.save_report = Mock(
@@ -227,8 +196,7 @@ class TestLessonPlanAnalysisService:
             new=AsyncMock(return_value='stable_id="X"'),
         ):
             result = await service.analyze_lesson_plan(
-                session_id=1,
-                user_id=123
+                session_id=1, user_id=123
             )
 
         # Then
@@ -239,23 +207,15 @@ class TestLessonPlanAnalysisService:
         assert "latency_ms" in result
 
     @pytest.mark.asyncio
-    async def test_analyze_lesson_plan_no_stores(
-        self,
-        service
-    ):
+    async def test_analyze_lesson_plan_no_stores(self, service):
         """
         Store 없을 시 에러 반환
         """
         # Mock _get_store_ids - 빈 리스트 반환
-        service._get_store_ids = AsyncMock(
-            return_value=[]
-        )
+        service._get_store_ids = AsyncMock(return_value=[])
 
         # When
-        result = await service.analyze_lesson_plan(
-            session_id=1,
-            user_id=123
-        )
+        result = await service.analyze_lesson_plan(session_id=1, user_id=123)
 
         # Then
         assert result["success"] is False
@@ -263,10 +223,7 @@ class TestLessonPlanAnalysisService:
         assert "분석할 문서가 없습니다" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_analyze_lesson_plan_timeout(
-        self,
-        service
-    ):
+    async def test_analyze_lesson_plan_timeout(self, service):
         """
         타임아웃 발생 시 에러 반환
 
@@ -295,8 +252,7 @@ class TestLessonPlanAnalysisService:
             side_effect=lambda _seconds: real_timeout(0.05),
         ):
             result = await service.analyze_lesson_plan(
-                session_id=1,
-                user_id=123
+                session_id=1, user_id=123
             )
 
         # Then
@@ -321,11 +277,27 @@ class TestLessonPlanAnalysisService:
         processed = service._post_process_report(raw)
 
         # 보고서 본문에 어떤 이모지도 남아 있어서는 안 된다
-        for emoji_char in ["📑", "1️⃣", "📊", "💡", "✅", "🔧", "🔎", "🚀",
-                           "📝", "✨", "⚡️", "📚", "🔍", "📌", "📏", "📂"]:
-            assert emoji_char not in processed, (
-                f"이모지 '{emoji_char}' 가 후처리 후에도 남아있음"
-            )
+        for emoji_char in [
+            "📑",
+            "1️⃣",
+            "📊",
+            "💡",
+            "✅",
+            "🔧",
+            "🔎",
+            "🚀",
+            "📝",
+            "✨",
+            "⚡️",
+            "📚",
+            "🔍",
+            "📌",
+            "📏",
+            "📂",
+        ]:
+            assert (
+                emoji_char not in processed
+            ), f"이모지 '{emoji_char}' 가 후처리 후에도 남아있음"
 
         # 헤더 구조와 한글 본문은 보존
         assert "수업 지도안 평가 보고서" in processed
@@ -422,7 +394,7 @@ class TestLessonPlanAnalysisService:
             "## 1. 교육과정 목표 및 성격과의 부합\n\n"
             "**근거**\n"
             "> **평가기준**: 교육과정 부합성\n"
-            "> **수업지도안**: \"활동지에 ✅ 표시 후 제출\"\n\n"
+            '> **수업지도안**: "활동지에 ✅ 표시 후 제출"\n\n'
             "**개선점**\n"
             "- 시간 배분 ⚡ 검토\n"
         )
@@ -458,9 +430,7 @@ class TestLessonPlanAnalysisService:
         assert "   - 의사코드를 사전 자료로 제공" in processed
         assert "   - 학습 부진 학생의 중도 포기 방지" in processed
 
-    def test_post_process_sanitizes_non_citation_blockquotes(
-        self, service
-    ):
+    def test_post_process_sanitizes_non_citation_blockquotes(self, service):
         """
         '> **수업지도안**:' 가 아닌 블록 인용 라인(분석 개요, 평가기준
         라벨 등)은 살균된다. 실제 사용자 인용만 verbatim 보존.
@@ -471,7 +441,7 @@ class TestLessonPlanAnalysisService:
             "## 1. 교육과정 부합성\n\n"
             "**근거**\n"
             "> **평가기준**: ✅ 교육과정 부합성\n"
-            "> **수업지도안**: \"활동지에 ✅ 표시 후 제출\"\n"
+            '> **수업지도안**: "활동지에 ✅ 표시 후 제출"\n'
         )
 
         processed = service._post_process_report(raw)
@@ -484,9 +454,7 @@ class TestLessonPlanAnalysisService:
         # 수업지도안 인용 라인(실제 인용): 이모지 보존
         assert "활동지에 ✅ 표시 후 제출" in processed
 
-    def test_post_process_preserves_multiline_citation_block(
-        self, service
-    ):
+    def test_post_process_preserves_multiline_citation_block(self, service):
         """
         수업지도안 인용이 여러 줄에 걸쳐 있을 때, 라벨 라인 + 후속 continuation
         라인 모두 verbatim 보존되어 사용자 문서 이모지가 살아남는다.
@@ -494,9 +462,9 @@ class TestLessonPlanAnalysisService:
         raw = (
             "**근거**\n"
             "> **평가기준**: 부합성\n"
-            "> **수업지도안**: \"활동지에\n"
+            '> **수업지도안**: "활동지에\n'
             "> ✅ 표시 후\n"
-            "> 🚀 제출하기\"\n\n"
+            '> 🚀 제출하기"\n\n'
             "**개선점**\n"
             "- ⚡ 검토 필요\n"
         )
@@ -518,8 +486,8 @@ class TestLessonPlanAnalysisService:
         """
         raw = (
             "**근거**\n"
-            "> **수업지도안**: \"원본 ✅ 내용\"\n"
-            "> **추가**: \"이건 인용 아님 ⚡\"\n"
+            '> **수업지도안**: "원본 ✅ 내용"\n'
+            '> **추가**: "이건 인용 아님 ⚡"\n'
         )
 
         processed = service._post_process_report(raw)
@@ -538,7 +506,7 @@ class TestLessonPlanAnalysisService:
         """
         raw = (
             "**근거**\n"
-            "> **📄 수업지도안**: \"활동지에 ✅ 표시 후 제출\"\n\n"
+            '> **📄 수업지도안**: "활동지에 ✅ 표시 후 제출"\n\n'
             "**개선점**\n"
             "- ⚡ 검토 필요\n"
         )
@@ -560,9 +528,9 @@ class TestLessonPlanAnalysisService:
         continuation 라인까지 verbatim 보존된다.
         """
         raw = (
-            "> **📄 수업지도안**: \"활동지에\n"
+            '> **📄 수업지도안**: "활동지에\n'
             "> ✅ 표시\n"
-            "> 후 제출\"\n\n"
+            '> 후 제출"\n\n'
             "**개선점**\n"
             "- ⚡ 검토\n"
         )
@@ -581,7 +549,7 @@ class TestLessonPlanAnalysisService:
         """
         raw = (
             "**근거**\n"
-            "> **수업 지도안**: \"활동지에 ✅ 표시 후 제출\"\n\n"
+            '> **수업 지도안**: "활동지에 ✅ 표시 후 제출"\n\n'
             "**개선점**\n"
             "- ⚡ 검토 필요\n"
         )
@@ -599,19 +567,14 @@ class TestLessonPlanAnalysisService:
         """
         장식 + 띄어쓰기 결합('> **📄 수업 지도안**:') 도 인용으로 인식.
         """
-        raw = (
-            "> **📄 수업 지도안**: \"문서 본문 ✅\"\n\n"
-            "- ⚡ 외부\n"
-        )
+        raw = '> **📄 수업 지도안**: "문서 본문 ✅"\n\n' "- ⚡ 외부\n"
 
         processed = service._post_process_report(raw)
 
         assert "문서 본문 ✅" in processed
         assert "⚡" not in processed
 
-    def test_post_process_keeps_bold_lines_inside_citation_block(
-        self, service
-    ):
+    def test_post_process_keeps_bold_lines_inside_citation_block(self, service):
         """
         다중 라인 인용 본문 안에 굵은 텍스트(`> **준비물**`) 가 있어도
         인용 모드를 종료하지 않고 verbatim 보존한다. 새 라벨은 콜론
@@ -619,9 +582,9 @@ class TestLessonPlanAnalysisService:
         """
         raw = (
             "**근거**\n"
-            "> **수업지도안**: \"활동 흐름은 다음과 같다\n"
+            '> **수업지도안**: "활동 흐름은 다음과 같다\n'
             "> **준비물** ✅: 색종이, 풀, 활동지\n"
-            "> **유의사항** 🚀: 모둠별 협력\"\n\n"
+            '> **유의사항** 🚀: 모둠별 협력"\n\n'
             "**개선점**\n"
             "- ⚡ 외부\n"
         )
@@ -643,9 +606,9 @@ class TestLessonPlanAnalysisService:
         간주.
         """
         raw = (
-            "> **수업지도안**: \"본문 1\n"
+            '> **수업지도안**: "본문 1\n'
             "> **소제목**\n"
-            "> 본문 2 ✅\"\n"
+            '> 본문 2 ✅"\n'
             "> **다음 라벨**: 새 콘텐츠 ⚡\n"
         )
 
@@ -664,11 +627,7 @@ class TestLessonPlanAnalysisService:
         모델이 굵은 라벨을 여러 줄에 걸쳐 출력해도, 이모지 제거 후 잔여 공백이
         흡수되어 strong-emphasis 가 유지된다.
         """
-        raw = (
-            "**🚀 분석\n"
-            "내용**\n\n"
-            "본문 텍스트\n"
-        )
+        raw = "**🚀 분석\n" "내용**\n\n" "본문 텍스트\n"
 
         processed = service._post_process_report(raw)
 
@@ -679,16 +638,11 @@ class TestLessonPlanAnalysisService:
         # 잘못된 단독 opener('** 분석') 부재
         assert "** 분석" not in processed
 
-    def test_post_process_normalizes_multiline_bold_at_end(
-        self, service
-    ):
+    def test_post_process_normalizes_multiline_bold_at_end(self, service):
         """
         굵은 영역의 닫는 마커가 다음 줄에 나오는 경우도 정상 처리.
         """
-        raw = (
-            "**foo\n"
-            "bar ✅**\n"
-        )
+        raw = "**foo\n" "bar ✅**\n"
 
         processed = service._post_process_report(raw)
 
@@ -704,7 +658,7 @@ class TestLessonPlanAnalysisService:
         """
         raw = (
             "**근거**\n"
-            "> **수업 지도안**: \"활동지에 ✅ 표시\"\n\n"
+            '> **수업 지도안**: "활동지에 ✅ 표시"\n\n'
             "**개선점**\n"
             "- ⚡ 검토\n"
         )
@@ -723,11 +677,7 @@ class TestLessonPlanAnalysisService:
         모델이 굵은 마커를 닫지 않은 채 다음 섹션으로 넘어가면, 빈 줄(단락 경계)
         에서 살균을 분리하여 다음 섹션 헤더를 침범하지 않게 한다.
         """
-        raw = (
-            "**강점\n"
-            "\n"
-            "**개선점**\n"
-        )
+        raw = "**강점\n" "\n" "**개선점**\n"
 
         processed = service._post_process_report(raw)
 
@@ -744,11 +694,7 @@ class TestLessonPlanAnalysisService:
         """
         섹션 간 빈 줄이 살균 과정에서 사라지지 않는다 (단락 경계 보존).
         """
-        raw = (
-            "**🚀 첫 섹션**\n"
-            "\n"
-            "**✅ 두 번째 섹션**\n"
-        )
+        raw = "**🚀 첫 섹션**\n" "\n" "**✅ 두 번째 섹션**\n"
 
         processed = service._post_process_report(raw)
 
@@ -791,10 +737,7 @@ class TestLessonPlanAnalysisService:
         self, service
     ):
         """보고서에 섹션이 없으면 끝에 부착한다."""
-        raw = (
-            "## 종합 평가\n\n"
-            "요약 본문\n"
-        )
+        raw = "## 종합 평가\n\n" "요약 본문\n"
 
         processed = service._post_process_report(
             raw,
@@ -823,9 +766,7 @@ class TestLessonPlanAnalysisService:
         assert "LLM 이 적은 임의 항목" in processed
 
     @pytest.mark.asyncio
-    async def test_collect_active_criteria_display_names_sorted(
-        self, service
-    ):
+    async def test_collect_active_criteria_display_names_sorted(self, service):
         """active 항목들의 alias 가 activated_at desc, stable_id desc
         로 정렬되어 반환된다."""
         from app.schemas.alias_map import AliasMap, AliasMapEntry
@@ -928,11 +869,7 @@ class TestLessonPlanAnalysisService:
             criteria_aliases=["A 기준", "B 기준"],
             lessonplan_original_filename="우리반 수업계획.pdf",
         )
-        assert rendered == (
-            "- A 기준\n"
-            "- B 기준\n"
-            "- 우리반 수업계획.pdf"
-        )
+        assert rendered == ("- A 기준\n" "- B 기준\n" "- 우리반 수업계획.pdf")
 
     def test_render_file_search_references_only_criteria(self, service):
         """수업지도안 파일명이 없으면 평가기준만 표시한다."""
@@ -1015,28 +952,31 @@ class TestLessonPlanAnalysisService:
         )
 
         # active criteria filter & alias_map fetch
-        with patch(
-            "app.services.criteria_vector_service"
-            ".CriteriaVectorService.active_stable_id_filter",
-            new=AsyncMock(return_value='stable_id="X"'),
-        ), patch(
-            "app.services.criteria_alias_map_service"
-            ".CriteriaAliasMapService.fetch",
-            new=AsyncMock(
-                return_value=(
-                    "doc/name",
-                    AliasMap(
-                        schema_version=1,
-                        updated_at="2026-05-27T00:00:00Z",
-                        entries={
-                            "01OK": AliasMapEntry(
-                                alias="정보 교육과정 평가기준",
-                                status="active",
-                                activated_at="2026-05-25T00:00:00Z",
-                            ),
-                        },
-                    ),
-                )
+        with (
+            patch(
+                "app.services.criteria_vector_service"
+                ".CriteriaVectorService.active_stable_id_filter",
+                new=AsyncMock(return_value='stable_id="X"'),
+            ),
+            patch(
+                "app.services.criteria_alias_map_service"
+                ".CriteriaAliasMapService.fetch",
+                new=AsyncMock(
+                    return_value=(
+                        "doc/name",
+                        AliasMap(
+                            schema_version=1,
+                            updated_at="2026-05-27T00:00:00Z",
+                            entries={
+                                "01OK": AliasMapEntry(
+                                    alias="정보 교육과정 평가기준",
+                                    status="active",
+                                    activated_at="2026-05-25T00:00:00Z",
+                                ),
+                            },
+                        ),
+                    )
+                ),
             ),
         ):
             # Gemini 응답에 모델명 라인과 임의 참고문서 섹션 포함
@@ -1059,9 +999,7 @@ class TestLessonPlanAnalysisService:
             service._user_file_search_store_has_documents = Mock(
                 return_value=True
             )
-            service.lessonplan_storage.list_lessonplans = Mock(
-                return_value=[]
-            )
+            service.lessonplan_storage.list_lessonplans = Mock(return_value=[])
             # 보고서 저장 모킹 — 파일 시스템 회피
             service.report_storage.save_report = Mock(
                 return_value={

@@ -2,16 +2,16 @@
 평가 기준 삭제 통합 테스트
 실제 DB와 API 엔드포인트를 사용한 테스트
 """
-import os
+
 import time
 import uuid
+
 import pytest
-from pathlib import Path
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.main import app
 from app.db import get_db
+from app.main import app
 from app.models.criteria import CriteriaDocument
 from app.repositories.criteria_repository import CriteriaRepository
 
@@ -110,16 +110,12 @@ class TestCriteriaDeleteIntegration:
         assert total == 0
         assert len(documents) == 0
 
-    async def test_delete_api_endpoint(
-        self, sample_criteria: CriteriaDocument
-    ):
+    async def test_delete_api_endpoint(self, sample_criteria: CriteriaDocument):
         """DELETE API 엔드포인트 테스트 (인증 포함)"""
         # 이 테스트는 실제 인증 토큰이 필요
         # 프로젝트의 인증 방식에 맞게 수정 필요
 
-        async with AsyncClient(
-            app=app, base_url="http://test"
-        ) as client:
+        async with AsyncClient(app=app, base_url="http://test") as client:
             # 관리자 로그인 (실제 구현에 맞게 수정)
             # login_response = await client.post("/auth/login", ...)
             # token = login_response.json()["access_token"]
@@ -135,9 +131,7 @@ class TestCriteriaDeleteIntegration:
 
             pass  # 실제 인증 구현 후 활성화
 
-    async def test_delete_active_criteria(
-        self, test_db: AsyncSession
-    ):
+    async def test_delete_active_criteria(self, test_db: AsyncSession):
         """활성 평가 기준 삭제 테스트"""
         repo = CriteriaRepository(test_db)
 

@@ -1,6 +1,7 @@
 """
 평가기준 스키마 보정 도우미
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,9 +48,7 @@ async def ensure_criteria_file_path_column(
         columns = await conn.run_sync(_collect_criteria_columns)
 
         if columns is None:
-            logger.warning(
-                "criteria 테이블이 없어 스키마 패치를 건너뜀"
-            )
+            logger.warning("criteria 테이블이 없어 스키마 패치를 건너뜀")
             return False
 
         if "file_path" in columns:
@@ -75,9 +74,7 @@ async def ensure_criteria_file_path_column(
             {"default_value": default_value},
         )
 
-        logger.info(
-            "criteria.file_path 컬럼을 추가하고 기본값을 설정함"
-        )
+        logger.info("criteria.file_path 컬럼을 추가하고 기본값을 설정함")
         return True
 
 
@@ -91,9 +88,7 @@ async def ensure_criteria_display_alias_column(
     async with engine.begin() as conn:
         columns = await conn.run_sync(_collect_criteria_columns)
         if columns is None:
-            logger.warning(
-                "criteria 테이블이 없어 display_alias 패치를 건너뜀"
-            )
+            logger.warning("criteria 테이블이 없어 display_alias 패치를 건너뜀")
             return False
         if "display_alias" in columns:
             logger.debug(
@@ -138,4 +133,3 @@ async def ensure_app_state_table(engine: AsyncEngine) -> bool:
         )
         logger.info("app_state 테이블 생성 완료")
         return True
-

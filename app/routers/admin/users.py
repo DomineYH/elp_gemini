@@ -2,6 +2,7 @@
 관리자 사용자 관리 라우터
 학년별 통계, 세션 목록, 세션 상세 API
 """
+
 import logging
 from pathlib import Path
 from typing import Any
@@ -32,11 +33,11 @@ from app.models.simulation_session import SimulationSession
 from app.models.users import User
 from app.services.admin_deletion_service import AdminDeletionService
 from app.services.auth_service import AuthService
+from app.templating import templates
 from app.utils.admin_csrf import (
     ensure_admin_csrf_token,
     require_admin_csrf_token,
 )
-from app.templating import templates
 from app.utils.logging import log_auth_event, log_user_action
 from app.utils.timestamps import kst_today_start_utc_naive, utc_iso
 
@@ -46,8 +47,7 @@ logger = logging.getLogger(__name__)
 
 def _role_str(role):
     """role 문자열 추출 (방어적)"""
-    return role.value if hasattr(role, "value") \
-        else str(role)
+    return role.value if hasattr(role, "value") else str(role)
 
 
 def _user_identifier(user: Any) -> str | None:
@@ -162,69 +162,70 @@ async def get_user_stats(
             select(
                 ChatSession.user_type,
                 func.count().label("sc"),
-                func.count(case(
-                    (ChatSession.created_at >= today,
-                     1),
-                )).label("tc"),
-            ).where(ut_in)
-            .group_by(ChatSession.user_type))
-        sess = {
-            r.user_type: (r.sc, r.tc)
-            for r in await db.execute(sess_q)}
+                func.count(
+                    case(
+                        (ChatSession.created_at >= today, 1),
+                    )
+                ).label("tc"),
+            )
+            .where(ut_in)
+            .group_by(ChatSession.user_type)
+        )
+        sess = {r.user_type: (r.sc, r.tc) for r in await db.execute(sess_q)}
         # QnA 수 (1 쿼리)
         qna_q = (
             select(
                 ChatSession.user_type,
                 func.count().label("qc"),
-            ).select_from(ChatMessage)
-            .join(ChatSession).where(
+            )
+            .select_from(ChatMessage)
+            .join(ChatSession)
+            .where(
                 ChatMessage.role == MessageRole.USER,
                 ut_in,
-            ).group_by(ChatSession.user_type))
-        qna = {
-            r.user_type: r.qc
-            for r in await db.execute(qna_q)}
+            )
+            .group_by(ChatSession.user_type)
+        )
+        qna = {r.user_type: r.qc for r in await db.execute(qna_q)}
         # 보고서 수 - distinct로 cross product 방지
         rpt_q = (
             select(
                 ChatSession.user_type,
-                func.count(func.distinct(
-                    AnalysisReport.id
-                )).label("rc"),
-            ).select_from(AnalysisReport)
-            .join(User).join(
+                func.count(func.distinct(AnalysisReport.id)).label("rc"),
+            )
+            .select_from(AnalysisReport)
+            .join(User)
+            .join(
                 ChatSession,
                 ChatSession.user_id == User.id,
-            ).where(ut_in)
-            .group_by(ChatSession.user_type))
-        rpt = {
-            r.user_type: r.rc
-            for r in await db.execute(rpt_q)}
+            )
+            .where(ut_in)
+            .group_by(ChatSession.user_type)
+        )
+        rpt = {r.user_type: r.rc for r in await db.execute(rpt_q)}
         stats = []
         totals = dict(
-            session_count=0, qna_count=0,
-            report_count=0, today_count=0)
+            session_count=0, qna_count=0, report_count=0, today_count=0
+        )
         for ut in USER_TYPES:
             sc, tc = sess.get(ut, (0, 0))
             entry = dict(
-                user_type=ut, session_count=sc,
+                user_type=ut,
+                session_count=sc,
                 qna_count=qna.get(ut, 0),
                 report_count=rpt.get(ut, 0),
-                today_count=tc)
+                today_count=tc,
+            )
             stats.append(entry)
             for k in totals:
                 totals[k] += entry[k]
-        logger.info(
-            f"사용자 통계 조회: "
-            f"admin={current_admin.username}")
+        logger.info(f"사용자 통계 조회: " f"admin={current_admin.username}")
         return {
             "stats": stats,
             "totals": totals,
         }
     except Exception as e:
-        logger.error(
-            f"사용자 통계 조회 실패: {e}",
-            exc_info=True)
+        logger.error(f"사용자 통계 조회 실패: {e}", exc_info=True)
         raise
 
 
@@ -244,9 +245,9 @@ async def get_user_sessions(
                 selectinload(ChatSession.messages),
                 selectinload(ChatSession.user),
             )
-            .order_by(ChatSession.created_at.desc()))
-        cnt_q = select(func.count()).select_from(
-            ChatSession)
+            .order_by(ChatSession.created_at.desc())
+        )
+        cnt_q = select(func.count()).select_from(ChatSession)
         if user_type:
             flt = ChatSession.user_type == user_type
             query = query.where(flt)
@@ -254,8 +255,7 @@ async def get_user_sessions(
         total_r = await db.execute(cnt_q)
         total = total_r.scalar() or 0
         offset = (page - 1) * page_size
-        result = await db.execute(
-            query.offset(offset).limit(page_size))
+        result = await db.execute(query.offset(offset).limit(page_size))
         sessions = result.scalars().all()
         # 보고서 수 일괄 조회
         uids = {s.user_id for s in sessions}
@@ -265,49 +265,43 @@ async def get_user_sessions(
                 select(
                     AnalysisReport.user_id,
                     func.count().label("cnt"),
-                ).where(
-                    AnalysisReport.user_id.in_(uids)
-                ).group_by(AnalysisReport.user_id))
+                )
+                .where(AnalysisReport.user_id.in_(uids))
+                .group_by(AnalysisReport.user_id)
+            )
             for row in await db.execute(rc_q):
                 rpt_map[row.user_id] = row.cnt
         sessions_data = []
         for s in sessions:
-            msgs = sorted(
-                s.messages,
-                key=lambda m: m.created_at)
-            qna_c = sum(
-                1 for m in msgs
-                if m.role == MessageRole.USER)
+            msgs = sorted(s.messages, key=lambda m: m.created_at)
+            qna_c = sum(1 for m in msgs if m.role == MessageRole.USER)
             last = msgs[-1] if msgs else None
             user = getattr(s, "user", None)
             last_at = (
-                utc_iso(last.created_at) if last
-                else utc_iso(s.created_at))
-            sessions_data.append({
-                "session_id": s.id,
-                "user_id": s.user_id,
-                "user_identifier": _user_identifier(user),
-                "username": (
-                    user.username if user is not None else None
-                ),
-                "nickname": (
-                    user.nickname if user is not None else None
-                ),
-                "user_type": s.user_type,
-                "title": s.title,
-                "created_at": utc_iso(s.created_at),
-                "qna_count": qna_c,
-                "message_count": len(msgs),
-                "report_count": rpt_map.get(
-                    s.user_id, 0),
-                "last_activity": last_at,
-                "status": (
-                    "active" if msgs else "empty"),
-            })
+                utc_iso(last.created_at) if last else utc_iso(s.created_at)
+            )
+            sessions_data.append(
+                {
+                    "session_id": s.id,
+                    "user_id": s.user_id,
+                    "user_identifier": _user_identifier(user),
+                    "username": (user.username if user is not None else None),
+                    "nickname": (user.nickname if user is not None else None),
+                    "user_type": s.user_type,
+                    "title": s.title,
+                    "created_at": utc_iso(s.created_at),
+                    "qna_count": qna_c,
+                    "message_count": len(msgs),
+                    "report_count": rpt_map.get(s.user_id, 0),
+                    "last_activity": last_at,
+                    "status": ("active" if msgs else "empty"),
+                }
+            )
         logger.info(
             f"세션 목록: "
             f"admin={current_admin.username}"
-            f", page={page}, total={total}")
+            f", page={page}, total={total}"
+        )
         return {
             "sessions": sessions_data,
             "total": total,
@@ -315,9 +309,7 @@ async def get_user_sessions(
             "page_size": page_size,
         }
     except Exception as e:
-        logger.error(
-            f"세션 목록 조회 실패: {e}",
-            exc_info=True)
+        logger.error(f"세션 목록 조회 실패: {e}", exc_info=True)
         raise
 
 
@@ -358,9 +350,7 @@ async def get_user_accounts(
         total_r = await db.execute(cnt_q)
         total = total_r.scalar() or 0
         offset = (page - 1) * page_size
-        result = await db.execute(
-            query.offset(offset).limit(page_size)
-        )
+        result = await db.execute(query.offset(offset).limit(page_size))
         users = result.scalars().all()
 
         user_ids = {user.id for user in users}
@@ -370,21 +360,23 @@ async def get_user_accounts(
 
         accounts = []
         for account in users:
-            accounts.append({
-                "user_id": account.id,
-                "username": account.username,
-                "nickname": account.nickname,
-                "user_identifier": _user_identifier(account),
-                "is_admin": account.is_admin,
-                "created_at": utc_iso(account.created_at),
-                "session_count": session_counts.get(account.id, 0),
-                "report_count": report_counts.get(account.id, 0),
-                "simulation_count": simulation_counts.get(account.id, 0),
-                # Issue #91: 재설정 후 실제 로그인 가능한 계정만 허용한다.
-                "can_change_password": (
-                    not account.is_admin and _user_can_login(account)
-                ),
-            })
+            accounts.append(
+                {
+                    "user_id": account.id,
+                    "username": account.username,
+                    "nickname": account.nickname,
+                    "user_identifier": _user_identifier(account),
+                    "is_admin": account.is_admin,
+                    "created_at": utc_iso(account.created_at),
+                    "session_count": session_counts.get(account.id, 0),
+                    "report_count": report_counts.get(account.id, 0),
+                    "simulation_count": simulation_counts.get(account.id, 0),
+                    # Issue #91: 재설정 후 실제 로그인 가능한 계정만 허용한다.
+                    "can_change_password": (
+                        not account.is_admin and _user_can_login(account)
+                    ),
+                }
+            )
 
         logger.info(
             f"사용자 계정 목록: "
@@ -397,14 +389,11 @@ async def get_user_accounts(
             "page_size": page_size,
         }
     except Exception as e:
-        logger.error(
-            f"사용자 계정 목록 조회 실패: {e}",
-            exc_info=True)
+        logger.error(f"사용자 계정 목록 조회 실패: {e}", exc_info=True)
         raise
 
 
-@router.get(
-    "/admin/api/users/session/{session_id}")
+@router.get("/admin/api/users/session/{session_id}")
 async def get_session_detail(
     session_id: int,
     current_admin: User = Depends(get_current_admin),
@@ -414,18 +403,16 @@ async def get_session_detail(
     try:
         query = (
             select(ChatSession)
-            .options(
-                selectinload(ChatSession.messages))
-            .where(ChatSession.id == session_id))
+            .options(selectinload(ChatSession.messages))
+            .where(ChatSession.id == session_id)
+        )
         result = await db.execute(query)
         session = result.scalar_one_or_none()
         if not session:
             raise HTTPException(
-                status_code=404,
-                detail="세션을 찾을 수 없습니다.")
-        msgs = sorted(
-            session.messages,
-            key=lambda m: m.created_at)
+                status_code=404, detail="세션을 찾을 수 없습니다."
+            )
+        msgs = sorted(session.messages, key=lambda m: m.created_at)
         messages_data = [
             {
                 "id": m.id,
@@ -439,11 +426,9 @@ async def get_session_detail(
         ]
         rpt_q = (
             select(AnalysisReport)
-            .where(
-                AnalysisReport.user_id
-                == session.user_id)
-            .order_by(
-                AnalysisReport.created_at.desc()))
+            .where(AnalysisReport.user_id == session.user_id)
+            .order_by(AnalysisReport.created_at.desc())
+        )
         rpt_r = await db.execute(rpt_q)
         reports_data = [
             {
@@ -455,8 +440,7 @@ async def get_session_detail(
             }
             for r in rpt_r.scalars().all()
         ]
-        logger.info(
-            f"세션 상세: session_id={session_id}")
+        logger.info(f"세션 상세: session_id={session_id}")
         return {
             "session_id": session.id,
             "user_type": session.user_type,
@@ -467,9 +451,7 @@ async def get_session_detail(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"세션 상세 조회 실패: {e}",
-            exc_info=True)
+        logger.error(f"세션 상세 조회 실패: {e}", exc_info=True)
         raise
 
 
@@ -486,9 +468,7 @@ async def get_user_sessions_for_admin(
     사용자 측 `/api/qna/sessions`와 동일한 정렬/필드 셰입을 반환하되,
     소유권 검사 없이 관리자 권한으로 접근한다.
     """
-    user_row = await db.execute(
-        select(User.id).where(User.id == user_id)
-    )
+    user_row = await db.execute(select(User.id).where(User.id == user_id))
     if user_row.scalar_one_or_none() is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -509,9 +489,7 @@ async def get_user_sessions_for_admin(
     )
 
     total_result = await db.execute(
-        select(func.count(ChatSession.id)).where(
-            ChatSession.user_id == user_id
-        )
+        select(func.count(ChatSession.id)).where(ChatSession.user_id == user_id)
     )
     total_count = int(total_result.scalar_one() or 0)
 
@@ -523,7 +501,9 @@ async def get_user_sessions_for_admin(
     result = await db.execute(
         select(
             ChatSession,
-            func.coalesce(message_stats.c.message_count, 0).label("message_count"),
+            func.coalesce(message_stats.c.message_count, 0).label(
+                "message_count"
+            ),
             message_stats.c.last_message_at,
         )
         .outerjoin(
@@ -538,19 +518,23 @@ async def get_user_sessions_for_admin(
 
     sessions = []
     for session, message_count, last_message_at in result.all():
-        sessions.append({
-            "session_id": session.id,
-            "title": session.title,
-            "user_type": session.user_type,
-            "created_at": utc_iso(session.created_at),
-            "updated_at": utc_iso(session.updated_at),
-            "message_count": int(message_count or 0),
-            "last_message_at": utc_iso(last_message_at),
-        })
+        sessions.append(
+            {
+                "session_id": session.id,
+                "title": session.title,
+                "user_type": session.user_type,
+                "created_at": utc_iso(session.created_at),
+                "updated_at": utc_iso(session.updated_at),
+                "message_count": int(message_count or 0),
+                "last_message_at": utc_iso(last_message_at),
+            }
+        )
 
     logger.info(
         "관리자 사용자 세션 목록: admin=%s, target=%s, total=%s",
-        current_admin.username, user_id, total_count,
+        current_admin.username,
+        user_id,
+        total_count,
     )
     return {
         "user_id": user_id,
@@ -575,9 +559,7 @@ async def get_user_reports_for_admin(
 
     사용자 측 `/api/lessonplan/reports`와 동일한 정렬(생성일 desc)·필드를 반환한다.
     """
-    user_row = await db.execute(
-        select(User.id).where(User.id == user_id)
-    )
+    user_row = await db.execute(select(User.id).where(User.id == user_id))
     if user_row.scalar_one_or_none() is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -603,7 +585,9 @@ async def get_user_reports_for_admin(
             "id": r.id,
             "report_filename": r.report_filename,
             "lessonplan_filename": r.lessonplan_filename,
-            "lessonplan_original_name": getattr(r, "lessonplan_original_name", None),
+            "lessonplan_original_name": getattr(
+                r, "lessonplan_original_name", None
+            ),
             "latency_ms": r.latency_ms,
             "created_at": utc_iso(r.created_at),
         }
@@ -612,7 +596,9 @@ async def get_user_reports_for_admin(
 
     logger.info(
         "관리자 사용자 보고서 목록: admin=%s, target=%s, total=%s",
-        current_admin.username, user_id, total_count,
+        current_admin.username,
+        user_id,
+        total_count,
     )
     return {
         "user_id": user_id,
@@ -800,8 +786,7 @@ async def change_regular_user_password(
             success=True,
         )
         logger.info(
-            "관리자 비밀번호 변경 성공: "
-            "admin_id=%s, target_user_id=%s",
+            "관리자 비밀번호 변경 성공: " "admin_id=%s, target_user_id=%s",
             current_admin.id,
             target_user.id,
         )
@@ -963,9 +948,7 @@ async def _read_id_list(request: Request, key: str) -> list[int]:
     return raw
 
 
-@router.post(
-    "/admin/api/users/{user_id}/sessions/bulk-delete"
-)
+@router.post("/admin/api/users/{user_id}/sessions/bulk-delete")
 async def bulk_delete_user_sessions(
     user_id: int,
     request: Request,
@@ -996,9 +979,7 @@ async def bulk_delete_user_sessions(
     return result
 
 
-@router.post(
-    "/admin/api/users/{user_id}/reports/bulk-delete"
-)
+@router.post("/admin/api/users/{user_id}/reports/bulk-delete")
 async def bulk_delete_user_reports(
     user_id: int,
     request: Request,
@@ -1029,8 +1010,7 @@ async def bulk_delete_user_reports(
     return result
 
 
-@router.get(
-    "/admin/users", response_class=HTMLResponse)
+@router.get("/admin/users", response_class=HTMLResponse)
 async def users_page(
     request: Request,
     current_admin: User = Depends(get_current_admin),
@@ -1043,12 +1023,11 @@ async def users_page(
             "request": request,
             "user": current_admin,
             "csrf_token": csrf_token,
-        })
+        },
+    )
 
 
-@router.get(
-    "/admin/users/session/{session_id}",
-    response_class=HTMLResponse)
+@router.get("/admin/users/session/{session_id}", response_class=HTMLResponse)
 async def user_session_detail_page(
     request: Request,
     session_id: int,
@@ -1057,9 +1036,8 @@ async def user_session_detail_page(
     """세션 상세 페이지 렌더링"""
     return templates.TemplateResponse(
         "admin/admin_user_session_detail.html",
-        {"request": request,
-         "user": current_admin,
-         "session_id": session_id})
+        {"request": request, "user": current_admin, "session_id": session_id},
+    )
 
 
 @router.get(
@@ -1081,9 +1059,7 @@ async def admin_user_detail_page(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="사용자를 찾을 수 없습니다.",
         )
-    result = await db.execute(
-        select(User.id).where(User.id == user_id)
-    )
+    result = await db.execute(select(User.id).where(User.id == user_id))
     if result.scalar_one_or_none() is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -1,4 +1,5 @@
 import inspect
+
 from google import genai
 
 print("Client signature:")

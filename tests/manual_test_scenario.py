@@ -7,19 +7,15 @@ Task 4.4: 수동 테스트 시나리오 자동화 스크립트
 
 import asyncio
 import sqlite3
-from pathlib import Path
 import sys
+from pathlib import Path
 
 # 프로젝트 루트를 sys.path에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.services.criteria_embedding_service import (
-    CriteriaEmbeddingService
-)
-from app.repositories.criteria_repository import (
-    CriteriaRepository
-)
-from app.config import settings
+from app.services.criteria_embedding_service import CriteriaEmbeddingService
+
+from app.repositories.criteria_repository import CriteriaRepository
 
 
 class ManualTestScenario:
@@ -36,9 +32,9 @@ class ManualTestScenario:
 
     def print_section(self, title: str):
         """섹션 제목 출력"""
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print(f"  {title}")
-        print("="*60)
+        print("=" * 60)
 
     def verify_db_schema(self):
         """DB 스키마 검증 - document_id 컬럼 존재 확인"""
@@ -48,14 +44,10 @@ class ManualTestScenario:
         cursor = conn.cursor()
 
         # 테이블 스키마 확인
-        cursor.execute(
-            "PRAGMA table_info(criteria_documents);"
-        )
+        cursor.execute("PRAGMA table_info(criteria_documents);")
         columns = cursor.fetchall()
 
-        has_document_id = any(
-            col[1] == 'document_id' for col in columns
-        )
+        has_document_id = any(col[1] == "document_id" for col in columns)
 
         print(f"✅ document_id 컬럼 존재: {has_document_id}")
 
@@ -87,11 +79,12 @@ class ManualTestScenario:
         try:
             # 1. 업로드 및 임베딩
             print("⏳ 업로드 및 임베딩 시작...")
-            vector_store_id, document_id = await (
-                self.embedding_service.upload_and_embed(
-                    file_path=str(self.test_pdf),
-                    criteria_name="Manual Test Criteria"
-                )
+            (
+                vector_store_id,
+                document_id,
+            ) = await self.embedding_service.upload_and_embed(
+                file_path=str(self.test_pdf),
+                criteria_name="Manual Test Criteria",
             )
 
             print(
@@ -107,7 +100,7 @@ class ManualTestScenario:
                 description="수동 테스트용 평가기준",
                 pdf_path=str(self.test_pdf),
                 vector_store_id=vector_store_id,
-                document_id=document_id
+                document_id=document_id,
             )
 
             print(f"✅ DB 저장 완료 (ID: {criteria_id})")
@@ -117,16 +110,13 @@ class ManualTestScenario:
         except Exception as e:
             print(f"❌ 업로드 실패: {str(e)}")
             import traceback
+
             traceback.print_exc()
             return None, None, None
         finally:
             await repo.close()
 
-    def verify_db_save(
-        self,
-        criteria_id: int,
-        expected_doc_id: str
-    ):
+    def verify_db_save(self, criteria_id: int, expected_doc_id: str):
         """DB 저장 검증"""
         self.print_section("3. DB 저장 검증")
 
@@ -139,7 +129,7 @@ class ManualTestScenario:
             FROM criteria_documents
             WHERE id = ?
             """,
-            (criteria_id,)
+            (criteria_id,),
         )
 
         result = cursor.fetchone()
@@ -151,7 +141,7 @@ class ManualTestScenario:
 
         saved_id, title, saved_doc_id, store_id = result
 
-        print(f"📊 DB 레코드:")
+        print("📊 DB 레코드:")
         print(f"   - ID: {saved_id}")
         print(f"   - 제목: {title}")
         print(f"   - document_id: {saved_doc_id}")
@@ -169,10 +159,7 @@ class ManualTestScenario:
             return False
 
     async def test_delete(
-        self,
-        criteria_id: int,
-        vector_store_id: str,
-        document_id: str
+        self, criteria_id: int, vector_store_id: str, document_id: str
     ):
         """삭제 테스트"""
         self.print_section("4. 삭제 테스트")
@@ -181,8 +168,7 @@ class ManualTestScenario:
             # 1. 문서 삭제
             print("⏳ 문서 삭제 중...")
             await self.embedding_service.delete_document(
-                vector_store_id=vector_store_id,
-                document_id=document_id
+                vector_store_id=vector_store_id, document_id=document_id
             )
             print("✅ 문서 삭제 성공")
 
@@ -211,6 +197,7 @@ class ManualTestScenario:
         except Exception as e:
             print(f"❌ 삭제 실패: {str(e)}")
             import traceback
+
             traceback.print_exc()
             return False
 
@@ -238,11 +225,7 @@ class ManualTestScenario:
             return
 
         # 4. 삭제 테스트
-        success = await self.test_delete(
-            criteria_id,
-            store_id,
-            doc_id
-        )
+        success = await self.test_delete(criteria_id, store_id, doc_id)
 
         # 최종 결과
         self.print_section("최종 결과")

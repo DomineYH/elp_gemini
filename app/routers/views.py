@@ -1,6 +1,7 @@
 """
 HTML 뷰 라우터
 """
+
 import hashlib
 import logging
 import os
@@ -19,13 +20,13 @@ from app.dependencies import get_current_user
 from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
 from app.repositories.criteria_repository import CriteriaRepository
+from app.services.criteria_freshness import ensure_criteria_cache_fresh
 from app.services.file_search_service import (
     FileSearchService,
     _sanitize_display_name,
 )
-from app.templating import templates
-from app.services.criteria_freshness import ensure_criteria_cache_fresh
 from app.services.simulation import lessonplan_source
+from app.templating import templates
 
 router = APIRouter(tags=["뷰"])
 logger = logging.getLogger(__name__)
@@ -41,8 +42,7 @@ def _format_upload_size_limit(limit: int) -> str:
 
 def _criteria_documents_from_active(active_list) -> list[dict]:
     return [
-        {"id": c.id, "name": c.display_alias or c.title}
-        for c in active_list
+        {"id": c.id, "name": c.display_alias or c.title} for c in active_list
     ]
 
 
@@ -53,9 +53,7 @@ def _document_from_upload(upload: LessonPlanUpload) -> dict | None:
     File Search 문서 ID가 없거나(과거 행·로그아웃으로 스토어 삭제)
     원본 PDF가 없으면 None → 지금처럼 업로드 안내를 보인다.
     """
-    path = (
-        lessonplan_source.UPLOADS_DIR / str(upload.user_id) / upload.filename
-    )
+    path = lessonplan_source.UPLOADS_DIR / str(upload.user_id) / upload.filename
     if not upload.fs_document_id or not path.is_file():
         return None
     return {
@@ -73,7 +71,7 @@ def _document_from_upload(upload: LessonPlanUpload) -> dict | None:
     "/dashboard",
     response_class=HTMLResponse,
     summary="사용자 대시보드",
-    description="사용자 대시보드 페이지"
+    description="사용자 대시보드 페이지",
 )
 async def user_dashboard(
     request: Request,
@@ -114,7 +112,7 @@ async def user_dashboard(
                 else None
             ),
             "criteria_documents": criteria_documents,
-        }
+        },
     )
 
 
@@ -122,7 +120,7 @@ async def user_dashboard(
     "/dashboard/upload",
     response_class=HTMLResponse,
     summary="문서 업로드 처리",
-    description="PDF 문서를 업로드하고 텍스트를 추출하여 표시합니다."
+    description="PDF 문서를 업로드하고 텍스트를 추출하여 표시합니다.",
 )
 async def upload_document(
     request: Request,
@@ -144,7 +142,7 @@ async def upload_document(
         f"file={file.filename}"
     )
 
-    if not file.filename.endswith('.pdf'):
+    if not file.filename.endswith(".pdf"):
         return templates.TemplateResponse(
             "error.html",
             {
@@ -241,14 +239,14 @@ async def upload_document(
             "user_id": str(current_user.id),
             "original_filename": file.filename,
             "uploaded_at": datetime.now().isoformat(),
-            "type": "user_document"
+            "type": "user_document",
         }
 
         # Google Store에 업로드
         result = await file_search_service.upload_document(
             file_path=str(file_path),
             display_name=file.filename,
-            metadata=metadata
+            metadata=metadata,
         )
 
         upload_row = LessonPlanUpload(
@@ -277,7 +275,7 @@ async def upload_document(
             "file_size": os.path.getsize(file_path),
             "content": extracted_text,
             "store_id": result["store_id"],
-            "file_url": file_url
+            "file_url": file_url,
         }
 
         # 평가 기준 목록 조회 (DB 기반)
@@ -293,7 +291,7 @@ async def upload_document(
                 "document": document,
                 "extracted_text": extracted_text,
                 "criteria_documents": criteria_documents,
-            }
+            },
         )
 
     except Exception as e:
@@ -315,7 +313,7 @@ async def upload_document(
 @router.post(
     "/dashboard/cleanup",
     summary="사용자 데이터 정리",
-    description="사용자의 Vector Store 및 임시 데이터를 정리합니다."
+    description="사용자의 Vector Store 및 임시 데이터를 정리합니다.",
 )
 async def cleanup_dashboard(
     request: Request,

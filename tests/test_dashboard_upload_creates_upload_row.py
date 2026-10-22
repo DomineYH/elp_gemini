@@ -1,6 +1,7 @@
 """
 /dashboard/upload 이 LessonPlanUpload 행을 만드는지 검증.
 """
+
 from io import BytesIO
 from unittest.mock import AsyncMock, patch
 
@@ -32,6 +33,7 @@ async def session_factory(tmp_path):
 async def client(session_factory, tmp_path, monkeypatch):
     # Redirect static/uploads writes to a tmp dir to avoid polluting repo
     from app.routers import views as views_mod
+
     real_path_cls = views_mod.Path
 
     def _patched_path(*args, **kwargs):
@@ -45,16 +47,15 @@ async def client(session_factory, tmp_path, monkeypatch):
     # Stub FileSearchService — we're testing the DB-row side effect, not the
     # real Google call
     fake_result = {"document_id": "doc-1", "store_id": "store-1"}
-    with patch(
-        "app.routers.views.FileSearchService"
-    ) as mock_fss:
+    with patch("app.routers.views.FileSearchService") as mock_fss:
         instance = mock_fss.return_value
         instance.upload_document = AsyncMock(return_value=fake_result)
         instance.delete_store_by_display_name = AsyncMock(return_value=None)
 
         async with session_factory() as s:
             u = User(
-                username="alice", nickname="alice",
+                username="alice",
+                nickname="alice",
                 hashed_password="x",
             )
             s.add(u)
@@ -64,9 +65,7 @@ async def client(session_factory, tmp_path, monkeypatch):
         async def override_get_user():
             async with session_factory() as s:
                 return (
-                    await s.execute(
-                        select(User).where(User.id == user_id)
-                    )
+                    await s.execute(select(User).where(User.id == user_id))
                 ).scalar_one()
 
         async def override_get_db():
@@ -92,8 +91,7 @@ async def client(session_factory, tmp_path, monkeypatch):
 async def test_dashboard_upload_inserts_lessonplan_upload_row(client):
     c, session_factory = client
     pdf_bytes = (
-        b"%PDF-1.4\n%fake pdf for test\n"
-        b"1 0 obj\n<<>>\nendobj\n%%EOF\n"
+        b"%PDF-1.4\n%fake pdf for test\n" b"1 0 obj\n<<>>\nendobj\n%%EOF\n"
     )
     files = {"file": ("plan.pdf", BytesIO(pdf_bytes), "application/pdf")}
 
@@ -108,9 +106,7 @@ async def test_dashboard_upload_inserts_lessonplan_upload_row(client):
     assert res.status_code == 200
 
     async with session_factory() as s:
-        rows = (
-            await s.execute(select(LessonPlanUpload))
-        ).scalars().all()
+        rows = (await s.execute(select(LessonPlanUpload))).scalars().all()
         assert len(rows) == 1
         row = rows[0]
         assert row.original_filename == "plan.pdf"
@@ -122,9 +118,7 @@ async def test_dashboard_upload_inserts_lessonplan_upload_row(client):
 
 
 @pytest.mark.asyncio
-async def test_dashboard_upload_rejects_file_over_limit(
-    client, monkeypatch
-):
+async def test_dashboard_upload_rejects_file_over_limit(client, monkeypatch):
     c, session_factory = client
 
     from app.routers import views as views_mod
@@ -146,9 +140,7 @@ async def test_dashboard_upload_rejects_file_over_limit(
     mock_reader.assert_not_called()
 
     async with session_factory() as s:
-        rows = (
-            await s.execute(select(LessonPlanUpload))
-        ).scalars().all()
+        rows = (await s.execute(select(LessonPlanUpload))).scalars().all()
         assert rows == []
 
 

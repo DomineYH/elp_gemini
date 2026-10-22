@@ -37,12 +37,14 @@ async def test_qna_builds_normal_context_when_sync_ok():
     app_state = AsyncMock()
     app_state.get = AsyncMock(return_value=SYNC_STATE_OK)
     criteria_ctx_svc = AsyncMock()
-    criteria_ctx_svc.get_context = AsyncMock(return_value={
-        "context_text": "some text",
-        "criteria_ids": [1],
-        "criteria_metadata": [],
-        "citations": [],
-    })
+    criteria_ctx_svc.get_context = AsyncMock(
+        return_value={
+            "context_text": "some text",
+            "criteria_ids": [1],
+            "criteria_metadata": [],
+            "citations": [],
+        }
+    )
 
     ctx, notice = await build_criteria_context_or_notice(
         app_state_repo=app_state,
@@ -65,13 +67,13 @@ async def test_qna_uses_only_user_store_when_criteria_sync_not_ok():
     response.candidates = []
     client.models.generate_content.return_value = response
 
-    with patch(
-        "app.services.qna_service.genai.Client", return_value=client
-    ), patch(
-        "app.services.qna_service.FileSearchService"
-    ) as file_search_cls, patch(
-        "app.services.criteria_context_service.build_criteria_context_or_notice",
-        new=AsyncMock(return_value=(None, "평가기준 동기화가 필요합니다.")),
+    with (
+        patch("app.services.qna_service.genai.Client", return_value=client),
+        patch("app.services.qna_service.FileSearchService") as file_search_cls,
+        patch(
+            "app.services.criteria_context_service.build_criteria_context_or_notice",
+            new=AsyncMock(return_value=(None, "평가기준 동기화가 필요합니다.")),
+        ),
     ):
         file_search = file_search_cls.return_value
         file_search.get_user_store_id = MagicMock(

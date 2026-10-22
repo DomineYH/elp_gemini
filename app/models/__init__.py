@@ -1,4 +1,5 @@
 """데이터베이스 모델"""
+
 from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage, MessageRole
 from app.models.chat_sessions import ChatSession

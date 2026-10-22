@@ -1,6 +1,7 @@
 """Dependency availability regression tests."""
 
 from pathlib import Path
+
 import tomllib
 
 
@@ -49,6 +50,7 @@ def test_google_genai_import() -> None:
     try:
         from google import genai
         from google.genai import types
+
         assert genai is not None
         assert types is not None
     except ImportError as e:
@@ -56,4 +58,3 @@ def test_google_genai_import() -> None:
             f"google-genai import failed: {e}. "
             "Ensure google-genai>=1.43.0 is installed."
         ) from e
-

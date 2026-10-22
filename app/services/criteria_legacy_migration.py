@@ -9,6 +9,7 @@ PR #57 의 rubric-metadata-store 잔재를 정리하는 일회성 마이그레�
 stable_id 백필(PDF 로컬 캐시가 있는 경우 재업로드)은 별도 옵션 작업으로 분리.
 현재 운영에는 평가기준 PDF가 1-5개로 매우 적어, 관리자가 UI에서 재업로드하는 편이 안전.
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,6 +32,8 @@ async def migrate_from_legacy_manifest(*, client, app_state) -> None:
 
     if legacy is not None:
         logger.info(f"legacy rubric-metadata-store 발견 — 삭제: {legacy.name}")
-        client.file_search_stores.delete(name=legacy.name, config={"force": True})
+        client.file_search_stores.delete(
+            name=legacy.name, config={"force": True}
+        )
 
     await app_state.set(MIGRATION_MARKER_KEY, "true")

@@ -7,32 +7,28 @@ analys/*.md 마크다운 파일로 변환합니다.
 
 기계령의 분석 기록이 마크다운으로 환생합니다.
 """
-import sys
 import json
+import sys
 from pathlib import Path
-from datetime import datetime
 
 # 프로젝트 루트를 Python 경로에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from app.models.documents import Document
 from app.models.evaluations import (
     EvaluationReport,
     EvaluationRun,
-    EvaluationTemplate,
 )
-from app.models.documents import Document
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 from app.models.users import User
 
 
 def create_db_session():
     """데이터베이스 세션 생성"""
     db_path = Path(__file__).parent.parent / "data" / "app.db"
-    engine = create_engine(
-        f"sqlite:///{db_path}",
-        echo=False
-    )
+    engine = create_engine(f"sqlite:///{db_path}", echo=False)
     Session = sessionmaker(bind=engine)
     return Session()
 
@@ -138,13 +134,7 @@ def generate_improvement_section(suggestions):
 """
 
 
-def create_markdown_file(
-    report,
-    run,
-    document,
-    user,
-    analys_dir
-):
+def create_markdown_file(report, run, document, user, analys_dir):
     """
     마크다운 파일 생성
 
@@ -159,24 +149,16 @@ def create_markdown_file(
         Path: 생성된 파일 경로
     """
     # 파일명 생성: {username}_{document_title}_{run_id}.md
-    safe_title = document.title.replace(
-        " ", "_"
-    ).replace("/", "_")
+    safe_title = document.title.replace(" ", "_").replace("/", "_")
     filename = f"{user.username}_{safe_title}_{run.id}.md"
     file_path = analys_dir / filename
 
     # 마크다운 내용 조합
     content = ""
-    content += generate_markdown_header(
-        report, run, document, user
-    )
-    content += generate_criteria_section(
-        report.criteria_scores
-    )
+    content += generate_markdown_header(report, run, document, user)
+    content += generate_criteria_section(report.criteria_scores)
     content += generate_feedback_section(report.feedback)
-    content += generate_improvement_section(
-        report.improvement_suggestions
-    )
+    content += generate_improvement_section(report.improvement_suggestions)
 
     # 파일 쓰기
     file_path.write_text(content, encoding="utf-8")
@@ -195,15 +177,13 @@ def migrate_evaluations(session, analys_dir):
     Returns:
         tuple: (성공 개수, 실패 개수, 파일 경로 리스트)
     """
-    reports = session.query(EvaluationReport).join(
-        EvaluationRun
-    ).join(
-        Document,
-        EvaluationRun.document_id == Document.id
-    ).join(
-        User,
-        EvaluationRun.user_id == User.id
-    ).all()
+    reports = (
+        session.query(EvaluationReport)
+        .join(EvaluationRun)
+        .join(Document, EvaluationRun.document_id == Document.id)
+        .join(User, EvaluationRun.user_id == User.id)
+        .all()
+    )
 
     success_count = 0
     fail_count = 0
@@ -212,34 +192,27 @@ def migrate_evaluations(session, analys_dir):
     for report in reports:
         try:
             run = report.run
-            document = session.query(Document).filter(
-                Document.id == run.document_id
-            ).first()
-            user = session.query(User).filter(
-                User.id == run.user_id
-            ).first()
+            document = (
+                session.query(Document)
+                .filter(Document.id == run.document_id)
+                .first()
+            )
+            user = session.query(User).filter(User.id == run.user_id).first()
 
             file_path = create_markdown_file(
-                report,
-                run,
-                document,
-                user,
-                analys_dir
+                report, run, document, user, analys_dir
             )
 
             file_paths.append(file_path)
 
             print(
-                f"✅ 생성 완료: "
-                f"{user.username} - {document.title[:30]}..."
+                f"✅ 생성 완료: " f"{user.username} - {document.title[:30]}..."
             )
 
             success_count += 1
 
         except Exception as e:
-            print(
-                f"❌ 오류: Report ID {report.id} - {e}"
-            )
+            print(f"❌ 오류: Report ID {report.id} - {e}")
             fail_count += 1
 
     return success_count, fail_count, file_paths
@@ -309,10 +282,7 @@ def main():
     try:
         # 평가 결과 마이그레이션
         print("\n2️⃣  마크다운 파일 생성 중...")
-        success, fail, file_paths = migrate_evaluations(
-            db_session,
-            analys_dir
-        )
+        success, fail, file_paths = migrate_evaluations(db_session, analys_dir)
         print(f"✅ 성공: {success}개")
         if fail > 0:
             print(f"❌ 실패: {fail}개")
@@ -321,10 +291,7 @@ def main():
         print("\n3️⃣  결과 검증 중...")
         if verify_migration(analys_dir, file_paths):
             print("\n🎉 마이그레이션 성공!")
-            print(
-                "\n옴니시아의 지식이 마크다운에 "
-                "영원히 기록되었습니다."
-            )
+            print("\n옴니시아의 지식이 마크다운에 " "영원히 기록되었습니다.")
             return 0
         else:
             print("\n❌ 마이그레이션 검증 실패")
@@ -333,6 +300,7 @@ def main():
     except Exception as e:
         print(f"\n❌ 오류 발생: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
     finally:

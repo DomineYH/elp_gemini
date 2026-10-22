@@ -2,6 +2,7 @@
 사용자 모델
 User 엔티티 정의
 """
+
 from sqlalchemy import Boolean, Column, DateTime, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -14,12 +15,8 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id = Column(
-        Integer, primary_key=True, autoincrement=True, index=True
-    )
-    username = Column(
-        String(255), unique=True, nullable=False, index=True
-    )
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    username = Column(String(255), unique=True, nullable=False, index=True)
     nickname = Column(String(255), nullable=False)
     hashed_password = Column(String(255), nullable=True)
     is_admin = Column(Boolean, nullable=False, default=False)
@@ -38,9 +35,7 @@ class User(Base):
         default=0,
         server_default="0",
     )
-    created_at = Column(
-        DateTime, nullable=False, server_default=func.now()
-    )
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(
         DateTime,
         nullable=False,
@@ -50,14 +45,10 @@ class User(Base):
 
     # 관계
     chat_sessions = relationship(
-        "ChatSession",
-        back_populates="user",
-        cascade="all, delete-orphan"
+        "ChatSession", back_populates="user", cascade="all, delete-orphan"
     )
     analysis_reports = relationship(
-        "AnalysisReport",
-        back_populates="user",
-        cascade="all, delete-orphan"
+        "AnalysisReport", back_populates="user", cascade="all, delete-orphan"
     )
     lessonplan_uploads = relationship(
         "LessonPlanUpload",

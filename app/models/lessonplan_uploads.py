@@ -2,6 +2,7 @@
 업로드 이벤트 모델
 한 번의 업로드 액션 = 한 행. 분석 보고서와 1:1로 연결된다.
 """
+
 from sqlalchemy import (
     Column,
     DateTime,
@@ -32,9 +33,7 @@ class LessonPlanUpload(Base):
         ),
     )
 
-    id = Column(
-        Integer, primary_key=True, autoincrement=True, index=True
-    )
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     user_id = Column(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),

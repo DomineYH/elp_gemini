@@ -8,24 +8,21 @@ prompt/prompt.md 파일로 통합합니다.
 기계령의 지시문이 마크다운에 기록됩니다.
 """
 import sys
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
 
 # 프로젝트 루트를 Python 경로에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.models.prompts import SystemPrompt
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.models.prompts import SystemPrompt
 
 
 def create_db_session():
     """데이터베이스 세션 생성"""
     db_path = Path(__file__).parent.parent / "data" / "app.db"
-    engine = create_engine(
-        f"sqlite:///{db_path}",
-        echo=False
-    )
+    engine = create_engine(f"sqlite:///{db_path}", echo=False)
     Session = sessionmaker(bind=engine)
     return Session()
 
@@ -45,12 +42,12 @@ def group_prompts_by_type(session):
     Returns:
         dict: {type: [SystemPrompt, ...]}
     """
-    prompts = session.query(SystemPrompt).filter(
-        SystemPrompt.is_active == True
-    ).order_by(
-        SystemPrompt.type,
-        SystemPrompt.version.desc()
-    ).all()
+    prompts = (
+        session.query(SystemPrompt)
+        .filter(SystemPrompt.is_active == True)
+        .order_by(SystemPrompt.type, SystemPrompt.version.desc())
+        .all()
+    )
 
     grouped = defaultdict(list)
     for prompt in prompts:
@@ -70,15 +67,10 @@ def generate_markdown_content(grouped_prompts):
         str: 마크다운 내용
     """
     content = "# 시스템 프롬프트\n\n"
-    content += (
-        "이 파일은 시스템에서 사용하는 "
-        "프롬프트를 정의합니다.\n\n"
-    )
+    content += "이 파일은 시스템에서 사용하는 " "프롬프트를 정의합니다.\n\n"
     content += "---\n\n"
 
-    for prompt_type, prompts in sorted(
-        grouped_prompts.items()
-    ):
+    for prompt_type, prompts in sorted(grouped_prompts.items()):
         # 타입명을 보기 좋게 변환
         type_title = prompt_type.replace("_", " ").title()
 
@@ -193,20 +185,14 @@ def main():
 
         # 프롬프트 파일 생성
         print("\n3️⃣  마크다운 파일 생성 중...")
-        file_path = create_prompt_file(
-            grouped_prompts,
-            prompt_dir
-        )
+        file_path = create_prompt_file(grouped_prompts, prompt_dir)
         print(f"✅ 파일 생성: {file_path.name}")
 
         # 검증
         print("\n4️⃣  결과 검증 중...")
         if verify_migration(file_path, grouped_prompts):
             print("\n🎉 마이그레이션 성공!")
-            print(
-                "\n옴니시아의 지시문이 "
-                "영원한 마크다운에 새겨졌습니다."
-            )
+            print("\n옴니시아의 지시문이 " "영원한 마크다운에 새겨졌습니다.")
             return 0
         else:
             print("\n❌ 마이그레이션 검증 실패")
@@ -215,6 +201,7 @@ def main():
     except Exception as e:
         print(f"\n❌ 오류 발생: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
     finally:

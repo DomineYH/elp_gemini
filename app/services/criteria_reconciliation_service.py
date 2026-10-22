@@ -3,6 +3,7 @@ Criteria 클라우드 동기화 (v2 — alias_map 기반)
 
 설계: docs/superpowers/specs/2026-05-15-criteria-cloud-metadata-design.md §6
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -153,6 +154,7 @@ class CriteriaReconciliationService:
                         from app.services.criteria_legacy_migration import (  # noqa: F401
                             migrate_from_legacy_manifest,
                         )
+
                         async with _transaction_if_needed(self._db):
                             await migrate_from_legacy_manifest(
                                 client=self._vec.file_search_service.client,
@@ -260,13 +262,15 @@ class CriteriaReconciliationService:
                                 activated_at=entry.activated_at,
                             )
 
-                        await self._state.set_many({
-                            KEY_API_KEY_HASH: current_hash,
-                            KEY_LAST_SYNCED_AT: _now_iso(),
-                            KEY_SYNC_STATE: "ok",
-                            KEY_SYNC_ERROR: None,
-                            KEY_LAST_ALIAS_MAP_UPDATED_AT: alias_map.updated_at,
-                        })
+                        await self._state.set_many(
+                            {
+                                KEY_API_KEY_HASH: current_hash,
+                                KEY_LAST_SYNCED_AT: _now_iso(),
+                                KEY_SYNC_STATE: "ok",
+                                KEY_SYNC_ERROR: None,
+                                KEY_LAST_ALIAS_MAP_UPDATED_AT: alias_map.updated_at,  # noqa: E501
+                            }
+                        )
                     return ReconcileResult(ok=True, count=len(criteria_docs))
 
                 except Exception as e:
@@ -274,12 +278,14 @@ class CriteriaReconciliationService:
                     if swallow_errors and not key_changed:
                         return ReconcileResult(error=str(e))
                     async with _transaction_if_needed(self._db):
-                        await self._state.set_many({
-                            KEY_SYNC_STATE: (
-                                "error" if key_changed else "needs_resync"
-                            ),
-                            KEY_SYNC_ERROR: str(e),
-                        })
+                        await self._state.set_many(
+                            {
+                                KEY_SYNC_STATE: (
+                                    "error" if key_changed else "needs_resync"
+                                ),
+                                KEY_SYNC_ERROR: str(e),
+                            }
+                        )
                     return ReconcileResult(error=str(e))
 
 

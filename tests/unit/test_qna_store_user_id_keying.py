@@ -6,6 +6,7 @@ The QnA service must resolve stores as ``user-{user_id}-store``, not
 These tests exercise the real ``ask_question`` code path to ensure the
 store-lookup call receives the int ``user_id``, not the string ``username``.
 """
+
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -21,9 +22,7 @@ def _mock_db():
     session_result.scalar_one_or_none.return_value = mock_session
     history_result = Mock()
     history_result.scalars.return_value.all.return_value = []
-    db.execute = AsyncMock(
-        side_effect=[session_result, history_result]
-    )
+    db.execute = AsyncMock(side_effect=[session_result, history_result])
     return db
 
 
@@ -31,6 +30,7 @@ def _make_service(db):
     """Create a QnAService with mocked Gemini client and prompt."""
     with patch("app.services.qna_service.genai.Client"):
         from app.services.qna_service import QnAService
+
         svc = QnAService(db=db)
     svc.prompt_loader.get_prompt = Mock(return_value="QnA system prompt")
     mock_resp = Mock()
@@ -72,10 +72,12 @@ class TestQnAStoreUserIdKeying:
                 return_value="fileSearchStores/user42"
             )
 
-            with patch(_COMMON_PATCHES[0], Mock()), \
-                 patch(_COMMON_PATCHES[1], AsyncMock(return_value=(None, None))), \
-                 patch(_COMMON_PATCHES[2], Mock()), \
-                 patch(_COMMON_PATCHES[3]) as MockQA:
+            with (
+                patch(_COMMON_PATCHES[0], Mock()),
+                patch(_COMMON_PATCHES[1], AsyncMock(return_value=(None, None))),
+                patch(_COMMON_PATCHES[2], Mock()),
+                patch(_COMMON_PATCHES[3]) as MockQA,
+            ):
                 MockQA.return_value.analyze_question.return_value = {
                     "question_type": "general",
                     "metadata_filter": None,
@@ -90,9 +92,7 @@ class TestQnAStoreUserIdKeying:
 
             # THE critical assertion
             svc.file_search_service.get_user_store_id.assert_called_once()
-            call_kwargs = (
-                svc.file_search_service.get_user_store_id.call_args
-            )
+            call_kwargs = svc.file_search_service.get_user_store_id.call_args
             assert call_kwargs.kwargs["user_key"] == 42
             assert isinstance(call_kwargs.kwargs["user_key"], int)
             # Sanity
@@ -117,15 +117,17 @@ class TestQnAStoreUserIdKeying:
                 ]
             )
 
-            with patch(_COMMON_PATCHES[0], Mock()), \
-                 patch(_COMMON_PATCHES[1], AsyncMock(return_value=(None, None))), \
-                 patch(_COMMON_PATCHES[2], Mock()), \
-                 patch(_COMMON_PATCHES[3]) as MockQA, \
-                 patch(
-                     "app.services.criteria_vector_service"
-                     ".CriteriaVectorService.active_stable_id_filter",
-                     new=AsyncMock(return_value="some_filter"),
-                 ):
+            with (
+                patch(_COMMON_PATCHES[0], Mock()),
+                patch(_COMMON_PATCHES[1], AsyncMock(return_value=(None, None))),
+                patch(_COMMON_PATCHES[2], Mock()),
+                patch(_COMMON_PATCHES[3]) as MockQA,
+                patch(
+                    "app.services.criteria_vector_service"
+                    ".CriteriaVectorService.active_stable_id_filter",
+                    new=AsyncMock(return_value="some_filter"),
+                ),
+            ):
                 MockQA.return_value.analyze_question.return_value = {
                     "question_type": "evaluation",
                     "metadata_filter": None,
@@ -140,9 +142,7 @@ class TestQnAStoreUserIdKeying:
 
             # THE critical assertion
             svc.file_search_service.get_dual_store_ids.assert_called_once()
-            call_kwargs = (
-                svc.file_search_service.get_dual_store_ids.call_args
-            )
+            call_kwargs = svc.file_search_service.get_dual_store_ids.call_args
             assert call_kwargs.kwargs["user_key"] == 42
             assert isinstance(call_kwargs.kwargs["user_key"], int)
             # Sanity

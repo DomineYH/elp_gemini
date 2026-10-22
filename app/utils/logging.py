@@ -2,6 +2,7 @@
 로깅 구성
 구조화된 로깅 설정 및 로거 생성
 """
+
 import logging
 import sys
 from typing import Any, Dict
@@ -19,17 +20,13 @@ def setup_logging(debug: bool = False) -> None:
     # 루트 로거 설정
     logging.basicConfig(
         level=log_level,
-        format=(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        ),
+        format=("%(asctime)s - %(name)s - %(levelname)s - %(message)s"),
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
 
     # 외부 라이브러리 로그 레벨 조정
-    logging.getLogger("sqlalchemy.engine").setLevel(
-        logging.WARNING
-    )
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 

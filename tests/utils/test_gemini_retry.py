@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 from google.genai import errors as genai_errors
 
 from app.utils.gemini_retry import (
@@ -13,8 +14,13 @@ def _make_429():
     # google-genai ClientError signature: (code, response_json, response)
     return genai_errors.ClientError(
         429,
-        {"error": {"code": 429, "message": "Failed to embed content.",
-                   "status": "RESOURCE_EXHAUSTED"}},
+        {
+            "error": {
+                "code": 429,
+                "message": "Failed to embed content.",
+                "status": "RESOURCE_EXHAUSTED",
+            }
+        },
         MagicMock(),
     )
 
@@ -23,8 +29,13 @@ def _make_503():
     # google-genai ServerError signature: (code, response_json, response)
     return genai_errors.ServerError(
         503,
-        {"error": {"code": 503, "message": "high demand.",
-                   "status": "UNAVAILABLE"}},
+        {
+            "error": {
+                "code": 503,
+                "message": "high demand.",
+                "status": "UNAVAILABLE",
+            }
+        },
         MagicMock(),
     )
 
@@ -78,6 +89,7 @@ def test_retries_on_503_then_succeeds():
 
 def test_raises_gemini_server_overloaded_after_max_attempts():
     """503 재시도 소진 시 GeminiServerOverloaded 로 변환된다 (#120)."""
+
     @retry_on_resource_exhausted(max_attempts=2, initial_wait=0.0)
     def always_503():
         raise _make_503()

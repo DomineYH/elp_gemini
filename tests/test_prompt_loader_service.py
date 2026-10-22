@@ -1,11 +1,13 @@
 """
 PromptLoaderService 단위 테스트
 """
-import os
-import pytest
-import tempfile
+
 import shutil
+import tempfile
 from pathlib import Path
+
+import pytest
+
 from app.services.prompt_loader_service import (
     PromptLoaderService,
 )
@@ -188,9 +190,7 @@ def test_nonexistent_prompt_file(temp_prompt_dir):
     nonexistent_file = Path(temp_prompt_dir) / "nonexistent.md"
 
     # When
-    service = PromptLoaderService(
-        prompt_file=str(nonexistent_file)
-    )
+    service = PromptLoaderService(prompt_file=str(nonexistent_file))
 
     # Then
     assert len(service.list_available_prompts()) == 0
@@ -268,17 +268,13 @@ def test_integration_with_real_file():
         pytest.skip("실제 프롬프트 파일 없음")
 
     # When
-    service = PromptLoaderService(
-        prompt_file=real_prompt_file
-    )
+    service = PromptLoaderService(prompt_file=real_prompt_file)
 
     # Then
     prompts = service.list_available_prompts()
     assert len(prompts) > 0
     # 최소한 하나의 프롬프트는 존재해야 함
-    assert any(
-        service.has_prompt(p) for p in ["qna", "evaluation"]
-    )
+    assert any(service.has_prompt(p) for p in ["qna", "evaluation"])
 
 
 def test_lesson_analysis_prompt_has_no_leaking_instructions():

@@ -216,8 +216,7 @@ async def test_replace_creates_active_without_demoting_others():
     # Existing active stays active
     assert new_alias_map.entries[active_sid].status == "active"
     assert (
-        new_alias_map.entries[active_sid].activated_at
-        == "2026-05-15T00:00:00Z"
+        new_alias_map.entries[active_sid].activated_at == "2026-05-15T00:00:00Z"
     )
 
     # DB insert also active

@@ -1,4 +1,5 @@
 """list_criteria_documents가 custom_metadata를 함께 반환"""
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -30,13 +31,18 @@ async def test_list_returns_documents_with_raw_metadata():
 
     client = MagicMock()
     client.file_search_stores.list.return_value = iter([store])
-    client.file_search_stores.documents.list.return_value = iter([
-        _doc("docs/a", [
-            _meta("type", string_value="criteria"),
-            _meta("stable_id", string_value="01HA"),
-        ]),
-        _doc("docs/b", [_meta("type", string_value="alias_map")]),
-    ])
+    client.file_search_stores.documents.list.return_value = iter(
+        [
+            _doc(
+                "docs/a",
+                [
+                    _meta("type", string_value="criteria"),
+                    _meta("stable_id", string_value="01HA"),
+                ],
+            ),
+            _doc("docs/b", [_meta("type", string_value="alias_map")]),
+        ]
+    )
 
     svc = CriteriaVectorService()
     svc.file_search_service = MagicMock()

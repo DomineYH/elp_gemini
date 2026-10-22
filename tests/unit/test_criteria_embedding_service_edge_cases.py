@@ -2,9 +2,10 @@
 CriteriaEmbeddingService Edge Case 테스트
 빈 파일, 긴 제목, 특수 문자 등 경계 조건 검증
 """
-import pytest
+
 from unittest.mock import MagicMock, patch
 
+import pytest
 from app.services.criteria_embedding_service import (
     CriteriaEmbeddingService,
 )
@@ -14,15 +15,9 @@ from app.services.criteria_embedding_service import (
 class TestCriteriaEmbeddingServiceEdgeCases:
     """Edge Case 테스트"""
 
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
-    async def test_upload_empty_file(
-        self, mock_genai, mock_settings
-    ):
+    @patch("app.services.criteria_embedding_service.settings")
+    @patch("app.services.criteria_embedding_service.genai")
+    async def test_upload_empty_file(self, mock_genai, mock_settings):
         """빈 파일 업로드 처리"""
         # Arrange
         mock_settings.GOOGLE_API_KEY = "test-key"
@@ -36,16 +31,12 @@ class TestCriteriaEmbeddingServiceEdgeCases:
 
         mock_client = MagicMock()
         fss = mock_client.file_search_stores
-        fss.create.return_value = (
-            mock_store
-        )
+        fss.create.return_value = mock_store
 
         # 완료된 operation
         complete_op = MagicMock()
         complete_op.done = True
-        complete_op.response.parent = (
-            "stores/vector-empty-123"
-        )
+        complete_op.response.parent = "stores/vector-empty-123"
 
         upload_mock = fss.upload_to_file_search_store
         upload_mock.return_value = complete_op
@@ -65,15 +56,9 @@ class TestCriteriaEmbeddingServiceEdgeCases:
         assert result == "stores/vector-empty-123"
         upload_mock.assert_called_once()
 
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
-    async def test_upload_very_long_title(
-        self, mock_genai, mock_settings
-    ):
+    @patch("app.services.criteria_embedding_service.settings")
+    @patch("app.services.criteria_embedding_service.genai")
+    async def test_upload_very_long_title(self, mock_genai, mock_settings):
         """매우 긴 제목 (1000자) 처리"""
         # Arrange
         mock_settings.GOOGLE_API_KEY = "test-key"
@@ -87,16 +72,12 @@ class TestCriteriaEmbeddingServiceEdgeCases:
 
         mock_client = MagicMock()
         fss = mock_client.file_search_stores
-        fss.create.return_value = (
-            mock_store
-        )
+        fss.create.return_value = mock_store
 
         # 완료된 operation
         complete_op = MagicMock()
         complete_op.done = True
-        complete_op.response.parent = (
-            "stores/vector-long-123"
-        )
+        complete_op.response.parent = "stores/vector-long-123"
 
         upload_mock = fss.upload_to_file_search_store
         upload_mock.return_value = complete_op
@@ -117,12 +98,8 @@ class TestCriteriaEmbeddingServiceEdgeCases:
         assert result == "stores/vector-long-123"
         upload_mock.assert_called_once()
 
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
+    @patch("app.services.criteria_embedding_service.settings")
+    @patch("app.services.criteria_embedding_service.genai")
     async def test_upload_special_characters_in_title(
         self, mock_genai, mock_settings
     ):
@@ -139,16 +116,12 @@ class TestCriteriaEmbeddingServiceEdgeCases:
 
         mock_client = MagicMock()
         fss = mock_client.file_search_stores
-        fss.create.return_value = (
-            mock_store
-        )
+        fss.create.return_value = mock_store
 
         # 완료된 operation
         complete_op = MagicMock()
         complete_op.done = True
-        complete_op.response.parent = (
-            "stores/vector-special-123"
-        )
+        complete_op.response.parent = "stores/vector-special-123"
 
         upload_mock = fss.upload_to_file_search_store
         upload_mock.return_value = complete_op
@@ -159,9 +132,7 @@ class TestCriteriaEmbeddingServiceEdgeCases:
         service.client = mock_client
 
         # Act - 특수 문자: 한글, 이모지, 기호
-        special_title = (
-            "테스트 📄 문서!@#$%^&*()_+-=[]{}|;':\",./<>?"
-        )
+        special_title = "테스트 📄 문서!@#$%^&*()_+-=[]{}|;':\",./<>?"
         result = await service.upload_and_embed(
             file_path="test.pdf",
             title=special_title,
@@ -171,15 +142,9 @@ class TestCriteriaEmbeddingServiceEdgeCases:
         assert result == "stores/vector-special-123"
         upload_mock.assert_called_once()
 
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
-    async def test_upload_with_metadata_dict(
-        self, mock_genai, mock_settings
-    ):
+    @patch("app.services.criteria_embedding_service.settings")
+    @patch("app.services.criteria_embedding_service.genai")
+    async def test_upload_with_metadata_dict(self, mock_genai, mock_settings):
         """메타데이터 Dict 포함 업로드 처리"""
         # Arrange
         mock_settings.GOOGLE_API_KEY = "test-key"
@@ -193,16 +158,12 @@ class TestCriteriaEmbeddingServiceEdgeCases:
 
         mock_client = MagicMock()
         fss = mock_client.file_search_stores
-        fss.create.return_value = (
-            mock_store
-        )
+        fss.create.return_value = mock_store
 
         # 완료된 operation
         complete_op = MagicMock()
         complete_op.done = True
-        complete_op.response.parent = (
-            "stores/vector-metadata-123"
-        )
+        complete_op.response.parent = "stores/vector-metadata-123"
 
         upload_mock = fss.upload_to_file_search_store
         upload_mock.return_value = complete_op
@@ -228,15 +189,9 @@ class TestCriteriaEmbeddingServiceEdgeCases:
         assert result == "stores/vector-metadata-123"
         upload_mock.assert_called_once()
 
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
-    async def test_upload_with_unicode_title(
-        self, mock_genai, mock_settings
-    ):
+    @patch("app.services.criteria_embedding_service.settings")
+    @patch("app.services.criteria_embedding_service.genai")
+    async def test_upload_with_unicode_title(self, mock_genai, mock_settings):
         """유니코드 제목 (다양한 언어) 처리"""
         # Arrange
         mock_settings.GOOGLE_API_KEY = "test-key"
@@ -250,16 +205,12 @@ class TestCriteriaEmbeddingServiceEdgeCases:
 
         mock_client = MagicMock()
         fss = mock_client.file_search_stores
-        fss.create.return_value = (
-            mock_store
-        )
+        fss.create.return_value = mock_store
 
         # 완료된 operation
         complete_op = MagicMock()
         complete_op.done = True
-        complete_op.response.parent = (
-            "stores/vector-unicode-123"
-        )
+        complete_op.response.parent = "stores/vector-unicode-123"
 
         upload_mock = fss.upload_to_file_search_store
         upload_mock.return_value = complete_op

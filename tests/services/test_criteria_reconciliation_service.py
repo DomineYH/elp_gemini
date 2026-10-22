@@ -1,4 +1,5 @@
 """Unit tests for criteria_reconciliation_service helpers."""
+
 from app.schemas.alias_map import AliasMapEntry
 from app.services.criteria_reconciliation_service import (
     _normalize_active_entries,

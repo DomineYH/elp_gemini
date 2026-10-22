@@ -2,6 +2,7 @@
 인증 라우터
 로그인, 로그아웃, 현재 사용자 정보 엔드포인트
 """
+
 import asyncio
 import logging
 import secrets
@@ -51,9 +52,7 @@ async def _equalize_admin_failure_response(started_at: float) -> None:
         await asyncio.sleep(remaining)
 
 
-INVALID_USER_CREDENTIALS_MESSAGE = (
-    "아이디 또는 비밀번호가 올바르지 않습니다."
-)
+INVALID_USER_CREDENTIALS_MESSAGE = "아이디 또는 비밀번호가 올바르지 않습니다."
 
 
 def _register_context(
@@ -230,9 +229,7 @@ async def login_user(
             f"사용자 로그인 성공: user_id={user.id}, id={normalized_id}"
         )
 
-        return RedirectResponse(
-            url="/", status_code=status.HTTP_302_FOUND
-        )
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
 
     except Exception as e:
         log_auth_event(
@@ -299,13 +296,9 @@ async def register_user(
             username=user.username,
             success=True,
         )
-        logger.info(
-            f"사용자 등록 성공: user_id={user.id}, id={user.username}"
-        )
+        logger.info(f"사용자 등록 성공: user_id={user.id}, id={user.username}")
 
-        return RedirectResponse(
-            url="/", status_code=status.HTTP_302_FOUND
-        )
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
 
     except ValueError as exc:
         # 중복 아이디 등 도메인 검증 실패
@@ -317,9 +310,7 @@ async def register_user(
             success=False,
             reason=str(exc),
         )
-        logger.error(
-            f"사용자 등록 처리 중 오류: {str(exc)}", exc_info=True
-        )
+        logger.error(f"사용자 등록 처리 중 오류: {str(exc)}", exc_info=True)
         return render_error(
             "등록 처리 중 오류가 발생했습니다. 다시 시도해주세요.",
             status_code=500,
@@ -415,9 +406,7 @@ async def login_admin(
 
     try:
         auth_service = AuthService(db)
-        result = await auth_service.authenticate_admin(
-            admin_id, password
-        )
+        result = await auth_service.authenticate_admin(admin_id, password)
 
         # 외부 응답 통일 (issue #6) — locked / invalid 모두 동일한 401 + 메시지
         if result.locked or not result.user:
@@ -466,8 +455,7 @@ async def login_admin(
             success=True,
         )
         logger.info(
-            f"관리자 로그인 성공: "
-            f"user_id={user.id}, admin_id={admin_id}"
+            f"관리자 로그인 성공: " f"user_id={user.id}, admin_id={admin_id}"
         )
 
         return RedirectResponse(
@@ -481,9 +469,7 @@ async def login_admin(
             success=False,
             reason=str(e),
         )
-        logger.error(
-            f"관리자 로그인 처리 중 오류: {str(e)}", exc_info=True
-        )
+        logger.error(f"관리자 로그인 처리 중 오류: {str(e)}", exc_info=True)
         return templates.TemplateResponse(
             "user/login_admin.html",
             _admin_login_context(
@@ -558,6 +544,7 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
         # Vector Store 정리
         try:
             from app.services.file_search_service import FileSearchService
+
             file_search_service = FileSearchService()
             store_name = f"user-{user_id}-store"
             await file_search_service.delete_store_by_display_name(store_name)
@@ -572,9 +559,7 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
 
     request.session.clear()
 
-    return RedirectResponse(
-        url="/login", status_code=status.HTTP_302_FOUND
-    )
+    return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
 
 
 # T026: GET /auth/me - 현재 사용자 정보

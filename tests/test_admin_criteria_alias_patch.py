@@ -1,4 +1,5 @@
 """PATCH /admin/criteria/{stable_id}/alias"""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -25,6 +26,7 @@ def test_patch_alias_updates_alias_map_and_db():
 def test_patch_alias_route_is_registered():
     """Verify the new PATCH route is wired into the FastAPI router."""
     from app.routers.admin.criteria import router
+
     paths = [r.path for r in router.routes if hasattr(r, "path")]
     assert "/api/admin/criteria/{stable_id}/alias" in paths
 
@@ -62,27 +64,29 @@ async def test_patch_alias_replace_failure_marks_resync():
     db = AsyncMock()
     stable_id = "01HALIAS"
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.AppStateRepository"
-    ) as state_cls:
+    with (
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as state_cls,
+    ):
         vector_cls.return_value.file_search_service.client = MagicMock()
         alias = alias_cls.return_value
-        alias.fetch = AsyncMock(return_value=(
-            "docs/alias-map",
-            AliasMap(
-                schema_version=1,
-                updated_at="2026-05-15T00:00:00Z",
-                entries={
-                    stable_id: AliasMapEntry(
-                        alias=None, status="uploaded", activated_at=None
-                    ),
-                },
-            ),
-        ))
+        alias.fetch = AsyncMock(
+            return_value=(
+                "docs/alias-map",
+                AliasMap(
+                    schema_version=1,
+                    updated_at="2026-05-15T00:00:00Z",
+                    entries={
+                        stable_id: AliasMapEntry(
+                            alias=None, status="uploaded", activated_at=None
+                        ),
+                    },
+                ),
+            )
+        )
         alias.replace = AsyncMock(
             side_effect=RuntimeError("alias publish failed")
         )
@@ -108,13 +112,13 @@ async def test_patch_alias_replace_failure_marks_resync():
 async def test_patch_alias_corrupted_alias_map_marks_resync_without_replace():
     db = AsyncMock()
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.AppStateRepository"
-    ) as state_cls:
+    with (
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as state_cls,
+    ):
         vector_cls.return_value.file_search_service.client = MagicMock()
         alias = alias_cls.return_value
         alias.fetch = AsyncMock(
@@ -145,13 +149,13 @@ async def test_patch_alias_corrupted_alias_map_marks_resync_without_replace():
 async def test_patch_alias_missing_alias_map_marks_resync_without_replace():
     db = AsyncMock()
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.AppStateRepository"
-    ) as state_cls:
+    with (
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as state_cls,
+    ):
         vector_cls.return_value.file_search_service.client = MagicMock()
         alias = alias_cls.return_value
         alias.fetch = AsyncMock(return_value=None)
@@ -180,29 +184,30 @@ async def test_patch_alias_db_commit_failure_after_replace_marks_resync():
     db.commit = AsyncMock(side_effect=[RuntimeError("commit failed"), None])
     stable_id = "01HALIAS"
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.CriteriaRepository"
-    ) as repo_cls, patch(
-        "app.routers.admin.criteria.AppStateRepository"
-    ) as state_cls:
+    with (
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as state_cls,
+    ):
         vector_cls.return_value.file_search_service.client = MagicMock()
         alias = alias_cls.return_value
-        alias.fetch = AsyncMock(return_value=(
-            "docs/alias-map",
-            AliasMap(
-                schema_version=1,
-                updated_at="2026-05-15T00:00:00Z",
-                entries={
-                    stable_id: AliasMapEntry(
-                        alias=None, status="uploaded", activated_at=None
-                    ),
-                },
-            ),
-        ))
+        alias.fetch = AsyncMock(
+            return_value=(
+                "docs/alias-map",
+                AliasMap(
+                    schema_version=1,
+                    updated_at="2026-05-15T00:00:00Z",
+                    entries={
+                        stable_id: AliasMapEntry(
+                            alias=None, status="uploaded", activated_at=None
+                        ),
+                    },
+                ),
+            )
+        )
         alias.replace = AsyncMock(return_value="docs/alias-map-new")
 
         repo_cls.return_value.get_criteria_by_stable_id = AsyncMock(

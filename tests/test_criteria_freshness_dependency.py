@@ -1,4 +1,5 @@
 """Tests for Issue #80 — list-call triggered freshness dependency."""
+
 import asyncio
 from contextlib import suppress
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -10,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 def test_settings_has_list_reconcile_ttl():
     from app.config import settings
+
     assert isinstance(settings.CRITERIA_LIST_RECONCILE_TTL_SECONDS, int)
     assert settings.CRITERIA_LIST_RECONCILE_TTL_SECONDS >= 0
 
@@ -38,18 +40,20 @@ def _make_successful_reconcile_services():
 
     fake_vec = MagicMock()
     fake_vec.file_search_service.client = fake_client
-    fake_vec.list_criteria_documents = AsyncMock(return_value=[
-        {
-            "document_id": "docs/abc",
-            "display_name": "abc.pdf",
-            "custom_metadata_kv": {
-                "type": ("criteria", []),
-                "stable_id": ("abc", []),
-                "original_title_b64": ("YWJjLnBkZg==", []),
-                "created_at": ("2026-05-15T00:00:00Z", []),
-            },
-        }
-    ])
+    fake_vec.list_criteria_documents = AsyncMock(
+        return_value=[
+            {
+                "document_id": "docs/abc",
+                "display_name": "abc.pdf",
+                "custom_metadata_kv": {
+                    "type": ("criteria", []),
+                    "stable_id": ("abc", []),
+                    "original_title_b64": ("YWJjLnBkZg==", []),
+                    "created_at": ("2026-05-15T00:00:00Z", []),
+                },
+            }
+        ]
+    )
 
     fake_alias = MagicMock()
     fake_alias.fetch = AsyncMock(return_value=None)
@@ -64,17 +68,11 @@ async def test_freshness_dependency_calls_reconcile_when_ttl_expired(
     from app.services import criteria_freshness as cf
 
     cf._reset_throttle_for_test()
-    monkeypatch.setattr(
-        cf.settings, "CRITERIA_CLOUD_RECONCILE_ENABLED", True
-    )
-    monkeypatch.setattr(
-        cf.settings, "CRITERIA_LIST_RECONCILE_TTL_SECONDS", 0
-    )
+    monkeypatch.setattr(cf.settings, "CRITERIA_CLOUD_RECONCILE_ENABLED", True)
+    monkeypatch.setattr(cf.settings, "CRITERIA_LIST_RECONCILE_TTL_SECONDS", 0)
 
     db = object()
-    with patch.object(
-        cf, "_run_reconcile_once", new=AsyncMock()
-    ) as run:
+    with patch.object(cf, "_run_reconcile_once", new=AsyncMock()) as run:
         await cf.ensure_criteria_cache_fresh(db=db)
         await cf.ensure_criteria_cache_fresh(db=db)
     assert run.await_count == 2
@@ -86,17 +84,11 @@ async def test_freshness_dependency_throttles_within_ttl(monkeypatch):
     from app.services import criteria_freshness as cf
 
     cf._reset_throttle_for_test()
-    monkeypatch.setattr(
-        cf.settings, "CRITERIA_CLOUD_RECONCILE_ENABLED", True
-    )
-    monkeypatch.setattr(
-        cf.settings, "CRITERIA_LIST_RECONCILE_TTL_SECONDS", 60
-    )
+    monkeypatch.setattr(cf.settings, "CRITERIA_CLOUD_RECONCILE_ENABLED", True)
+    monkeypatch.setattr(cf.settings, "CRITERIA_LIST_RECONCILE_TTL_SECONDS", 60)
 
     db = object()
-    with patch.object(
-        cf, "_run_reconcile_once", new=AsyncMock()
-    ) as run:
+    with patch.object(cf, "_run_reconcile_once", new=AsyncMock()) as run:
         await cf.ensure_criteria_cache_fresh(db=db)
         await cf.ensure_criteria_cache_fresh(db=db)
         await cf.ensure_criteria_cache_fresh(db=db)
@@ -109,16 +101,10 @@ async def test_freshness_dependency_noop_when_reconcile_disabled(monkeypatch):
     from app.services import criteria_freshness as cf
 
     cf._reset_throttle_for_test()
-    monkeypatch.setattr(
-        cf.settings, "CRITERIA_CLOUD_RECONCILE_ENABLED", False
-    )
-    monkeypatch.setattr(
-        cf.settings, "CRITERIA_LIST_RECONCILE_TTL_SECONDS", 0
-    )
+    monkeypatch.setattr(cf.settings, "CRITERIA_CLOUD_RECONCILE_ENABLED", False)
+    monkeypatch.setattr(cf.settings, "CRITERIA_LIST_RECONCILE_TTL_SECONDS", 0)
 
-    with patch.object(
-        cf, "_run_reconcile_once", new=AsyncMock()
-    ) as run:
+    with patch.object(cf, "_run_reconcile_once", new=AsyncMock()) as run:
         await cf.ensure_criteria_cache_fresh(db=object())
     run.assert_not_awaited()
 
@@ -128,12 +114,8 @@ async def test_freshness_dependency_swallows_exceptions(monkeypatch):
     from app.services import criteria_freshness as cf
 
     cf._reset_throttle_for_test()
-    monkeypatch.setattr(
-        cf.settings, "CRITERIA_CLOUD_RECONCILE_ENABLED", True
-    )
-    monkeypatch.setattr(
-        cf.settings, "CRITERIA_LIST_RECONCILE_TTL_SECONDS", 0
-    )
+    monkeypatch.setattr(cf.settings, "CRITERIA_CLOUD_RECONCILE_ENABLED", True)
+    monkeypatch.setattr(cf.settings, "CRITERIA_LIST_RECONCILE_TTL_SECONDS", 0)
 
     async def boom(_db):
         raise RuntimeError("cloud 503")

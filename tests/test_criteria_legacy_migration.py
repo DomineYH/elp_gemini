@@ -1,4 +1,5 @@
 """legacy migration: manifest → alias_map + metadata-store 삭제"""
+
 import hashlib
 import logging
 from types import SimpleNamespace
@@ -28,14 +29,16 @@ async def _reconcile_with_cloud_docs(docs, alias_entries=None):
     fake_vec.list_criteria_documents = AsyncMock(return_value=docs)
 
     fake_alias = MagicMock()
-    fake_alias.fetch = AsyncMock(return_value=(
-        "docs/alias-map",
-        AliasMap(
-            schema_version=1,
-            updated_at="2026-05-15T00:00:00Z",
-            entries=alias_entries or {},
-        ),
-    ))
+    fake_alias.fetch = AsyncMock(
+        return_value=(
+            "docs/alias-map",
+            AliasMap(
+                schema_version=1,
+                updated_at="2026-05-15T00:00:00Z",
+                entries=alias_entries or {},
+            ),
+        )
+    )
     fake_alias.replace = AsyncMock()
 
     inserted = []
@@ -83,7 +86,9 @@ async def _reconcile_with_cloud_docs(docs, alias_entries=None):
 
 @pytest.mark.asyncio
 async def test_no_op_when_migration_marker_set():
-    from app.services.criteria_legacy_migration import migrate_from_legacy_manifest
+    from app.services.criteria_legacy_migration import (
+        migrate_from_legacy_manifest,
+    )
 
     state = MagicMock()
     state.get = AsyncMock(return_value="true")  # marker present
@@ -97,7 +102,9 @@ async def test_no_op_when_migration_marker_set():
 
 @pytest.mark.asyncio
 async def test_no_op_when_legacy_store_absent():
-    from app.services.criteria_legacy_migration import migrate_from_legacy_manifest
+    from app.services.criteria_legacy_migration import (
+        migrate_from_legacy_manifest,
+    )
 
     state = MagicMock()
     state.get = AsyncMock(return_value=None)
@@ -116,7 +123,9 @@ async def test_no_op_when_legacy_store_absent():
 
 @pytest.mark.asyncio
 async def test_deletes_legacy_store_and_sets_marker():
-    from app.services.criteria_legacy_migration import migrate_from_legacy_manifest
+    from app.services.criteria_legacy_migration import (
+        migrate_from_legacy_manifest,
+    )
 
     state = MagicMock()
     state.get = AsyncMock(return_value=None)
@@ -130,7 +139,9 @@ async def test_deletes_legacy_store_and_sets_marker():
     rubric_store.display_name = "rubric-store"
 
     client = MagicMock()
-    client.file_search_stores.list.return_value = iter([rubric_store, legacy_store])
+    client.file_search_stores.list.return_value = iter(
+        [rubric_store, legacy_store]
+    )
     client.file_search_stores.delete = MagicMock()
 
     await migrate_from_legacy_manifest(client=client, app_state=state)
@@ -157,16 +168,24 @@ async def test_reconcile_uses_legacy_surrogates_for_legacy_docs_without_stable_i
         "legacy_" + hashlib.sha1(doc_id.encode("utf-8")).hexdigest()[:16]
         for doc_id in doc_ids
     ]
-    outcome = await _reconcile_with_cloud_docs([
-        _doc_kv(doc_ids[0], [
-            ("type", "criteria"),
-            ("original_title_b64", "Zmlyc3Q="),
-        ]),
-        _doc_kv(doc_ids[1], [
-            ("type", "criteria"),
-            ("original_title_b64", "c2Vjb25k"),
-        ]),
-    ])
+    outcome = await _reconcile_with_cloud_docs(
+        [
+            _doc_kv(
+                doc_ids[0],
+                [
+                    ("type", "criteria"),
+                    ("original_title_b64", "Zmlyc3Q="),
+                ],
+            ),
+            _doc_kv(
+                doc_ids[1],
+                [
+                    ("type", "criteria"),
+                    ("original_title_b64", "c2Vjb25k"),
+                ],
+            ),
+        ]
+    )
 
     assert outcome.result.ok is True
     outcome.alias.replace.assert_called_once()
@@ -193,10 +212,13 @@ async def test_reconcile_preserves_mixed_stable_and_surrogate_documents():
     )
     outcome = await _reconcile_with_cloud_docs(
         [
-            _doc_kv("fileSearchStores/s/documents/modern", [
-                ("type", "criteria"),
-                ("stable_id", stable_id),
-            ]),
+            _doc_kv(
+                "fileSearchStores/s/documents/modern",
+                [
+                    ("type", "criteria"),
+                    ("stable_id", stable_id),
+                ],
+            ),
             _doc_kv(legacy_document_id, [("type", "criteria")]),
         ],
         alias_entries={
@@ -235,16 +257,24 @@ async def test_reconcile_fresh_install_stable_id_documents_do_not_use_surrogates
         "fileSearchStores/s/documents/modern-b",
     ]
     stable_ids = ["01HAAA", "01HBBB"]
-    outcome = await _reconcile_with_cloud_docs([
-        _doc_kv(doc_ids[0], [
-            ("type", "criteria"),
-            ("stable_id", stable_ids[0]),
-        ]),
-        _doc_kv(doc_ids[1], [
-            ("type", "criteria"),
-            ("stable_id", stable_ids[1]),
-        ]),
-    ])
+    outcome = await _reconcile_with_cloud_docs(
+        [
+            _doc_kv(
+                doc_ids[0],
+                [
+                    ("type", "criteria"),
+                    ("stable_id", stable_ids[0]),
+                ],
+            ),
+            _doc_kv(
+                doc_ids[1],
+                [
+                    ("type", "criteria"),
+                    ("stable_id", stable_ids[1]),
+                ],
+            ),
+        ]
+    )
 
     assert outcome.result.ok is True
     healed_map = outcome.alias.replace.call_args.args[0]

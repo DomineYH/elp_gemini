@@ -2,16 +2,18 @@
 의존성 주입 설정
 FastAPI 의존성 함수 모음
 """
+
 import logging
-from fastapi import Depends, HTTPException, status, Request
+
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.models.users import User
 from app.repositories.app_state_repository import (
-    AppStateRepository,
     KEY_SYNC_STATE,
     SYNC_STATE_OK,
+    AppStateRepository,
 )
 from app.services.auth_service import AuthService
 from app.utils.logging import log_auth_event

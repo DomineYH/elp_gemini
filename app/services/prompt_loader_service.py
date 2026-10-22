@@ -2,11 +2,12 @@
 프롬프트 로더 서비스
 prompt/prompt.md 파일에서 프롬프트 로드 및 캐싱
 """
+
 import logging
 import os
 import re
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -29,23 +30,17 @@ class PromptLoaderService:
         """프롬프트 파일 로드 및 캐싱"""
         try:
             if not self.prompt_file.exists():
-                logger.warning(
-                    f"프롬프트 파일 없음: {self.prompt_file}"
-                )
+                logger.warning(f"프롬프트 파일 없음: {self.prompt_file}")
                 return
 
-            with open(
-                self.prompt_file, "r", encoding="utf-8"
-            ) as f:
+            with open(self.prompt_file, "r", encoding="utf-8") as f:
                 content = f.read()
 
             # 프롬프트 타입별로 추출
             prompts = self._extract_prompt(content)
             self._cache = prompts
 
-            logger.info(
-                f"프롬프트 로드 완료: {len(self._cache)}개"
-            )
+            logger.info(f"프롬프트 로드 완료: {len(self._cache)}개")
         except Exception as e:
             logger.error(f"프롬프트 로드 실패: {str(e)}")
             raise
@@ -104,14 +99,10 @@ class PromptLoaderService:
             프롬프트 내용
         """
         if prompt_type in self._cache:
-            logger.debug(
-                f"프롬프트 조회 (캐시): {prompt_type}"
-            )
+            logger.debug(f"프롬프트 조회 (캐시): {prompt_type}")
             return self._cache[prompt_type]
 
-        logger.warning(
-            f"프롬프트 타입 없음: {prompt_type}"
-        )
+        logger.warning(f"프롬프트 타입 없음: {prompt_type}")
         return default if default is not None else ""
 
     def reload_cache(self) -> None:
@@ -150,9 +141,7 @@ class PromptLoaderService:
             - total_prompts: 전체 프롬프트 개수
             - total_chars: 전체 문자 수
         """
-        total_chars = sum(
-            len(content) for content in self._cache.values()
-        )
+        total_chars = sum(len(content) for content in self._cache.values())
 
         return {
             "total_prompts": len(self._cache),
@@ -179,25 +168,15 @@ class PromptLoaderService:
 
         output = "\n".join(lines) + "\n"
 
-        self.prompt_file.parent.mkdir(
-            parents=True, exist_ok=True
-        )
+        self.prompt_file.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = self.prompt_file.with_suffix(".tmp")
-        with open(
-            tmp_path, "w", encoding="utf-8"
-        ) as f:
+        with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(output)
-        os.replace(
-            str(tmp_path), str(self.prompt_file)
-        )
+        os.replace(str(tmp_path), str(self.prompt_file))
 
-        logger.info(
-            f"프롬프트 저장 완료: {len(self._cache)}개"
-        )
+        logger.info(f"프롬프트 저장 완료: {len(self._cache)}개")
 
-    def create_prompt(
-        self, prompt_type: str, content: str
-    ) -> None:
+    def create_prompt(self, prompt_type: str, content: str) -> None:
         """
         새 프롬프트 생성
 
@@ -209,9 +188,7 @@ class PromptLoaderService:
             ValueError: 이미 존재하는 타입인 경우
         """
         if prompt_type in self._cache:
-            raise ValueError(
-                f"이미 존재하는 프롬프트: {prompt_type}"
-            )
+            raise ValueError(f"이미 존재하는 프롬프트: {prompt_type}")
 
         old_cache = dict(self._cache)
         self._cache[prompt_type] = content
@@ -222,9 +199,7 @@ class PromptLoaderService:
             raise
         logger.info(f"프롬프트 생성: {prompt_type}")
 
-    def update_prompt(
-        self, prompt_type: str, content: str
-    ) -> None:
+    def update_prompt(self, prompt_type: str, content: str) -> None:
         """
         기존 프롬프트 수정
 
@@ -236,9 +211,7 @@ class PromptLoaderService:
             ValueError: 존재하지 않는 타입인 경우
         """
         if prompt_type not in self._cache:
-            raise ValueError(
-                f"존재하지 않는 프롬프트: {prompt_type}"
-            )
+            raise ValueError(f"존재하지 않는 프롬프트: {prompt_type}")
 
         old_cache = dict(self._cache)
         self._cache[prompt_type] = content
@@ -260,9 +233,7 @@ class PromptLoaderService:
             ValueError: 존재하지 않는 타입인 경우
         """
         if prompt_type not in self._cache:
-            raise ValueError(
-                f"존재하지 않는 프롬프트: {prompt_type}"
-            )
+            raise ValueError(f"존재하지 않는 프롬프트: {prompt_type}")
 
         old_cache = dict(self._cache)
         del self._cache[prompt_type]

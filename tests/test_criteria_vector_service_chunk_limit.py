@@ -1,4 +1,5 @@
 """criteria_vector_service._string_list_metadata chunk limit tests."""
+
 from app.services.criteria_vector_service import _string_list_metadata
 
 

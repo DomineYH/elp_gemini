@@ -1,7 +1,9 @@
 """QnA citation에 alias가 반영되는지 검증"""
-import pytest
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.models.criteria import Criteria
 from app.services.criteria_context_service import CriteriaContextService
@@ -49,11 +51,13 @@ async def test_citation_uses_alias_when_set(db_session):
     await db_session.commit()
 
     service = CriteriaContextService(db=db_session)
-    fake_search = AsyncMock(return_value={
-        "response_text": "answer",
-        "citations": [{"title": "lesson-criteria.pdf", "uri": "..."}],
-        "sources_count": 1,
-    })
+    fake_search = AsyncMock(
+        return_value={
+            "response_text": "answer",
+            "citations": [{"title": "lesson-criteria.pdf", "uri": "..."}],
+            "sources_count": 1,
+        }
+    )
     with patch.object(service.vector_service, "search_criteria", fake_search):
         result = await service.get_context("question")
 
@@ -75,11 +79,13 @@ async def test_citation_falls_back_when_alias_null(db_session):
     await db_session.commit()
 
     service = CriteriaContextService(db=db_session)
-    fake_search = AsyncMock(return_value={
-        "response_text": "answer",
-        "citations": [{"title": "raw-title.pdf"}],
-        "sources_count": 1,
-    })
+    fake_search = AsyncMock(
+        return_value={
+            "response_text": "answer",
+            "citations": [{"title": "raw-title.pdf"}],
+            "sources_count": 1,
+        }
+    )
     with patch.object(service.vector_service, "search_criteria", fake_search):
         result = await service.get_context("question")
 

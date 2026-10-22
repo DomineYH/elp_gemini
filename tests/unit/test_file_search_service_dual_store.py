@@ -2,10 +2,13 @@
 FileSearchService - get_dual_store_ids() 메서드 테스트
 Phase 1에서 추가된 공통 유틸리티 메서드 검증
 """
-import pytest
+
 from unittest.mock import Mock, patch
-from app.services.file_search_service import FileSearchService
+
+import pytest
+
 from app.config import settings
+from app.services.file_search_service import FileSearchService
 
 
 class TestGetDualStoreIds:
@@ -18,8 +21,8 @@ class TestGetDualStoreIds:
         """
         rubricstore + 사용자 스토어 조회 성공
         """
-        with patch.object(settings, 'GOOGLE_API_KEY', 'test-key'):
-            with patch('app.services.file_search_service.genai.Client'):
+        with patch.object(settings, "GOOGLE_API_KEY", "test-key"):
+            with patch("app.services.file_search_service.genai.Client"):
                 service = FileSearchService()
 
                 # Mock stores
@@ -47,8 +50,8 @@ class TestGetDualStoreIds:
         """
         rubricstore 없을 시 ValueError 발생
         """
-        with patch.object(settings, 'GOOGLE_API_KEY', 'test-key'):
-            with patch('app.services.file_search_service.genai.Client'):
+        with patch.object(settings, "GOOGLE_API_KEY", "test-key"):
+            with patch("app.services.file_search_service.genai.Client"):
                 service = FileSearchService()
 
                 # rubricstore 없음
@@ -70,8 +73,8 @@ class TestGetDualStoreIds:
         """
         사용자 스토어 없을 시 자동 생성
         """
-        with patch.object(settings, 'GOOGLE_API_KEY', 'test-key'):
-            with patch('app.services.file_search_service.genai.Client'):
+        with patch.object(settings, "GOOGLE_API_KEY", "test-key"):
+            with patch("app.services.file_search_service.genai.Client"):
                 service = FileSearchService()
 
                 # rubricstore만 있음
@@ -86,9 +89,7 @@ class TestGetDualStoreIds:
                 # 사용자 스토어 생성 Mock
                 mock_created = Mock()
                 mock_created.name = "fileSearchStores/user999"
-                service._get_or_create_store = Mock(
-                    return_value=mock_created
-                )
+                service._get_or_create_store = Mock(return_value=mock_created)
 
                 # When
                 result = service.get_dual_store_ids(user_key=999)
@@ -103,8 +104,8 @@ class TestGetDualStoreIds:
         """
         60초 이내 재호출 시 캐시 사용
         """
-        with patch.object(settings, 'GOOGLE_API_KEY', 'test-key'):
-            with patch('app.services.file_search_service.genai.Client'):
+        with patch.object(settings, "GOOGLE_API_KEY", "test-key"):
+            with patch("app.services.file_search_service.genai.Client"):
                 service = FileSearchService()
 
                 # Mock stores
@@ -140,8 +141,8 @@ class TestGetDualStoreIds:
         """
         delete_store_by_display_name() force=True 사용 확인
         """
-        with patch.object(settings, 'GOOGLE_API_KEY', 'test-key'):
-            with patch('app.services.file_search_service.genai.Client'):
+        with patch.object(settings, "GOOGLE_API_KEY", "test-key"):
+            with patch("app.services.file_search_service.genai.Client"):
                 service = FileSearchService()
 
                 # Mock store
@@ -158,8 +159,6 @@ class TestGetDualStoreIds:
                 await service.delete_store_by_display_name("test-store")
 
                 # Then
-                service.client.file_search_stores.delete \
-                    .assert_called_once_with(
-                        name=mock_store.name,
-                        config={'force': True}
-                    )
+                service.client.file_search_stores.delete.assert_called_once_with(
+                    name=mock_store.name, config={"force": True}
+                )

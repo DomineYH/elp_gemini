@@ -2,24 +2,25 @@
 공통 테스트 픽스처 및 헬퍼 함수
 단위 테스트와 통합 테스트에서 공통으로 사용
 """
+
 import os
-import pytest
-import pytest_asyncio
-from unittest.mock import MagicMock, patch
-from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import (
-    create_async_engine,
-    AsyncSession,
-    async_sessionmaker
-)
-from sqlalchemy.pool import StaticPool
 import tempfile
 from io import BytesIO
+from unittest.mock import MagicMock, patch
 
-from app.main import app
+import pytest
+import pytest_asyncio
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import StaticPool
+
 from app.db import Base, get_db
+from app.main import app
 from app.models.users import User
-
 
 # ===== 단위 테스트 공통 픽스처 =====
 
@@ -27,9 +28,7 @@ from app.models.users import User
 @pytest.fixture
 def mock_settings():
     """Mock Settings (단위 테스트용)"""
-    with patch(
-        "app.services.criteria_embedding_service.settings"
-    ) as mock:
+    with patch("app.services.criteria_embedding_service.settings") as mock:
         mock.GOOGLE_API_KEY = "test-key"
         mock.FS_CHUNKING_MAX_TOKENS = 1000
         mock.FS_CHUNKING_OVERLAP_TOKENS = 100
@@ -41,9 +40,7 @@ def mock_settings():
 @pytest.fixture
 def mock_genai():
     """Mock Google Genai (단위 테스트용)"""
-    with patch(
-        "app.services.criteria_embedding_service.genai"
-    ) as mock:
+    with patch("app.services.criteria_embedding_service.genai") as mock:
         yield mock
 
 
@@ -51,8 +48,8 @@ def mock_genai():
 def mock_genai_client():
     """Mock Google Genai Client (단위 테스트용)"""
     client = MagicMock()
-    client.file_search_stores.create.return_value = (
-        MagicMock(name="stores/test-store-123")
+    client.file_search_stores.create.return_value = MagicMock(
+        name="stores/test-store-123"
     )
     client.file_search_stores.delete = MagicMock()
     return client
@@ -93,20 +90,16 @@ def mock_operation_incomplete():
 # 테스트용 임시 DB
 test_db_fd, test_db_path = tempfile.mkstemp(suffix=".db")
 os.close(test_db_fd)  # FD 누수 방지
-SQLALCHEMY_TEST_DATABASE_URL = (
-    f"sqlite+aiosqlite:///{test_db_path}"
-)
+SQLALCHEMY_TEST_DATABASE_URL = f"sqlite+aiosqlite:///{test_db_path}"
 
 engine = create_async_engine(
     SQLALCHEMY_TEST_DATABASE_URL,
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
-    echo=False
+    echo=False,
 )
 TestingSessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False
+    engine, class_=AsyncSession, expire_on_commit=False
 )
 
 
@@ -141,18 +134,17 @@ async def setup_test_db():
 def test_client(setup_test_db):
     """TestClient (통합 테스트용)"""
     app.dependency_overrides[get_db] = override_get_db
-    client = TestClient(
-        app=app,
-        base_url="http://testserver"
-    )
+    client = TestClient(app=app, base_url="http://testserver")
     yield client
     app.dependency_overrides.clear()
 
 
 def override_admin(user):
     """Admin 인증 오버라이드 헬퍼 (통합 테스트용, 픽스처 아님)"""
+
     def _override():
         return user
+
     return _override
 
 
@@ -164,7 +156,7 @@ async def admin_user():
             username="admin_test",
             nickname="Admin",
             hashed_password="hashed",
-            is_admin=True
+            is_admin=True,
         )
         db.add(user)
         await db.commit()
@@ -177,6 +169,6 @@ async def admin_user():
 
 def create_test_pdf():
     """더미 PDF 파일 생성 헬퍼 (통합 테스트용, 픽스처 아님)"""
-    pdf_content = b"%PDF-1.4\n%\xE2\xE3\xCF\xD3\n"
+    pdf_content = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"
     pdf_content += b"%%EOF\n"
     return BytesIO(pdf_content)

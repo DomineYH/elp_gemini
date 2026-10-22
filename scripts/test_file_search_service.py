@@ -2,6 +2,7 @@
 FileSearchService 기본 동작 검증
 search_in_store, _extract_citations 메서드 테스트
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -9,7 +10,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.services.file_search_service import FileSearchService
-from app.config import settings
 
 
 async def test_service_initialization():
@@ -17,7 +17,7 @@ async def test_service_initialization():
     print("1. FileSearchService 초기화 테스트...")
     try:
         service = FileSearchService()
-        print(f"✅ 서비스 초기화 성공")
+        print("✅ 서비스 초기화 성공")
         print(f"  - Main Store: {service.main_store_name}")
         print(f"  - Rubric Store: {service.rubric_store_name}")
         return service
@@ -58,7 +58,7 @@ async def test_extract_citations():
         mock_response = MockResponse()
         citations = service._extract_citations(mock_response)
 
-        print(f"✅ Citation 추출 성공")
+        print("✅ Citation 추출 성공")
         print(f"  - 추출된 citations: {len(citations)}개")
         if citations:
             print(f"  - 첫 번째 citation: {citations[0]}")
@@ -66,6 +66,7 @@ async def test_extract_citations():
     except Exception as e:
         print(f"❌ 테스트 실패: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

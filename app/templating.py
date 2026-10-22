@@ -2,13 +2,13 @@
 공통 템플릿 설정
 Jinja2Templates 인스턴스와 전역 값을 한 곳에서 관리
 """
+
 import os
 import shutil
 import subprocess
 from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
-
 
 templates = Jinja2Templates(directory="app/templates")
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -37,7 +37,9 @@ def _app_version() -> str:
 
         count = subprocess.run(
             [git, "rev-list", "--count", "HEAD"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
             cwd=_REPO_ROOT,
             env={**os.environ, "PATH": git_path},
         ).stdout.strip()

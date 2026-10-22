@@ -2,18 +2,19 @@
 관리자 QnA 로그 라우터
 세션 기반 대화 로그 조회 API
 """
+
+import logging
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
-import logging
 
 from app.db import get_db
 from app.dependencies import get_current_admin
-from app.models.users import User
 from app.models.chat_sessions import ChatSession
-from app.models.chat_messages import ChatMessage
+from app.models.users import User
 from app.templating import templates
 from app.utils.admin_csrf import ensure_admin_csrf_token
 from app.utils.timestamps import utc_iso
@@ -82,21 +83,27 @@ async def get_qna_logs(
             messages_data = [
                 {
                     "id": msg.id,
-                    "role": msg.role.value if hasattr(msg.role, "value") else str(msg.role),
+                    "role": (
+                        msg.role.value
+                        if hasattr(msg.role, "value")
+                        else str(msg.role)
+                    ),
                     "content": msg.content,
                     "created_at": utc_iso(msg.created_at),
                 }
                 for msg in sorted_messages
             ]
 
-            sessions_data.append({
-                "session_id": session.id,
-                "user_type": session.user_type,
-                "title": session.title,
-                "messages": messages_data,
-                "message_count": len(messages_data),
-                "created_at": utc_iso(session.created_at),
-            })
+            sessions_data.append(
+                {
+                    "session_id": session.id,
+                    "user_type": session.user_type,
+                    "title": session.title,
+                    "messages": messages_data,
+                    "message_count": len(messages_data),
+                    "created_at": utc_iso(session.created_at),
+                }
+            )
 
         logger.info(
             f"QnA 로그 조회: admin={current_admin.username}, "

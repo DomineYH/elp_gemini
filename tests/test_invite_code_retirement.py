@@ -1,4 +1,5 @@
 """Regression tests for invite-code retirement follow-up safety gates."""
+
 from __future__ import annotations
 
 import pytest

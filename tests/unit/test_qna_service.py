@@ -2,16 +2,20 @@
 QnAService 단위 테스트
 Citations 추출, 에러 처리, API 통합 검증
 """
+
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
-from app.services.qna_service import QnAService
-from app.config import settings
 from app.models.documents import Document
 from app.models.prompts import SystemPrompt
+
+from app.config import settings
+from app.services.qna_service import QnAService
 
 
 class MockGroundingChunk:
     """GroundingChunk 모킹 클래스"""
+
     def __init__(self, text="Test chunk"):
         self.retrieved_context = Mock()
         self.retrieved_context.text = text
@@ -19,10 +23,10 @@ class MockGroundingChunk:
 
 class MockGroundingMetadata:
     """GroundingMetadata 모킹 클래스"""
+
     def __init__(self, num_chunks=5):
         self.grounding_chunks = [
-            MockGroundingChunk(f"Chunk {i}")
-            for i in range(num_chunks)
+            MockGroundingChunk(f"Chunk {i}") for i in range(num_chunks)
         ]
 
 
@@ -58,7 +62,7 @@ class TestQnAService:
     @pytest.mark.asyncio
     async def test_init(self, mock_db):
         """QnAService 초기화 테스트"""
-        with patch('app.services.qna_service.genai.Client'):
+        with patch("app.services.qna_service.genai.Client"):
             service = QnAService(mock_db)
             assert service.db == mock_db
             assert service.qna_model_name == settings.GEMINI_QNA_MODEL
@@ -71,7 +75,7 @@ class TestQnAService:
         mock_result.scalar_one_or_none = Mock(return_value=mock_prompt)
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        with patch('app.services.qna_service.genai.Client'):
+        with patch("app.services.qna_service.genai.Client"):
             service = QnAService(mock_db)
             prompt = await service._get_active_prompt("qna")
 
@@ -87,7 +91,7 @@ class TestQnAService:
         mock_result.scalar_one_or_none = Mock(return_value=None)
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        with patch('app.services.qna_service.genai.Client'):
+        with patch("app.services.qna_service.genai.Client"):
             service = QnAService(mock_db)
             prompt = await service._get_active_prompt("qna")
 
@@ -107,19 +111,23 @@ class TestQnAService:
         mock_response = Mock()
         mock_response.text = "This is a test answer with citations."
         mock_response.candidates = [Mock()]
-        mock_response.candidates[0].grounding_metadata = MockGroundingMetadata(5)
+        mock_response.candidates[0].grounding_metadata = MockGroundingMetadata(
+            5
+        )
 
         # Mock Gemini Client
         mock_client = Mock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch('app.services.qna_service.genai.Client', return_value=mock_client):
+        with patch(
+            "app.services.qna_service.genai.Client", return_value=mock_client
+        ):
             service = QnAService(mock_db)
 
             result = await service.ask_question(
                 document=mock_document,
                 question="What is this document about?",
-                user_id=1
+                user_id=1,
             )
 
             # 결과 검증
@@ -149,13 +157,15 @@ class TestQnAService:
         mock_client = Mock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch('app.services.qna_service.genai.Client', return_value=mock_client):
+        with patch(
+            "app.services.qna_service.genai.Client", return_value=mock_client
+        ):
             service = QnAService(mock_db)
 
             result = await service.ask_question(
                 document=mock_document,
                 question="What is this document about?",
-                user_id=1
+                user_id=1,
             )
 
             # 결과 검증
@@ -164,23 +174,19 @@ class TestQnAService:
             assert result["grounding_metadata"]["sources_count"] == 0
 
     @pytest.mark.asyncio
-    async def test_ask_question_no_active_prompt(
-        self, mock_db, mock_document
-    ):
+    async def test_ask_question_no_active_prompt(self, mock_db, mock_document):
         """활성 프롬프트 없을 때 에러 처리 테스트"""
         # Mock DB execute 결과 - None 반환
         mock_result = Mock()
         mock_result.scalar_one_or_none = Mock(return_value=None)
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        with patch('app.services.qna_service.genai.Client'):
+        with patch("app.services.qna_service.genai.Client"):
             service = QnAService(mock_db)
 
             with pytest.raises(ValueError) as exc_info:
                 await service.ask_question(
-                    document=mock_document,
-                    question="Test question",
-                    user_id=1
+                    document=mock_document, question="Test question", user_id=1
                 )
 
             assert "활성 QnA 프롬프트를 찾을 수 없습니다" in str(exc_info.value)
@@ -199,14 +205,14 @@ class TestQnAService:
         mock_client = Mock()
         mock_client.models.generate_content.side_effect = Exception("API Error")
 
-        with patch('app.services.qna_service.genai.Client', return_value=mock_client):
+        with patch(
+            "app.services.qna_service.genai.Client", return_value=mock_client
+        ):
             service = QnAService(mock_db)
 
             with pytest.raises(Exception) as exc_info:
                 await service.ask_question(
-                    document=mock_document,
-                    question="Test question",
-                    user_id=1
+                    document=mock_document, question="Test question", user_id=1
                 )
 
             assert "API Error" in str(exc_info.value)
@@ -214,12 +220,11 @@ class TestQnAService:
     @pytest.mark.asyncio
     async def test_build_context_without_history(self, mock_db):
         """대화 히스토리 없는 컨텍스트 구성 테스트"""
-        with patch('app.services.qna_service.genai.Client'):
+        with patch("app.services.qna_service.genai.Client"):
             service = QnAService(mock_db)
 
             context = service._build_context(
-                system_prompt="You are helpful.",
-                conversation_history=None
+                system_prompt="You are helpful.", conversation_history=None
             )
 
             assert "시스템 프롬프트: You are helpful." in context
@@ -233,12 +238,12 @@ class TestQnAService:
             {"question": "Q2", "answer": "A2"},
         ]
 
-        with patch('app.services.qna_service.genai.Client'):
+        with patch("app.services.qna_service.genai.Client"):
             service = QnAService(mock_db)
 
             context = service._build_context(
                 system_prompt="You are helpful.",
-                conversation_history=conversation_history
+                conversation_history=conversation_history,
             )
 
             assert "시스템 프롬프트: You are helpful." in context
@@ -249,7 +254,7 @@ class TestQnAService:
     @pytest.mark.asyncio
     async def test_save_qa_log(self, mock_db):
         """QA 로그 저장 테스트"""
-        with patch('app.services.qna_service.genai.Client'):
+        with patch("app.services.qna_service.genai.Client"):
             service = QnAService(mock_db)
 
             await service._save_qa_log(
@@ -261,7 +266,7 @@ class TestQnAService:
                 model_name="gemini-2.5-flash",
                 latency_ms=1000,
                 citations={"test": "data"},
-                sources_count=3
+                sources_count=3,
             )
 
             # DB add와 flush가 호출되었는지 확인
@@ -279,13 +284,11 @@ class TestQnAService:
         mock_result.scalars = Mock(return_value=mock_scalars)
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        with patch('app.services.qna_service.genai.Client'):
+        with patch("app.services.qna_service.genai.Client"):
             service = QnAService(mock_db)
 
             history = await service.get_qa_history(
-                document_id=5,
-                user_id=1,
-                limit=10
+                document_id=5, user_id=1, limit=10
             )
 
             assert len(history) == 3
@@ -298,14 +301,16 @@ class TestQnAService:
 
         # 직렬화 함수 (실제 코드에서 사용되는 로직)
         def to_serializable(obj):
-            if hasattr(obj, 'to_dict'):
+            if hasattr(obj, "to_dict"):
                 return obj.to_dict()
-            elif hasattr(obj, '__dict__'):
+            elif hasattr(obj, "__dict__"):
                 result = {}
                 for key, value in vars(obj).items():
                     if isinstance(value, list):
                         result[key] = [to_serializable(item) for item in value]
-                    elif hasattr(value, '__dict__') or hasattr(value, 'to_dict'):
+                    elif hasattr(value, "__dict__") or hasattr(
+                        value, "to_dict"
+                    ):
                         result[key] = to_serializable(value)
                     else:
                         result[key] = value
@@ -317,8 +322,8 @@ class TestQnAService:
 
         # 검증
         assert isinstance(citations, dict)
-        assert 'grounding_chunks' in citations
-        assert len(citations['grounding_chunks']) == 3
+        assert "grounding_chunks" in citations
+        assert len(citations["grounding_chunks"]) == 3
 
     @pytest.mark.asyncio
     async def test_metadata_filter_added(
@@ -339,22 +344,27 @@ class TestQnAService:
         mock_client = Mock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch('app.services.qna_service.genai.Client', return_value=mock_client):
+        with patch(
+            "app.services.qna_service.genai.Client", return_value=mock_client
+        ):
             service = QnAService(mock_db)
 
             await service.ask_question(
-                document=mock_document,
-                question="Test question",
-                user_id=1
+                document=mock_document, question="Test question", user_id=1
             )
 
             # generate_content 호출 인자 확인
             call_args = mock_client.models.generate_content.call_args
-            config = call_args.kwargs['config']
+            config = call_args.kwargs["config"]
 
             # FileSearch 설정 확인
             file_search = config.tools[0].file_search
-            assert file_search.file_search_store_names == [mock_document.store_id]
+            assert file_search.file_search_store_names == [
+                mock_document.store_id
+            ]
 
             # metadata_filter가 올바르게 설정되었는지 확인
-            assert file_search.filter == f"metadata.document_id = '{mock_document.id}'"
+            assert (
+                file_search.filter
+                == f"metadata.document_id = '{mock_document.id}'"
+            )

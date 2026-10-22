@@ -10,6 +10,7 @@
 - SQLite는 ALTER COLUMN을 지원하지 않으므로
 - 테이블 재생성 방식 사용
 """
+
 import asyncio
 import logging
 import sys
@@ -20,11 +21,11 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from sqlalchemy import text
+
 from app.db import engine
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -45,15 +46,15 @@ async def migrate_criteria_document_id_nullable():
         logger.info("마이그레이션 시작: criteria.document_id nullable 변경")
 
         # 1. 기존 데이터 확인
-        result = await conn.execute(
-            text("SELECT COUNT(*) FROM criteria")
-        )
+        result = await conn.execute(text("SELECT COUNT(*) FROM criteria"))
         count = result.scalar()
         logger.info(f"기존 데이터: {count}건")
 
         # 2. 새 테이블 생성 (올바른 스키마)
         logger.info("새 테이블 생성 중...")
-        await conn.execute(text("""
+        await conn.execute(
+            text(
+                """
             CREATE TABLE criteria_new (
                 id INTEGER NOT NULL,
                 title VARCHAR(255) NOT NULL,
@@ -66,12 +67,16 @@ async def migrate_criteria_document_id_nullable():
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (id)
             )
-        """))
+        """
+            )
+        )
 
         # 3. 데이터 복사
         if count > 0:
             logger.info(f"데이터 복사 중... ({count}건)")
-            await conn.execute(text("""
+            await conn.execute(
+                text(
+                    """
                 INSERT INTO criteria_new
                     (id, title, document_id, file_size, file_path,
                      status, uploaded_by, created_at, updated_at)
@@ -79,7 +84,9 @@ async def migrate_criteria_document_id_nullable():
                     id, title, document_id, file_size, file_path,
                     status, uploaded_by, created_at, updated_at
                 FROM criteria
-            """))
+            """
+                )
+            )
             logger.info("데이터 복사 완료")
 
         # 4. 기존 테이블 삭제
@@ -88,34 +95,30 @@ async def migrate_criteria_document_id_nullable():
 
         # 5. 새 테이블 이름 변경
         logger.info("새 테이블 이름 변경 중...")
-        await conn.execute(text(
-            "ALTER TABLE criteria_new RENAME TO criteria"
-        ))
+        await conn.execute(text("ALTER TABLE criteria_new RENAME TO criteria"))
 
         # 6. 인덱스 재생성
         logger.info("인덱스 재생성 중...")
-        await conn.execute(text(
-            "CREATE INDEX ix_criteria_id ON criteria (id)"
-        ))
-        await conn.execute(text(
-            "CREATE INDEX ix_criteria_status ON criteria (status)"
-        ))
-        await conn.execute(text(
-            "CREATE INDEX ix_criteria_created_at ON criteria (created_at)"
-        ))
-        await conn.execute(text(
-            "CREATE UNIQUE INDEX ix_criteria_document_id "
-            "ON criteria (document_id) "
-            "WHERE document_id IS NOT NULL"  # NULL 값은 UNIQUE 제약에서 제외
-        ))
+        await conn.execute(text("CREATE INDEX ix_criteria_id ON criteria (id)"))
+        await conn.execute(
+            text("CREATE INDEX ix_criteria_status ON criteria (status)")
+        )
+        await conn.execute(
+            text("CREATE INDEX ix_criteria_created_at ON criteria (created_at)")
+        )
+        await conn.execute(
+            text(
+                "CREATE UNIQUE INDEX ix_criteria_document_id "
+                "ON criteria (document_id) "
+                "WHERE document_id IS NOT NULL"  # NULL 값은 UNIQUE 제약에서 제외
+            )
+        )
 
         logger.info("✅ 마이그레이션 완료!")
         logger.info("document_id는 이제 NULL을 허용합니다.")
 
         # 7. 결과 확인
-        result = await conn.execute(
-            text("SELECT COUNT(*) FROM criteria")
-        )
+        result = await conn.execute(text("SELECT COUNT(*) FROM criteria"))
         new_count = result.scalar()
         logger.info(f"마이그레이션 후 데이터: {new_count}건")
 
@@ -123,8 +126,7 @@ async def migrate_criteria_document_id_nullable():
             logger.info("✅ 데이터 무결성 확인 완료")
         else:
             logger.error(
-                f"❌ 데이터 손실 발생! "
-                f"이전: {count}건, 이후: {new_count}건"
+                f"❌ 데이터 손실 발생! " f"이전: {count}건, 이후: {new_count}건"
             )
             raise Exception("데이터 손실 감지")
 
@@ -144,18 +146,22 @@ async def verify_migration():
         # NULL 값 삽입 테스트
         logger.info("\nNULL 값 삽입 테스트...")
         try:
-            await conn.execute(text("""
+            await conn.execute(
+                text(
+                    """
                 INSERT INTO criteria
                     (title, document_id, file_size, file_path,
                      status, uploaded_by)
                 VALUES
                     ('test.pdf', NULL, 100, '/test', 'uploaded', 'admin')
-            """))
+            """
+                )
+            )
 
             # 방금 삽입한 데이터 삭제
-            await conn.execute(text(
-                "DELETE FROM criteria WHERE title = 'test.pdf'"
-            ))
+            await conn.execute(
+                text("DELETE FROM criteria WHERE title = 'test.pdf'")
+            )
 
             logger.info("✅ NULL 값 삽입 테스트 성공!")
         except Exception as e:
@@ -172,9 +178,9 @@ async def main():
         # 검증
         await verify_migration()
 
-        logger.info("\n" + "="*50)
+        logger.info("\n" + "=" * 50)
         logger.info("마이그레이션이 성공적으로 완료되었습니다!")
-        logger.info("="*50)
+        logger.info("=" * 50)
 
     except Exception as e:
         logger.error(f"\n마이그레이션 실패: {e}", exc_info=True)

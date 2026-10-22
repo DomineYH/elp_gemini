@@ -1,6 +1,7 @@
 """
 수업 지도안 분석 라우터
 """
+
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -96,7 +97,7 @@ async def analyze_lesson_plan(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"서버 오류: {str(e)}"
+            detail=f"서버 오류: {str(e)}",
         )
 
 
@@ -122,16 +123,15 @@ async def list_analysis_reports(
         return AnalysisReportListResponse(
             username=current_user.username,
             reports=[
-                AnalysisReportItem.model_validate(report)
-                for report in reports
+                AnalysisReportItem.model_validate(report) for report in reports
             ],
-            total_count=len(reports)
+            total_count=len(reports),
         )
 
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"보고서 목록 조회 실패: {str(e)}"
+            detail=f"보고서 목록 조회 실패: {str(e)}",
         )
 
 
@@ -148,10 +148,9 @@ async def get_analysis_report(
     """
     try:
         result = await db.execute(
-            select(AnalysisReport)
-            .where(
+            select(AnalysisReport).where(
                 AnalysisReport.id == report_id,
-                AnalysisReport.user_id == current_user.id
+                AnalysisReport.user_id == current_user.id,
             )
         )
         report = result.scalar_one_or_none()
@@ -159,7 +158,7 @@ async def get_analysis_report(
         if not report:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="보고서를 찾을 수 없습니다."
+                detail="보고서를 찾을 수 없습니다.",
             )
 
         # 보고서 파일 내용 읽기
@@ -167,7 +166,7 @@ async def get_analysis_report(
         if not report_path.exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="보고서 파일이 존재하지 않습니다."
+                detail="보고서 파일이 존재하지 않습니다.",
             )
 
         content = report_path.read_text(encoding="utf-8")
@@ -179,7 +178,7 @@ async def get_analysis_report(
             "report_filename": report.report_filename,
             "content": content,
             "latency_ms": report.latency_ms,
-            "created_at": utc_iso(report.created_at)
+            "created_at": utc_iso(report.created_at),
         }
 
     except HTTPException:
@@ -187,7 +186,7 @@ async def get_analysis_report(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"보고서 조회 실패: {str(e)}"
+            detail=f"보고서 조회 실패: {str(e)}",
         )
 
 
@@ -204,10 +203,9 @@ async def download_analysis_report(
     """
     try:
         result = await db.execute(
-            select(AnalysisReport)
-            .where(
+            select(AnalysisReport).where(
                 AnalysisReport.id == report_id,
-                AnalysisReport.user_id == current_user.id
+                AnalysisReport.user_id == current_user.id,
             )
         )
         report = result.scalar_one_or_none()
@@ -215,20 +213,20 @@ async def download_analysis_report(
         if not report:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="보고서를 찾을 수 없습니다."
+                detail="보고서를 찾을 수 없습니다.",
             )
 
         report_path = Path(report.report_path)
         if not report_path.exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="보고서 파일이 존재하지 않습니다."
+                detail="보고서 파일이 존재하지 않습니다.",
             )
 
         return FileResponse(
             path=str(report_path),
             filename=report.report_filename,
-            media_type="text/markdown"
+            media_type="text/markdown",
         )
 
     except HTTPException:
@@ -236,5 +234,5 @@ async def download_analysis_report(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"보고서 다운로드 실패: {str(e)}"
+            detail=f"보고서 다운로드 실패: {str(e)}",
         )

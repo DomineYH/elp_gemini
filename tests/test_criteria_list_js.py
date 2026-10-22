@@ -8,7 +8,7 @@ JS_SOURCE = Path("app/static/js/criteria_list.js")
 def test_deactivate_action_posts_to_stable_id_endpoint():
     src = JS_SOURCE.read_text()
 
-    assert '.active-checkbox' in src
+    assert ".active-checkbox" in src
     assert "/deactivate" in src
     assert "method: 'POST'" in src
 
@@ -53,13 +53,11 @@ def test_label_updates_optimistically_before_fetch():
     """
     src = JS_SOURCE.read_text()
 
-    fetch_index = src.find('await fetch(url')
+    fetch_index = src.find("await fetch(url")
     assert fetch_index != -1, "fetch 호출이 존재해야 한다"
 
     # 시작 시 pending 라벨이 fetch 호출보다 먼저 등장해야 한다.
-    pending_assignment = (
-        "label.textContent = pendingLabelText"
-    )
+    pending_assignment = "label.textContent = pendingLabelText"
     pending_index = src.find(pending_assignment)
     assert pending_index != -1, "pending 라벨 할당 라인이 존재해야 한다"
     assert pending_index < fetch_index, (
@@ -77,13 +75,13 @@ def test_checkbox_disabled_while_request_in_flight():
     """
     src = JS_SOURCE.read_text()
 
-    fetch_index = src.find('await fetch(url')
+    fetch_index = src.find("await fetch(url")
     assert fetch_index != -1
-    disable_index = src.find('cb.disabled = true')
+    disable_index = src.find("cb.disabled = true")
     assert disable_index != -1, "체크박스 disable 라인이 존재해야 한다"
-    assert disable_index < fetch_index, (
-        "cb.disabled = true 는 fetch 호출보다 먼저 실행되어야 한다"
-    )
+    assert (
+        disable_index < fetch_index
+    ), "cb.disabled = true 는 fetch 호출보다 먼저 실행되어야 한다"
 
 
 def test_label_shows_pending_while_request_in_flight():
@@ -109,10 +107,10 @@ def test_checkbox_re_enabled_after_request_finishes():
     src = JS_SOURCE.read_text()
 
     # finally 블록 또는 catch/then 양쪽에서 enable 보장
-    assert 'cb.disabled = false' in src, (
-        "응답 후 체크박스를 enable 하는 라인이 존재해야 한다"
-    )
+    assert (
+        "cb.disabled = false" in src
+    ), "응답 후 체크박스를 enable 하는 라인이 존재해야 한다"
     # finally 키워드 사용 (가장 안전한 패턴)
-    assert '} finally {' in src, (
-        "try/finally 패턴으로 disabled 해제를 보장해야 한다"
-    )
+    assert (
+        "} finally {" in src
+    ), "try/finally 패턴으로 disabled 해제를 보장해야 한다"

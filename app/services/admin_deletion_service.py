@@ -3,6 +3,7 @@
 사용자/대화/보고서의 hard delete와 연관 파일 정리를 담당한다.
 모든 권한·CSRF 검증은 호출 측(라우터)에서 처리한다.
 """
+
 from __future__ import annotations
 
 import logging
@@ -214,9 +215,7 @@ class AdminDeletionService:
         report_ids = list(dict.fromkeys(report_ids))
 
         rows = await self.db.execute(
-            select(AnalysisReport).where(
-                AnalysisReport.id.in_(report_ids)
-            )
+            select(AnalysisReport).where(AnalysisReport.id.in_(report_ids))
         )
         reports = list(rows.scalars().all())
 
@@ -272,8 +271,7 @@ class AdminDeletionService:
             await service.delete_store_by_display_name(store_name)
         except Exception as exc:
             logger.warning(
-                "File Search 스토어 삭제 실패 (무시): "
-                "user_id=%s, err=%s",
+                "File Search 스토어 삭제 실패 (무시): " "user_id=%s, err=%s",
                 user_id,
                 exc,
             )
@@ -283,9 +281,7 @@ class AdminDeletionService:
     ) -> int:
         """DB에서 더 이상 참조하지 않는 report_path(.md) 파일을 삭제한다."""
         report_paths = {
-            report.report_path
-            for report in reports
-            if report.report_path
+            report.report_path for report in reports if report.report_path
         }
         if not report_paths:
             return 0
@@ -309,9 +305,7 @@ class AdminDeletionService:
                 path.unlink()
                 removed += 1
             except OSError as exc:
-                logger.warning(
-                    "파일 삭제 실패: path=%s, err=%s", path, exc
-                )
+                logger.warning("파일 삭제 실패: path=%s, err=%s", path, exc)
         return removed
 
     def _unlink_files(self, paths: set[str]) -> int:
@@ -341,10 +335,7 @@ class AdminDeletionService:
             if not report.lessonplan_filename:
                 continue
             key = (report.user_id, report.lessonplan_filename)
-            if (
-                key not in upload_ids_by_file
-                or report.upload_id is None
-            ):
+            if key not in upload_ids_by_file or report.upload_id is None:
                 upload_ids_by_file[key] = report.upload_id
         if not upload_ids_by_file:
             return 0
@@ -391,9 +382,7 @@ class AdminDeletionService:
                 path.unlink()
                 removed += 1
             except OSError as exc:
-                logger.warning(
-                    "파일 삭제 실패: path=%s, err=%s", path, exc
-                )
+                logger.warning("파일 삭제 실패: path=%s, err=%s", path, exc)
         return removed
 
     async def _lessonplan_used_by_simulation(
@@ -457,9 +446,7 @@ class AdminDeletionService:
             user_dir = base / str(user_id)
             if user_dir.is_dir():
                 try:
-                    count = sum(
-                        1 for f in user_dir.rglob("*") if f.is_file()
-                    )
+                    count = sum(1 for f in user_dir.rglob("*") if f.is_file())
                     shutil.rmtree(user_dir, ignore_errors=True)
                     removed += count
                     logger.info(

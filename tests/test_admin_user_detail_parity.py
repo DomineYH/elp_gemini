@@ -2,26 +2,26 @@
 Parity invariant: a user's dashboard endpoints and the admin per-user endpoints
 must return the same set of sessions and reports when looking at the same user.
 """
+
 from datetime import datetime, timedelta
 
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.db import Base, get_db
 from app.dependencies import get_current_admin, get_current_user
-from app.models.users import User
-from app.models.chat_sessions import ChatSession
-from app.models.chat_messages import ChatMessage, MessageRole
+from app.main import app
 from app.models.analysis_reports import AnalysisReport
+from app.models.chat_messages import ChatMessage, MessageRole
+from app.models.chat_sessions import ChatSession
+from app.models.users import User
 from tests.conftest import (
     TestingSessionLocal,
-    override_get_db,
-    override_admin,
     engine,
+    override_admin,
+    override_get_db,
 )
-
 
 _admin = User(
     id=999,
@@ -35,6 +35,7 @@ _admin = User(
 def _override_current_user(user: User):
     async def _factory():
         return user
+
     return _factory
 
 
@@ -71,12 +72,14 @@ async def parity_setup():
         )
         db.add_all([s1, s2])
         await db.flush()
-        db.add(ChatMessage(
-            session_id=s1.id,
-            role=MessageRole.USER,
-            content="최근 메시지",
-            created_at=base_time + timedelta(hours=2),
-        ))
+        db.add(
+            ChatMessage(
+                session_id=s1.id,
+                role=MessageRole.USER,
+                content="최근 메시지",
+                created_at=base_time + timedelta(hours=2),
+            )
+        )
 
         r1 = AnalysisReport(
             user_id=owner.id,
@@ -119,13 +122,17 @@ async def test_user_dashboard_and_admin_view_return_same_sessions(parity_setup):
     try:
         with TestClient(app) as client:
             user_resp = client.get("/api/qna/sessions?limit=50&offset=0")
-            admin_resp = client.get(f"/admin/api/users/{owner_id}/sessions?limit=50&offset=0")
+            admin_resp = client.get(
+                f"/admin/api/users/{owner_id}/sessions?limit=50&offset=0"
+            )
         assert user_resp.status_code == 200
         assert admin_resp.status_code == 200
         user_ids = [s["session_id"] for s in user_resp.json()["sessions"]]
         admin_ids = [s["session_id"] for s in admin_resp.json()["sessions"]]
         assert user_ids == admin_ids
-        assert user_resp.json()["total_count"] == admin_resp.json()["total_count"]
+        assert (
+            user_resp.json()["total_count"] == admin_resp.json()["total_count"]
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -143,7 +150,9 @@ async def test_user_dashboard_and_admin_view_return_same_reports(parity_setup):
     try:
         with TestClient(app) as client:
             user_resp = client.get("/api/lessonplan/reports")
-            admin_resp = client.get(f"/admin/api/users/{owner_id}/reports?limit=100&offset=0")
+            admin_resp = client.get(
+                f"/admin/api/users/{owner_id}/reports?limit=100&offset=0"
+            )
         assert user_resp.status_code == 200
         assert admin_resp.status_code == 200
         user_ids = [r["id"] for r in user_resp.json()["reports"]]

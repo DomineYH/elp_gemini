@@ -80,7 +80,6 @@ def test_template_alias_unset_placeholder():
     assert "비활성" in text
 
 
-
 def _row_for(html: str, stable_id: str) -> str:
     marker = f'data-stable-id="{stable_id}"'
     idx = html.index(marker)

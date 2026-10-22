@@ -8,28 +8,25 @@ chat_messages 테이블로 변환합니다.
 옴니시아의 데이터가 새로운 구조로 환생하리라.
 """
 import sys
-from pathlib import Path
 from collections import defaultdict
-from datetime import datetime
+from pathlib import Path
 
 # 프로젝트 루트를 Python 경로에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.models.documents import Document
+from app.models.qa_logs import QALog
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.models.qa_logs import QALog
-from app.models.documents import Document
-from app.models.chat_sessions import ChatSession
+
 from app.models.chat_messages import ChatMessage, MessageRole
+from app.models.chat_sessions import ChatSession
 
 
 def create_db_session():
     """데이터베이스 세션 생성"""
     db_path = Path(__file__).parent.parent / "data" / "app.db"
-    engine = create_engine(
-        f"sqlite:///{db_path}",
-        echo=False
-    )
+    engine = create_engine(f"sqlite:///{db_path}", echo=False)
     Session = sessionmaker(bind=engine)
     return Session()
 
@@ -41,11 +38,11 @@ def group_qa_logs(session):
     Returns:
         dict: {(doc_id, user_id): [QALog, ...]}
     """
-    qa_logs = session.query(QALog).order_by(
-        QALog.document_id,
-        QALog.user_id,
-        QALog.created_at
-    ).all()
+    qa_logs = (
+        session.query(QALog)
+        .order_by(QALog.document_id, QALog.user_id, QALog.created_at)
+        .all()
+    )
 
     grouped = defaultdict(list)
     for qa_log in qa_logs:
@@ -70,15 +67,10 @@ def create_chat_sessions(session, grouped_logs):
 
     for (doc_id, user_id), logs in grouped_logs.items():
         # 문서 정보 조회
-        document = session.query(Document).filter(
-            Document.id == doc_id
-        ).first()
+        document = session.query(Document).filter(Document.id == doc_id).first()
 
         if not document:
-            print(
-                f"⚠️  문서 ID {doc_id} 누락 "
-                f"(사용자 {user_id})"
-            )
+            print(f"⚠️  문서 ID {doc_id} 누락 " f"(사용자 {user_id})")
             continue
 
         # ChatSession 생성
@@ -86,7 +78,7 @@ def create_chat_sessions(session, grouped_logs):
             user_id=user_id,
             title=document.title,
             created_at=logs[0].created_at,
-            updated_at=logs[-1].created_at
+            updated_at=logs[-1].created_at,
         )
         session.add(chat_session)
         session.flush()  # ID 생성을 위해 flush
@@ -125,7 +117,7 @@ def create_chat_messages(session, grouped_logs, sessions_map):
                 session_id=chat_session.id,
                 role=MessageRole.USER,
                 content=qa_log.question,
-                created_at=qa_log.created_at
+                created_at=qa_log.created_at,
             )
             session.add(user_msg)
 
@@ -136,7 +128,7 @@ def create_chat_messages(session, grouped_logs, sessions_map):
                 content=qa_log.answer,
                 model_name=qa_log.model_name,
                 citations=qa_log.citations,
-                created_at=qa_log.created_at
+                created_at=qa_log.created_at,
             )
             session.add(assistant_msg)
 
@@ -157,10 +149,7 @@ def verify_migration(session):
     print(f"QA 로그 개수: {qa_log_count}")
     print(f"채팅 세션 개수: {chat_session_count}")
     print(f"채팅 메시지 개수: {chat_message_count}")
-    print(
-        f"예상 메시지 개수: {qa_log_count * 2} "
-        f"(QA 로그 * 2)"
-    )
+    print(f"예상 메시지 개수: {qa_log_count * 2} " f"(QA 로그 * 2)")
 
     if chat_message_count == qa_log_count * 2:
         print("✅ 데이터 개수 일치")
@@ -172,15 +161,20 @@ def verify_migration(session):
     sample_session = session.query(ChatSession).first()
     if sample_session:
         print(f"\n📋 샘플 세션: {sample_session.title}")
-        sample_messages = session.query(ChatMessage).filter(
-            ChatMessage.session_id == sample_session.id
-        ).limit(4).all()
+        sample_messages = (
+            session.query(ChatMessage)
+            .filter(ChatMessage.session_id == sample_session.id)
+            .limit(4)
+            .all()
+        )
 
         for msg in sample_messages:
-            role = "사용자" if msg.role == MessageRole.USER \
-                else "AI"
-            content_preview = msg.content[:50] + "..." \
-                if len(msg.content) > 50 else msg.content
+            role = "사용자" if msg.role == MessageRole.USER else "AI"
+            content_preview = (
+                msg.content[:50] + "..."
+                if len(msg.content) > 50
+                else msg.content
+            )
             print(f"  {role}: {content_preview}")
 
     return True
@@ -201,17 +195,12 @@ def main():
 
         # 2. ChatSession 생성
         print("\n2️⃣  채팅 세션 생성 중...")
-        sessions_map = create_chat_sessions(
-            db_session,
-            grouped_logs
-        )
+        sessions_map = create_chat_sessions(db_session, grouped_logs)
 
         # 3. ChatMessage 생성
         print("\n3️⃣  채팅 메시지 생성 중...")
         total_messages = create_chat_messages(
-            db_session,
-            grouped_logs,
-            sessions_map
+            db_session, grouped_logs, sessions_map
         )
         print(f"✅ {total_messages}개 메시지 생성")
 
@@ -237,6 +226,7 @@ def main():
         print(f"\n❌ 오류 발생: {e}")
         db_session.rollback()
         import traceback
+
         traceback.print_exc()
         return 1
     finally:

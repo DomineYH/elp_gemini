@@ -2,11 +2,13 @@
 성능 테스트 스크립트
 동시 사용자, 대용량 파일 업로드, 응답 시간, 에러율 측정
 """
+
 import asyncio
-import time
 import statistics
+import time
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict
+
 import httpx
 
 
@@ -36,9 +38,7 @@ class PerformanceTest:
 
         async def single_user_qna(user_id: int):
             """단일 사용자 QnA 수행"""
-            async with httpx.AsyncClient(
-                timeout=60.0
-            ) as client:
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 try:
                     # 로그인
                     login_data = {
@@ -60,11 +60,7 @@ class PerformanceTest:
 
                     # 세션 생성
                     start_time = time.time()
-                    session_data = {
-                        "lessonplan_filename": (
-                            "test_lesson.pdf"
-                        )
-                    }
+                    session_data = {"lessonplan_filename": ("test_lesson.pdf")}
                     session_resp = await client.post(
                         f"{self.base_url}/api/qna/sessions",
                         json=session_data,
@@ -78,15 +74,11 @@ class PerformanceTest:
                             "time": 0,
                         }
 
-                    session_id = session_resp.json()[
-                        "session_id"
-                    ]
+                    session_id = session_resp.json()["session_id"]
 
                     # 질문하기
                     question_data = {
-                        "question": (
-                            f"사용자 {user_id}의 테스트 질문"
-                        )
+                        "question": (f"사용자 {user_id}의 테스트 질문")
                     }
                     qa_resp = await client.post(
                         f"{self.base_url}/api/qna/"
@@ -121,9 +113,7 @@ class PerformanceTest:
                     }
 
         # 동시 실행
-        tasks = [
-            single_user_qna(i) for i in range(num_users)
-        ]
+        tasks = [single_user_qna(i) for i in range(num_users)]
         start_time = time.time()
         results = await asyncio.gather(*tasks)
         total_time = time.time() - start_time
@@ -138,15 +128,10 @@ class PerformanceTest:
             "successful": len(successful),
             "failed": len(failed),
             "total_time": total_time,
-            "avg_time": (
-                statistics.mean(times) if times else 0
-            ),
+            "avg_time": (statistics.mean(times) if times else 0),
             "min_time": min(times) if times else 0,
             "max_time": max(times) if times else 0,
-            "errors": [
-                f"User {r['user_id']}: {r['error']}"
-                for r in failed
-            ],
+            "errors": [f"User {r['user_id']}: {r['error']}" for r in failed],
         }
 
         self.results["concurrent_users"] = result
@@ -169,14 +154,10 @@ class PerformanceTest:
         try:
             # 테스트 파일 생성
             test_file = Path(f"test_{file_size_mb}mb.pdf")
-            file_content = b"X" * (
-                file_size_mb * 1024 * 1024
-            )
+            file_content = b"X" * (file_size_mb * 1024 * 1024)
             test_file.write_bytes(file_content)
 
-            async with httpx.AsyncClient(
-                timeout=120.0
-            ) as client:
+            async with httpx.AsyncClient(timeout=120.0) as client:
                 # 로그인
                 login_data = {
                     "username": "testuser",
@@ -190,9 +171,7 @@ class PerformanceTest:
                 # 파일 업로드
                 start_time = time.time()
                 with test_file.open("rb") as f:
-                    files = {
-                        "file": (test_file.name, f, "application/pdf")
-                    }
+                    files = {"file": (test_file.name, f, "application/pdf")}
                     upload_resp = await client.post(
                         f"{self.base_url}/dashboard/upload",
                         files=files,
@@ -211,9 +190,7 @@ class PerformanceTest:
                     "success": success,
                     "upload_time": elapsed,
                     "upload_speed_mbps": (
-                        (file_size_mb / elapsed) * 8
-                        if success
-                        else 0
+                        (file_size_mb / elapsed) * 8 if success else 0
                     ),
                     "status_code": upload_resp.status_code,
                 }
@@ -256,9 +233,7 @@ class PerformanceTest:
 
         results = {}
 
-        async with httpx.AsyncClient(
-            timeout=30.0
-        ) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             for name, config in endpoints.items():
                 times = []
                 for _ in range(10):  # 각 엔드포인트 10회 측정
@@ -284,17 +259,12 @@ class PerformanceTest:
                     "std_dev": statistics.stdev(times),
                 }
 
-                print(
-                    f"{name}: "
-                    f"{results[name]['avg_time']*1000:.2f}ms"
-                )
+                print(f"{name}: " f"{results[name]['avg_time']*1000:.2f}ms")
 
         self.results["response_times"] = results
         return results
 
-    async def test_error_rate(
-        self, num_requests: int = 100
-    ) -> Dict[str, Any]:
+    async def test_error_rate(self, num_requests: int = 100) -> Dict[str, Any]:
         """
         에러율 측정 (<1% 목표)
         Args:
@@ -307,14 +277,10 @@ class PerformanceTest:
         successful = 0
         failed = 0
 
-        async with httpx.AsyncClient(
-            timeout=30.0
-        ) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             for i in range(num_requests):
                 try:
-                    resp = await client.get(
-                        f"{self.base_url}/health"
-                    )
+                    resp = await client.get(f"{self.base_url}/health")
                     if resp.status_code == 200:
                         successful += 1
                     else:
@@ -374,47 +340,33 @@ class PerformanceTest:
         # 동시 사용자
         if "concurrent_users" in self.results:
             cu = self.results["concurrent_users"]
-            print(f"\n[동시 사용자 테스트]")
+            print("\n[동시 사용자 테스트]")
             print(
                 f"  성공률: {cu['successful']}/"
                 f"{cu['total_users']} "
                 f"({cu['successful']/cu['total_users']*100:.1f}%)"
             )
-            print(
-                f"  평균 응답 시간: {cu['avg_time']:.2f}초"
-            )
+            print(f"  평균 응답 시간: {cu['avg_time']:.2f}초")
 
         # 응답 시간
         if "response_times" in self.results:
-            print(f"\n[API 응답 시간]")
-            for endpoint, metrics in self.results[
-                "response_times"
-            ].items():
-                print(
-                    f"  {endpoint}: "
-                    f"{metrics['avg_time']*1000:.2f}ms"
-                )
+            print("\n[API 응답 시간]")
+            for endpoint, metrics in self.results["response_times"].items():
+                print(f"  {endpoint}: " f"{metrics['avg_time']*1000:.2f}ms")
 
         # 에러율
         if "error_rate" in self.results:
             er = self.results["error_rate"]
-            print(f"\n[에러율]")
-            print(
-                f"  에러율: {er['error_rate_percent']:.2f}%"
-            )
-            print(
-                f"  목표(<1%) 달성: "
-                f"{'✅' if er['passed'] else '❌'}"
-            )
+            print("\n[에러율]")
+            print(f"  에러율: {er['error_rate_percent']:.2f}%")
+            print(f"  목표(<1%) 달성: " f"{'✅' if er['passed'] else '❌'}")
 
         print("\n" + "=" * 60)
 
 
 async def main():
     """메인 함수"""
-    tester = PerformanceTest(
-        base_url="http://localhost:8000"
-    )
+    tester = PerformanceTest(base_url="http://localhost:8000")
     await tester.run_all_tests()
 
 

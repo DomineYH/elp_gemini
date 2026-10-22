@@ -1,5 +1,7 @@
 """문서 스키마"""
+
 from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 

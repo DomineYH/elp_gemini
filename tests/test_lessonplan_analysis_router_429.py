@@ -1,4 +1,5 @@
 """lessonplan_analysis 라우터의 429 RESOURCE_EXHAUSTED 분기 테스트"""
+
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -13,9 +14,7 @@ from app.models.users import User
 @pytest_asyncio.fixture
 async def client(tmp_path):
     """get_current_user와 get_db를 오버라이드한 테스트 클라이언트"""
-    test_user = User(
-        id=1, username="tester", hashed_password="x"
-    )
+    test_user = User(id=1, username="tester", hashed_password="x")
 
     async def override_get_user():
         return test_user

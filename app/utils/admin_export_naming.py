@@ -2,10 +2,10 @@
 
 순수 함수만 둔다. DB 세션/외부 I/O 의존 없음.
 """
+
 from __future__ import annotations
 
 import re
-
 
 _FORBIDDEN_FILENAME_CHARS = re.compile(r"[\x00-\x1f\\/:*?\"<>|]+")
 

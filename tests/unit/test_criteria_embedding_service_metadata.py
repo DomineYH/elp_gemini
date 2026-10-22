@@ -2,9 +2,10 @@
 CriteriaEmbeddingService 메타데이터 관련 테스트
 메타데이터 포함 업로드 검증
 """
-import pytest
+
 from unittest.mock import MagicMock, patch
 
+import pytest
 from app.services.criteria_embedding_service import (
     CriteriaEmbeddingService,
 )
@@ -14,12 +15,8 @@ from app.services.criteria_embedding_service import (
 class TestCriteriaEmbeddingServiceMetadata:
     """메타데이터 관련 테스트"""
 
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
+    @patch("app.services.criteria_embedding_service.settings")
+    @patch("app.services.criteria_embedding_service.genai")
     async def test_upload_and_embed_with_metadata(
         self, mock_genai, mock_settings
     ):
@@ -38,19 +35,13 @@ class TestCriteriaEmbeddingServiceMetadata:
         # Mock Client
         mock_client = MagicMock()
         fss = mock_client.file_search_stores
-        fss.create.return_value = (
-            mock_new_store
-        )
+        fss.create.return_value = mock_new_store
 
         # Mock Operation
         mock_operation = MagicMock()
         mock_operation.done = True
-        mock_operation.response.parent = (
-            "stores/vector-meta-789"
-        )
-        mock_operation.response.document_name = (
-            "docs/meta-doc"
-        )
+        mock_operation.response.parent = "stores/vector-meta-789"
+        mock_operation.response.document_name = "docs/meta-doc"
 
         upload_mock = fss.upload_to_file_search_store
         upload_mock.return_value = mock_operation
@@ -66,12 +57,10 @@ class TestCriteriaEmbeddingServiceMetadata:
             "category": "quality",
             "priority": 1,
         }
-        vector_store_id = (
-            await service.upload_and_embed(
-                file_path="/meta.pdf",
-                title="Criteria with Metadata",
-                metadata=metadata,
-            )
+        vector_store_id = await service.upload_and_embed(
+            file_path="/meta.pdf",
+            title="Criteria with Metadata",
+            metadata=metadata,
         )
 
         # Assert
@@ -81,22 +70,14 @@ class TestCriteriaEmbeddingServiceMetadata:
 
         # 메타데이터 구조 검증
         call_args = upload_mock.call_args[1]
-        custom_metadata = call_args["config"][
-            "custom_metadata"
-        ]
+        custom_metadata = call_args["config"]["custom_metadata"]
 
         # numeric_value와 string_value 확인
         assert len(custom_metadata) == 3
 
-    @patch(
-        "app.services.criteria_embedding_service.settings"
-    )
-    @patch(
-        "app.services.criteria_embedding_service.genai"
-    )
-    async def test_upload_with_metadata_dict(
-        self, mock_genai, mock_settings
-    ):
+    @patch("app.services.criteria_embedding_service.settings")
+    @patch("app.services.criteria_embedding_service.genai")
+    async def test_upload_with_metadata_dict(self, mock_genai, mock_settings):
         """메타데이터 Dict 포함 업로드 처리"""
         # Arrange
         mock_settings.GOOGLE_API_KEY = "test-key"
@@ -110,16 +91,12 @@ class TestCriteriaEmbeddingServiceMetadata:
 
         mock_client = MagicMock()
         fss = mock_client.file_search_stores
-        fss.create.return_value = (
-            mock_store
-        )
+        fss.create.return_value = mock_store
 
         # 완료된 operation
         complete_op = MagicMock()
         complete_op.done = True
-        complete_op.response.parent = (
-            "stores/vector-metadata-123"
-        )
+        complete_op.response.parent = "stores/vector-metadata-123"
 
         upload_mock = fss.upload_to_file_search_store
         upload_mock.return_value = complete_op

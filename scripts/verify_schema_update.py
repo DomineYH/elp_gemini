@@ -12,10 +12,11 @@ from pathlib import Path
 # 프로젝트 루트를 PYTHONPATH에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy import inspect
-from app.db import engine, Base
 from app.models.documents import Document
 from app.models.qa_logs import QALog
+from sqlalchemy import inspect
+
+from app.db import engine
 
 
 async def verify_schema():
@@ -26,9 +27,7 @@ async def verify_schema():
 
     async with engine.begin() as conn:
         # 테이블 존재 확인
-        inspector = await conn.run_sync(
-            lambda sync_conn: inspect(sync_conn)
-        )
+        inspector = await conn.run_sync(lambda sync_conn: inspect(sync_conn))
 
         # Document 테이블 검증
         print("\n[Document 테이블 검증]")

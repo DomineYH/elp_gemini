@@ -4,6 +4,7 @@ Rate limiter 인스턴스 (Issue #5)
 `/auth/login/admin` brute-force 방어를 위한 IP 기반 rate limit.
 순환 import 회피용으로 main.py 와 routers/auth.py 가 모두 이 모듈을 참조한다.
 """
+
 from fastapi import HTTPException, status
 from limits import parse
 from slowapi import Limiter

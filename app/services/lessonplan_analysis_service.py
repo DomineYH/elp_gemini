@@ -2,6 +2,7 @@
 수업 지도안 분석 서비스
 평가기준 기반 수업지도안 체계적 평가
 """
+
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
@@ -148,7 +149,7 @@ class LessonPlanAnalysisService:
         self.model_name = settings.GEMINI_EVAL_MODEL
         self.client = genai.Client(
             api_key=settings.GOOGLE_API_KEY,
-            http_options={'api_version': 'v1beta'}
+            http_options={"api_version": "v1beta"},
         )
         self.prompt_loader = PromptLoaderService()
         self.file_search_service = FileSearchService()
@@ -176,6 +177,7 @@ class LessonPlanAnalysisService:
             }
         """
         import time
+
         start_time = time.time()
 
         try:
@@ -184,9 +186,7 @@ class LessonPlanAnalysisService:
                 # 0. 중복 분석 차단 — 최신 업로드에 이미 보고서가 있으면
                 # 즉시 ALREADY_ANALYZED 반환 (Gemini 호출 안 함)
                 latest_upload, existing_report = (
-                    await self._find_existing_report_for_latest_upload(
-                        user_id
-                    )
+                    await self._find_existing_report_for_latest_upload(user_id)
                 )
                 if existing_report is not None:
                     report_file = Path(existing_report.report_path)
@@ -229,16 +229,13 @@ class LessonPlanAnalysisService:
                     has_file_search_documents = (
                         self._user_file_search_store_has_documents(user_id)
                     )
-                    if (
-                        not legacy_lessonplans
-                        and not has_file_search_documents
-                    ):
+                    if not legacy_lessonplans and not has_file_search_documents:
                         return {
                             "success": False,
                             "error": (
                                 "분석할 문서가 없습니다. "
                                 "수업 지도안을 먼저 업로드해주세요."
-                            )
+                            ),
                         }
 
                 # 1. File Search Store ID 조회 (Phase 1 활용)
@@ -249,12 +246,12 @@ class LessonPlanAnalysisService:
                         "error": (
                             "분석할 문서가 없습니다. "
                             "수업 지도안을 먼저 업로드해주세요."
-                        )
+                        ),
                     }
 
                 # Store ID 분리 및 역할 명확화
-                user_store_id = store_ids[0]      # 사용자 업로드 수업 지도안
-                rubric_store_id = store_ids[1]    # 평가기준 문서
+                user_store_id = store_ids[0]  # 사용자 업로드 수업 지도안
+                rubric_store_id = store_ids[1]  # 평가기준 문서
                 criteria_notice = None
 
                 logger.info(
@@ -264,8 +261,8 @@ class LessonPlanAnalysisService:
                 )
 
                 try:
-                    rubric_metadata_filter = await (
-                        CriteriaVectorService.active_stable_id_filter(
+                    rubric_metadata_filter = (
+                        await CriteriaVectorService.active_stable_id_filter(
                             client=self.client,
                             store_display_name=settings.FS_RUBRIC_STORE_NAME,
                         )
@@ -297,8 +294,12 @@ class LessonPlanAnalysisService:
                 # 3. Gemini API 호출 (File Search - 평가기준 우선 순서)
                 response = await asyncio.to_thread(
                     _call_gemini_with_file_search,
-                    self.client, self.model_name, full_prompt,
-                    rubric_store_id, user_store_id, rubric_metadata_filter,
+                    self.client,
+                    self.model_name,
+                    full_prompt,
+                    rubric_store_id,
+                    user_store_id,
+                    rubric_metadata_filter,
                 )
 
                 # 4. Markdown 보고서 추출 및 후처리
@@ -332,8 +333,7 @@ class LessonPlanAnalysisService:
                     try:
                         if latest_upload is not None:
                             original_filename = (
-                                latest_upload.original_filename
-                                or "unknown"
+                                latest_upload.original_filename or "unknown"
                             )
                             lessonplan_filename = latest_upload.filename
                         else:
@@ -345,8 +345,7 @@ class LessonPlanAnalysisService:
                             lessonplans = legacy_lessonplans
                             if lessonplans:
                                 latest = max(
-                                    lessonplans,
-                                    key=lambda x: x["created_at"]
+                                    lessonplans, key=lambda x: x["created_at"]
                                 )
                                 original_filename = latest["original_filename"]
                                 lessonplan_filename = latest["filename"]
@@ -365,10 +364,11 @@ class LessonPlanAnalysisService:
                                 await self.db.flush()
                             except IntegrityError:
                                 await self.db.rollback()
-                                latest_upload, existing_report = await (
-                                    self._find_existing_report_for_latest_upload(
-                                        user_id
-                                    )
+                                (
+                                    latest_upload,
+                                    existing_report,
+                                ) = await self._find_existing_report_for_latest_upload(  # noqa: E501
+                                    user_id
                                 )
                                 if existing_report is not None:
                                     logger.warning(
@@ -457,9 +457,7 @@ class LessonPlanAnalysisService:
                                 loser_path = saved_report["file_path"]
                                 if loser_path != winner.report_path:
                                     try:
-                                        Path(loser_path).unlink(
-                                            missing_ok=True
-                                        )
+                                        Path(loser_path).unlink(missing_ok=True)
                                     except Exception as cleanup_error:
                                         logger.warning(
                                             "race fallback orphan report "
@@ -496,7 +494,7 @@ class LessonPlanAnalysisService:
                     "citations": citations,
                     "latency_ms": latency_ms,
                     "criteria_notice": criteria_notice,
-                    "saved_report": saved_report
+                    "saved_report": saved_report,
                 }
 
         except asyncio.TimeoutError:
@@ -508,8 +506,7 @@ class LessonPlanAnalysisService:
             return {
                 "success": False,
                 "error": (
-                    "현재 분석 요청량이 많습니다. "
-                    "잠시 후 다시 시도해주세요."
+                    "현재 분석 요청량이 많습니다. " "잠시 후 다시 시도해주세요."
                 ),
                 "error_code": "RESOURCE_EXHAUSTED",
             }
@@ -546,9 +543,7 @@ class LessonPlanAnalysisService:
         """
         try:
             # Phase 1의 get_dual_store_ids() 사용
-            store_ids = self.file_search_service.get_dual_store_ids(
-                user_id
-            )
+            store_ids = self.file_search_service.get_dual_store_ids(user_id)
             logger.info(f"✅ Store ID 조회 완료: {len(store_ids)}개")
             return store_ids
         except ValueError as e:
@@ -573,14 +568,10 @@ class LessonPlanAnalysisService:
                 )
                 return any(True for _ in documents)
         except Exception as exc:
-            logger.warning(
-                f"사용자 File Search Store 문서 확인 실패: {exc}"
-            )
+            logger.warning(f"사용자 File Search Store 문서 확인 실패: {exc}")
         return False
 
-    async def _find_existing_report_for_latest_upload(
-        self, user_id: int
-    ):
+    async def _find_existing_report_for_latest_upload(self, user_id: int):
         """
         사용자의 최신 업로드 이벤트와 그에 연결된 기존 보고서를 함께 조회.
 
@@ -696,8 +687,8 @@ class LessonPlanAnalysisService:
             #          `> **분석 모델**: <임의 텍스트>` (전후 공백 허용,
             #          dash prefix 옵션)
             report = re.sub(
-                r'^\s*>\s*(?:-\s*)?\*\*분석\s*모델\*\*\s*:.*$\n?',
-                '',
+                r"^\s*>\s*(?:-\s*)?\*\*분석\s*모델\*\*\s*:.*$\n?",
+                "",
                 report,
                 flags=re.MULTILINE,
             )
@@ -717,8 +708,8 @@ class LessonPlanAnalysisService:
             # 1) "Vector Search 참고 자료" 섹션 가독성 개선
             # 이모지 유무와 무관하게 매칭되도록 패턴에서 🔍 의존을 제거한다.
             pattern = (
-                r'(###\s*(?:[^\n]*?)?Vector Search 참고 자료\s*\n)'
-                r'(.*?)(\n###|\Z)'
+                r"(###\s*(?:[^\n]*?)?Vector Search 참고 자료\s*\n)"
+                r"(.*?)(\n###|\Z)"
             )
             match = re.search(pattern, report, flags=re.DOTALL)
 
@@ -729,12 +720,12 @@ class LessonPlanAnalysisService:
 
                 # 이미 구조화되어 있는지 확인 (목록/번호가 있으면 이미 구조화됨)
                 already_structured = re.search(
-                    r'^\s*[0-9]+\.|\s*-|\s*\*',
+                    r"^\s*[0-9]+\.|\s*-|\s*\*",
                     content,
                     re.MULTILINE,
                 )
                 if not already_structured and len(content) > 100:
-                    sentences = re.split(r'(?<=[.!?])\s+', content)
+                    sentences = re.split(r"(?<=[.!?])\s+", content)
                     sentences = [
                         s.strip() for s in sentences if len(s.strip()) > 20
                     ]
@@ -743,7 +734,7 @@ class LessonPlanAnalysisService:
                     report = (
                         report[: match.start()]
                         + new_section
-                        + report[match.end():]
+                        + report[match.end() :]
                     )
 
             # 2) "File Search 참고 문서" 섹션을 서버 렌더로 교체
@@ -755,17 +746,13 @@ class LessonPlanAnalysisService:
             if should_render_refs:
                 body = self._render_file_search_references_section(
                     criteria_aliases=criteria_aliases or [],
-                    lessonplan_original_filename=(
-                        lessonplan_original_filename
-                    ),
+                    lessonplan_original_filename=(lessonplan_original_filename),
                 )
                 refs_pattern = (
-                    r'(###\s*(?:[^\n]*?)?File Search 참고 문서\s*\n)'
-                    r'(.*?)(\n###|\Z)'
+                    r"(###\s*(?:[^\n]*?)?File Search 참고 문서\s*\n)"
+                    r"(.*?)(\n###|\Z)"
                 )
-                refs_match = re.search(
-                    refs_pattern, report, flags=re.DOTALL
-                )
+                refs_match = re.search(refs_pattern, report, flags=re.DOTALL)
                 if refs_match:
                     header = refs_match.group(1)
                     next_section = refs_match.group(3)
@@ -773,14 +760,11 @@ class LessonPlanAnalysisService:
                     report = (
                         report[: refs_match.start()]
                         + new_section
-                        + report[refs_match.end():]
+                        + report[refs_match.end() :]
                     )
                 else:
                     # 섹션이 누락된 경우 끝에 부착
-                    suffix = (
-                        "\n\n### File Search 참고 문서\n"
-                        f"{body}\n"
-                    )
+                    suffix = "\n\n### File Search 참고 문서\n" f"{body}\n"
                     if not report.endswith("\n"):
                         report += "\n"
                     report += suffix
@@ -813,9 +797,7 @@ class LessonPlanAnalysisService:
 
         # 모델이 라벨을 장식하거나 띄어쓰기를 사용해도
         # (예: '> **📄 수업 지도안**:') 인용으로 인정.
-        citation_start = re.compile(
-            r"^\s*>\s*\*\*[^*]*수업\s*지도안[^*]*\*\*"
-        )
+        citation_start = re.compile(r"^\s*>\s*\*\*[^*]*수업\s*지도안[^*]*\*\*")
         # 새 라벨은 '> **<텍스트>**:' 콜론 형태로만 인식.
         # 콜론 없는 굵은 블록인용은 인용 본문의 일부로 보존.
         blockquote_label = re.compile(r"^\s*>\s*\*\*[^*\n]+\*\*\s*:")
@@ -935,9 +917,7 @@ class LessonPlanAnalysisService:
         if latest_upload is not None:
             return getattr(latest_upload, "original_filename", None)
         if legacy_lessonplans:
-            latest = max(
-                legacy_lessonplans, key=lambda x: x["created_at"]
-            )
+            latest = max(legacy_lessonplans, key=lambda x: x["created_at"])
             return latest.get("original_filename")
         return None
 
@@ -969,10 +949,7 @@ class LessonPlanAnalysisService:
         Returns:
             Citation 정보 딕셔너리
         """
-        citations = {
-            "used_criteria": [],
-            "grounding_chunks": []
-        }
+        citations = {"used_criteria": [], "grounding_chunks": []}
 
         try:
             if (

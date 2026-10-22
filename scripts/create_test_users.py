@@ -5,6 +5,7 @@
 - testuser (일반 사용자)
 - admin (관리자)
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -14,6 +15,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from sqlalchemy import select
+
 from app.db import get_async_session_context
 from app.models.users import User
 
@@ -32,19 +34,14 @@ async def create_test_users():
         if testuser:
             print("✅ testuser 이미 존재")
         else:
-            testuser = User(
-                username="testuser",
-                is_admin=False
-            )
+            testuser = User(username="testuser", is_admin=False)
             testuser.set_password("testpassword")
             db.add(testuser)
             await db.commit()
             print("✅ testuser 생성 완료")
 
         # 2. 관리자 확인 및 생성
-        result = await db.execute(
-            select(User).where(User.username == "admin")
-        )
+        result = await db.execute(select(User).where(User.username == "admin"))
         admin = result.scalar_one_or_none()
 
         if admin:
@@ -55,10 +52,7 @@ async def create_test_users():
                 await db.commit()
                 print("   관리자 권한 업데이트")
         else:
-            admin = User(
-                username="admin",
-                is_admin=True
-            )
+            admin = User(username="admin", is_admin=True)
             admin.set_password("admin1234")
             db.add(admin)
             await db.commit()

@@ -2,6 +2,7 @@
 사용자 스키마
 API 요청/응답 모델
 """
+
 import re
 from datetime import datetime
 
@@ -38,9 +39,7 @@ def validate_user_id(value: str | None) -> str:
     """
     normalized = normalize_user_id(value)
     if not USER_ID_PATTERN.fullmatch(normalized):
-        raise ValueError(
-            "아이디는 영문/숫자 9자 이하로 입력해주세요."
-        )
+        raise ValueError("아이디는 영문/숫자 9자 이하로 입력해주세요.")
     if normalized in RESERVED_USER_IDS:
         raise ValueError("사용할 수 없는 아이디입니다.")
     return normalized

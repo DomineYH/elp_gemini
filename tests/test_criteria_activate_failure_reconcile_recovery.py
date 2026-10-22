@@ -25,6 +25,7 @@ Diagnostic regression — 평가기준 활성/비활성 500 + reconcile 복구 �
 
 본 모듈은 두 가설을 분리해서 재현하는 mock-수준 통합 테스트를 제공한다.
 """
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -72,27 +73,31 @@ async def test_activate_500_then_reconcile_recovers_when_cloud_partially_committ
     # ---------- Phase 1: activate fails with replace exception ----------
     db1 = AsyncMock()
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.AppStateRepository"
-    ) as state_cls:
+    with (
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as state_cls,
+    ):
         vector_cls.return_value.file_search_service.client = MagicMock()
         alias = alias_cls.return_value
-        alias.fetch = AsyncMock(return_value=(
-            "docs/alias-map-old",
-            AliasMap(
-                schema_version=1,
-                updated_at="2026-05-15T00:00:00Z",
-                entries={
-                    stable_id: AliasMapEntry(
-                        alias=None, status="uploaded", activated_at=None,
-                    ),
-                },
-            ),
-        ))
+        alias.fetch = AsyncMock(
+            return_value=(
+                "docs/alias-map-old",
+                AliasMap(
+                    schema_version=1,
+                    updated_at="2026-05-15T00:00:00Z",
+                    entries={
+                        stable_id: AliasMapEntry(
+                            alias=None,
+                            status="uploaded",
+                            activated_at=None,
+                        ),
+                    },
+                ),
+            )
+        )
         alias.replace = AsyncMock(
             side_effect=TimeoutError("alias-map upload timeout"),
         )
@@ -121,27 +126,31 @@ async def test_activate_500_then_reconcile_recovers_when_cloud_partially_committ
     fake_client = MagicMock()
     fake_vec = MagicMock()
     fake_vec.file_search_service.client = fake_client
-    fake_vec.list_criteria_documents = AsyncMock(return_value=[
-        _doc(document_id, stable_id),
-    ])
+    fake_vec.list_criteria_documents = AsyncMock(
+        return_value=[
+            _doc(document_id, stable_id),
+        ]
+    )
 
     # cloud-truth: alias_map already shows the entry as active (the partial-
     # commit that occurred before the replace() call surfaced TimeoutError).
     fake_alias = MagicMock()
-    fake_alias.fetch = AsyncMock(return_value=(
-        "docs/alias-map-new",
-        AliasMap(
-            schema_version=1,
-            updated_at="2026-05-15T00:00:01Z",
-            entries={
-                stable_id: AliasMapEntry(
-                    alias=None,
-                    status="active",
-                    activated_at="2026-05-15T00:00:01Z",
-                ),
-            },
-        ),
-    ))
+    fake_alias.fetch = AsyncMock(
+        return_value=(
+            "docs/alias-map-new",
+            AliasMap(
+                schema_version=1,
+                updated_at="2026-05-15T00:00:01Z",
+                entries={
+                    stable_id: AliasMapEntry(
+                        alias=None,
+                        status="active",
+                        activated_at="2026-05-15T00:00:01Z",
+                    ),
+                },
+            ),
+        )
+    )
     fake_alias.replace = AsyncMock()
 
     fake_repo = MagicMock()
@@ -162,29 +171,37 @@ async def test_activate_500_then_reconcile_recovers_when_cloud_partially_committ
     }
     fake_state = MagicMock()
     fake_state.get = AsyncMock(side_effect=lambda key: state_values.get(key))
-    fake_state.set = AsyncMock(side_effect=lambda k, v: state_values.__setitem__(k, v))
+    fake_state.set = AsyncMock(
+        side_effect=lambda k, v: state_values.__setitem__(k, v)
+    )
 
     async def _set_many(values):
         state_values.update(values)
 
     fake_state.set_many = AsyncMock(side_effect=_set_many)
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService",
-        return_value=fake_vec,
-    ), patch(
-        # reconcile_criteria 라우터는 함수 내부에서 local import 함
-        "app.services.criteria_alias_map_service.CriteriaAliasMapService",
-        return_value=fake_alias,
-    ), patch(
-        "app.routers.admin.criteria.CriteriaRepository",
-        return_value=fake_repo,
-    ), patch(
-        "app.routers.admin.criteria.AppStateRepository",
-        return_value=fake_state,
-    ), patch(
-        "app.services.criteria_reconciliation_service.sha256_hex_of_api_key",
-        return_value="samehash",
+    with (
+        patch(
+            "app.routers.admin.criteria.CriteriaVectorService",
+            return_value=fake_vec,
+        ),
+        patch(
+            # reconcile_criteria 라우터는 함수 내부에서 local import 함
+            "app.services.criteria_alias_map_service.CriteriaAliasMapService",
+            return_value=fake_alias,
+        ),
+        patch(
+            "app.routers.admin.criteria.CriteriaRepository",
+            return_value=fake_repo,
+        ),
+        patch(
+            "app.routers.admin.criteria.AppStateRepository",
+            return_value=fake_state,
+        ),
+        patch(
+            "app.services.criteria_reconciliation_service.sha256_hex_of_api_key",
+            return_value="samehash",
+        ),
     ):
         result = await reconcile_criteria(db=db2, _admin=object())
 
@@ -219,27 +236,31 @@ async def test_activate_500_then_reconcile_does_not_apply_when_cloud_unchanged()
     # ---------- Phase 1: activate fails ----------
     db1 = AsyncMock()
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService"
-    ) as vector_cls, patch(
-        "app.routers.admin.criteria.CriteriaAliasMapService"
-    ) as alias_cls, patch(
-        "app.routers.admin.criteria.AppStateRepository"
-    ) as state_cls:
+    with (
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as state_cls,
+    ):
         vector_cls.return_value.file_search_service.client = MagicMock()
         alias = alias_cls.return_value
-        alias.fetch = AsyncMock(return_value=(
-            "docs/alias-map",
-            AliasMap(
-                schema_version=1,
-                updated_at="2026-05-15T00:00:00Z",
-                entries={
-                    stable_id: AliasMapEntry(
-                        alias=None, status="uploaded", activated_at=None,
-                    ),
-                },
-            ),
-        ))
+        alias.fetch = AsyncMock(
+            return_value=(
+                "docs/alias-map",
+                AliasMap(
+                    schema_version=1,
+                    updated_at="2026-05-15T00:00:00Z",
+                    entries={
+                        stable_id: AliasMapEntry(
+                            alias=None,
+                            status="uploaded",
+                            activated_at=None,
+                        ),
+                    },
+                ),
+            )
+        )
         alias.replace = AsyncMock(
             side_effect=RuntimeError("upload_to_file_search_store 503"),
         )
@@ -266,23 +287,29 @@ async def test_activate_500_then_reconcile_does_not_apply_when_cloud_unchanged()
     fake_client = MagicMock()
     fake_vec = MagicMock()
     fake_vec.file_search_service.client = fake_client
-    fake_vec.list_criteria_documents = AsyncMock(return_value=[
-        _doc(document_id, stable_id),
-    ])
+    fake_vec.list_criteria_documents = AsyncMock(
+        return_value=[
+            _doc(document_id, stable_id),
+        ]
+    )
 
     fake_alias = MagicMock()
-    fake_alias.fetch = AsyncMock(return_value=(
-        "docs/alias-map",
-        AliasMap(
-            schema_version=1,
-            updated_at="2026-05-15T00:00:00Z",
-            entries={
-                stable_id: AliasMapEntry(
-                    alias=None, status="uploaded", activated_at=None,
-                ),
-            },
-        ),
-    ))
+    fake_alias.fetch = AsyncMock(
+        return_value=(
+            "docs/alias-map",
+            AliasMap(
+                schema_version=1,
+                updated_at="2026-05-15T00:00:00Z",
+                entries={
+                    stable_id: AliasMapEntry(
+                        alias=None,
+                        status="uploaded",
+                        activated_at=None,
+                    ),
+                },
+            ),
+        )
+    )
     fake_alias.replace = AsyncMock()
 
     fake_repo = MagicMock()
@@ -303,28 +330,36 @@ async def test_activate_500_then_reconcile_does_not_apply_when_cloud_unchanged()
     }
     fake_state = MagicMock()
     fake_state.get = AsyncMock(side_effect=lambda key: state_values.get(key))
-    fake_state.set = AsyncMock(side_effect=lambda k, v: state_values.__setitem__(k, v))
+    fake_state.set = AsyncMock(
+        side_effect=lambda k, v: state_values.__setitem__(k, v)
+    )
 
     async def _set_many(values):
         state_values.update(values)
 
     fake_state.set_many = AsyncMock(side_effect=_set_many)
 
-    with patch(
-        "app.routers.admin.criteria.CriteriaVectorService",
-        return_value=fake_vec,
-    ), patch(
-        "app.services.criteria_alias_map_service.CriteriaAliasMapService",
-        return_value=fake_alias,
-    ), patch(
-        "app.routers.admin.criteria.CriteriaRepository",
-        return_value=fake_repo,
-    ), patch(
-        "app.routers.admin.criteria.AppStateRepository",
-        return_value=fake_state,
-    ), patch(
-        "app.services.criteria_reconciliation_service.sha256_hex_of_api_key",
-        return_value="samehash",
+    with (
+        patch(
+            "app.routers.admin.criteria.CriteriaVectorService",
+            return_value=fake_vec,
+        ),
+        patch(
+            "app.services.criteria_alias_map_service.CriteriaAliasMapService",
+            return_value=fake_alias,
+        ),
+        patch(
+            "app.routers.admin.criteria.CriteriaRepository",
+            return_value=fake_repo,
+        ),
+        patch(
+            "app.routers.admin.criteria.AppStateRepository",
+            return_value=fake_state,
+        ),
+        patch(
+            "app.services.criteria_reconciliation_service.sha256_hex_of_api_key",
+            return_value="samehash",
+        ),
     ):
         result = await reconcile_criteria(db=db2, _admin=object())
 

@@ -1,4 +1,5 @@
 """chat_sessions.user_type 라벨 정규화 마이그레이션 테스트"""
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -24,9 +25,7 @@ async def _create_chat_sessions_table(engine):
 async def _insert_user_type(engine, value):
     async with engine.begin() as conn:
         await conn.execute(
-            text(
-                "INSERT INTO chat_sessions (user_type) VALUES (:v)"
-            ),
+            text("INSERT INTO chat_sessions (user_type) VALUES (:v)"),
             {"v": value},
         )
 
@@ -34,9 +33,7 @@ async def _insert_user_type(engine, value):
 async def _count_user_type(engine, value):
     async with engine.connect() as conn:
         result = await conn.execute(
-            text(
-                "SELECT COUNT(*) FROM chat_sessions WHERE user_type = :v"
-            ),
+            text("SELECT COUNT(*) FROM chat_sessions WHERE user_type = :v"),
             {"v": value},
         )
         return result.scalar_one()

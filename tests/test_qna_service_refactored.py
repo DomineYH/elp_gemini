@@ -2,11 +2,14 @@
 QnA 서비스 리팩토링 테스트
 세션 기반 QnA 동작 검증
 """
+
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
-from app.services.qna_service import QnAService
-from app.models.chat_sessions import ChatSession
+
 from app.models.chat_messages import ChatMessage, MessageRole
+from app.models.chat_sessions import ChatSession
+from app.services.qna_service import QnAService
 
 
 @pytest.fixture
@@ -32,12 +35,8 @@ def mock_session():
 @pytest.fixture
 def qna_service(mock_db):
     """QnAService 인스턴스"""
-    with patch(
-        'app.services.qna_service.PromptLoaderService'
-    ):
-        with patch(
-            'app.services.qna_service.FileSearchService'
-        ):
+    with patch("app.services.qna_service.PromptLoaderService"):
+        with patch("app.services.qna_service.FileSearchService"):
             service = QnAService(mock_db)
             return service
 
@@ -46,17 +45,12 @@ class TestQnAServiceRefactored:
     """QnA 서비스 리팩토링 테스트"""
 
     @pytest.mark.asyncio
-    async def test_create_session(
-        self, qna_service, mock_db
-    ):
+    async def test_create_session(self, qna_service, mock_db):
         """세션 생성 테스트"""
         user_id = 100
         title = "테스트 세션"
 
-        session = await qna_service.create_session(
-            user_id=user_id,
-            title=title
-        )
+        session = await qna_service.create_session(user_id=user_id, title=title)
 
         # 세션이 DB에 추가되었는지 확인
         mock_db.add.assert_called_once()
@@ -69,9 +63,7 @@ class TestQnAServiceRefactored:
         assert added_session.title == title
 
     @pytest.mark.asyncio
-    async def test_save_messages(
-        self, qna_service, mock_db
-    ):
+    async def test_save_messages(self, qna_service, mock_db):
         """메시지 저장 테스트"""
         session_id = 1
         question = "테스트 질문"
@@ -84,7 +76,7 @@ class TestQnAServiceRefactored:
             question=question,
             answer=answer,
             model_name=model_name,
-            citations=citations
+            citations=citations,
         )
 
         # 2개의 메시지가 추가되었는지 확인 (user, assistant)
@@ -108,9 +100,7 @@ class TestQnAServiceRefactored:
         assert assistant_msg.citations == citations
 
     @pytest.mark.asyncio
-    async def test_get_conversation_history(
-        self, qna_service, mock_db
-    ):
+    async def test_get_conversation_history(self, qna_service, mock_db):
         """대화 히스토리 조회 테스트"""
         session_id = 1
 
@@ -134,16 +124,13 @@ class TestQnAServiceRefactored:
         # DB execute 결과 Mock
         mock_result = AsyncMock()
         mock_result.scalars = Mock(
-            return_value=Mock(
-                all=Mock(return_value=[msg1, msg2, msg3, msg4])
-            )
+            return_value=Mock(all=Mock(return_value=[msg1, msg2, msg3, msg4]))
         )
         mock_db.execute.return_value = mock_result
 
         # 히스토리 조회
         history = await qna_service.get_conversation_history(
-            session_id=session_id,
-            limit=10
+            session_id=session_id, limit=10
         )
 
         # 결과 확인
@@ -154,24 +141,19 @@ class TestQnAServiceRefactored:
         assert history[1]["answer"] == "답변 2"
 
     @pytest.mark.asyncio
-    async def test_get_session(
-        self, qna_service, mock_db, mock_session
-    ):
+    async def test_get_session(self, qna_service, mock_db, mock_session):
         """세션 가져오기 테스트"""
         session_id = 1
         user_id = 100
 
         # DB execute 결과 Mock
         mock_result = AsyncMock()
-        mock_result.scalar_one_or_none = Mock(
-            return_value=mock_session
-        )
+        mock_result.scalar_one_or_none = Mock(return_value=mock_session)
         mock_db.execute.return_value = mock_result
 
         # 세션 조회
         session = await qna_service._get_session(
-            session_id=session_id,
-            user_id=user_id
+            session_id=session_id, user_id=user_id
         )
 
         # 결과 확인
@@ -184,10 +166,7 @@ class TestQnAServiceRefactored:
         mock_metadata = Mock()
         mock_metadata.to_dict = Mock(
             return_value={
-                "grounding_chunks": [
-                    {"chunk_id": "1"},
-                    {"chunk_id": "2"}
-                ]
+                "grounding_chunks": [{"chunk_id": "1"}, {"chunk_id": "2"}]
             }
         )
 
@@ -217,8 +196,7 @@ class TestQnAServiceRefactored:
         system_prompt = "테스트 시스템 프롬프트"
 
         context = qna_service._build_context(
-            system_prompt=system_prompt,
-            conversation_history=None
+            system_prompt=system_prompt, conversation_history=None
         )
 
         assert "시스템 프롬프트: 테스트 시스템 프롬프트" in context
@@ -229,12 +207,11 @@ class TestQnAServiceRefactored:
         system_prompt = "테스트 시스템 프롬프트"
         history = [
             {"question": "Q1", "answer": "A1"},
-            {"question": "Q2", "answer": "A2"}
+            {"question": "Q2", "answer": "A2"},
         ]
 
         context = qna_service._build_context(
-            system_prompt=system_prompt,
-            conversation_history=history
+            system_prompt=system_prompt, conversation_history=history
         )
 
         assert "시스템 프롬프트: 테스트 시스템 프롬프트" in context

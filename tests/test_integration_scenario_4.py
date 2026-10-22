@@ -8,11 +8,12 @@
 4. 다양한 질문 수행 (프롬프트 타입 테스트)
 5. 응답에서 프롬프트 적용 확인
 """
+
 import asyncio
-import httpx
 import io
 from pathlib import Path
 
+import httpx
 
 # 테스트 설정
 BASE_URL = "http://localhost:8000"
@@ -51,7 +52,7 @@ async def get_auth_token(client: httpx.AsyncClient) -> str:
         data={
             "username": TEST_USERNAME,
             "password": TEST_PASSWORD,
-        }
+        },
     )
 
     if response.status_code != 200:
@@ -59,7 +60,7 @@ async def get_auth_token(client: httpx.AsyncClient) -> str:
 
     data = response.json()
     token = data["access_token"]
-    print(f"✅ 인증 토큰 획득 완료")
+    print("✅ 인증 토큰 획득 완료")
     return token
 
 
@@ -77,14 +78,14 @@ def verify_prompt_file_exists() -> bool:
 
     # 파일 내용 확인
     try:
-        content = prompt_file.read_text(encoding='utf-8')
+        content = prompt_file.read_text(encoding="utf-8")
         print(f"   파일 크기: {len(content)} bytes")
 
         # 프롬프트 타입 확인
         if "# qna" in content.lower():
-            print(f"   ✓ QnA 프롬프트 존재")
+            print("   ✓ QnA 프롬프트 존재")
         if "# evaluation" in content.lower():
-            print(f"   ✓ Evaluation 프롬프트 존재")
+            print("   ✓ Evaluation 프롬프트 존재")
 
         return True
     except Exception as e:
@@ -93,21 +94,18 @@ def verify_prompt_file_exists() -> bool:
 
 
 async def upload_lessonplan(
-    client: httpx.AsyncClient,
-    token: str
+    client: httpx.AsyncClient, token: str
 ) -> str | None:
     """지도안 업로드"""
     print("\n📤 지도안 업로드 중...")
 
-    file_content = TEST_LESSONPLAN_CONTENT.encode('utf-8')
-    files = {
-        'file': ('science_lessonplan.txt', io.BytesIO(file_content))
-    }
+    file_content = TEST_LESSONPLAN_CONTENT.encode("utf-8")
+    files = {"file": ("science_lessonplan.txt", io.BytesIO(file_content))}
 
     response = await client.post(
         f"{BASE_URL}/dashboard/upload",
         files=files,
-        headers={"Authorization": f"Bearer {token}"}
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     if response.status_code != 200:
@@ -118,9 +116,7 @@ async def upload_lessonplan(
 
 
 async def create_qna_session(
-    client: httpx.AsyncClient,
-    token: str,
-    lessonplan_filename: str
+    client: httpx.AsyncClient, token: str, lessonplan_filename: str
 ) -> int:
     """QnA 세션 생성"""
     print("\n🔄 QnA 세션 생성 중...")
@@ -128,7 +124,7 @@ async def create_qna_session(
     response = await client.post(
         f"{BASE_URL}/api/qna/sessions",
         json={"lessonplan_filename": lessonplan_filename},
-        headers={"Authorization": f"Bearer {token}"}
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     if response.status_code != 201:
@@ -141,9 +137,7 @@ async def create_qna_session(
 
 
 async def ask_multiple_questions(
-    client: httpx.AsyncClient,
-    token: str,
-    session_id: int
+    client: httpx.AsyncClient, token: str, session_id: int
 ) -> list:
     """다양한 질문 수행"""
     print("\n💬 다양한 질문 수행 중...")
@@ -163,16 +157,14 @@ async def ask_multiple_questions(
         response = await client.post(
             f"{BASE_URL}/api/qna/sessions/{session_id}/ask",
             json={"question": question},
-            headers={"Authorization": f"Bearer {token}"}
+            headers={"Authorization": f"Bearer {token}"},
         )
 
         if response.status_code != 200:
             print(f"   ❌ 질문 실패: {response.text}")
-            results.append({
-                "question": question,
-                "success": False,
-                "error": response.text
-            })
+            results.append(
+                {"question": question, "success": False, "error": response.text}
+            )
             continue
 
         data = response.json()
@@ -182,12 +174,14 @@ async def ask_multiple_questions(
         print(f"   ✅ 답변: {answer[:150]}...")
         print(f"   응답 시간: {latency}ms")
 
-        results.append({
-            "question": question,
-            "answer": answer,
-            "latency_ms": latency,
-            "success": True
-        })
+        results.append(
+            {
+                "question": question,
+                "answer": answer,
+                "latency_ms": latency,
+                "success": True,
+            }
+        )
 
     return results
 
@@ -200,18 +194,14 @@ def analyze_prompt_usage(results: list) -> dict:
         "total_questions": len(results),
         "successful_questions": sum(1 for r in results if r["success"]),
         "average_latency": 0,
-        "prompt_indicators": []
+        "prompt_indicators": [],
     }
 
     # 평균 응답 시간 계산
     successful_results = [r for r in results if r["success"]]
     if successful_results:
-        total_latency = sum(
-            r.get("latency_ms", 0) for r in successful_results
-        )
-        analysis["average_latency"] = (
-            total_latency / len(successful_results)
-        )
+        total_latency = sum(r.get("latency_ms", 0) for r in successful_results)
+        analysis["average_latency"] = total_latency / len(successful_results)
 
     # 프롬프트 적용 지표 확인
     for result in successful_results:
@@ -258,9 +248,7 @@ async def run_integration_test_scenario_4():
             token = await get_auth_token(client)
 
             # 3. 지도안 업로드
-            lessonplan_filename = await upload_lessonplan(
-                client, token
-            )
+            lessonplan_filename = await upload_lessonplan(client, token)
             if lessonplan_filename is None:
                 return None
 
@@ -270,9 +258,7 @@ async def run_integration_test_scenario_4():
             )
 
             # 5. 다양한 질문 수행
-            results = await ask_multiple_questions(
-                client, token, session_id
-            )
+            results = await ask_multiple_questions(client, token, session_id)
 
             # 6. 프롬프트 적용 분석
             analysis = analyze_prompt_usage(results)
@@ -289,14 +275,17 @@ async def run_integration_test_scenario_4():
             print(f"- 총 질문: {analysis['total_questions']}개")
             print(f"- 성공: {analysis['successful_questions']}개")
             print(f"- 평균 응답 시간: {analysis['average_latency']:.2f}ms")
-            print(f"- 프롬프트 적용 지표: "
-                  f"{len(analysis['prompt_indicators'])}개")
+            print(
+                f"- 프롬프트 적용 지표: "
+                f"{len(analysis['prompt_indicators'])}개"
+            )
 
             return analysis["successful_questions"] > 0
 
         except Exception as e:
             print(f"\n❌ 테스트 실패: {str(e)}")
             import traceback
+
             traceback.print_exc()
             return False
 

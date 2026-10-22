@@ -7,11 +7,10 @@ This is a scaffold; full integration coverage lives in service-level tests
 across Waves 2-5. This file documents the happy path and serves as the
 canonical example of how the new flow composes.
 """
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.schemas.alias_map import AliasMap, AliasMapEntry, empty_alias_map
+from app.schemas.alias_map import AliasMap, AliasMapEntry
 
 
 @pytest.mark.asyncio
@@ -54,27 +53,22 @@ async def test_round_trip_documented_for_future_implementation():
 
 def test_feature_branch_modules_all_importable():
     """Smoke: every new module in the feature branch imports without error."""
-    from app.schemas.alias_map import AliasMap, AliasMapEntry, empty_alias_map  # noqa: F401
+    from app.models.criteria import Criteria
     from app.services.alias_map_codec import (  # noqa: F401
         ALIAS_MAP_PAYLOAD_KEY,
-        encode_alias_map_payload,
         decode_alias_map_payload,
+        encode_alias_map_payload,
     )
-    from app.services.criteria_alias_map_service import CriteriaAliasMapService  # noqa: F401
     from app.services.criteria_legacy_migration import (  # noqa: F401
-        migrate_from_legacy_manifest,
         LEGACY_METADATA_STORE_NAME,
         MIGRATION_MARKER_KEY,
+        migrate_from_legacy_manifest,
     )
     from app.services.criteria_reconciliation_service import (  # noqa: F401
         CriteriaReconciliationService,
         ReconcileResult,
         sha256_hex_of_api_key,
     )
-    from app.services.criteria_vector_service import CriteriaVectorService  # noqa: F401
-    from app.migrations.criteria_stable_id import ensure_criteria_stable_id_column  # noqa: F401
-    from app.repositories.criteria_repository import CriteriaRepository  # noqa: F401
-    from app.models.criteria import Criteria
 
     # Spot check the column exists on the ORM model
     assert "stable_id" in Criteria.__table__.columns
@@ -86,7 +80,11 @@ def test_alias_map_pydantic_round_trip():
         schema_version=1,
         updated_at="2026-05-15T00:00:00Z",
         entries={
-            "01HXYZ": AliasMapEntry(alias="1학기", status="active", activated_at="2026-05-15T00:00:00Z"),
+            "01HXYZ": AliasMapEntry(
+                alias="1학기",
+                status="active",
+                activated_at="2026-05-15T00:00:00Z",
+            ),
         },
     )
     raw = m.model_dump(mode="json")

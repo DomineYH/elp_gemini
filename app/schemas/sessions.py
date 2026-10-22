@@ -2,6 +2,7 @@
 채팅 세션 및 메시지 스키마
 세션 기반 QnA 관리
 """
+
 from datetime import datetime
 from typing import Any, List, Optional
 
@@ -14,27 +15,17 @@ class CreateSessionRequest(BaseModel):
     """세션 생성 요청"""
 
     lessonplan_filename: str = Field(
-        ...,
-        min_length=1,
-        description="지도안 파일명"
+        ..., min_length=1, description="지도안 파일명"
     )
 
 
 class CreateSessionResponse(BaseModel):
     """세션 생성 응답"""
 
-    session_id: int = Field(
-        ..., description="생성된 세션 ID"
-    )
-    user_id: int = Field(
-        ..., description="사용자 ID"
-    )
-    lessonplan_filename: str = Field(
-        ..., description="지도안 파일명"
-    )
-    created_at: datetime = Field(
-        ..., description="생성 시간"
-    )
+    session_id: int = Field(..., description="생성된 세션 ID")
+    user_id: int = Field(..., description="사용자 ID")
+    lessonplan_filename: str = Field(..., description="지도안 파일명")
+    created_at: datetime = Field(..., description="생성 시간")
 
     @field_serializer("created_at")
     def _ser_utc(self, value: datetime | None) -> str | None:
@@ -45,31 +36,18 @@ class AskQuestionRequest(BaseModel):
     """질문 요청"""
 
     question: str = Field(
-        ...,
-        min_length=1,
-        max_length=5000,
-        description="질문 내용"
+        ..., min_length=1, max_length=5000, description="질문 내용"
     )
 
 
 class AskQuestionResponse(BaseModel):
     """질문 응답"""
 
-    session_id: int = Field(
-        ..., description="세션 ID"
-    )
-    question: str = Field(
-        ..., description="질문"
-    )
-    answer: str = Field(
-        ..., description="답변"
-    )
-    latency_ms: Optional[int] = Field(
-        None, description="응답 시간 (ms)"
-    )
-    citations: Optional[Any] = Field(
-        None, description="인용 정보"
-    )
+    session_id: int = Field(..., description="세션 ID")
+    question: str = Field(..., description="질문")
+    answer: str = Field(..., description="답변")
+    latency_ms: Optional[int] = Field(None, description="응답 시간 (ms)")
+    citations: Optional[Any] = Field(None, description="인용 정보")
     sources: List[str] = Field(
         default_factory=list, description="출처 문서 제목"
     )
@@ -98,51 +76,26 @@ class ChatMessageResponse(BaseModel):
 class ChatHistoryResponse(BaseModel):
     """채팅 히스토리 응답"""
 
-    session_id: int = Field(
-        ..., description="세션 ID"
-    )
+    session_id: int = Field(..., description="세션 ID")
     messages: List[ChatMessageResponse] = Field(
-        default_factory=list,
-        description="메시지 목록"
+        default_factory=list, description="메시지 목록"
     )
-    total_count: int = Field(
-        ..., description="전체 메시지 수"
-    )
-    returned_count: int = Field(
-        ..., description="이번 응답에 포함된 메시지 수"
-    )
-    limit: int = Field(
-        ..., description="페이지당 메시지 수"
-    )
-    offset: int = Field(
-        ..., description="조회 시작 위치"
-    )
-    has_more: bool = Field(
-        ..., description="추가 메시지 존재 여부"
-    )
+    total_count: int = Field(..., description="전체 메시지 수")
+    returned_count: int = Field(..., description="이번 응답에 포함된 메시지 수")
+    limit: int = Field(..., description="페이지당 메시지 수")
+    offset: int = Field(..., description="조회 시작 위치")
+    has_more: bool = Field(..., description="추가 메시지 존재 여부")
 
 
 class UserSessionItem(BaseModel):
     """사용자 세션 목록 항목"""
 
-    session_id: int = Field(
-        ..., description="세션 ID"
-    )
-    title: Optional[str] = Field(
-        None, description="세션 제목"
-    )
-    user_type: Optional[str] = Field(
-        None, description="사용자 유형"
-    )
-    created_at: datetime = Field(
-        ..., description="생성 시간"
-    )
-    updated_at: datetime = Field(
-        ..., description="수정 시간"
-    )
-    message_count: int = Field(
-        0, description="메시지 수"
-    )
+    session_id: int = Field(..., description="세션 ID")
+    title: Optional[str] = Field(None, description="세션 제목")
+    user_type: Optional[str] = Field(None, description="사용자 유형")
+    created_at: datetime = Field(..., description="생성 시간")
+    updated_at: datetime = Field(..., description="수정 시간")
+    message_count: int = Field(0, description="메시지 수")
     last_message_at: Optional[datetime] = Field(
         None, description="마지막 메시지 시간"
     )
@@ -158,21 +111,10 @@ class UserSessionListResponse(BaseModel):
     """사용자 세션 목록 응답"""
 
     sessions: List[UserSessionItem] = Field(
-        default_factory=list,
-        description="세션 목록"
+        default_factory=list, description="세션 목록"
     )
-    total_count: int = Field(
-        ..., description="전체 세션 수"
-    )
-    returned_count: int = Field(
-        ..., description="이번 응답에 포함된 세션 수"
-    )
-    limit: int = Field(
-        ..., description="페이지당 세션 수"
-    )
-    offset: int = Field(
-        ..., description="조회 시작 위치"
-    )
-    has_more: bool = Field(
-        ..., description="추가 세션 존재 여부"
-    )
+    total_count: int = Field(..., description="전체 세션 수")
+    returned_count: int = Field(..., description="이번 응답에 포함된 세션 수")
+    limit: int = Field(..., description="페이지당 세션 수")
+    offset: int = Field(..., description="조회 시작 위치")
+    has_more: bool = Field(..., description="추가 세션 존재 여부")
