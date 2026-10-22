@@ -123,3 +123,30 @@ async def test_missing_table_is_skipped():
         assert await ensure_chat_sessions_document_id_column(engine) is False
     finally:
         await engine.dispose()
+
+
+async def test_long_upload_filename_is_truncated_to_title_length(
+    legacy_engine,
+):
+    long_name = "가" * 300 + ".pdf"
+    path3 = "fileSearchStores/s1/documents/d3"
+    async with legacy_engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO chat_sessions (id, user_id, title) "
+                f"VALUES (4, 3, '{path3}')"
+            )
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO lessonplan_uploads "
+                "(id, user_id, original_filename, fs_document_id, created_at) "
+                f"VALUES (5, 3, '{long_name}', '{path3}', '2026-01-01')"
+            )
+        )
+
+    await ensure_chat_sessions_document_id_column(legacy_engine)
+
+    title = (await _titles(legacy_engine))[4]
+    assert len(title) == 255
+    assert title == long_name[:255]
