@@ -237,6 +237,8 @@ async def test_list_my_sessions_only_returns_current_user_sessions(
     assert session_with_messages["user_type"] == "1학년"
     assert session_with_messages["message_count"] == 3
     assert session_with_messages["last_message_at"] is not None
+    assert sessions[0]["created_at"].endswith("+00:00")
+    assert session_with_messages["last_message_at"].endswith("+00:00")
 
     empty_session = next(
         item for item in sessions
@@ -343,6 +345,7 @@ async def test_get_history_owner_receives_ordered_messages(
         "두 번째 질문",
     ]
     assert all("created_at" in message for message in messages)
+    assert messages[0]["created_at"].endswith("+00:00")
 
 
 @pytest.mark.asyncio

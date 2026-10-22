@@ -127,6 +127,7 @@ async def test_accounts_response_uses_username_identifier():
     assert body["accounts"][0]["username"] == "idonly1"
     assert body["accounts"][0]["user_identifier"] == "idonly1"
     assert body["accounts"][1]["user_identifier"] == "teacher1"
+    assert body["accounts"][0]["created_at"].endswith("+00:00")
 
 
 @pytest.mark.asyncio
@@ -487,6 +488,7 @@ async def test_session_detail_with_messages(seed_data):
     assert "role" in msg
     assert "content" in msg
     assert "created_at" in msg
+    assert msg["created_at"].endswith("+00:00")
 
     rpt = data["reports"][0]
     assert "id" in rpt
@@ -686,6 +688,7 @@ async def test_admin_user_reports_returns_target_user_reports(seed_data):
         assert first >= second
     for item in body["reports"]:
         assert {"id", "report_filename", "lessonplan_filename", "created_at"} <= set(item)
+        assert item["created_at"].endswith("+00:00")
 
 
 @pytest.mark.asyncio
