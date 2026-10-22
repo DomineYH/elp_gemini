@@ -112,11 +112,12 @@ async def test_new_session_uses_upload_filename_and_is_reused(client, user):
 
 
 @pytest.mark.asyncio
-async def test_without_upload_title_is_last_path_segment(client):
+async def test_without_upload_title_is_fixed_label(client):
     await _ask(client)
 
     sessions = await _sessions()
-    assert [s.title for s in sessions] == ["d1"]
+    assert [s.title for s in sessions] == ["업로드한 지도안"]
+    assert "d1" not in sessions[0].title
 
 
 @pytest.mark.asyncio
