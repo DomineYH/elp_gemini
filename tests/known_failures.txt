@@ -6,30 +6,9 @@
 #       SESSION_HTTPS_ONLY=false TZ=UTC \
 #       uv run --frozen python scripts/ci_ratchet.py tests --update
 # 정리 후속 이슈: #227
-ERROR tests/integration/test_criteria_delete_integration.py
-ERROR tests/integration/test_criteria_full_lifecycle.py
-ERROR tests/integration/test_criteria_pipeline_evaluation.py
-ERROR tests/integration/test_criteria_pipeline_isolation_store.py
-ERROR tests/integration/test_criteria_pipeline_isolation_user.py
-ERROR tests/integration/test_qna_api.py
 ERROR tests/test_dashboard_view.py::test_dashboard_report_links_use_viewer_endpoint
 ERROR tests/test_dashboard_view.py::test_dashboard_view_authenticated
-ERROR tests/test_frontend_flow.py
-ERROR tests/test_lifecycle.py
-ERROR tests/unit/test_criteria_delete.py
-ERROR tests/unit/test_criteria_delete_logic.py
-ERROR tests/unit/test_criteria_embedding_service_cleanup.py
-ERROR tests/unit/test_criteria_embedding_service_edge_cases.py
-ERROR tests/unit/test_criteria_embedding_service_metadata.py
-ERROR tests/unit/test_criteria_embedding_service_polling.py
-ERROR tests/unit/test_criteria_embedding_service_retry.py
-ERROR tests/unit/test_criteria_embedding_service_store.py
-ERROR tests/unit/test_criteria_embedding_service_upload.py
-ERROR tests/unit/test_criteria_repository.py
-ERROR tests/unit/test_criteria_repository_activation.py
-ERROR tests/unit/test_legacy_data_handling.py
 ERROR tests/unit/test_lessonplan_analysis_service.py
-ERROR tests/unit/test_qna_service.py
 ERROR tests/unit/test_qna_service_refactored.py
 FAILED tests/services/test_lessonplan_analysis_tool_order.py::test_rubric_metadata_filter_omitted_when_none
 FAILED tests/services/test_lessonplan_analysis_tool_order.py::test_user_store_tool_precedes_rubric_tool
