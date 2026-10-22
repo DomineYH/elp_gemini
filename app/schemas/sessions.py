@@ -5,7 +5,9 @@
 from datetime import datetime
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
+
+from app.utils.timestamps import utc_iso
 
 
 class CreateSessionRequest(BaseModel):
@@ -33,6 +35,10 @@ class CreateSessionResponse(BaseModel):
     created_at: datetime = Field(
         ..., description="생성 시간"
     )
+
+    @field_serializer("created_at")
+    def _ser_utc(self, value: datetime | None) -> str | None:
+        return utc_iso(value)
 
 
 class AskQuestionRequest(BaseModel):
@@ -79,6 +85,10 @@ class ChatMessageResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @field_serializer("created_at")
+    def _ser_utc(self, value: datetime | None) -> str | None:
+        return utc_iso(value)
 
 
 class ChatHistoryResponse(BaseModel):
@@ -134,6 +144,10 @@ class UserSessionItem(BaseModel):
     )
 
     model_config = {"from_attributes": True}
+
+    @field_serializer("created_at", "updated_at", "last_message_at")
+    def _ser_utc(self, value: datetime | None) -> str | None:
+        return utc_iso(value)
 
 
 class UserSessionListResponse(BaseModel):

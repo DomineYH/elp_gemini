@@ -4,7 +4,9 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
+
+from app.utils.timestamps import utc_iso
 
 
 class AnalysisReportItem(BaseModel):
@@ -21,6 +23,10 @@ class AnalysisReportItem(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @field_serializer("created_at")
+    def _ser_utc(self, value: datetime | None) -> str | None:
+        return utc_iso(value)
 
 
 class AnalysisReportListResponse(BaseModel):
@@ -49,7 +55,7 @@ class AnalysisReportListResponse(BaseModel):
                             "수업지도안_a1b2c3d4_reports.md"
                         ),
                         "latency_ms": 45000,
-                        "created_at": "2025-11-28T18:25:30"
+                        "created_at": "2025-11-28T18:25:30+00:00"
                     }
                 ],
                 "total_count": 1

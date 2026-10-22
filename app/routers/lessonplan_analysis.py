@@ -20,6 +20,7 @@ from app.schemas.lessonplan_analysis import (
     LessonPlanAnalysisResponse,
 )
 from app.services.lessonplan_analysis_service import LessonPlanAnalysisService
+from app.utils.timestamps import utc_iso
 
 router = APIRouter(prefix="/api/lessonplan", tags=["lessonplan"])
 
@@ -176,7 +177,7 @@ async def get_analysis_report(
             "report_filename": report.report_filename,
             "content": content,
             "latency_ms": report.latency_ms,
-            "created_at": report.created_at.isoformat()
+            "created_at": utc_iso(report.created_at)
         }
 
     except HTTPException:

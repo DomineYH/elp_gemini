@@ -39,6 +39,7 @@ from app.utils.admin_csrf import (
 )
 from app.templating import templates
 from app.utils.logging import log_auth_event, log_user_action
+from app.utils.timestamps import utc_iso
 
 router = APIRouter(tags=["관리자-사용자관리"])
 logger = logging.getLogger(__name__)
@@ -282,8 +283,8 @@ async def get_user_sessions(
             last = msgs[-1] if msgs else None
             user = getattr(s, "user", None)
             last_at = (
-                last.created_at.isoformat() if last
-                else s.created_at.isoformat())
+                utc_iso(last.created_at) if last
+                else utc_iso(s.created_at))
             sessions_data.append({
                 "session_id": s.id,
                 "user_id": s.user_id,
@@ -296,8 +297,7 @@ async def get_user_sessions(
                 ),
                 "user_type": s.user_type,
                 "title": s.title,
-                "created_at": (
-                    s.created_at.isoformat()),
+                "created_at": utc_iso(s.created_at),
                 "qna_count": qna_c,
                 "message_count": len(msgs),
                 "report_count": rpt_map.get(
@@ -378,11 +378,7 @@ async def get_user_accounts(
                 "nickname": account.nickname,
                 "user_identifier": _user_identifier(account),
                 "is_admin": account.is_admin,
-                "created_at": (
-                    account.created_at.isoformat()
-                    if account.created_at
-                    else None
-                ),
+                "created_at": utc_iso(account.created_at),
                 "session_count": session_counts.get(account.id, 0),
                 "report_count": report_counts.get(account.id, 0),
                 "simulation_count": simulation_counts.get(account.id, 0),
@@ -439,8 +435,7 @@ async def get_session_detail(
                 "content": m.content,
                 "model_name": m.model_name,
                 "citations": m.citations,
-                "created_at": (
-                    m.created_at.isoformat()),
+                "created_at": utc_iso(m.created_at),
             }
             for m in msgs
         ]
@@ -458,8 +453,7 @@ async def get_session_detail(
                 "filename": r.report_filename,
                 "report_path": r.report_path,
                 "latency_ms": r.latency_ms,
-                "created_at": (
-                    r.created_at.isoformat()),
+                "created_at": utc_iso(r.created_at),
             }
             for r in rpt_r.scalars().all()
         ]
@@ -550,10 +544,10 @@ async def get_user_sessions_for_admin(
             "session_id": session.id,
             "title": session.title,
             "user_type": session.user_type,
-            "created_at": session.created_at.isoformat(),
-            "updated_at": session.updated_at.isoformat() if session.updated_at else None,
+            "created_at": utc_iso(session.created_at),
+            "updated_at": utc_iso(session.updated_at),
             "message_count": int(message_count or 0),
-            "last_message_at": last_message_at.isoformat() if last_message_at else None,
+            "last_message_at": utc_iso(last_message_at),
         })
 
     logger.info(
@@ -613,7 +607,7 @@ async def get_user_reports_for_admin(
             "lessonplan_filename": r.lessonplan_filename,
             "lessonplan_original_name": getattr(r, "lessonplan_original_name", None),
             "latency_ms": r.latency_ms,
-            "created_at": r.created_at.isoformat(),
+            "created_at": utc_iso(r.created_at),
         }
         for r in result.scalars().all()
     ]
@@ -657,9 +651,7 @@ async def get_user_profile_for_admin(
         "username": target.username,
         "nickname": target.nickname,
         "is_admin": target.is_admin,
-        "created_at": (
-            target.created_at.isoformat() if target.created_at else None
-        ),
+        "created_at": utc_iso(target.created_at),
         "session_count": session_counts.get(target.id, 0),
         "report_count": report_counts.get(target.id, 0),
         "simulation_count": simulation_counts.get(target.id, 0),
@@ -708,7 +700,7 @@ async def get_admin_report_detail(
         "report_filename": report.report_filename,
         "content": content,
         "latency_ms": report.latency_ms,
-        "created_at": report.created_at.isoformat(),
+        "created_at": utc_iso(report.created_at),
     }
 
 

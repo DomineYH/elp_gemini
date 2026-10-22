@@ -16,6 +16,7 @@ from app.models.chat_sessions import ChatSession
 from app.models.chat_messages import ChatMessage
 from app.templating import templates
 from app.utils.admin_csrf import ensure_admin_csrf_token
+from app.utils.timestamps import utc_iso
 
 router = APIRouter(tags=["관리자-QnA로그"])
 logger = logging.getLogger(__name__)
@@ -83,7 +84,7 @@ async def get_qna_logs(
                     "id": msg.id,
                     "role": msg.role.value if hasattr(msg.role, "value") else str(msg.role),
                     "content": msg.content,
-                    "created_at": msg.created_at.isoformat(),
+                    "created_at": utc_iso(msg.created_at),
                 }
                 for msg in sorted_messages
             ]
@@ -94,7 +95,7 @@ async def get_qna_logs(
                 "title": session.title,
                 "messages": messages_data,
                 "message_count": len(messages_data),
-                "created_at": session.created_at.isoformat(),
+                "created_at": utc_iso(session.created_at),
             })
 
         logger.info(
