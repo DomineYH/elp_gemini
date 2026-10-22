@@ -156,7 +156,7 @@ uv run --frozen python scripts/ci_ratchet.py lint --base origin/main
 uv run --frozen python scripts/ci_ratchet.py tests
 ```
 
-`tests/known_failures.txt`는 줄어들기만 해야 합니다. 테스트를 고쳐 CI가 `fixed`를 알리면 해당 줄을 지웁니다. 목록 전체를 다시 쓰려면 위 환경변수로 `python scripts/ci_ratchet.py tests --update`를 실행합니다. 새 실패를 목록에 추가해서 CI를 통과시키지 않습니다.
+`tests/known_failures.txt`는 줄어들기만 해야 합니다. 테스트를 고쳐 CI가 `fixed`를 알리면 해당 줄을 지웁니다. 목록 전체를 다시 쓰려면 위 환경변수로 `uv run --frozen python scripts/ci_ratchet.py tests --update`를 실행합니다. 새 실패를 목록에 추가해서 CI를 통과시키지 않습니다.
 
 커밋 전 lint 래칫과 이모지 점검은 pre-commit으로 돌릴 수 있습니다 (테스트는 CI만 돌립니다).
 
