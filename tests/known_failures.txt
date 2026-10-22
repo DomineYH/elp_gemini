@@ -8,8 +8,6 @@
 # 정리 후속 이슈: #227
 ERROR tests/test_dashboard_view.py::test_dashboard_report_links_use_viewer_endpoint
 ERROR tests/test_dashboard_view.py::test_dashboard_view_authenticated
-ERROR tests/unit/test_lessonplan_analysis_service.py
-ERROR tests/unit/test_qna_service_refactored.py
 FAILED tests/services/test_lessonplan_analysis_tool_order.py::test_rubric_metadata_filter_omitted_when_none
 FAILED tests/services/test_lessonplan_analysis_tool_order.py::test_user_store_tool_precedes_rubric_tool
 FAILED tests/services/test_lessonplan_storage_service.py::test_save_lessonplan_different_content_different_hash
