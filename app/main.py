@@ -8,6 +8,7 @@ import logging
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import (
+    FileResponse,
     HTMLResponse,
     JSONResponse,
     RedirectResponse,
@@ -20,7 +21,12 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
 from app.db import create_tables, engine
-from app.middleware import AuthMiddleware, login_url_for
+from app.middleware import (
+    SECURITY_HEADERS,
+    AuthMiddleware,
+    SecurityHeadersMiddleware,
+    login_url_for,
+)
 from app.migrations import (
     drop_invite_codes_table,
     drop_user_profiles,
@@ -68,6 +74,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 보안 응답 헤더 (#268, HSTS 는 리버스 프록시 담당)
+app.add_middleware(SecurityHeadersMiddleware)
 
 # 전역 인증 미들웨어 (T095)
 # SessionMiddleware 이후 실행 (세션 데이터 확인)
@@ -145,12 +154,14 @@ async def general_exception_handler(request: Request, exc: Exception):
         f"처리되지 않은 예외: {str(exc)} - " f"Path: {request.url.path}",
         exc_info=True,
     )
+    # 500 은 사용자 미들웨어 바깥(ServerErrorMiddleware)에서 나가므로 헤더 직접 지정
 
     # API 요청인 경우 JSON 응답
     if request.url.path.startswith("/api"):
         return JSONResponse(
             status_code=500,
             content={"detail": "내부 서버 오류가 발생했습니다."},
+            headers=SECURITY_HEADERS,
         )
 
     # 웹 요청인 경우 HTML 응답
@@ -162,7 +173,14 @@ async def general_exception_handler(request: Request, exc: Exception):
             "detail": "내부 서버 오류가 발생했습니다.",
         },
         status_code=500,
+        headers=SECURITY_HEADERS,
     )
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """사이트 아이콘 (SVG)"""
+    return FileResponse("app/static/favicon.svg", media_type="image/svg+xml")
 
 
 # 라이프사이클 이벤트
