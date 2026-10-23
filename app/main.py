@@ -75,12 +75,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 보안 응답 헤더 (#268, HSTS 는 리버스 프록시 담당)
-app.add_middleware(SecurityHeadersMiddleware)
-
 # 전역 인증 미들웨어 (T095)
 # SessionMiddleware 이후 실행 (세션 데이터 확인)
 app.add_middleware(AuthMiddleware)
+
+# 보안 응답 헤더 (#268, HSTS 는 리버스 프록시 담당)
+# AuthMiddleware 바깥에 둬야 인증 리다이렉트(302)에도 헤더가 붙음
+app.add_middleware(SecurityHeadersMiddleware)
 
 # 세션 미들웨어 (T012)
 # 가장 먼저 실행되어야 함 (세션 데이터 로드)
@@ -154,8 +155,9 @@ async def general_exception_handler(request: Request, exc: Exception):
         f"처리되지 않은 예외: {str(exc)} - " f"Path: {request.url.path}",
         exc_info=True,
     )
-    # 500 은 사용자 미들웨어 바깥(ServerErrorMiddleware)에서 나가므로 헤더 직접 지정
 
+    # 500 은 사용자 미들웨어 바깥(ServerErrorMiddleware)에서 나가므로
+    # 아래 두 응답 모두 보안 헤더를 직접 지정
     # API 요청인 경우 JSON 응답
     if request.url.path.startswith("/api"):
         return JSONResponse(

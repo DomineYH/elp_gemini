@@ -40,6 +40,16 @@ def test_security_headers_on_every_response(path, status, content_type):
     _assert_security_headers(response)
 
 
+@pytest.mark.parametrize("path", ["/dashboard", "/admin/users", "/auth/me"])
+def test_security_headers_on_auth_redirects(path):
+    response = TestClient(app).get(
+        path, headers={"accept": "text/html"}, follow_redirects=False
+    )
+
+    assert response.status_code == 302
+    _assert_security_headers(response)
+
+
 @pytest.fixture
 def error_routes(monkeypatch):
     """HTML 404 / 500 을 내는 임시 공개 라우트"""
