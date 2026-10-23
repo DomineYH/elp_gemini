@@ -100,7 +100,7 @@ async def _upload(c):
         "/dashboard/upload",
         files={"file": ("plan.pdf", BytesIO(PDF_BYTES), "application/pdf")},
     )
-    assert res.status_code == 200
+    assert res.status_code == 303
     return res
 
 

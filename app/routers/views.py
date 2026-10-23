@@ -4,12 +4,11 @@ HTML 뷰 라우터
 
 import hashlib
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pypdf.errors import PdfReadError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -120,6 +119,12 @@ async def user_dashboard(
     )
 
 
+@router.get("/dashboard/upload", include_in_schema=False)
+async def upload_document_get():
+    """결과 화면 새로고침·직접 진입 시 405 대신 대시보드로 (#266)."""
+    return RedirectResponse(url="/dashboard", status_code=303)
+
+
 @router.post(
     "/dashboard/upload",
     response_class=HTMLResponse,
@@ -139,7 +144,7 @@ async def upload_document(
     2. PDF 텍스트 추출
     3. File Search Tool 업로드 (비동기)
     4. 로컬 파일 삭제
-    5. 결과 페이지 렌더링
+    5. /dashboard 로 303 (PRG, #266)
     """
     logger.info(
         f"문서 업로드 요청: user={current_user.username}, "
@@ -168,9 +173,6 @@ async def upload_document(
     user_upload_dir.mkdir(parents=True, exist_ok=True)
     saved_filename = f"{timestamp}_{safe_original}"
     file_path = user_upload_dir / saved_filename
-
-    # 웹 접근 URL
-    file_url = f"/dashboard/uploads/{saved_filename}"
 
     try:
         hasher = hashlib.sha256()
@@ -279,33 +281,9 @@ async def upload_document(
 
         logger.info(f"File Search 업로드 완료: {result}")
 
-        # 문서 정보 구성
-        document = {
-            "id": result["document_id"],
-            "title": file.filename,
-            "status": "ready",
-            "uploaded_at": datetime.now(),
-            "file_size": os.path.getsize(file_path),
-            "content": extracted_text,
-            "store_id": result["store_id"],
-            "file_url": file_url,
-        }
-
-        # 평가 기준 목록 조회 (DB 기반)
-        repo = CriteriaRepository(db)
-        active_list = await repo.get_active_criteria()
-        criteria_documents = _criteria_documents_from_active(active_list)
-
-        return templates.TemplateResponse(
-            "user/dashboard.html",
-            {
-                "request": request,
-                "user": current_user,
-                "document": document,
-                "extracted_text": extracted_text,
-                "criteria_documents": criteria_documents,
-            },
-        )
+        # get_db 는 응답 뒤에 commit 하므로 리다이렉트 후 GET 이 행을 보도록 먼저 commit (#266)
+        await db.commit()
+        return RedirectResponse(url="/dashboard", status_code=303)
 
     except Exception as e:
         # get_db 가 정상 반환을 commit 하므로 flush 된 업로드 행을 되돌린다.

@@ -10,7 +10,11 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.db import Base
 from app.dependencies import get_current_user, get_db
@@ -96,8 +100,9 @@ async def test_dashboard_upload_inserts_lessonplan_upload_row(client):
 
     res = await c.post("/dashboard/upload", files=files)
 
-    # The endpoint renders the dashboard template back; status will be 200
-    assert res.status_code == 200
+    # PRG: 성공하면 /dashboard 로 303 (#266)
+    assert res.status_code == 303
+    assert res.headers["location"] == "/dashboard"
 
     async with session_factory() as s:
         rows = (await s.execute(select(LessonPlanUpload))).scalars().all()
@@ -108,6 +113,21 @@ async def test_dashboard_upload_inserts_lessonplan_upload_row(client):
         assert len(row.file_hash) == 64
         # filename is "{YYYYMMDDHHMMSS}_{original}"; user is the directory
         assert re.fullmatch(r"\d{14}_plan\.pdf", row.filename)
+
+    # 리다이렉트 전에 commit 되어 이어진 GET 이 업로드를 본다
+    follow = await c.get("/dashboard")
+    assert follow.status_code == 200
+    assert "plan.pdf" in follow.text
+
+
+@pytest.mark.asyncio
+async def test_get_dashboard_upload_redirects_to_dashboard(client):
+    c, _ = client
+
+    res = await c.get("/dashboard/upload")
+
+    assert res.status_code == 303
+    assert res.headers["location"] == "/dashboard"
 
 
 @pytest.mark.asyncio
@@ -188,12 +208,23 @@ async def test_dashboard_upload_failure_after_flush_rolls_back_row(
     c, session_factory = client
     files = {"file": ("plan.pdf", BytesIO(text_pdf()), "application/pdf")}
 
-    with patch(
-        "app.routers.views.CriteriaRepository.get_active_criteria",
-        AsyncMock(side_effect=RuntimeError("boom")),
-    ):
+    # 업로드 행을 담은 첫 commit(리다이렉트 직전)만 실패시키고 나머지는 실제로 돈다
+    real_commit = AsyncSession.commit
+    failed = []
+
+    async def flaky_commit(self):
+        has_upload = any(
+            isinstance(o, LessonPlanUpload) for o in self.identity_map.values()
+        )
+        if has_upload and not failed:
+            failed.append(1)
+            raise RuntimeError("boom")
+        await real_commit(self)
+
+    with patch.object(AsyncSession, "commit", flaky_commit):
         res = await c.post("/dashboard/upload", files=files)
 
+    assert failed
     assert res.status_code == 500
     assert _uploaded_files(tmp_path) == []
     async with session_factory() as s:
