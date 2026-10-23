@@ -109,6 +109,7 @@ elp_gemini/
 2. **사용자 관리**: `/admin/users` - 사용자 활동 모니터링
 3. **QnA 로그**: `/admin/qna-logs` - 질문답변 기록 조회
 4. **프롬프트 관리**: `/admin/prompts` - 시스템 프롬프트 버전 관리
+5. **전체 내보내기**: `/admin/api/exports/all.zip` - ZIP 안의 `users.csv` 열은 `user_id, username, created_at, n_reports, n_sessions, n_lessonplans`(관리자 전용이라 username을 익명화하지 않음)
 
 ## 개발
 
@@ -122,11 +123,23 @@ black .
 ruff check .
 ```
 
+### Tailwind CSS 재생성
+
+화면은 CDN 대신 미리 빌드한 `app/static/css/tailwind.css`(커밋 대상)를 씁니다.
+템플릿이나 `app/static/js/*.js`의 클래스를 바꾼 뒤에는 다시 빌드해 함께 커밋합니다.
+
+```bash
+# Tailwind v3.4.17 standalone CLI를 .cache/에 받아 sha256 검증 후 빌드 (Node 불필요)
+scripts/build_tailwind.sh
+```
+
 ### 데이터베이스 백업
 
 ```bash
 python scripts/backup_db.py
 ```
+
+프롬프트를 저장할 때마다 직전 `prompt/prompt.md`를 `prompt/prompt.md.bak-<UTC 시각>`으로 남기고 최신 10개만 유지한다. 복원은 원하는 백업을 `prompt/prompt.md`로 덮어쓴 뒤 서버를 재시작한다.
 
 ### 테스트
 
@@ -197,6 +210,21 @@ GEMINI_QNA_MODEL=gemini-3.1-flash-lite
 GEMINI_EVAL_MODEL=gemini-3.1-flash-lite
 FS_MAIN_STORE_NAME=main-store
 FS_RUBRIC_STORE_NAME=rubric-store
+```
+
+## 배포 / 보안 헤더
+
+앱은 모든 응답에 다음 헤더를 붙입니다 (`app/middleware/security_headers.py`).
+
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: SAMEORIGIN`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Content-Security-Policy-Report-Only`: 템플릿의 인라인 스크립트를 걷어낼 때까지 차단 없이 위반만 보고하는 모드입니다.
+
+HSTS(`Strict-Transport-Security`)는 앱이 보내지 않습니다. TLS를 종료하는 리버스 프록시에서 설정합니다. nginx 예:
+
+```nginx
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 ```
 
 ## 문제 해결

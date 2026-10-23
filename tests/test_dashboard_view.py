@@ -1,3 +1,5 @@
+import re
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -76,3 +78,15 @@ def test_dashboard_report_links_use_viewer_endpoint(
     assert "`/static/${" not in response.text
 
     app.dependency_overrides = {}
+
+
+def test_close_survey_modal_also_closes_analysis_modal():
+    # 설문 모달을 X/배경으로 닫아도 분석 모달이 남아 설문이 반복되지 않게 (#268)
+    source = Path("app/templates/user/dashboard.html").read_text(
+        encoding="utf-8"
+    )
+    assert re.search(
+        r"function closeSurveyModal\(\) \{(?:\n[^\n]*){0,3}?"
+        r"\n\s*closeAnalysisModal\(\);",
+        source,
+    )

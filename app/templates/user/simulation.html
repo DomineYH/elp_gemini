@@ -440,7 +440,12 @@
         form.addEventListener("submit", e => {
             e.preventDefault();
             const text = input.value.trim();
-            if (!text || busy) return;
+            if (busy) return;
+            if (!text) {
+                status.textContent = "내용을 입력해 주세요.";
+                input.focus();
+                return;
+            }
             input.value = "";
             say(text, target());
         });

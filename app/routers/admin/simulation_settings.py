@@ -88,10 +88,10 @@ async def preview_guideline(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """관리자 본인의 최근 종료 세션으로 1회 생성. 아무것도 저장하지 않는다."""
+    """최근 종료 세션(모든 사용자)으로 1회 생성. 아무것도 저장하지 않는다."""
     require_admin_csrf_token(request)
     try:
-        session = await guidelines.latest_finished_session(db, current_admin.id)
+        session = await guidelines.latest_finished_session(db)
         if session is None:
             raise SimulationError("NO_SAMPLE_SESSION")
         system = await guidelines.system_prompt(db, body)

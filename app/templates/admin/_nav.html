@@ -1,0 +1,24 @@
+{% if user and user.is_admin %}
+{% for href, label in [
+    ("/admin/dashboard", "대시보드"),
+    ("/admin/criteria", "평가기준"),
+    ("/admin/users", "사용자"),
+    ("/admin/qna-logs", "QnA 로그"),
+    ("/admin/prompts", "프롬프트"),
+    ("/admin/simulation/settings", "시뮬레이션 설정"),
+    ("/admin/simulation/logs", "시뮬레이션 로그"),
+    ("/admin/account", "계정"),
+] %}
+{% if request is defined and request.url.path.startswith(href) %}
+<a href="{{ href }}" class="text-blue-600 font-medium">{{ label }}</a>
+{% else %}
+<a href="{{ href }}" class="text-gray-600 hover:text-blue-600">{{ label }}</a>
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if user %}
+<span class="text-gray-600">{{ user.nickname or user.username }}</span>
+<form method="POST" action="/auth/logout" class="inline">
+    <button type="submit" class="text-gray-600 hover:text-red-600">로그아웃</button>
+</form>
+{% endif %}
