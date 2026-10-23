@@ -406,17 +406,17 @@ def _transcript_line(u: SimulationUtterance, names: dict) -> str:
     if u.speaker_type == "teacher":
         to = names.get(u.target_persona_id)
         return f"교사({to + '에게' if to else '전체'}): {u.content}"
-    return f"{names[u.persona_id]}: {student_evidence(u)}"
+    # 오개념 태그를 보이면 학생 모델이 남의·이전 오개념을 옮겨 적는다 (#274)
+    return f"{names[u.persona_id]}: {student_evidence(u, misconception=False)}"
 
 
-def student_evidence(u: SimulationUtterance) -> str:
+def student_evidence(u: SimulationUtterance, misconception: bool = True) -> str:
     """모델용 대화록: 발화 + 비어 있지 않은 산출물·오개념. 실패 반응은 원문."""
     s = u.structured or {}
-    tags = [
-        f"[{label}: {s[key]}]"
-        for key, label in (("artifact", "산출물"), ("misconception", "오개념"))
-        if s.get(key)
-    ]
+    fields = [("artifact", "산출물")]
+    if misconception:
+        fields.append(("misconception", "오개념"))
+    tags = [f"[{label}: {s[key]}]" for key, label in fields if s.get(key)]
     return " ".join([u.content, *tags])
 
 
