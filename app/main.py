@@ -19,7 +19,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
-from app.db import engine
+from app.db import create_tables, engine
 from app.middleware import AuthMiddleware, login_url_for
 from app.migrations import (
     drop_invite_codes_table,
@@ -235,6 +235,9 @@ async def startup_event():
     """애플리케이션 시작 시 실행"""
     logger.info("애플리케이션 시작...")
 
+    # 빈 DB(운영 첫 배포)에도 테이블을 만든다. 기존 테이블은 그대로 (#262)
+    await create_tables(engine)
+
     patched = await ensure_criteria_file_path_column(engine)
     if patched:
         logger.info("criteria.file_path 컬럼이 자동 복구되었습니다.")
@@ -287,12 +290,12 @@ async def startup_event():
             renamed,
         )
 
-    # 데이터베이스 초기화 (개발 모드에서만)
+    # 기본 관리자 시드 (개발 모드에서만, #264)
     if settings.DEBUG:
-        from app.db import init_db
+        from app.db import seed_initial_data
 
-        await init_db()
-        logger.info("데이터베이스 초기화 완료")
+        await seed_initial_data()
+        logger.info("기본 관리자 시드 완료")
 
     await _drop_legacy_invite_codes_table_if_enabled(engine)
 

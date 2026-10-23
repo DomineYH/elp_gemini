@@ -1,0 +1,56 @@
+"""#262: DEBUG가 꺼진 운영 모드에서도 startup이 빈 DB에 테이블을 만든다."""
+
+from unittest.mock import patch
+
+import pytest
+from sqlalchemy import inspect
+from sqlalchemy.ext.asyncio import create_async_engine
+
+CORE_TABLES = (
+    "users",
+    "criteria",
+    "chat_sessions",
+    "chat_messages",
+    "analysis_reports",
+)
+
+
+@pytest.mark.asyncio
+async def test_startup_creates_core_tables_without_debug(tmp_path, monkeypatch):
+    import app.main as main_mod
+
+    eng = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'empty.db'}")
+    monkeypatch.setattr(main_mod, "engine", eng)
+    monkeypatch.setattr(main_mod.settings, "DEBUG", False)
+    monkeypatch.setattr(
+        main_mod.settings, "CRITERIA_CLOUD_RECONCILE_ENABLED", False
+    )
+    try:
+        with patch("app.db.seed_initial_data") as seed:
+            for _ in range(2):  # 재실행 멱등
+                await main_mod.startup_event()
+                async with eng.begin() as conn:
+                    has = await conn.run_sync(
+                        lambda c: {
+                            t: inspect(c).has_table(t) for t in CORE_TABLES
+                        }
+                    )
+                assert all(has.values()), has
+        seed.assert_not_called()  # 기본 관리자 시드 정책은 #264
+    finally:
+        await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_create_tables_standalone_builds_all_tables(tmp_path):
+    from app.db import create_tables
+
+    eng = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'fresh.db'}")
+    try:
+        await create_tables(eng)
+        async with eng.begin() as conn:
+            names = await conn.run_sync(lambda c: inspect(c).get_table_names())
+        assert len(names) == 13, names
+        assert "simulation_sessions" in names
+    finally:
+        await eng.dispose()

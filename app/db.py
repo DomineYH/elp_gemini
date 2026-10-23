@@ -56,17 +56,29 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
+async def create_tables(db_engine=None):
+    """모델을 모두 import한 뒤 create_all. 기존 테이블은 건드리지 않는다."""
+    # 모델이 app.db.Base를 import하므로 순환을 피해 함수 안에서 import
+    import app.models  # noqa: F401
+    import app.models.app_state  # noqa: F401
+    import app.models.simulation_feedback_guideline  # noqa: F401
+    import app.models.simulation_persona  # noqa: F401
+    import app.models.simulation_persona_library  # noqa: F401
+    import app.models.simulation_phase  # noqa: F401
+    import app.models.simulation_session  # noqa: F401
+    import app.models.simulation_utterance  # noqa: F401
+
+    async with (db_engine or engine).begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
 async def init_db():
     """
     데이터베이스 초기화
     - 모든 테이블 생성
     - 기본 데이터 시드
     """
-    async with engine.begin() as conn:
-        # 모든 테이블 생성
-        await conn.run_sync(Base.metadata.create_all)
-
-    # 기본 데이터 시드
+    await create_tables()
     await seed_initial_data()
 
 
