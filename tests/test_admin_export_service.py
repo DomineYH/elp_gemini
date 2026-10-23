@@ -342,11 +342,27 @@ async def test_users_csv_counts(db_session, tmp_path):
     plan = await svc.collect(ExportFilters())
     raw = build_users_csv(plan)
     rows = list(csv.DictReader(io.StringIO(raw.decode("utf-8"))))
+    assert list(rows[0]) == [
+        "user_id",
+        "username",
+        "created_at",
+        "n_reports",
+        "n_sessions",
+        "n_lessonplans",
+    ]
     assert rows[0]["user_id"] == "1"
+    assert rows[0]["username"] == "u1"
     assert rows[0]["n_reports"] == "1"
     assert rows[0]["n_sessions"] == "0"
     # Removed columns must not appear
-    for col in ("user_email", "role", "region", "tenure", "tenure_kind"):
+    for col in (
+        "user_email",
+        "role",
+        "region",
+        "tenure",
+        "tenure_kind",
+        "last_login_at",
+    ):
         assert col not in rows[0], f"{col} should not be in users CSV"
 
 

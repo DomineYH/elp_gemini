@@ -297,3 +297,40 @@ def test_lesson_analysis_prompt_has_no_leaking_instructions():
     ):
         assert leaked not in prompt, leaked
     assert "### File Search 참고 문서" in prompt
+
+
+def _backups(prompt_file: str) -> list:
+    path = Path(prompt_file)
+    return sorted(path.parent.glob(f"{path.name}.bak-*"))
+
+
+def test_update_writes_backup_of_previous_content(service, temp_prompt_file):
+    """저장 전 이전 내용을 .bak-<ts> 파일로 남긴다 (#268)"""
+    before = Path(temp_prompt_file).read_text(encoding="utf-8")
+
+    service.update_prompt("qna", "새 QnA 프롬프트")
+
+    backups = _backups(temp_prompt_file)
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == before
+
+
+def test_first_save_without_existing_file_creates_no_backup(temp_prompt_dir):
+    prompt_file = Path(temp_prompt_dir) / "new.md"
+    service = PromptLoaderService(prompt_file=str(prompt_file))
+
+    service.create_prompt("qna", "내용")
+
+    assert prompt_file.exists()
+    assert _backups(str(prompt_file)) == []
+
+
+def test_backups_pruned_to_keep_limit(service, temp_prompt_file):
+    service.BACKUP_KEEP = 3
+    for i in range(5):
+        service.update_prompt("qna", f"내용 {i}")
+
+    backups = _backups(temp_prompt_file)
+    assert len(backups) == 3
+    # 가장 최근 백업은 마지막 저장 직전 내용(4번째 저장 결과)이다.
+    assert "내용 3" in backups[-1].read_text(encoding="utf-8")

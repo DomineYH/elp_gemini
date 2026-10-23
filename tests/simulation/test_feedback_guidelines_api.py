@@ -106,15 +106,24 @@ def test_preview_uses_own_finished_session_and_saves_nothing(
     assert r.status_code == 404
 
 
-def test_preview_without_own_finished_session_is_409(
+def test_preview_uses_any_users_finished_session(
     client, as_user, teacher, admin, make_upload, fake_gemini, reports
 ):
+    # 관리자 본인 세션이 없어도 교사의 최근 종료 세션으로 미리보기 (#268)
     make_upload(teacher)
     _finished(client)
     as_user(admin)
     client.headers[ADMIN_CSRF_HEADER] = _token(client)
 
     r = client.post(f"{API}/preview", json=BODY)
+    assert r.status_code == 200
+    assert fake_gemini.count("feedback") == 1
+
+
+def test_preview_without_any_finished_session_is_409(
+    admin_client, fake_gemini, reports
+):
+    r = admin_client.post(f"{API}/preview", json=BODY)
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "NO_SAMPLE_SESSION"
     assert fake_gemini.count("feedback") == 0

@@ -49,7 +49,10 @@ async def get_qna_logs(
         # 기본 쿼리: 세션과 메시지를 함께 로드
         query = (
             select(ChatSession)
-            .options(selectinload(ChatSession.messages))
+            .options(
+                selectinload(ChatSession.messages),
+                selectinload(ChatSession.user),
+            )
             .order_by(ChatSession.created_at.desc())
         )
 
@@ -97,6 +100,10 @@ async def get_qna_logs(
             sessions_data.append(
                 {
                     "session_id": session.id,
+                    "user_id": session.user_id,
+                    "username": (
+                        session.user.username if session.user else None
+                    ),
                     "user_type": session.user_type,
                     "title": session.title,
                     "messages": messages_data,

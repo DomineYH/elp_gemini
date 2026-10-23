@@ -41,7 +41,6 @@ class UserContext:
     user_id: int
     filename_prefix: str
     username: str | None = None
-    last_login_at: datetime | None = None
     created_at: datetime | None = None
 
 
@@ -166,7 +165,6 @@ class AdminExportService:
                     user_id=u.id,
                     filename_prefix=build_filename_prefix(user_id=u.id),
                     username=u.username,
-                    last_login_at=None,
                     created_at=u.created_at,
                 )
             )
@@ -660,8 +658,8 @@ _MANIFEST_COLUMNS = [
 
 _USERS_COLUMNS = [
     "user_id",
+    "username",
     "created_at",
-    "last_login_at",
     "n_reports",
     "n_sessions",
     "n_lessonplans",
@@ -739,11 +737,9 @@ def build_users_csv(plan: ExportPlan) -> bytes:
         w.writerow(
             {
                 "user_id": u.user_id,
+                "username": _csv_safe(u.username),
                 "created_at": (
                     u.created_at.isoformat() if u.created_at else ""
-                ),
-                "last_login_at": (
-                    u.last_login_at.isoformat() if u.last_login_at else ""
                 ),
                 "n_reports": counts[u.user_id]["r"],
                 "n_sessions": counts[u.user_id]["s"],
