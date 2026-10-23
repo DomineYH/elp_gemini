@@ -61,7 +61,10 @@
             <div class="flex items-center gap-2 min-w-0">
                 <span id="dmDot" class="w-3 h-3 rounded-full shrink-0"></span>
                 <div class="min-w-0">
-                    <p id="dmTitle" class="font-semibold text-sm truncate">학생</p>
+                    <div class="flex items-center gap-2 min-w-0">
+                        <p id="dmTitle" class="font-semibold text-sm truncate">학생</p>
+                        <span id="dmAgree" class="shrink-0" aria-live="polite"></span>
+                    </div>
                     <p id="dmSub" class="note truncate"></p>
                 </div>
             </div>
@@ -227,10 +230,15 @@
         if (c < 0xAC00 || c > 0xD7A3) return "와";
         return (c - 0xAC00) % 28 === 0 ? "와" : "과";
     }
+    function agreeBadge(ok) {
+        return el("span", "agree" + (ok ? " yes" : ""), ok ? "✓ 다음 국면 동의" : "대기");
+    }
+
     function renderDM(utts, pending) {
         if (!dmPersona) return;
         const p = dmPersona;
         $("dmTitle").textContent = p.display_name;
+        $("dmAgree").replaceChildren(agreeBadge(state.agreement.agreed_persona_ids.includes(p.id)));
         $("dmSub").textContent = [p.adapted_level, p.adapted_profile.behavior_summary].filter(Boolean).join(" · ");
         $("dmDot").style.background = "var(--" + p.color_key + ")";
         const feed = $("dmFeed");
@@ -320,8 +328,7 @@
                 el("span", "name " + p.color_key + " font-semibold text-sm truncate", p.display_name),
                 el("span", "note truncate", p.adapted_level),
             );
-            const ok = agreed.has(p.id);
-            head.append(who, el("span", "agree" + (ok ? " yes" : ""), ok ? "✓ 다음 국면 동의" : "대기"));
+            head.append(who, agreeBadge(agreed.has(p.id)));
             const feed = el("div", "flex flex-col gap-2 min-h-[4.5rem]");
             const mine = seatUtterances(utts, p);
             const last = mine.filter(u => u.speaker_type === "student").pop();
