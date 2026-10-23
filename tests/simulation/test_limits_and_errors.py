@@ -131,6 +131,7 @@ def test_turn_limit_blocks_say_but_not_transitions(
     [
         ("quota", 429, "RESOURCE_EXHAUSTED"),
         ("overload", 503, "MODEL_OVERLOADED"),
+        ("timeout", 503, "MODEL_TIMEOUT"),
     ],
 )
 def test_gemini_errors_during_say_map_and_persist_nothing(
@@ -147,6 +148,30 @@ def test_gemini_errors_during_say_map_and_persist_nothing(
     assert r.headers["Retry-After"] == "30"
     assert _code(r) == code
     assert ready.get(_api(sid)).json()["utterances"] == before
+
+
+def test_enter_timeout_is_503_and_stores_nothing(ready, fake_gemini):
+    state, refs = _create(ready)
+    sid = state["session"]["id"]
+    fake_gemini.timeout.add(refs[1])
+
+    r = ready.post(_api(sid, "/phases/0/enter"))
+    assert r.status_code == 503
+    assert r.headers["Retry-After"] == "30"
+    assert _code(r) == "MODEL_TIMEOUT"
+    assert ready.get(_api(sid)).json()["utterances"] == []
+
+
+def test_quota_wins_over_timeout(ready, fake_gemini):
+    state, refs = _create(ready)
+    sid = state["session"]["id"]
+    ready.post(_api(sid, "/phases/0/enter"))
+
+    fake_gemini.quota.add(refs[0])
+    fake_gemini.timeout.add(refs[1])
+    r = ready.post(_api(sid, "/say"), json={"content": "질문"})
+    assert r.status_code == 429
+    assert _code(r) == "RESOURCE_EXHAUSTED"
 
 
 def test_gemini_error_during_regenerate_keeps_failed_row(ready, fake_gemini):

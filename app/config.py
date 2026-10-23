@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     )
     GEMINI_HTTP_TIMEOUT_MS: int = Field(
         default=120_000,
-        description="QnA·평가·File Search Gemini 요청 타임아웃(ms)",
+        description="QnA·평가·File Search·시뮬레이션 Gemini 요청 타임아웃(ms)",
     )
     SIM_MAX_PERSONAS: int = Field(
         default=6, description="시뮬레이션 최대 학생 수"

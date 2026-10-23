@@ -1,10 +1,12 @@
-"""Gemini 응답 파싱 (#152): 깨진 JSON·스키마 불일치 → None."""
+"""Gemini 응답 파싱 (#152)과 클라이언트 timeout (#260)."""
 
 import logging
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
+from app.config import settings
 from app.services.simulation import gemini
 from app.services.simulation.gemini import parse_structured
 from app.services.simulation.llm_schemas import StudentReaction
@@ -64,3 +66,12 @@ def test_rejected_output_logs_one_warning_without_raw_text(monkeypatch, caplog):
     assert "student" in message and "42" in message
     assert "ready_for_next" in message
     assert "maybe" not in message and raw not in message
+
+
+def test_client_is_created_with_timeout():
+    # __wrapped__로 lru_cache를 거치지 않아 캐시를 오염시키지 않는다
+    with patch.object(gemini.genai, "Client") as client:
+        gemini._client.__wrapped__()
+    opts = client.call_args.kwargs["http_options"]
+    assert opts.api_version == "v1beta"
+    assert opts.timeout == settings.GEMINI_HTTP_TIMEOUT_MS == 120_000

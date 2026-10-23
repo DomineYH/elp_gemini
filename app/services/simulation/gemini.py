@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Literal
 
+import httpx
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, ValidationError
@@ -43,7 +44,10 @@ class LLMResult:
 def _client() -> genai.Client:
     return genai.Client(
         api_key=settings.GOOGLE_API_KEY,
-        http_options={"api_version": "v1beta"},
+        http_options=types.HttpOptions(
+            api_version="v1beta",
+            timeout=settings.GEMINI_HTTP_TIMEOUT_MS,
+        ),
     )
 
 
@@ -88,8 +92,6 @@ def call_structured(
     """
     model = settings.GEMINI_SIM_MODEL
 
-    # ponytail: SDK 기본 타임아웃만 쓴다.
-    # 느린 응답이 문제 되면 http_options에 timeout 추가.
     @retry_on_resource_exhausted(
         max_attempts=3, initial_wait=2.0, max_wait=16.0
     )
@@ -126,7 +128,8 @@ def call_structured(
 async def call_many(calls: list[dict]) -> list[LLMResult]:
     """call_structured 여러 개를 병렬로. 오류 정책(PLAN 2.3):
 
-    하나라도 한도 초과 → RESOURCE_EXHAUSTED, 아니면 과부하 → MODEL_OVERLOADED.
+    하나라도 한도 초과 → RESOURCE_EXHAUSTED, 아니면 과부하 → MODEL_OVERLOADED,
+    아니면 timeout → MODEL_TIMEOUT.
     """
     results = await asyncio.gather(
         *(asyncio.to_thread(call_structured, **kw) for kw in calls),
@@ -137,6 +140,8 @@ async def call_many(calls: list[dict]) -> list[LLMResult]:
         raise SimulationError("RESOURCE_EXHAUSTED")
     if any(isinstance(e, GeminiServerOverloaded) for e in errors):
         raise SimulationError("MODEL_OVERLOADED")
+    if any(isinstance(e, httpx.TimeoutException) for e in errors):
+        raise SimulationError("MODEL_TIMEOUT")
     if errors:
         raise errors[0]
     return results

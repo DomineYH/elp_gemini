@@ -7,6 +7,7 @@
 import asyncio
 import io
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event
@@ -233,7 +234,7 @@ class FakeGemini:
     """gemini.call_structured 대역.
 
     results[kind]: 스키마 인스턴스 또는 (persona_key) -> 인스턴스.
-    parse_fail / quota / overload: persona_key 또는 kind 이름 집합.
+    parse_fail / quota / overload / timeout: persona_key 또는 kind 이름 집합.
     """
 
     def __init__(self):
@@ -241,6 +242,7 @@ class FakeGemini:
         self.parse_fail = set()
         self.quota = set()
         self.overload = set()
+        self.timeout = set()
         self.calls = []
 
     def count(self, kind=None):
@@ -253,6 +255,8 @@ class FakeGemini:
             raise GeminiQuotaExhausted("fake quota")
         if keys & self.overload:
             raise GeminiServerOverloaded("fake overload")
+        if keys & self.timeout:
+            raise httpx.ReadTimeout("fake timeout")
         if keys & self.parse_fail:
             parsed, text = None, "not json"
         else:
