@@ -64,7 +64,7 @@ async def change_own_password(
     if new_password != str(body.get("confirm_password") or ""):
         raise _fail(current_admin, "새 비밀번호와 확인 값이 일치하지 않습니다.")
     try:
-        user = await AuthService(db).change_own_password(
+        new_version = await AuthService(db).change_own_password(
             current_admin,
             str(body.get("current_password") or ""),
             new_password,
@@ -73,6 +73,8 @@ async def change_own_password(
         raise _fail(current_admin, str(exc)) from None
 
     # 요청한 본인 세션은 유지, 다른 세션은 session_version 불일치로 401
-    request.session["session_version"] = user.session_version
-    log_user_action(user_id=user.id, action="admin_self_password_change")
+    request.session["session_version"] = new_version
+    log_user_action(
+        user_id=current_admin.id, action="admin_self_password_change"
+    )
     return {"message": "비밀번호가 변경되었습니다."}

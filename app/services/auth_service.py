@@ -494,31 +494,49 @@ class AuthService:
 
     async def change_own_password(
         self, user: User, current_password: str, new_password: str
-    ) -> User:
+    ) -> int:
         """
         본인 비밀번호 변경 (#264).
 
         현재 비밀번호를 확인한 뒤 바꾸고 다른 세션을 무효화한다.
+        이 변경이 만든 session_version을 반환한다.
         """
-        if not self.verify_password(current_password, user.hashed_password):
+        loaded_version = user.session_version or 0
+        loaded_hash = user.hashed_password
+        if not self.verify_password(current_password, loaded_hash):
             raise ValueError("현재 비밀번호가 올바르지 않습니다.")
         validated_password = validate_password_strength(new_password)
 
-        user.hashed_password = self.hash_password(validated_password)
-        user.failed_login_count = 0
-        user.locked_until = None
-        user.last_failed_login_at = None
-        user.session_version = User.session_version + 1
-
+        # 인증 이후 다른 요청이 먼저 바꿨다면 덮어쓰지 않는다
+        result = await self.db.execute(
+            update(User)
+            .where(
+                User.id == user.id,
+                User.session_version == loaded_version,
+                User.hashed_password == loaded_hash,
+            )
+            .values(
+                hashed_password=self.hash_password(validated_password),
+                failed_login_count=0,
+                locked_until=None,
+                last_failed_login_at=None,
+                session_version=loaded_version + 1,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            # 0행 갱신이라 되돌릴 것이 없다 (rollback은 user를 만료시킴)
+            raise ValueError(
+                "다른 곳에서 비밀번호가 변경되었습니다. 다시 로그인해 주세요."
+            )
         await self.db.commit()
-        await self.db.refresh(user)
         log_auth_event(
             "password_change",
             user_id=user.id,
             username=user.username,
             success=True,
         )
-        return user
+        return loaded_version + 1
 
     @staticmethod
     def hash_password(password: str) -> str:

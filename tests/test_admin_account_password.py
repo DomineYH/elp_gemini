@@ -22,7 +22,10 @@ from app.db import Base, get_db
 from app.main import app
 from app.models.users import User
 from app.services.auth_service import AuthService
-from tests.test_user_id_password_auth import _build_session_cookie
+from tests.test_user_id_password_auth import (
+    _build_session_cookie,
+    _decode_session_cookie,
+)
 
 ADMIN_PASSWORD = "AdminPass123"
 NEW_PASSWORD = "NewAdminPass456"
@@ -202,6 +205,36 @@ async def test_success_rotates_other_sessions_keeps_caller(
 
     assert (await other.get("/auth/me")).status_code == 401
     assert (await caller.get("/auth/me")).status_code == 200
+    # 이 요청이 만든 버전(0+1)을 세션에 저장한다
+    assert _decode_session_cookie(res.cookies[COOKIE])["session_version"] == 1
+
+
+@pytest.mark.asyncio
+async def test_stale_request_cannot_override_concurrent_change(
+    session_factory,
+):
+    """A가 인증을 통과한 뒤 B가 먼저 바꾸면 A의 변경은 거부된다."""
+    b_hash = AuthService.hash_password("ByOtherReq789")
+    async with session_factory() as a_db:
+        stale_admin = (
+            await a_db.execute(select(User).where(User.username == "admin"))
+        ).scalar_one()
+        async with session_factory() as b_db:
+            admin = (
+                await b_db.execute(select(User).where(User.username == "admin"))
+            ).scalar_one()
+            admin.hashed_password = b_hash
+            admin.session_version = 1
+            await b_db.commit()
+
+        with pytest.raises(ValueError):
+            await AuthService(a_db).change_own_password(
+                stale_admin, ADMIN_PASSWORD, NEW_PASSWORD
+            )
+
+    admin = await _user(session_factory, "admin")
+    assert admin.hashed_password == b_hash
+    assert admin.session_version == 1
 
 
 # ===== 초기 관리자 시드 =====
