@@ -27,8 +27,9 @@ from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
 from app.services.criteria_freshness import ensure_criteria_cache_fresh
 from app.services.simulation import lessonplan_source
+from tests.pdf_samples import text_pdf
 
-PDF_BYTES = b"%PDF-1.4\n%fake\n1 0 obj\n<<>>\nendobj\n%%EOF\n"
+PDF_BYTES = text_pdf()
 QNA_FAB = 'aria-label="QnA 챗봇"'
 ANALYSIS_FAB = 'aria-label="분석 시작"'
 UPLOAD_HINT = "문서를 업로드하면 분석 및 QnA 기능을 사용할 수 있습니다."
@@ -95,12 +96,10 @@ async def env(tmp_path, monkeypatch):
 
 
 async def _upload(c):
-    with patch("app.routers.views.PdfReader") as reader:
-        reader.return_value.pages = []
-        res = await c.post(
-            "/dashboard/upload",
-            files={"file": ("plan.pdf", BytesIO(PDF_BYTES), "application/pdf")},
-        )
+    res = await c.post(
+        "/dashboard/upload",
+        files={"file": ("plan.pdf", BytesIO(PDF_BYTES), "application/pdf")},
+    )
     assert res.status_code == 200
     return res
 
@@ -225,12 +224,10 @@ async def test_failed_replacement_upload_forgets_deleted_doc(env):
 
     fss = views_mod.FileSearchService.return_value
     fss.upload_document.side_effect = RuntimeError("upload failed")
-    with patch("app.routers.views.PdfReader") as reader:
-        reader.return_value.pages = []
-        res = await c.post(
-            "/dashboard/upload",
-            files={"file": ("new.pdf", BytesIO(PDF_BYTES), "application/pdf")},
-        )
+    res = await c.post(
+        "/dashboard/upload",
+        files={"file": ("new.pdf", BytesIO(PDF_BYTES), "application/pdf")},
+    )
     assert res.status_code == 500
     assert fss.delete_store_by_display_name.await_count == 2
 

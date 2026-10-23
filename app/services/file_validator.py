@@ -5,13 +5,35 @@
 
 import logging
 import re
+from io import BytesIO
 from typing import Dict, Optional, Tuple
 
 from fastapi import HTTPException, UploadFile
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# 쪽번호·스탬프 몇 글자만 있는 스캔본도 거르기 위한 최소 글자 수 (#249)
+MIN_PDF_TEXT_CHARS = 20
+TEXTLESS_PDF_MESSAGE = (
+    "이미지(스캔)로만 된 PDF는 올릴 수 없습니다. "
+    "텍스트를 선택·복사할 수 있는 PDF를 올려 주세요."
+)
+
+
+def extract_pdf_text(source) -> str:
+    """모든 페이지 텍스트를 줄바꿈으로 이어 반환 (PdfReader가 받는 경로·스트림)"""
+    return "".join(
+        page.extract_text() + "\n" for page in PdfReader(source).pages
+    )
+
+
+def is_textless_pdf_text(text: str) -> bool:
+    """공백을 뺀 글자 수가 기준 미만이면 텍스트 없는 PDF로 본다"""
+    return len("".join(text.split())) < MIN_PDF_TEXT_CHARS
 
 
 class FileValidator:
@@ -117,10 +139,13 @@ class FileValidator:
         # 3. PDF 헤더 검증
         self._validate_pdf_header(contents)
 
-        # 4. 악성 콘텐츠 검사
+        # 4. 텍스트 레이어 검증 (스캔본은 File Search 인덱싱이 끝나지 않는다)
+        self._validate_pdf_text(contents)
+
+        # 5. 악성 콘텐츠 검사
         warnings = self._scan_suspicious_content(contents)
 
-        # 5. 메타데이터 추출
+        # 6. 메타데이터 추출
         metadata = self._extract_metadata(contents, warnings)
 
         logger.info(
@@ -176,6 +201,19 @@ class FileValidator:
             )
             if major > 2 or (major == 2 and minor > 0):
                 logger.warning(f"높은 PDF 버전: {major}.{minor}")
+
+    def _validate_pdf_text(self, contents: bytes) -> None:
+        """텍스트 없는·손상 PDF 거부"""
+        try:
+            text = extract_pdf_text(BytesIO(contents))
+        except PdfReadError:
+            raise HTTPException(
+                status_code=400,
+                detail="PDF 파일이 손상되었거나 비어 있습니다.",
+            )
+        if is_textless_pdf_text(text):
+            logger.warning("텍스트 없는 PDF")
+            raise HTTPException(status_code=400, detail=TEXTLESS_PDF_MESSAGE)
 
     def _scan_suspicious_content(self, contents: bytes) -> list[str]:
         """악성 콘텐츠 패턴 검사"""

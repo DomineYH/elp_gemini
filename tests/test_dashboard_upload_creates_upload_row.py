@@ -17,6 +17,7 @@ from app.dependencies import get_current_user, get_db
 from app.main import app
 from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
+from tests.pdf_samples import blank_pdf, image_only_pdf, text_pdf
 
 
 @pytest_asyncio.fixture
@@ -91,17 +92,9 @@ async def client(session_factory, tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_dashboard_upload_inserts_lessonplan_upload_row(client):
     c, session_factory = client
-    pdf_bytes = (
-        b"%PDF-1.4\n%fake pdf for test\n" b"1 0 obj\n<<>>\nendobj\n%%EOF\n"
-    )
-    files = {"file": ("plan.pdf", BytesIO(pdf_bytes), "application/pdf")}
+    files = {"file": ("plan.pdf", BytesIO(text_pdf()), "application/pdf")}
 
-    # Patching PdfReader because the fake bytes aren't a real PDF — we don't
-    # care about text extraction for this test
-    with patch("app.routers.views.PdfReader") as mock_reader:
-        instance = mock_reader.return_value
-        instance.pages = []  # extract_text loop becomes a no-op
-        res = await c.post("/dashboard/upload", files=files)
+    res = await c.post("/dashboard/upload", files=files)
 
     # The endpoint renders the dashboard template back; status will be 200
     assert res.status_code == 200
@@ -132,7 +125,7 @@ async def test_dashboard_upload_rejects_file_over_limit(client, monkeypatch):
         )
     }
 
-    with patch("app.routers.views.PdfReader") as mock_reader:
+    with patch("app.routers.views.extract_pdf_text") as mock_reader:
         res = await c.post("/dashboard/upload", files=files)
 
     assert res.status_code == 400
@@ -173,13 +166,9 @@ async def test_dashboard_upload_failure_removes_file_and_hides_error(
     client, tmp_path
 ):
     c, _ = client
-    files = {"file": ("plan.pdf", BytesIO(b"%PDF-1.4\n"), "application/pdf")}
+    files = {"file": ("plan.pdf", BytesIO(text_pdf()), "application/pdf")}
 
-    with (
-        patch("app.routers.views.PdfReader") as mock_reader,
-        patch("app.routers.views.FileSearchService") as mock_fss,
-    ):
-        mock_reader.return_value.pages = []
+    with patch("app.routers.views.FileSearchService") as mock_fss:
         mock_fss.return_value.delete_store_by_display_name = AsyncMock()
         mock_fss.return_value.upload_document = AsyncMock(
             side_effect=RuntimeError("secret internal detail")
@@ -197,19 +186,41 @@ async def test_dashboard_upload_failure_after_flush_rolls_back_row(
 ):
     # get_db 는 정상 반환을 commit 하므로 실패 시 flush 된 행도 남으면 안 된다.
     c, session_factory = client
-    files = {"file": ("plan.pdf", BytesIO(b"%PDF-1.4\n"), "application/pdf")}
+    files = {"file": ("plan.pdf", BytesIO(text_pdf()), "application/pdf")}
 
-    with (
-        patch("app.routers.views.PdfReader") as mock_reader,
-        patch(
-            "app.routers.views.CriteriaRepository.get_active_criteria",
-            AsyncMock(side_effect=RuntimeError("boom")),
-        ),
+    with patch(
+        "app.routers.views.CriteriaRepository.get_active_criteria",
+        AsyncMock(side_effect=RuntimeError("boom")),
     ):
-        mock_reader.return_value.pages = []
         res = await c.post("/dashboard/upload", files=files)
 
     assert res.status_code == 500
+    assert _uploaded_files(tmp_path) == []
+    async with session_factory() as s:
+        rows = (await s.execute(select(LessonPlanUpload))).scalars().all()
+        assert rows == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload", [blank_pdf(), image_only_pdf()], ids=["blank", "image-only"]
+)
+async def test_dashboard_upload_rejects_textless_pdf_before_store_delete(
+    client, tmp_path, payload
+):
+    # 기존 지도안 스토어를 지우기 전에 거부해야 한다 (#249)
+    c, session_factory = client
+    files = {"file": ("scan.pdf", BytesIO(payload), "application/pdf")}
+
+    with patch("app.routers.views.FileSearchService") as mock_fss:
+        mock_fss.return_value.delete_store_by_display_name = AsyncMock()
+        mock_fss.return_value.upload_document = AsyncMock()
+        res = await c.post("/dashboard/upload", files=files)
+
+    assert res.status_code == 400
+    assert "이미지(스캔)로만 된 PDF는 올릴 수 없습니다." in res.text
+    mock_fss.return_value.delete_store_by_display_name.assert_not_called()
+    mock_fss.return_value.upload_document.assert_not_called()
     assert _uploaded_files(tmp_path) == []
     async with session_factory() as s:
         rows = (await s.execute(select(LessonPlanUpload))).scalars().all()

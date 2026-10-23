@@ -10,7 +10,6 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
-from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +23,11 @@ from app.services.criteria_freshness import ensure_criteria_cache_fresh
 from app.services.file_search_service import (
     FileSearchService,
     _sanitize_display_name,
+)
+from app.services.file_validator import (
+    TEXTLESS_PDF_MESSAGE,
+    extract_pdf_text,
+    is_textless_pdf_text,
 )
 from app.services.simulation import lessonplan_source
 from app.templating import templates
@@ -218,12 +222,21 @@ async def upload_document(
 
         # PDF 텍스트 추출
         try:
-            reader = PdfReader(str(file_path))
-            extracted_text = ""
-            for page in reader.pages:
-                extracted_text += page.extract_text() + "\n"
+            extracted_text = extract_pdf_text(str(file_path))
         except PdfReadError:
             return bad_pdf_response()
+        # 기존 스토어를 지우기 전에 거부해야 지도안이 남는다 (#249)
+        if is_textless_pdf_text(extracted_text):
+            file_path.unlink(missing_ok=True)
+            return templates.TemplateResponse(
+                "error.html",
+                {
+                    "request": request,
+                    "status_code": 400,
+                    "detail": TEXTLESS_PDF_MESSAGE,
+                },
+                status_code=400,
+            )
 
         # File Search Service 업로드
         file_search_service = FileSearchService()
