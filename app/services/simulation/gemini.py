@@ -129,7 +129,7 @@ async def call_many(calls: list[dict]) -> list[LLMResult]:
     """call_structured 여러 개를 병렬로. 오류 정책(PLAN 2.3):
 
     하나라도 한도 초과 → RESOURCE_EXHAUSTED, 아니면 과부하 → MODEL_OVERLOADED,
-    아니면 timeout → MODEL_TIMEOUT.
+    아니면 timeout → MODEL_TIMEOUT, 그 밖의 전송 오류 → MODEL_UNAVAILABLE.
     """
     results = await asyncio.gather(
         *(asyncio.to_thread(call_structured, **kw) for kw in calls),
@@ -142,6 +142,9 @@ async def call_many(calls: list[dict]) -> list[LLMResult]:
         raise SimulationError("MODEL_OVERLOADED")
     if any(isinstance(e, httpx.TimeoutException) for e in errors):
         raise SimulationError("MODEL_TIMEOUT")
+    # TimeoutException 도 TransportError 하위라 timeout 검사 뒤에 둔다
+    if any(isinstance(e, httpx.TransportError) for e in errors):
+        raise SimulationError("MODEL_UNAVAILABLE")
     if errors:
         raise errors[0]
     return results
