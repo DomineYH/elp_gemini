@@ -65,11 +65,12 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - 웹 UI: http://localhost:8000
 - API 문서: http://localhost:8000/docs
 - Health Check: http://localhost:8000/health
-
-기본 관리자 계정:
-- ID: admin
-- Password: admin1234
 ```
+
+관리자 계정(ID `admin`)은 `admin` 계정이 없을 때 시작 시 한 번 만들어진다.
+초기 비밀번호는 `.env`의 `ADMIN_INITIAL_PASSWORD`로 지정한다(8자 이상, 문자와 숫자 포함).
+운영 모드(`DEBUG=false`)에서 이 값이 없으면 관리자 계정을 만들지 않는다.
+로그인 후 관리자 메뉴의 **계정**(`/admin/account`)에서 비밀번호를 바꾼다.
 
 ## 프로젝트 구조
 

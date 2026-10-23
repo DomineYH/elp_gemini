@@ -492,6 +492,34 @@ class AuthService:
         )
         return user
 
+    async def change_own_password(
+        self, user: User, current_password: str, new_password: str
+    ) -> User:
+        """
+        본인 비밀번호 변경 (#264).
+
+        현재 비밀번호를 확인한 뒤 바꾸고 다른 세션을 무효화한다.
+        """
+        if not self.verify_password(current_password, user.hashed_password):
+            raise ValueError("현재 비밀번호가 올바르지 않습니다.")
+        validated_password = validate_password_strength(new_password)
+
+        user.hashed_password = self.hash_password(validated_password)
+        user.failed_login_count = 0
+        user.locked_until = None
+        user.last_failed_login_at = None
+        user.session_version = User.session_version + 1
+
+        await self.db.commit()
+        await self.db.refresh(user)
+        log_auth_event(
+            "password_change",
+            user_id=user.id,
+            username=user.username,
+            success=True,
+        )
+        return user
+
     @staticmethod
     def hash_password(password: str) -> str:
         """

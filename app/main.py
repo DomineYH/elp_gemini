@@ -291,12 +291,10 @@ async def startup_event():
             renamed,
         )
 
-    # 기본 관리자 시드 (개발 모드에서만, #264)
-    if settings.DEBUG:
-        from app.db import seed_initial_data
+    # 초기 관리자 시드: 환경변수 우선, 개발 모드만 기본값 (#264)
+    from app.db import seed_initial_admin
 
-        await seed_initial_data()
-        logger.info("기본 관리자 시드 완료")
+    await seed_initial_admin()
 
     await _drop_legacy_invite_codes_table_if_enabled(engine)
 

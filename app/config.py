@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     # 애플리케이션
     DEBUG: bool = Field(default=False, description="디버그 모드")
     SECRET_KEY: str = Field(..., min_length=32, description="세션 암호화 키")
+    ADMIN_INITIAL_PASSWORD: str | None = Field(
+        default=None,
+        repr=False,
+        description="admin 계정이 없을 때 시드할 초기 비밀번호 (#264)",
+    )
     ALLOWED_ORIGINS: List[str] = Field(
         default=["http://localhost:3000"],
         description="CORS 허용 오리진",

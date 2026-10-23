@@ -20,12 +20,18 @@ CORE_TABLES = (
 
 
 @pytest.mark.asyncio
-async def test_startup_creates_core_tables_without_debug(tmp_path, monkeypatch):
+@pytest.mark.parametrize("env_password", [None, "EnvAdmin2026"])
+async def test_startup_creates_core_tables_without_debug(
+    tmp_path, monkeypatch, env_password
+):
     import app.main as main_mod
 
     eng = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'empty.db'}")
     monkeypatch.setattr(main_mod, "engine", eng)
     monkeypatch.setattr(main_mod.settings, "DEBUG", False)
+    monkeypatch.setattr(
+        main_mod.settings, "ADMIN_INITIAL_PASSWORD", env_password
+    )
     monkeypatch.setattr(
         main_mod.settings, "CRITERIA_CLOUD_RECONCILE_ENABLED", False
     )
@@ -40,7 +46,11 @@ async def test_startup_creates_core_tables_without_debug(tmp_path, monkeypatch):
                         }
                     )
                 assert all(has.values()), has
-        seed.assert_not_called()  # 기본 관리자 시드 정책은 #264
+        # 운영 모드: 환경변수가 있을 때만 그 값으로 시드한다 (#264)
+        if env_password:
+            seed.assert_called_with(env_password)
+        else:
+            seed.assert_not_called()
     finally:
         await eng.dispose()
 

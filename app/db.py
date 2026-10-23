@@ -3,6 +3,7 @@
 SQLite with WAL mode, SQLAlchemy async support
 """
 
+import logging
 from typing import AsyncGenerator
 
 from sqlalchemy import event
@@ -79,20 +80,46 @@ async def init_db():
     - 기본 데이터 시드
     """
     await create_tables()
-    await seed_initial_data()
+    await seed_initial_admin()
 
 
-async def seed_initial_data():
+async def seed_initial_admin() -> None:
+    """
+    초기 관리자 시드 (#264)
+    - ADMIN_INITIAL_PASSWORD 우선, 없으면 개발 모드만 기본값
+    - 운영 모드에서 환경변수가 없으면 건너뛰고 경고
+    """
+    from app.schemas.users import validate_password_strength
+
+    password = settings.ADMIN_INITIAL_PASSWORD
+    if password:
+        try:
+            validate_password_strength(password)
+        except ValueError as e:
+            # 값 자체는 메시지에 남기지 않는다
+            raise RuntimeError(
+                f"ADMIN_INITIAL_PASSWORD가 비밀번호 정책에 맞지 않습니다: {e}"
+            ) from None
+    elif settings.DEBUG:
+        password = "admin1234"
+    else:
+        logging.getLogger(__name__).warning(
+            "운영 모드: ADMIN_INITIAL_PASSWORD가 없어 "
+            "관리자 계정을 만들지 않았습니다"
+        )
+        return
+    await seed_initial_data(password)
+
+
+async def seed_initial_data(password: str):
     """
     초기 데이터 시드
-    - 기본 관리자 계정
+    - admin 계정이 없을 때만 생성 (기존 비밀번호는 덮어쓰지 않음)
     """
-    from passlib.context import CryptContext
     from sqlalchemy import select
 
     from app.models.users import User
-
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    from app.services.auth_service import AuthService
 
     async with async_session_maker() as session:
         try:
@@ -107,7 +134,7 @@ async def seed_initial_data():
                 admin = User(
                     username="admin",
                     nickname="admin",
-                    hashed_password=pwd_context.hash("admin1234"),
+                    hashed_password=AuthService.hash_password(password),
                     is_admin=True,
                 )
                 session.add(admin)

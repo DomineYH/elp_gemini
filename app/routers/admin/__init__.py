@@ -5,6 +5,7 @@ Admin 라우터 패키지
 from fastapi import APIRouter
 
 from . import (
+    account,
     criteria,
     criteria_views,
     dashboard,
@@ -27,3 +28,4 @@ router.include_router(users.router)  # 사용자 관리 라우터
 router.include_router(prompts.router)
 router.include_router(simulation_settings.router)
 router.include_router(simulation_logs.router)
+router.include_router(account.router)
