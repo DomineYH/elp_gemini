@@ -297,3 +297,16 @@ def test_lesson_analysis_prompt_has_no_leaking_instructions():
     ):
         assert leaked not in prompt, leaked
     assert "### File Search 참고 문서" in prompt
+
+
+def test_sim_student_misconception_excludes_not_knowing_and_copying():
+    """모름·막힘은 오개념이 아니고 남의 오개념을 옮겨 적지 않는다 (#274)."""
+    prompt = PromptLoaderService().get_prompt("sim_student")
+    [item] = [
+        line
+        for line in prompt.splitlines()
+        if line.startswith("- misconception:")
+    ]
+
+    for phrase in ("모름", "막힘", "오개념이 아니", "옮겨 적지 않"):
+        assert phrase in item, phrase

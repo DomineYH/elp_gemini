@@ -2,7 +2,8 @@
 
 import pytest
 
-from app.services.simulation import gemini
+from app.models.simulation_utterance import SimulationUtterance
+from app.services.simulation import gemini, session_service
 from app.services.simulation.llm_schemas import StudentReaction
 
 
@@ -183,9 +184,10 @@ def test_targeted_say_only_target_reacts(ready, fake_gemini):
     ]
 
 
-def test_next_student_call_sees_earlier_artifact_and_misconception(
+def test_next_student_call_sees_artifact_but_not_misconception(
     ready, fake_gemini, monkeypatch
 ):
+    """학생 호출 대화록엔 오개념 태그를 넣지 않는다: 옮겨 적기·고착 방지 (#274)."""
     fake_gemini.results["student"] = StudentReaction(
         action="공책에 쓴다",
         utterance="다 했어요",
@@ -209,11 +211,23 @@ def test_next_student_call_sees_earlier_artifact_and_misconception(
     assert r.status_code == 200
     student = [u for k, u in prompts if k == "student"]
     assert student
-    assert all("3/4" in u and "분모끼리 더함" in u for u in student)
+    assert all("[산출물: 3/4]" in u for u in student)
+    assert not any("[오개념:" in u or "분모끼리 더함" in u for u in student)
     stored = ready.get(_api(sid)).json()["utterances"]
     assert {u["content"] for u in stored if u["speaker_type"] == "student"} == {
         "다 했어요"
     }
+
+
+def test_student_evidence_keeps_both_tags_for_feedback():
+    u = SimulationUtterance(
+        speaker_type="student",
+        content="다 했어요",
+        structured={"artifact": "3/4", "misconception": "분모끼리 더함"},
+    )
+    assert session_service.student_evidence(u) == (
+        "다 했어요 [산출물: 3/4] [오개념: 분모끼리 더함]"
+    )
 
 
 def test_say_guards(ready, as_user, other_teacher):
