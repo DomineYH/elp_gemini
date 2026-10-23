@@ -138,6 +138,8 @@ class FileSearchService:
         if not settings.GOOGLE_API_KEY:
             raise ValueError("GOOGLE_API_KEY 환경 변수가 설정되지 않았습니다")
 
+        self._store_cache = {}
+
         self.client = self.get_client()
         self.main_store_name = settings.FS_MAIN_STORE_NAME
         self.rubric_store_name = settings.FS_RUBRIC_STORE_NAME
@@ -212,9 +214,6 @@ class FileSearchService:
 
         # 1. 캐시 확인 (60초 TTL)
         cache_key = f"dual_store_{user_key}"
-        if not hasattr(self, "_store_cache"):
-            self._store_cache = {}
-
         cached = self._store_cache.get(cache_key)
         if cached and time.time() - cached["time"] < 60:
             logger.debug(f"캐시에서 Store ID 조회: {user_key}")
@@ -296,9 +295,6 @@ class FileSearchService:
 
         # 1. 캐시 확인 (60초 TTL)
         cache_key = f"user_store_{user_key}"
-        if not hasattr(self, "_store_cache"):
-            self._store_cache = {}
-
         cached = self._store_cache.get(cache_key)
         if cached and time.time() - cached["time"] < 60:
             logger.debug(f"캐시에서 사용자 Store ID 조회: {user_key}")
