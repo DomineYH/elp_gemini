@@ -367,6 +367,57 @@ class TestDefaultTargets:
         # 기본 대상 2개(prompt + schema)가 실제로 사용되었는지 — 보고서 글로브는 비어있음
         assert "OK: scanned 2 files" in captured.out
 
+    def test_default_reports_scan_only_git_tracked_files(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """gitignore·미추적 로컬 보고서는 기본 스캔에서 빠져야 한다 —
+        그래야 로컬 런타임 산출물이 pre-commit을 막지 않는다."""
+        import subprocess
+
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        clean_prompt = tmp_path / "prompt.md"
+        clean_prompt.write_text(
+            "## lesson_analysis\n\nClean body.\n\n---\n",
+            encoding="utf-8",
+        )
+        clean_schema = tmp_path / "schema.py"
+        clean_schema.write_text("# clean python file\n", encoding="utf-8")
+        reports_dir = tmp_path / "reports"
+        reports_dir.mkdir()
+        tracked = reports_dir / "a_reports.md"
+        tracked.write_text("# Clean report\n", encoding="utf-8")
+        untracked = reports_dir / "b_reports.md"
+        untracked.write_text("# Report 📑\n", encoding="utf-8")
+        subprocess.run(["git", "add", str(tracked)], cwd=tmp_path, check=True)
+
+        monkeypatch.setattr(_GUARD_MODULE, "DEFAULT_PROMPT_PATH", clean_prompt)
+        monkeypatch.setattr(_GUARD_MODULE, "DEFAULT_SCHEMA_PATH", clean_schema)
+        monkeypatch.setattr(
+            _GUARD_MODULE,
+            "DEFAULT_REPORTS_GLOB",
+            str(reports_dir / "*_reports.md"),
+        )
+
+        rc = main([])
+
+        captured = capsys.readouterr()
+        assert rc == 0
+        assert captured.err == ""
+        # prompt + schema + 추적된 a_reports.md — 미추적 b_reports.md는 제외
+        assert "OK: scanned 3 files" in captured.out
+
+        # 추적하게 되면 다시 검사 대상이 되어 이모지가 잡힌다
+        subprocess.run(["git", "add", str(untracked)], cwd=tmp_path, check=True)
+
+        rc = main([])
+
+        captured = capsys.readouterr()
+        assert rc == 1
+        assert "📑" in captured.err
+
 
 def test_script_runs_as_cli_subprocess(tmp_path):
     """Regression guard: script must work when invoked directly via

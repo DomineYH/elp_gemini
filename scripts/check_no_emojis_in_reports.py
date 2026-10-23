@@ -8,7 +8,7 @@
 기본 스캔 대상 (인자 없이 실행 시):
 1. `prompt/prompt.md` — `## lesson_analysis` 섹션 본문만 (가드 블록 제외).
 2. `app/schemas/lessonplan_analysis.py` — 파일 전체.
-3. `app/static/reports/*_reports.md` — 인용(`>`) 줄 제외.
+3. `app/static/reports/*_reports.md` 중 git 추적 파일 — 인용(`>`) 줄 제외.
 
 명시적 파일 인자가 주어지면 해당 파일들만 검사하며, 파일 경로 휴리스틱
 으로 어떤 예외 규칙을 적용할지 결정한다 (`prompt.md` / `prompt/` 하위 →
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import subprocess
 import sys
 from pathlib import Path
 from typing import List, Tuple
@@ -161,6 +162,28 @@ def _scan_file(path: Path) -> List[Finding]:
     return _scan_full(lines)
 
 
+def _git_tracked(paths: List[Path]) -> List[Path]:
+    """git이 추적하는 파일만 남긴다.
+
+    .gitignore된 로컬 런타임 보고서가 pre-commit을 막지 않게 한다
+    (CI 체크아웃에는 추적 파일만 있다). git을 쓸 수 없으면 거르지 않는다.
+    """
+    if not paths:
+        return paths
+    cwd = paths[0].parent
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "-z", "--", *map(str, paths)],
+            cwd=cwd,
+            capture_output=True,
+            check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return paths
+    tracked = {(cwd / p).resolve() for p in out.decode().split("\0") if p}
+    return [p for p in paths if p.resolve() in tracked]
+
+
 def _resolve_targets(explicit: List[str]) -> List[Path]:
     """명시 인자 우선, 없으면 기본 스캔 대상 목록을 반환."""
     if explicit:
@@ -171,7 +194,9 @@ def _resolve_targets(explicit: List[str]) -> List[Path]:
         targets.append(DEFAULT_PROMPT_PATH)
     if DEFAULT_SCHEMA_PATH.exists():
         targets.append(DEFAULT_SCHEMA_PATH)
-    targets.extend(sorted(Path(p) for p in glob.glob(DEFAULT_REPORTS_GLOB)))
+    targets.extend(
+        _git_tracked(sorted(Path(p) for p in glob.glob(DEFAULT_REPORTS_GLOB)))
+    )
     return targets
 
 
@@ -188,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "검사할 파일 경로. 지정 시 기본 스캔 대상 무시. 미지정 시 "
             "prompt/prompt.md, app/schemas/lessonplan_analysis.py, "
-            "app/static/reports/*_reports.md 를 검사."
+            "app/static/reports/*_reports.md(git 추적 파일만) 를 검사."
         ),
     )
     args = parser.parse_args(argv)
