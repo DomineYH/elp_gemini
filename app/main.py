@@ -91,6 +91,11 @@ app.mount(
     StaticFiles(directory="app/static/js"),
     name="static",
 )
+app.mount(
+    "/static/css",
+    StaticFiles(directory="app/static/css"),
+    name="static_css",
+)
 
 
 # Note: /files 정적 마운트 제거 (보안 강화)

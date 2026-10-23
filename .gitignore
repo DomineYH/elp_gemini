@@ -75,3 +75,6 @@ app/static/uploads/preservice_teacher_*
 app/static/uploads/[0-9]*/
 app/static/uploads/[0-9]*_*.pdf
 app/static/uploads/test01_*.pdf
+
+# Tailwind standalone CLI cache (scripts/build_tailwind.sh)
+.cache/

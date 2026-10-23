@@ -122,6 +122,16 @@ black .
 ruff check .
 ```
 
+### Tailwind CSS 재생성
+
+화면은 CDN 대신 미리 빌드한 `app/static/css/tailwind.css`(커밋 대상)를 씁니다.
+템플릿이나 `app/static/js/*.js`의 클래스를 바꾼 뒤에는 다시 빌드해 함께 커밋합니다.
+
+```bash
+# Tailwind v3.4.17 standalone CLI를 .cache/에 받아 sha256 검증 후 빌드 (Node 불필요)
+scripts/build_tailwind.sh
+```
+
 ### 데이터베이스 백업
 
 ```bash
