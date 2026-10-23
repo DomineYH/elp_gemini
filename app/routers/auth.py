@@ -10,6 +10,7 @@ import time
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     Form,
     Request,
@@ -511,9 +512,25 @@ async def login(
     )
 
 
+async def _delete_user_store(user_id) -> None:
+    """클라우드 user store 삭제 (최대 120초라 응답 뒤에 실행, #247)"""
+    try:
+        from app.services.file_search_service import FileSearchService
+
+        await FileSearchService().delete_store_by_display_name(
+            f"user-{user_id}-store"
+        )
+    except Exception as e:
+        logger.warning(f"로그아웃 시 스토어 정리 실패: {str(e)}")
+
+
 # T025: POST /auth/logout - 로그아웃 처리
 @router.post("/auth/logout")
-async def logout(request: Request, db: AsyncSession = Depends(get_db)):
+async def logout(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     """
     사용자 로그아웃
 
@@ -541,14 +558,8 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
             user_id, request.session.get("session_version", 0)
         )
 
-        # Vector Store 정리
+        # 지워질 문서로 대시보드가 QnA 버튼을 복원하지 않게 (#173)
         try:
-            from app.services.file_search_service import FileSearchService
-
-            file_search_service = FileSearchService()
-            store_name = f"user-{user_id}-store"
-            await file_search_service.delete_store_by_display_name(store_name)
-            # 지워진 문서로 대시보드가 QnA 버튼을 복원하지 않게 (#173)
             from app.services.simulation.lessonplan_source import (
                 forget_file_search_ids,
             )
@@ -556,6 +567,8 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
             await forget_file_search_ids(db, user_id)
         except Exception as e:
             logger.warning(f"로그아웃 시 스토어 정리 실패: {str(e)}")
+
+        background_tasks.add_task(_delete_user_store, user_id)
 
     request.session.clear()
 
