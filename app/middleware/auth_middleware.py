@@ -40,7 +40,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     - /auth/login, /auth/login/user, /auth/login/admin, /auth/logout, /auth/register
     - /health
     - /static/*
-    - /docs, /redoc, /openapi.json (API 문서)
+    - /docs, /redoc, /openapi.json (API 문서, DEBUG에서만 존재)
     """
 
     # 화이트리스트 경로 (인증 불필요)
