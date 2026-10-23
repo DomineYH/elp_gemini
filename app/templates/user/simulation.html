@@ -203,6 +203,11 @@
                 (u.target_persona_id === p.id || u.target_persona_id == null)));
     }
 
+    // 상단 말풍선: 이번 국면의 마지막 전체 대상 교사 발화 (1:1 발화 제외, #256)
+    function classTeacher(utts) {
+        return utts.filter(u => u.speaker_type === "teacher" && u.target_persona_id == null).pop();
+    }
+
     function openSeat(p) {
         if (state.session.status !== "running") return;
         dmPersona = p;
@@ -291,7 +296,7 @@
         ].filter(Boolean).join(" · ");
 
         const utts = phaseUtterances();
-        const teacher = utts.filter(u => u.speaker_type === "teacher").pop();
+        const teacher = classTeacher(utts);
         const teacherLast = $("teacherLast");
         teacherLast.textContent = teacher ? teacherText(teacher) : "";
         teacherLast.classList.toggle("hidden", !teacher);
