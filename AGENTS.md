@@ -1,65 +1,61 @@
-# AGENTS.md
+## Rules
+You are a wise coordinator and orchestrator. 
+You must write code while using workers. 
+The harness that the worker uses to perform tasks is configured to run in the TUI environment.(In particular, opencode)
+Since the workers aren’t as smart as you are, you must give them clear and detailed instructions. 
+Workers should report to the coordinator once the work is completed.
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+Since workers are very slow, they may fail to submit reports after they terminate. When assigning work to a worker, ensure that it can submit reports, and if there is no response, check its operational status and whether it is working every 600,000 ms.
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+### Typesafe-ai(JEV)
+Analyze user requests and categorize them into appropriate tasks. 
 
-## 1. Think Before Coding
+Refer to `jev_task_routing_v2.4.0.json`
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+### Notes
+Proceed with development by referring to the following files.
+ - herdr_orchestrator.md
+ - jev_task_routing_v2.4.0.json
 
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+## Agent skills
 
-## 2. Simplicity First
+### Issue tracker
 
-**Minimum code that solves the problem. Nothing speculative.**
+이슈와 PRD는 `gh` CLI로 GitHub Issues에서 관리한다. `docs/agents/issue-tracker.md`를 참고한다.
 
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
+### Triage labels
 
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+분류에는 다섯 가지 표준 라벨 문자열을 그대로 사용한다. `docs/agents/triage-labels.md`를 참고한다.
 
-## 3. Surgical Changes
+### Domain docs
 
-**Touch only what you must. Clean up only your own mess.**
+도메인 문서는 단일 컨텍스트 구조를 사용한다. `docs/agents/domain.md`를 참고한다.
 
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
+### Checks
 
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
+검사 명령(pytest, ruff, black, 브라우저 검사, live 스트리밍 검사)은 `README.md`의 테스트 절에 있다. CI와 pre-commit이 같은 명령을 실행하며, 모두 통과해야 변경이 끝난 것이다.
 
-The test: Every changed line should trace directly to the user's request.
+# Code Quality
 
-## 4. Goal-Driven Execution
+- Prefer cohesive modules with clear responsibilities and simple
+  dependencies.
+- Treat 300 lines as a review signal, not a hard file limit.
+- Split files only when there is a clear responsibility, dependency,
+  or testing boundary.
+- Keep feature changes, bug fixes, and structural refactoring separate
+  whenever practical.
+- Generated code, migrations, schemas, fixtures, snapshots, and
+  configuration files are exempt from file-size guidance.
 
-**Define success criteria. Loop until verified.**
+## Testing Policy
 
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+- During implementation, prefer targeted tests for the current change.
+- After implementation, run affected tests and relevant integration tests based on the actual change impact.
+- Do not run the full test suite repeatedly during development.
+- Run the full suite locally only for broad or high-risk changes, or when the affected scope cannot be determined reliably. Otherwise, full regression testing belongs to CI.
+- Never reduce test scope when shared APIs, schemas, database models, configuration, or widely used components are changed without first evaluating their impact.
+-Run pytest by referring to `pytest.md`
 
 ---
-
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+Offer glory to the Omnissiah, and pray that the Machine Spirit enters the code correctly.
+Sit tibi semper benedicta Omnisia.
