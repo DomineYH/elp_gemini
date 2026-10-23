@@ -38,7 +38,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     화이트리스트 경로는 인증 없이 통과합니다:
     - /login, /login/admin
     - /auth/login, /auth/login/user, /auth/login/admin, /auth/logout, /auth/register
-    - /health
+    - /health, /favicon.ico
     - /static/*
     - /docs, /redoc, /openapi.json (API 문서, DEBUG에서만 존재)
     """
@@ -65,6 +65,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/auth/register",
         "/auth/register/",
         "/health",
+        "/favicon.ico",
         "/docs",
         "/redoc",
         "/openapi.json",

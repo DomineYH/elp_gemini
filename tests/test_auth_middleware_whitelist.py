@@ -200,3 +200,16 @@ async def test_authed_user_accesses_auth_me(
         headers={"Accept": "application/json"},
     )
     assert resp_me.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_favicon_is_public_for_html_accept(http_client):
+    """GET /favicon.ico 는 세션 없이 HTML Accept 여도 아이콘을 반환."""
+    response = await http_client.get(
+        "/favicon.ico",
+        headers={"accept": "text/html"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/")

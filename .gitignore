@@ -78,3 +78,5 @@ app/static/uploads/test01_*.pdf
 
 # 프롬프트 저장 시 자동 백업 (#268)
 prompt/prompt.md.bak-*
+# Tailwind standalone CLI cache (scripts/build_tailwind.sh)
+.cache/
