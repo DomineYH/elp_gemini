@@ -54,10 +54,10 @@
             <div>
                 <label class="eyebrow" for="count">학생 수</label>
                 <div class="flex items-center gap-3 mt-2">
-                    <input id="count" type="range" min="{{ min_personas }}" max="{{ max_personas }}" value="4" class="flex-1">
-                    <span id="countVal" class="mono text-lg font-medium w-6 text-right">4</span>
+                    <input id="count" type="range" min="{{ min_personas }}" max="{{ max_personas }}" value="{{ default_count }}" class="flex-1">
+                    <span id="countVal" class="mono text-lg font-medium w-6 text-right">{{ default_count }}</span>
                 </div>
-                <p class="note mt-1">권장 3~5명. 많을수록 반응 생성 시간과 비용이 늘어납니다.</p>
+                <p class="note mt-1">최대 {{ max_personas }}명(관리자 설정). 많을수록 반응 생성 시간과 비용이 늘어납니다.</p>
             </div>
             <div>
                 <p class="eyebrow mb-2">필터</p>
@@ -206,8 +206,14 @@
     rows.addEventListener("change", e => {
         const ref = e.target.dataset.ref;
         if (!ref) return;
-        if (e.target.checked) chosen.add(ref);
-        else if (chosen.size > MIN) chosen.delete(ref);
+        if (e.target.checked) {
+            if (chosen.size >= MAX) {
+                e.target.checked = false;
+                status.textContent = "최대 " + MAX + "명(관리자 설정)";
+                return;
+            }
+            chosen.add(ref);
+        } else if (chosen.size > MIN) chosen.delete(ref);
         render();
     });
     count.addEventListener("input", () => chooseFirst(Number(count.value)));
@@ -216,7 +222,7 @@
         const params = new URLSearchParams({
             grade: document.getElementById("fGrade").value,
             level: document.getElementById("fLevel").value,
-            n: String(MAX),
+            n: "{{ absolute_max }}",
         });
         if (!newSeed && seed !== null) params.set("seed", String(seed));
         status.textContent = "불러오는 중...";

@@ -54,6 +54,7 @@ async def simulation_setup_page(
         if upload
         else ""
     )
+    limit = await persona_pool.effective_max_personas(db)
     return templates.TemplateResponse(
         "user/simulation_setup.html",
         {
@@ -62,7 +63,9 @@ async def simulation_setup_page(
             "upload": upload,
             "plan_summary": summary,
             "min_personas": persona_pool.MIN_PERSONAS,
-            "max_personas": settings.SIM_MAX_PERSONAS,
+            "max_personas": limit,
+            "default_count": min(persona_pool.DEFAULT_MAX_PERSONAS, limit),
+            "absolute_max": settings.SIM_MAX_PERSONAS,
             "level_labels": persona_pool.LEVEL_LABELS,
         },
     )

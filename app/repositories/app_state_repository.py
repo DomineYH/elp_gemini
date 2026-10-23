@@ -13,6 +13,7 @@ KEY_LAST_SYNCED_AT = "criteria_last_synced_at"
 KEY_SYNC_STATE = "criteria_sync_state"
 KEY_SYNC_ERROR = "criteria_sync_error"
 KEY_LAST_ALIAS_MAP_UPDATED_AT = "criteria_last_alias_map_updated_at"
+KEY_SIM_MAX_PERSONAS = "sim_max_personas"
 
 SYNC_STATE_OK = "ok"
 SYNC_STATE_NEEDS_RESYNC = "needs_resync"

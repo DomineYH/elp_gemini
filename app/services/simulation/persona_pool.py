@@ -8,6 +8,11 @@ import random
 from functools import lru_cache
 from pathlib import Path
 
+from app.config import settings
+from app.repositories.app_state_repository import (
+    KEY_SIM_MAX_PERSONAS,
+    AppStateRepository,
+)
 from app.services.simulation.errors import SimulationError
 
 DATA_PATH = (
@@ -17,6 +22,7 @@ DATA_PATH = (
     / "hachimi_grade5_6_en.jsonl"
 )
 MIN_PERSONAS = 2
+DEFAULT_MAX_PERSONAS = 4
 LEVELS = ("High", "Average", "Low", "Poor")
 _LEVEL_ALIASES = {"Mid": "Average"}
 LEVEL_LABELS = {
@@ -152,3 +158,15 @@ def resolve_refs(refs: list[str]) -> list[dict]:
     if any(ref not in by_id for ref in refs):
         raise SimulationError("UNKNOWN_PERSONA")
     return [by_id[ref] for ref in refs]
+
+
+async def effective_max_personas(db) -> int:
+    """관리자 설정값. 없거나 못 읽거나 범위 밖이면 기본값(절대 상한 이하)."""
+    raw = await AppStateRepository(db).get(KEY_SIM_MAX_PERSONAS)
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return min(DEFAULT_MAX_PERSONAS, settings.SIM_MAX_PERSONAS)
+    if MIN_PERSONAS <= n <= settings.SIM_MAX_PERSONAS:
+        return n
+    return min(DEFAULT_MAX_PERSONAS, settings.SIM_MAX_PERSONAS)

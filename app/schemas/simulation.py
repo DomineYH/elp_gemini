@@ -88,6 +88,17 @@ class CreateSessionRequest(BaseModel):
         return self
 
 
+class PersonaLimitIn(BaseModel):
+    max_personas: int = Field(ge=MIN_PERSONAS, le=settings.SIM_MAX_PERSONAS)
+
+
+class PersonaLimitOut(BaseModel):
+    max_personas: int
+    min: int
+    absolute_max: int
+    configured: bool
+
+
 class Persona(BaseModel):
     """좌석의 페르소나 (원본 프로필은 사용자에게 보내지 않는다)"""
 

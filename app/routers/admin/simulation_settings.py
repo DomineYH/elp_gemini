@@ -1,16 +1,23 @@
 """
-관리자 시뮬레이션 설정: 피드백 지침 버전 관리·미리보기 (#159)
+관리자 시뮬레이션 설정: 피드백 지침 버전 관리·미리보기 (#159),
+학생 페르소나 최대 수 (#255)
 """
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db import get_db
 from app.dependencies import get_current_admin
 from app.models.users import User
+from app.repositories.app_state_repository import (
+    KEY_SIM_MAX_PERSONAS,
+    AppStateRepository,
+)
+from app.schemas.simulation import PersonaLimitIn, PersonaLimitOut
 from app.schemas.simulation_guidelines import GuidelineIn
-from app.services.simulation import feedback, guidelines
+from app.services.simulation import feedback, guidelines, persona_pool
 from app.services.simulation.errors import SimulationError
 from app.templating import templates
 from app.utils.admin_csrf import (
@@ -20,6 +27,7 @@ from app.utils.admin_csrf import (
 
 router = APIRouter(tags=["관리자-시뮬레이션"])
 API = "/admin/api/simulation/feedback-guidelines"
+PERSONA_API = "/admin/api/simulation/persona-limit"
 
 
 @router.get("/admin/simulation/settings", response_class=HTMLResponse)
@@ -95,3 +103,35 @@ async def preview_guideline(
         "model_name": result.model,
         "latency_ms": result.latency_ms,
     }
+
+
+@router.get(PERSONA_API, response_model=PersonaLimitOut)
+async def get_persona_limit(
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    n = await persona_pool.effective_max_personas(db)
+    raw = await AppStateRepository(db).get(KEY_SIM_MAX_PERSONAS)
+    return PersonaLimitOut(
+        max_personas=n,
+        min=persona_pool.MIN_PERSONAS,
+        absolute_max=settings.SIM_MAX_PERSONAS,
+        # 저장값이 그대로 쓰일 때만 true (못 읽거나 범위 밖이면 폴백)
+        configured=raw == str(n),
+    )
+
+
+@router.put(PERSONA_API, response_model=PersonaLimitOut)
+async def save_persona_limit(
+    request: Request,
+    body: PersonaLimitIn,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    require_admin_csrf_token(request)
+    await AppStateRepository(db).set(
+        KEY_SIM_MAX_PERSONAS, str(body.max_personas)
+    )
+    # get_db는 응답 뒤에 커밋하므로, 화면이 바로 다시 읽기 전에 커밋한다
+    await db.commit()
+    return await get_persona_limit(current_admin, db)

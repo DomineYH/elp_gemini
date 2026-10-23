@@ -30,6 +30,14 @@
         <a href="/admin/simulation/logs" class="text-blue-600 hover:underline">시뮬레이션 로그 보기</a>
     </div>
 
+    <div class="bg-white shadow-md rounded-lg p-6 mb-6 flex flex-wrap items-center gap-3">
+        <label for="maxPersonas" class="font-medium">학생 페르소나 최대 수</label>
+        <input id="maxPersonas" type="number" step="1" class="border rounded-lg px-2 py-1 w-20">
+        <span id="maxPersonasRange" class="text-sm text-gray-500"></span>
+        <button id="maxPersonasSave" type="button" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">저장</button>
+        <p id="maxPersonasMsg" class="text-sm text-gray-600 w-full" role="status"></p>
+    </div>
+
     <div class="grid gap-6 lg:grid-cols-3">
         <div class="lg:col-span-2 bg-white shadow-md rounded-lg p-6 space-y-5">
             <label class="flex items-center gap-2 font-medium">
@@ -78,6 +86,7 @@
 
 <script>
 const API = '/admin/api/simulation/feedback-guidelines';
+const PERSONA_API = '/admin/api/simulation/persona-limit';
 const $ = (id) => document.getElementById(id);
 
 function csrfToken() {
@@ -152,16 +161,17 @@ async function load() {
     render(await resp.json());
 }
 
-async function post(url, body) {
+async function post(url, body, method = 'POST') {
     const resp = await fetch(url, {
-        method: 'POST',
+        method,
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken() },
         body: JSON.stringify(body),
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
         const detail = data.detail;
-        throw new Error((detail && detail.message) || (typeof detail === 'string' ? detail : '요청에 실패했습니다.'));
+        const message = (detail && detail.message) || (typeof detail === 'string' ? detail : '요청에 실패했습니다.');
+        throw Object.assign(new Error(message), { status: resp.status });
     }
     return data;
 }
@@ -211,6 +221,29 @@ $('previewBtn').addEventListener('click', async () => {
         $('previewBtn').disabled = false;
     }
 });
+async function loadLimit() {
+    const d = await (await fetch(PERSONA_API)).json();
+    const input = $('maxPersonas');
+    input.value = d.max_personas;
+    input.min = d.min;
+    input.max = d.absolute_max;
+    $('maxPersonasRange').textContent = `${d.min}~${d.absolute_max}${d.configured ? '' : ', 기본값 사용 중'}`;
+}
+
+$('maxPersonasSave').addEventListener('click', async () => {
+    const input = $('maxPersonas');
+    $('maxPersonasSave').disabled = true;
+    try {
+        await post(PERSONA_API, { max_personas: Number(input.value) }, 'PUT');
+        $('maxPersonasMsg').textContent = '저장했습니다';
+        await loadLimit();
+    } catch (e) {
+        $('maxPersonasMsg').textContent = e.status === 422 ? `${input.min}~${input.max} 사이 값을 입력하세요` : e.message;
+    } finally {
+        $('maxPersonasSave').disabled = false;
+    }
+});
 load();
+loadLimit();
 </script>
 {% endblock %}

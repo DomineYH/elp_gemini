@@ -63,6 +63,12 @@ async def create_session(
     upload = await lessonplan_source.get_latest_upload(db, user_id)
     if upload is None:
         raise SimulationError("NO_UPLOAD")
+    limit = await persona_pool.effective_max_personas(db)
+    requested = (
+        len(body.personas) if body.personas is not None else body.random.n
+    )
+    if requested > limit:
+        raise SimulationError("TOO_MANY_PERSONAS")
 
     # 페르소나 결정: custom:<id>는 라이브러리 번안본을 복사, 데이터셋만 번안
     custom = {}
