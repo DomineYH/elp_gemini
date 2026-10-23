@@ -11,13 +11,17 @@ def _persona(pid, level="안정적 도달"):
     return SimpleNamespace(id=pid, adapted_level=level)
 
 
-def _student(pid, ready, phase_idx=0):
+def _student(pid, ready, phase_idx=0, misconception=""):
     return SimpleNamespace(
         phase_idx=phase_idx,
         speaker_type="student",
         persona_id=pid,
         target_persona_id=None,
-        structured=None if ready is None else {"ready_for_next": ready},
+        structured=(
+            None
+            if ready is None
+            else {"ready_for_next": ready, "misconception": misconception}
+        ),
     )
 
 
@@ -31,7 +35,7 @@ def _teacher(source="user", target=None, phase_idx=0):
     )
 
 
-def test_last_reaction_wins_and_counts():
+def test_latch_counts():
     personas = [_persona(1), _persona(2)]
     utts = [_student(1, False), _student(2, True), _student(1, True)]
     assert compute_agreement(0, personas, utts) == {
@@ -43,17 +47,44 @@ def test_last_reaction_wins_and_counts():
     }
     utts.append(_student(2, False))
     result = compute_agreement(0, personas, utts)
-    assert result["agreed_persona_ids"] == [1]
-    assert result["all_agreed"] is False
+    assert result["agreed_persona_ids"] == [1, 2]
+    assert result["all_agreed"] is True
 
 
-def test_failed_latest_reaction_clears_consent_until_regenerated():
-    personas = [_persona(1)]
-    utts = [_student(1, True), _student(1, None)]
-    assert compute_agreement(0, personas, utts)["agreed_persona_ids"] == []
-    # 재생성은 실패한 행을 그 자리에서 고친다
-    utts[1].structured = {"ready_for_next": True}
-    assert compute_agreement(0, personas, utts)["agreed_persona_ids"] == [1]
+def _ids(utts):
+    return compute_agreement(0, [_persona(1)], utts)["agreed_persona_ids"]
+
+
+def test_latch_survives_later_false_without_misconception():
+    assert _ids([_student(1, True), _student(1, False)]) == [1]
+
+
+def test_misconception_releases_latch():
+    released = [
+        _student(1, True),
+        _student(1, False, misconception="분수는 클수록 작다"),
+    ]
+    assert _ids(released) == []
+    # 오개념이 있으면 ready_for_next=true여도 미동의다
+    assert _ids([_student(1, True, misconception="오개념")]) == []
+
+
+def test_relatch_after_release():
+    utts = [
+        _student(1, True),
+        _student(1, False, misconception="오개념"),
+        _student(1, True),
+    ]
+    assert _ids(utts) == [1]
+
+
+def test_failed_reaction_keeps_previous_state():
+    assert _ids([_student(1, True), _student(1, None)]) == [1]
+    assert _ids([_student(1, None)]) == []
+    assert (
+        _ids([_student(1, False, misconception="오개념"), _student(1, None)])
+        == []
+    )
 
 
 def test_other_phase_is_ignored():

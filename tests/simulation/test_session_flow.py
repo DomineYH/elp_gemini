@@ -126,7 +126,7 @@ def test_agree_with_one_not_ready_is_409_skip_passes(ready, fake_gemini):
     }
 
 
-def test_failed_latest_reaction_blocks_agree(ready, fake_gemini):
+def test_failed_latest_reaction_keeps_agreement(ready, fake_gemini):
     state = _create(ready)
     sid = state["session"]["id"]
     turn = ready.post(_api(sid, "/phases/0/enter")).json()
@@ -136,11 +136,11 @@ def test_failed_latest_reaction_blocks_agree(ready, fake_gemini):
     fake_gemini.parse_fail.add(failing)
     turn = ready.post(_api(sid, "/say"), json={"content": "하나 더"}).json()
     assert turn["failed_persona_ids"] == [state["personas"][0]["id"]]
-    assert turn["agreement"]["count"] == 3
+    # 파싱 실패는 이전 동의를 유지한다 (#254)
+    assert turn["agreement"]["count"] == 4
 
     r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
-    assert r.status_code == 409
-    assert _code(r) == "NOT_ALL_AGREED"
+    assert r.status_code == 200
 
 
 def test_support_level_guard_lifts_after_user_turn(ready):
