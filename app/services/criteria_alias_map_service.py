@@ -101,15 +101,18 @@ class CriteriaAliasMapService:
         self._client = client
         self._store_display_name = store_display_name
 
-    def _find_store(self):
-        for s in self._client.file_search_stores.list():
+    async def _find_store(self):
+        stores = await asyncio.to_thread(
+            lambda: list(self._client.file_search_stores.list())
+        )
+        for s in stores:
             if s.display_name == self._store_display_name:
                 return s
         return None
 
     async def fetch(self) -> Optional[Tuple[str, AliasMap]]:
         """(doc_name, AliasMap) 또는 None을 반환."""
-        store = self._find_store()
+        store = await self._find_store()
         if not store:
             return None
 
@@ -117,9 +120,14 @@ class CriteriaAliasMapService:
         unparseable_docs: list[_UnparseableAliasMapDoc] = []
         alias_doc_names: list[str] = []
 
-        for doc in self._client.file_search_stores.documents.list(
-            parent=store.name
-        ):
+        docs = await asyncio.to_thread(
+            lambda: list(
+                self._client.file_search_stores.documents.list(
+                    parent=store.name
+                )
+            )
+        )
+        for doc in docs:
             kv = _read_metadata_kv(getattr(doc, "custom_metadata", None))
             type_value = (kv.get("type") or (None, []))[0]
             if type_value != "alias_map":
@@ -192,7 +200,8 @@ class CriteriaAliasMapService:
         )
         for doc_name in cleanup_names:
             try:
-                self._client.file_search_stores.documents.delete(
+                await asyncio.to_thread(
+                    self._client.file_search_stores.documents.delete,
                     name=doc_name,
                     config={"force": True},
                 )
@@ -212,7 +221,7 @@ class CriteriaAliasMapService:
         새 alias-map.txt 문서를 업로드한 뒤(만 성공 시) 이전 문서를 삭제한다.
         upload-then-delete 순서로 부분 손실을 방지.
         """
-        store = self._find_store()
+        store = await self._find_store()
         if not store:
             raise RuntimeError(
                 f"rubric-store '{self._store_display_name}' 미존재"
@@ -232,7 +241,8 @@ class CriteriaAliasMapService:
             tmp_path = tmp.name
 
         try:
-            op = self._client.file_search_stores.upload_to_file_search_store(
+            op = await asyncio.to_thread(
+                self._client.file_search_stores.upload_to_file_search_store,
                 file_search_store_name=store.name,
                 file=tmp_path,
                 config={
@@ -251,7 +261,9 @@ class CriteriaAliasMapService:
                 await asyncio.sleep(2)
                 elapsed += 2
                 try:
-                    op = self._client.operations.get(op)
+                    op = await asyncio.to_thread(
+                        self._client.operations.get, op
+                    )
                 except Exception:
                     break
             if not getattr(op, "done", False):
@@ -265,7 +277,8 @@ class CriteriaAliasMapService:
                 pass
 
         if old_doc_name:
-            self._client.file_search_stores.documents.delete(
+            await asyncio.to_thread(
+                self._client.file_search_stores.documents.delete,
                 name=old_doc_name,
                 config={"force": True},
             )

@@ -248,6 +248,12 @@ async def test_analyze_allows_premigration_file_search_upload_without_row(
         patch.object(
             svc, "_get_store_ids", return_value=["user-store", "rubric-store"]
         ) as mock_stores,
+        # alias fetch도 to_thread를 쓰므로 호출 횟수 검사에서 뺀다.
+        patch.object(
+            svc,
+            "_collect_active_criteria_display_names",
+            new=AsyncMock(return_value=[]),
+        ),
         patch.object(svc.prompt_loader, "get_prompt", return_value="SYS"),
         patch(
             "app.services.criteria_vector_service."

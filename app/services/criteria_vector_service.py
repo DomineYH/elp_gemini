@@ -3,6 +3,7 @@
 Gemini File Search API를 사용한 평가기준 임베딩 저장 및 검색
 """
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -87,7 +88,8 @@ class CriteriaVectorService:
         """
         if not document_id:
             raise ValueError("document_id가 비어있습니다")
-        self.file_search_service.client.file_search_stores.documents.delete(
+        await asyncio.to_thread(
+            self.file_search_service.client.file_search_stores.documents.delete,
             name=document_id,
             config={"force": True},
         )
@@ -120,7 +122,10 @@ class CriteriaVectorService:
             client = self.file_search_service.client
             store = None
 
-            for s in client.file_search_stores.list():
+            stores = await asyncio.to_thread(
+                lambda: list(client.file_search_stores.list())
+            )
+            for s in stores:
                 if s.display_name == self.store_name:
                     store = s
                     break
@@ -250,12 +255,11 @@ class CriteriaVectorService:
         from app.services.criteria_alias_map_service import _read_metadata_kv
 
         client = self.file_search_service.client
+        stores = await asyncio.to_thread(
+            lambda: list(client.file_search_stores.list())
+        )
         store = next(
-            (
-                s
-                for s in client.file_search_stores.list()
-                if s.display_name == self.store_name
-            ),
+            (s for s in stores if s.display_name == self.store_name),
             None,
         )
         if not store:
@@ -263,7 +267,12 @@ class CriteriaVectorService:
             return []
 
         documents = []
-        for doc in client.file_search_stores.documents.list(parent=store.name):
+        docs = await asyncio.to_thread(
+            lambda: list(
+                client.file_search_stores.documents.list(parent=store.name)
+            )
+        )
+        for doc in docs:
             documents.append(
                 {
                     "document_id": doc.name,

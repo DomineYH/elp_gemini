@@ -12,6 +12,7 @@ stable_id 백필(PDF 로컬 캐시가 있는 경우 재업로드)은 별도 옵�
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,15 +26,20 @@ async def migrate_from_legacy_manifest(*, client, app_state) -> None:
         return
 
     legacy = None
-    for s in client.file_search_stores.list():
+    stores = await asyncio.to_thread(
+        lambda: list(client.file_search_stores.list())
+    )
+    for s in stores:
         if s.display_name == LEGACY_METADATA_STORE_NAME:
             legacy = s
             break
 
     if legacy is not None:
         logger.info(f"legacy rubric-metadata-store 발견 — 삭제: {legacy.name}")
-        client.file_search_stores.delete(
-            name=legacy.name, config={"force": True}
+        await asyncio.to_thread(
+            client.file_search_stores.delete,
+            name=legacy.name,
+            config={"force": True},
         )
 
     await app_state.set(MIGRATION_MARKER_KEY, "true")

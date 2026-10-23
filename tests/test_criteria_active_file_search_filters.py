@@ -235,6 +235,10 @@ async def test_lessonplan_analysis_continues_without_filter_when_active_filter_f
         service._get_store_ids = AsyncMock(
             return_value=["fileSearchStores/user", "fileSearchStores/rubric"]
         )
+        # alias fetch도 to_thread를 쓰므로 Gemini 호출 인자 검사를 위해 막는다.
+        service._collect_active_criteria_display_names = AsyncMock(
+            return_value=[]
+        )
         service.prompt_loader.get_prompt = MagicMock(
             return_value="{model_name}"
         )
