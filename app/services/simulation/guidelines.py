@@ -155,14 +155,14 @@ async def system_prompt(db: AsyncSession, guideline) -> str:
 
 
 async def latest_finished_session(
-    db: AsyncSession, user_id: int
+    db: AsyncSession, user_id: int | None = None
 ) -> SimulationSession | None:
+    conds = [SimulationSession.status == "finished"]
+    if user_id is not None:
+        conds.append(SimulationSession.user_id == user_id)
     result = await db.execute(
         select(SimulationSession)
-        .where(
-            SimulationSession.user_id == user_id,
-            SimulationSession.status == "finished",
-        )
+        .where(*conds)
         .order_by(
             SimulationSession.finished_at.desc(), SimulationSession.id.desc()
         )

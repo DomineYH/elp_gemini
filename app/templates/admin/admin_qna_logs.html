@@ -93,6 +93,8 @@ async function loadLogs(page = 1) {
                         </span>
                         <!-- 세션 제목 -->
                         <span class="text-gray-900 font-medium">${escapeHtml(session.title || '제목 없음')}</span>
+                        <!-- 작성자 -->
+                        <span class="text-gray-500 text-sm">${escapeHtml(session.username || '-')}</span>
                         <!-- 메시지 수 -->
                         <span class="text-gray-500 text-sm">메시지 ${session.message_count}개</span>
                     </div>

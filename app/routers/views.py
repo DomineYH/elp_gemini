@@ -10,11 +10,13 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pypdf.errors import PdfReadError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import get_db
 from app.dependencies import get_current_user
+from app.models.analysis_reports import AnalysisReport
 from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
 from app.repositories.criteria_repository import CriteriaRepository
@@ -339,14 +341,24 @@ async def view_analysis_report(
     request: Request,
     report_id: int,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     보고서 뷰어 페이지 (HTML shell)
 
-    소유권/존재 검증은 페이지에서 호출되는
-    `/api/lessonplan/reports/{report_id}` JSON 엔드포인트가 수행한다.
+    본인 소유가 아니거나 없는 보고서는 404로 응답한다.
     """
-    if report_id <= 0:
+    owned = None
+    if report_id > 0:
+        owned = (
+            await db.execute(
+                select(AnalysisReport.id).where(
+                    AnalysisReport.id == report_id,
+                    AnalysisReport.user_id == current_user.id,
+                )
+            )
+        ).scalar_one_or_none()
+    if owned is None:
         raise HTTPException(
             status_code=404,
             detail="보고서를 찾을 수 없습니다.",

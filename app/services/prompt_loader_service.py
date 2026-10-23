@@ -6,6 +6,8 @@ prompt/prompt.md 파일에서 프롬프트 로드 및 캐싱
 import logging
 import os
 import re
+import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -14,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 class PromptLoaderService:
     """프롬프트 로더 서비스"""
+
+    # 저장할 때마다 이전 파일을 남기는 백업 개수 (최신 N개 유지)
+    BACKUP_KEEP = 10
 
     def __init__(self, prompt_file: str = "prompt/prompt.md"):
         """
@@ -172,9 +177,22 @@ class PromptLoaderService:
         tmp_path = self.prompt_file.with_suffix(".tmp")
         with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(output)
+        if self.prompt_file.exists():
+            self._backup_current()
         os.replace(str(tmp_path), str(self.prompt_file))
 
         logger.info(f"프롬프트 저장 완료: {len(self._cache)}개")
+
+    def _backup_current(self) -> None:
+        """현재 파일을 .bak-<UTC ts>로 복사하고 오래된 백업을 정리"""
+        name = self.prompt_file.name
+        ts = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S%f}"
+        shutil.copy2(
+            self.prompt_file, self.prompt_file.with_name(f"{name}.bak-{ts}")
+        )
+        backups = sorted(self.prompt_file.parent.glob(f"{name}.bak-*"))
+        for old in backups[: -self.BACKUP_KEEP]:
+            old.unlink()
 
     def create_prompt(self, prompt_type: str, content: str) -> None:
         """

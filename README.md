@@ -109,6 +109,7 @@ elp_gemini/
 2. **사용자 관리**: `/admin/users` - 사용자 활동 모니터링
 3. **QnA 로그**: `/admin/qna-logs` - 질문답변 기록 조회
 4. **프롬프트 관리**: `/admin/prompts` - 시스템 프롬프트 버전 관리
+5. **전체 내보내기**: `/admin/api/exports/all.zip` - ZIP 안의 `users.csv` 열은 `user_id, username, created_at, n_reports, n_sessions, n_lessonplans`(관리자 전용이라 username을 익명화하지 않음)
 
 ## 개발
 
@@ -127,6 +128,8 @@ ruff check .
 ```bash
 python scripts/backup_db.py
 ```
+
+프롬프트를 저장할 때마다 직전 `prompt/prompt.md`를 `prompt/prompt.md.bak-<UTC 시각>`으로 남기고 최신 10개만 유지한다. 복원은 원하는 백업을 `prompt/prompt.md`로 덮어쓴 뒤 서버를 재시작한다.
 
 ### 테스트
 
