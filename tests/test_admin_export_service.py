@@ -4,6 +4,7 @@ import inspect
 import io
 import os
 import time
+import zipfile
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -772,3 +773,49 @@ async def test_report_without_upload_falls_back_to_report_number(
     ]
     rows = _manifest_rows(plan)
     assert [r["upload_id"] for r in rows.values()] == ["", ""]
+
+
+@pytest.mark.asyncio
+async def test_drifted_report_filename_falls_back_to_upload_file(
+    db_session, tmp_path
+):
+    await _seed_user(db_session, user_id=1)
+    upload_dir = tmp_path / "static-uploads"
+    (upload_dir / "1").mkdir(parents=True)
+    filename = "u1_20260101000000_plan.pdf"
+    upload_file = upload_dir / "1" / filename
+    pdf = b"%PDF-1.4\nplan\n"
+    upload_file.write_bytes(pdf)
+    upload = LessonPlanUpload(
+        user_id=1,
+        filename=filename,
+        original_filename="plan.pdf",
+        file_hash="d" * 64,
+    )
+    db_session.add(upload)
+    await db_session.flush()
+    db_session.add(
+        AnalysisReport(
+            user_id=1,
+            lessonplan_filename="plan.pdf",  # 옛 행: 업로드 파일명과 다르다
+            lessonplan_original_name="plan.pdf",
+            report_filename="r.md",
+            report_path=str(tmp_path / "r.md"),
+            upload_id=upload.id,
+        )
+    )
+    await db_session.commit()
+
+    svc = AdminExportService(
+        db_session,
+        lessonplan_base_dir=str(tmp_path / "no-legacy"),
+        static_uploads_dir=str(upload_dir),
+    )
+    plan = await svc.collect(ExportFilters())
+
+    assert len(plan.lessonplans) == 1
+    entry = plan.lessonplans[0]
+    assert entry.source_status == "OK"
+    assert Path(entry.source_path).resolve() == upload_file.resolve()
+    zf = zipfile.ZipFile(io.BytesIO(b"".join(svc.stream_zip(plan))))
+    assert zf.read(entry.archive_path) == pdf

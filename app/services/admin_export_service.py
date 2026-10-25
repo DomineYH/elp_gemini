@@ -308,6 +308,25 @@ class AdminExportService:
         if upper_bound:
             stmt = stmt.where(AnalysisReport.created_at < upper_bound)
         rows = (await self.db.execute(stmt)).scalars().all()
+        # 옛 행은 lessonplan_filename이 업로드 파일명과 다를 수 있다 (#286)
+        report_upload_ids = {r.upload_id for r in rows if r.upload_id}
+        linked_filenames = (
+            {
+                u.id: u.filename
+                for u in (
+                    await self.db.execute(
+                        select(LessonPlanUpload).where(
+                            LessonPlanUpload.id.in_(report_upload_ids),
+                            LessonPlanUpload.user_id.in_(user_ids),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            }
+            if report_upload_ids
+            else {}
+        )
 
         for r in rows:
             key = (r.user_id, r.lessonplan_filename)
@@ -319,6 +338,13 @@ class AdminExportService:
                 user_id=r.user_id,
                 upload_id=r.upload_id,
             )
+            linked = linked_filenames.get(r.upload_id)
+            if not source_path.is_file() and linked:
+                fallback = self._resolve_lessonplan_source_path(
+                    linked, user_id=r.user_id, upload_id=r.upload_id
+                )
+                if fallback.is_file():
+                    source_path = fallback
             archive_name = build_lessonplan_basename(
                 r.user_id, original, upload_id=r.upload_id, report_id=r.id
             )
