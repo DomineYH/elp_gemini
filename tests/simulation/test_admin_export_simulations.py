@@ -1,8 +1,12 @@
-"""관리자 export zip에 시뮬레이션 세션 jsonl 포함 (#160)."""
+"""관리자 export zip에 시뮬레이션 세션 jsonl·md 포함 (#160, #280)."""
 
+import csv
+import hashlib
 import io
 import json
 import zipfile
+
+import pytest
 
 from app.schemas.admin_export import ExportFilters
 from app.services.admin_export_service import AdminExportService
@@ -80,7 +84,7 @@ def test_zip_contains_session_jsonl_in_seq_order(
         "created_at",
     }
     readme = zf.read("README.txt").decode()
-    assert "simulations/" in readme
+    assert "simulations/      수업 시뮬레이션 대화록·피드백 (.md)" in readme
 
 
 def test_zip_excludes_simulations_without_conversations(
@@ -97,3 +101,30 @@ def test_zip_respects_user_filter(
     _session_with_utterances(client, teacher, make_upload)
     zf = _zip(sim_db, ExportFilters(user_ids=[other_teacher.id]))
     assert not [n for n in zf.namelist() if n.startswith("simulations/")]
+
+
+@pytest.mark.parametrize("by_user", [False, True])
+def test_zip_contains_session_markdown_with_manifest_digest(
+    client, sim_db, teacher, make_upload, fake_gemini, by_user
+):
+    sid, target = _session_with_utterances(client, teacher, make_upload)
+    filters = ExportFilters(user_ids=[teacher.id] if by_user else None)
+    zf = _zip(sim_db, filters)
+
+    name = f"simulations/u{teacher.id:05d}__simsession_{sid}.md"
+    data = zf.read(name)
+    md = data.decode()
+    assert "teacher1" in md
+    assert f"- **교사 ({target['display_name']}에게)**: 너는?" in md
+    assert "피드백이 아직 생성되지 않았습니다." in md
+
+    rows = {
+        r["archive_path"]: r
+        for r in csv.DictReader(io.StringIO(zf.read("manifest.csv").decode()))
+    }
+    assert rows[name]["kind"] == "simulation_report"
+    assert rows[name]["session_id"] == str(sid)
+    assert rows[name]["byte_size"] == str(len(data))
+    assert rows[name]["sha256"] == hashlib.sha256(data).hexdigest()
+    # 기존 jsonl 행은 그대로 남는다
+    assert rows[name.replace(".md", ".jsonl")]["kind"] == "simulation"

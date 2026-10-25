@@ -36,11 +36,16 @@
     </div>
 
     <div id="detail" class="hidden bg-white shadow-md rounded-lg p-4">
-        <h2 id="detailTitle" class="text-xl font-semibold mb-4"></h2>
+        <div class="flex items-center justify-between mb-4">
+            <h2 id="detailTitle" class="text-xl font-semibold"></h2>
+            <a id="detailDownload" class="text-blue-600 hover:underline" href="#">Markdown 다운로드</a>
+        </div>
         <h3 class="font-medium text-gray-700 mb-2">페르소나</h3>
         <div id="detailPersonas" class="space-y-2 mb-6"></div>
         <h3 class="font-medium text-gray-700 mb-2">발화</h3>
-        <ol id="detailUtterances" class="space-y-2"></ol>
+        <ol id="detailUtterances" class="space-y-2 mb-6"></ol>
+        <h3 class="font-medium text-gray-700 mb-2">피드백</h3>
+        <div id="detailFeedback" class="space-y-4 text-sm"></div>
     </div>
 </div>
 {% endblock %}
@@ -139,8 +144,45 @@ async function loadDetail(sid) {
         li.appendChild(el('span', 'whitespace-pre-wrap', u.failed ? `(파싱 실패) ${u.content}` : u.content));
         list.appendChild(li);
     }
+    renderFeedback(state.feedback, phaseNames);
+    document.getElementById('detailDownload').href = `/admin/api/simulation/sessions/${state.session.id}/download`;
     document.getElementById('detailTitle').textContent = `세션 #${state.session.id} · ${STATUS_LABEL[state.session.status] ?? state.session.status}`;
     document.getElementById('detail').classList.remove('hidden');
+}
+
+function renderFeedback(envelope, phaseNames) {
+    const box = document.getElementById('detailFeedback');
+    box.replaceChildren();
+    if (!envelope) {
+        box.appendChild(el('p', 'text-gray-500', '피드백 없음'));
+        return;
+    }
+    const fb = envelope.feedback;
+    const section = (title) => {
+        const div = el('div');
+        div.appendChild(el('h4', 'font-medium mb-1', title));
+        box.appendChild(div);
+        return div;
+    };
+    const risks = section('위험 시나리오');
+    for (const r of fb.risk_scenarios) {
+        risks.appendChild(el('p', 'font-medium', r.title));
+        risks.appendChild(el('p', 'whitespace-pre-wrap mb-2', r.scene));
+    }
+    const suggestions = section('① 교사 발화 추천');
+    for (const s of fb.utterance_suggestions) {
+        const ul = el('ul', 'list-disc ml-5 mb-2');
+        ul.appendChild(el('li', null, `[${phaseNames[s.phase_idx] ?? `국면 ${s.phase_idx + 1}`}] 실제: ${s.actual}`));
+        ul.appendChild(el('li', null, `추천: ${s.suggested}`));
+        ul.appendChild(el('li', null, `의도: ${s.intent}`));
+        suggestions.appendChild(ul);
+    }
+    const progress = el('ul', 'list-disc ml-5');
+    for (const d of fb.progress_directions) progress.appendChild(el('li', null, d));
+    section('② 진행 방향').appendChild(progress);
+    const changes = el('ul', 'list-disc ml-5');
+    for (const c of fb.change_directions) changes.appendChild(el('li', null, `[${c.kind}] ${c.content}`));
+    section('③ 변경 방향').appendChild(changes);
 }
 
 document.getElementById('prevBtn').addEventListener('click', () => loadSessions(currentPage - 1));

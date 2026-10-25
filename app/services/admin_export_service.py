@@ -22,10 +22,12 @@ from app.models.chat_messages import ChatMessage
 from app.models.chat_sessions import ChatSession
 from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.simulation_persona import SimulationPersona
+from app.models.simulation_phase import SimulationPhase
 from app.models.simulation_session import SimulationSession
 from app.models.simulation_utterance import SimulationUtterance
 from app.models.users import User
 from app.schemas.admin_export import ExportFilters
+from app.services.simulation.session_report import render_session_markdown
 from app.utils.admin_export_naming import (
     build_filename_prefix,
     slugify_original_name,
@@ -94,6 +96,17 @@ class SimulationEntry:
 
 
 @dataclass(frozen=True)
+class SimulationReportEntry:
+    kind: str  # "simulation_report"
+    user_id: int
+    resource_id: int  # simulation session id
+    session_id: int
+    created_at: datetime
+    archive_path: str
+    markdown: str  # 대화록 + 피드백 (#280)
+
+
+@dataclass(frozen=True)
 class ExportPlan:
     users: list[UserContext]
     reports: list[ReportEntry] = field(default_factory=list)
@@ -103,6 +116,9 @@ class ExportPlan:
     simulations: list[SimulationEntry] = field(default_factory=list)
     simulation_utterances: dict[int, list[SimulationUtterance]] = field(
         default_factory=dict
+    )
+    simulation_reports: list[SimulationReportEntry] = field(
+        default_factory=list
     )
     filters: ExportFilters = field(default_factory=ExportFilters)
     generated_at: datetime = field(default_factory=datetime.utcnow)
@@ -131,9 +147,11 @@ class AdminExportService:
             user_ids, ctx_by_id, filters
         )
         lessonplans = await self._collect_lessonplans(users, filters)
-        simulations, sim_utterances = await self._collect_simulations(
-            user_ids, ctx_by_id, filters
-        )
+        (
+            simulations,
+            sim_utterances,
+            sim_reports,
+        ) = await self._collect_simulations(user_ids, ctx_by_id, filters)
 
         return ExportPlan(
             users=users,
@@ -143,6 +161,7 @@ class AdminExportService:
             session_messages=messages,
             simulations=simulations,
             simulation_utterances=sim_utterances,
+            simulation_reports=sim_reports,
             filters=filters,
             generated_at=datetime.utcnow(),
         )
@@ -419,12 +438,14 @@ class AdminExportService:
             msgs[s.id] = sorted_msgs
         return sessions, msgs
 
-    async def _collect_simulations(
-        self, user_ids, ctx_by_id, filters
-    ) -> tuple[list[SimulationEntry], dict[int, list[SimulationUtterance]]]:
+    async def _collect_simulations(self, user_ids, ctx_by_id, filters) -> tuple[
+        list[SimulationEntry],
+        dict[int, list[SimulationUtterance]],
+        list[SimulationReportEntry],
+    ]:
         # 시뮬레이션 발화는 별도 include 키 없이 conversations에 묶는다
         if "conversations" not in filters.include:
-            return [], {}
+            return [], {}, []
         stmt = (
             select(SimulationSession)
             .where(SimulationSession.user_id.in_(user_ids))
@@ -439,11 +460,21 @@ class AdminExportService:
 
         entries: list[SimulationEntry] = []
         utterances: dict[int, list[SimulationUtterance]] = {}
+        reports: list[SimulationReportEntry] = []
         for s in rows:
             ctx = ctx_by_id[s.user_id]
-            personas = await self.db.scalars(
-                select(SimulationPersona).where(
-                    SimulationPersona.session_id == s.id
+            personas = list(
+                await self.db.scalars(
+                    select(SimulationPersona)
+                    .where(SimulationPersona.session_id == s.id)
+                    .order_by(SimulationPersona.seat_idx)
+                )
+            )
+            phases = list(
+                await self.db.scalars(
+                    select(SimulationPhase)
+                    .where(SimulationPhase.session_id == s.id)
+                    .order_by(SimulationPhase.idx)
                 )
             )
             entries.append(
@@ -467,7 +498,23 @@ class AdminExportService:
                     .order_by(SimulationUtterance.seq)
                 )
             )
-        return entries, utterances
+            reports.append(
+                SimulationReportEntry(
+                    kind="simulation_report",
+                    user_id=s.user_id,
+                    resource_id=s.id,
+                    session_id=s.id,
+                    created_at=s.created_at,
+                    archive_path=(
+                        f"simulations/{ctx.filename_prefix}"
+                        f"__simsession_{s.id}.md"
+                    ),
+                    markdown=render_session_markdown(
+                        s, ctx.username, phases, personas, utterances[s.id]
+                    ),
+                )
+            )
+        return entries, utterances, reports
 
     # -------- ZIP streaming --------
 
@@ -526,6 +573,11 @@ class AdminExportService:
             )
             zf.writestr(s.archive_path, payload)
             digests[s.archive_path] = _digest(payload)
+            yield buf.take()
+        for r in plan.simulation_reports:
+            payload = r.markdown.encode("utf-8")
+            zf.writestr(r.archive_path, payload)
+            digests[r.archive_path] = _digest(payload)
             yield buf.take()
 
     def _emit_lessonplans(self, zf, buf, plan, digests):
@@ -696,6 +748,7 @@ def build_manifest_csv(
         list(plan.reports)
         + list(plan.sessions)
         + list(plan.simulations)
+        + list(plan.simulation_reports)
         + list(plan.lessonplans)
     )
     for e in iter_entries:
@@ -772,8 +825,8 @@ def build_readme(plan: ExportPlan) -> bytes:
         "  users.csv         사용자 메타데이터 + 자원 개수",
         "  reports/          분석 보고서 (.md)",
         "  conversations/    QnA 세션 대화 (.jsonl)",
-        "  simulations/      수업 시뮬레이션 세션 발화 (.jsonl,"
-        " include=conversations에 포함)",
+        "  simulations/      수업 시뮬레이션 대화록·피드백 (.md)"
+        " + 발화 원자료 (.jsonl), include=conversations에 포함",
         "  lessonplans/      원본 수업 지도안",
         "",
         "파일명 규칙:",

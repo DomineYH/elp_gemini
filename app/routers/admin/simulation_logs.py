@@ -4,7 +4,7 @@
 """
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from app.models.simulation_utterance import SimulationUtterance
 from app.models.users import User
 from app.services.simulation import session_service
 from app.services.simulation.errors import SimulationError
+from app.services.simulation.session_report import render_session_markdown
 from app.templating import templates
 from app.utils.timestamps import utc_iso
 
@@ -93,7 +94,37 @@ async def get_simulation_session(
     }
     for persona in state["personas"]:
         persona["raw_profile"] = raw[persona["id"]]
+    state["feedback"] = session.feedback_json
     return state
+
+
+@router.get("/admin/api/simulation/sessions/{sid}/download")
+async def download_simulation_session(
+    sid: int,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """대화록 + 피드백 Markdown (#280)"""
+    session = await db.get(SimulationSession, sid)
+    if session is None:
+        raise SimulationError("SESSION_NOT_FOUND").to_http()
+    owner = await db.get(User, session.user_id)
+    md = render_session_markdown(
+        session,
+        owner.username,
+        await session_service._phases(db, sid),
+        await session_service._personas(db, sid),
+        await session_service._utterances(db, sid),
+    )
+    return Response(
+        content=md,
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="simulation_{sid}.md"'
+            )
+        },
+    )
 
 
 @router.get("/admin/simulation/logs", response_class=HTMLResponse)

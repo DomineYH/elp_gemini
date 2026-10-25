@@ -23,6 +23,7 @@ from app.services.admin_export_service import (
     LessonplanEntry,
     ReportEntry,
     SimulationEntry,
+    SimulationReportEntry,
     UserContext,
     build_readme,
 )
@@ -90,6 +91,17 @@ def _plan(tmp_path, include=None) -> ExportPlan:
             )
         ],
         simulation_utterances={7: [utter]},
+        simulation_reports=[
+            SimulationReportEntry(
+                kind="simulation_report",
+                user_id=4,
+                resource_id=7,
+                session_id=7,
+                created_at=NOW,
+                archive_path="simulations/u00004__simsession_7.md",
+                markdown="# 세션 7\n",
+            )
+        ],
         filters=filters,
     )
 
@@ -111,6 +123,7 @@ def test_manifest_records_real_size_and_sha(tmp_path):
     for path in (
         "reports/u00004__report_1__lesson.md",
         "simulations/u00004__simsession_7.jsonl",
+        "simulations/u00004__simsession_7.md",
     ):
         data = zf.read(path)
         assert data
