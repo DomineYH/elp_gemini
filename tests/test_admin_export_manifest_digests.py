@@ -62,8 +62,9 @@ def _plan(tmp_path, include=None) -> ExportPlan:
                 session_id=None,
                 created_at=NOW,
                 original_name="lesson.pdf",
-                archive_path="reports/u00004__report_1__lesson.md",
+                archive_path="reports/u00004__report_3__lesson.md",
                 source_path=str(report_md),
+                upload_id=3,
             )
         ],
         lessonplans=[
@@ -77,6 +78,7 @@ def _plan(tmp_path, include=None) -> ExportPlan:
                 archive_path="lessonplans/u00004__lessonplan_3__lesson.pdf",
                 source_path=str(tmp_path / "gone.pdf"),
                 source_status="MISSING",
+                upload_id=3,
             )
         ],
         simulations=[
@@ -88,6 +90,7 @@ def _plan(tmp_path, include=None) -> ExportPlan:
                 created_at=NOW,
                 archive_path="simulations/u00004__simsession_3__lesson__s7.jsonl",
                 persona_names={},
+                upload_id=3,
             )
         ],
         simulation_utterances={7: [utter]},
@@ -100,6 +103,7 @@ def _plan(tmp_path, include=None) -> ExportPlan:
                 created_at=NOW,
                 archive_path="simulations/u00004__simsession_3__lesson__s7.md",
                 markdown="# 세션 7\n",
+                upload_id=3,
             )
         ],
         filters=filters,
@@ -121,7 +125,7 @@ def test_manifest_records_real_size_and_sha(tmp_path):
     rows = _manifest(zf)
 
     for path in (
-        "reports/u00004__report_1__lesson.md",
+        "reports/u00004__report_3__lesson.md",
         "simulations/u00004__simsession_3__lesson__s7.jsonl",
         "simulations/u00004__simsession_3__lesson__s7.md",
     ):
@@ -151,11 +155,17 @@ def test_manifest_includes_simulations(tmp_path):
     assert row["session_id"] == "7"
 
 
+def test_manifest_upload_id_column_shares_lessonplan_number(tmp_path):
+    rows = _manifest(_zip(_plan(tmp_path)))
+    assert {r["upload_id"] for r in rows.values()} == {"3"}
+    assert rows["reports/u00004__report_3__lesson.md"]["resource_id"] == "1"
+
+
 def test_manifest_blank_digest_for_entries_not_in_zip(tmp_path):
     zf = _zip(_plan(tmp_path, include={"meta"}))
     rows = _manifest(zf)
-    row = rows["reports/u00004__report_1__lesson.md"]
-    assert "reports/u00004__report_1__lesson.md" not in zf.namelist()
+    row = rows["reports/u00004__report_3__lesson.md"]
+    assert "reports/u00004__report_3__lesson.md" not in zf.namelist()
     assert row["byte_size"] == ""
     assert row["sha256"] == ""
 
