@@ -211,6 +211,23 @@ def test_transcript_and_feedback_pages_render(ready):
     assert r.text.count(feedback.SECTION_NOTE) == 2
 
 
+SURVEY_URL = "https://docs.google.com/forms/d/e/1FAIpQLSfXwRv2PdV4izYZGdJADiRUWdopZPbW0gXlESBATjqx9ZnBmg/viewform?usp=publish-editor"
+
+
+def test_feedback_page_has_survey_modal(ready):
+    # 피드백 화면을 떠날 때 설문 모달 (#289)
+    sid = _finished(ready)
+    r = ready.get(f"/simulation/sessions/{sid}/feedback")
+    assert r.status_code == 200
+    assert 'id="surveyModal"' in r.text
+    assert SURVEY_URL in r.text
+    assert "설문참여 완료" in r.text
+    assert 'id="backBtn"' in r.text
+    r = ready.get(f"/simulation/sessions/{sid}/transcript")
+    assert r.status_code == 200
+    assert "surveyModal" not in r.text
+
+
 def test_report_pages_include_plan_and_people_section(ready):
     # 지도안 파일명·참여 학생 공용 include (#283)
     sid = _finished(ready)

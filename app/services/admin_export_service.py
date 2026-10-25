@@ -30,8 +30,9 @@ from app.schemas.admin_export import ExportFilters
 from app.services.simulation.session_report import render_session_markdown
 from app.utils.admin_export_naming import (
     build_filename_prefix,
+    build_lessonplan_basename,
+    build_report_basename,
     build_simsession_basename,
-    slugify_original_name,
 )
 from app.utils.timestamps import kst_date_start_utc_naive
 
@@ -58,6 +59,7 @@ class ReportEntry:
     archive_path: str
     source_path: str  # on-disk .md path
     source_status: str = "OK"
+    upload_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -83,6 +85,7 @@ class LessonplanEntry:
     archive_path: str
     source_path: str  # on-disk lessonplan path
     source_status: str = "OK"
+    upload_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +97,7 @@ class SimulationEntry:
     created_at: datetime
     archive_path: str
     persona_names: dict[int, str]  # persona_id -> display_name
+    upload_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -105,6 +109,7 @@ class SimulationReportEntry:
     created_at: datetime
     archive_path: str
     markdown: str  # 대화록 + 피드백 (#280)
+    upload_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -209,11 +214,12 @@ class AdminExportService:
 
         reports: list[ReportEntry] = []
         for r in rows:
-            ctx = ctx_by_id[r.user_id]
             original = r.lessonplan_original_name or r.lessonplan_filename
             fname = (
-                f"{ctx.filename_prefix}__report_{r.id}__"
-                f"{slugify_original_name(_strip_ext(original))}.md"
+                build_report_basename(
+                    r.user_id, original, upload_id=r.upload_id, report_id=r.id
+                )
+                + ".md"
             )
             report_status = "OK" if os.path.exists(r.report_path) else "MISSING"
             reports.append(
@@ -227,6 +233,7 @@ class AdminExportService:
                     archive_path=f"reports/{fname}",
                     source_path=r.report_path,
                     source_status=report_status,
+                    upload_id=r.upload_id,
                 )
             )
         return reports
@@ -246,7 +253,8 @@ class AdminExportService:
         base = Path(self._lessonplan_base_dir)
         entries: list[LessonplanEntry] = []
         seen: set[tuple[int, str]] = set()
-        ctx_by_id = {ctx.user_id: ctx for ctx in users}
+        # 파일명 키가 어긋나도 같은 업로드를 두 번 넣지 않는다 (#286)
+        seen_upload_ids: set[int] = set()
         user_ids = [ctx.user_id for ctx in users]
         lower_bound, upper_bound = _date_bounds(filters)
 
@@ -272,9 +280,8 @@ class AdminExportService:
                     if upper_bound and mtime >= upper_bound:
                         continue
                     original = fpath.name
-                    archive_name = (
-                        f"{ctx.filename_prefix}__lessonplan_{ordinal}__"
-                        f"{slugify_original_name(original)}"
+                    archive_name = build_lessonplan_basename(
+                        ctx.user_id, original, ordinal=ordinal
                     )
                     seen.add((ctx.user_id, fpath.name))
                     entries.append(
@@ -301,21 +308,45 @@ class AdminExportService:
         if upper_bound:
             stmt = stmt.where(AnalysisReport.created_at < upper_bound)
         rows = (await self.db.execute(stmt)).scalars().all()
+        # 옛 행은 lessonplan_filename이 업로드 파일명과 다를 수 있다 (#286)
+        report_upload_ids = {r.upload_id for r in rows if r.upload_id}
+        linked_filenames = (
+            {
+                u.id: u.filename
+                for u in (
+                    await self.db.execute(
+                        select(LessonPlanUpload).where(
+                            LessonPlanUpload.id.in_(report_upload_ids),
+                            LessonPlanUpload.user_id.in_(user_ids),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            }
+            if report_upload_ids
+            else {}
+        )
 
         for r in rows:
             key = (r.user_id, r.lessonplan_filename)
             if key in seen:
                 continue
-            ctx = ctx_by_id[r.user_id]
             original = r.lessonplan_original_name or r.lessonplan_filename
             source_path = self._resolve_lessonplan_source_path(
                 r.lessonplan_filename,
                 user_id=r.user_id,
                 upload_id=r.upload_id,
             )
-            archive_name = (
-                f"{ctx.filename_prefix}__lessonplan_{r.id}__"
-                f"{slugify_original_name(original)}"
+            linked = linked_filenames.get(r.upload_id)
+            if not source_path.is_file() and linked:
+                fallback = self._resolve_lessonplan_source_path(
+                    linked, user_id=r.user_id, upload_id=r.upload_id
+                )
+                if fallback.is_file():
+                    source_path = fallback
+            archive_name = build_lessonplan_basename(
+                r.user_id, original, upload_id=r.upload_id, report_id=r.id
             )
             entries.append(
                 LessonplanEntry(
@@ -330,9 +361,12 @@ class AdminExportService:
                     source_status=(
                         "OK" if source_path.is_file() else "MISSING"
                     ),
+                    upload_id=r.upload_id,
                 )
             )
             seen.add(key)
+            if r.upload_id is not None:
+                seen_upload_ids.add(r.upload_id)
 
         upload_stmt = (
             select(LessonPlanUpload)
@@ -351,18 +385,16 @@ class AdminExportService:
 
         for upload in uploads:
             key = (upload.user_id, upload.filename)
-            if key in seen:
+            if upload.id in seen_upload_ids or key in seen:
                 continue
-            ctx = ctx_by_id[upload.user_id]
             original = upload.original_filename or upload.filename
             source_path = self._resolve_lessonplan_source_path(
                 upload.filename,
                 user_id=upload.user_id,
                 upload_id=upload.id,
             )
-            archive_name = (
-                f"{ctx.filename_prefix}__lessonplan_{upload.id}__"
-                f"{slugify_original_name(original)}"
+            archive_name = build_lessonplan_basename(
+                upload.user_id, original, upload_id=upload.id
             )
             entries.append(
                 LessonplanEntry(
@@ -377,6 +409,7 @@ class AdminExportService:
                     source_status=(
                         "OK" if source_path.is_file() else "MISSING"
                     ),
+                    upload_id=upload.id,
                 )
             )
             seen.add(key)
@@ -500,6 +533,7 @@ class AdminExportService:
                     created_at=s.created_at,
                     archive_path=f"simulations/{basename}.jsonl",
                     persona_names={p.id: p.display_name for p in personas},
+                    upload_id=s.upload_id,
                 )
             )
             utterances[s.id] = list(
@@ -525,6 +559,7 @@ class AdminExportService:
                         personas,
                         utterances[s.id],
                     ),
+                    upload_id=s.upload_id,
                 )
             )
         return entries, utterances, reports
@@ -613,10 +648,6 @@ def _date_bounds(
     if filters.date_to:
         upper = kst_date_start_utc_naive(filters.date_to + timedelta(days=1))
     return lower, upper
-
-
-def _strip_ext(name: str) -> str:
-    return os.path.splitext(name)[0] if name else name
 
 
 # -------- ZIP streaming --------
@@ -713,6 +744,7 @@ _MANIFEST_COLUMNS = [
     "user_id",
     "resource_id",
     "session_id",
+    "upload_id",
     "created_at",
     "original_name",
     "archive_path",
@@ -772,6 +804,9 @@ def build_manifest_csv(
                 "user_id": e.user_id,
                 "resource_id": e.resource_id,
                 "session_id": e.session_id or "",
+                "upload_id": (
+                    "" if getattr(e, "upload_id", None) is None else e.upload_id
+                ),
                 "created_at": (
                     e.created_at.isoformat() if e.created_at else ""
                 ),
@@ -843,8 +878,13 @@ def build_readme(plan: ExportPlan) -> bytes:
         "  lessonplans/      원본 수업 지도안",
         "",
         "파일명 규칙:",
-        "  u{user_id}__{resource_kind}_{resource_id}" "__{original_name}.{ext}",
-        "  시뮬레이션: u{user_id}__simsession_{지도안번호}__{지도안이름}"
+        "  u{user_id}__{종류}_{지도안번호}__{지도안이름}.{ext}",
+        "  지도안번호 = lessonplan_uploads.id."
+        " 같은 지도안의 report/lessonplan/simsession은 같은 번호다.",
+        "  번호가 없는 옛 자원: report·lessonplan은 r{보고서번호},"
+        " 레거시 파일시스템 lessonplan은 fs{순번}.",
+        "  simsession은 끝에 __s{세션번호}가 붙는다:",
+        "  u{user_id}__simsession_{지도안번호}__{지도안이름}"
         "__s{세션번호}.{md|jsonl}",
     ]
     return ("\n".join(lines) + "\n").encode("utf-8")

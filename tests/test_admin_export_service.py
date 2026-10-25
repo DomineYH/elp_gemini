@@ -4,6 +4,7 @@ import inspect
 import io
 import os
 import time
+import zipfile
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -703,3 +704,118 @@ async def test_collect_lessonplans_includes_upload_without_report(tmp_path):
     lessonplan = matches[0]
     assert Path(lessonplan.source_path).resolve() == upload_file
     assert lessonplan.source_status == "OK"
+
+
+def _manifest_rows(plan) -> dict[str, dict]:
+    rows = csv.DictReader(io.StringIO(build_manifest_csv(plan).decode()))
+    return {r["archive_path"]: r for r in rows}
+
+
+@pytest.mark.asyncio
+async def test_report_and_lessonplan_share_upload_number(db_session, tmp_path):
+    await _seed_user(db_session, user_id=1)
+    upload = LessonPlanUpload(
+        user_id=1,
+        filename="u1_20260101000000_plan.pdf",
+        original_filename="plan.pdf",
+        file_hash="c" * 64,
+    )
+    db_session.add(upload)
+    await db_session.flush()
+    report = AnalysisReport(
+        user_id=1,
+        # 파일명이 업로드 행과 달라도 upload_id로 중복을 막는다
+        lessonplan_filename="plan.pdf",
+        lessonplan_original_name="plan.pdf",
+        report_filename="r.md",
+        report_path=str(tmp_path / "r.md"),
+        upload_id=upload.id,
+    )
+    db_session.add(report)
+    await db_session.commit()
+
+    plan = await AdminExportService(db_session).collect(ExportFilters())
+
+    assert [e.archive_path for e in plan.reports] == [
+        f"reports/u00001__report_{upload.id}__plan.md"
+    ]
+    assert [e.archive_path for e in plan.lessonplans] == [
+        f"lessonplans/u00001__lessonplan_{upload.id}__plan.pdf"
+    ]
+    assert plan.reports[0].resource_id == report.id
+    rows = _manifest_rows(plan)
+    assert [r["upload_id"] for r in rows.values()] == [str(upload.id)] * 2
+
+
+@pytest.mark.asyncio
+async def test_report_without_upload_falls_back_to_report_number(
+    db_session, tmp_path
+):
+    await _seed_user(db_session, user_id=1)
+    report = AnalysisReport(
+        user_id=1,
+        lessonplan_filename="old.pdf",
+        lessonplan_original_name="old.pdf",
+        report_filename="r.md",
+        report_path=str(tmp_path / "r.md"),
+        upload_id=None,
+    )
+    db_session.add(report)
+    await db_session.commit()
+
+    plan = await AdminExportService(db_session).collect(ExportFilters())
+
+    assert [e.archive_path for e in plan.reports] == [
+        f"reports/u00001__report_r{report.id}__old.md"
+    ]
+    assert [e.archive_path for e in plan.lessonplans] == [
+        f"lessonplans/u00001__lessonplan_r{report.id}__old.pdf"
+    ]
+    rows = _manifest_rows(plan)
+    assert [r["upload_id"] for r in rows.values()] == ["", ""]
+
+
+@pytest.mark.asyncio
+async def test_drifted_report_filename_falls_back_to_upload_file(
+    db_session, tmp_path
+):
+    await _seed_user(db_session, user_id=1)
+    upload_dir = tmp_path / "static-uploads"
+    (upload_dir / "1").mkdir(parents=True)
+    filename = "u1_20260101000000_plan.pdf"
+    upload_file = upload_dir / "1" / filename
+    pdf = b"%PDF-1.4\nplan\n"
+    upload_file.write_bytes(pdf)
+    upload = LessonPlanUpload(
+        user_id=1,
+        filename=filename,
+        original_filename="plan.pdf",
+        file_hash="d" * 64,
+    )
+    db_session.add(upload)
+    await db_session.flush()
+    db_session.add(
+        AnalysisReport(
+            user_id=1,
+            lessonplan_filename="plan.pdf",  # 옛 행: 업로드 파일명과 다르다
+            lessonplan_original_name="plan.pdf",
+            report_filename="r.md",
+            report_path=str(tmp_path / "r.md"),
+            upload_id=upload.id,
+        )
+    )
+    await db_session.commit()
+
+    svc = AdminExportService(
+        db_session,
+        lessonplan_base_dir=str(tmp_path / "no-legacy"),
+        static_uploads_dir=str(upload_dir),
+    )
+    plan = await svc.collect(ExportFilters())
+
+    assert len(plan.lessonplans) == 1
+    entry = plan.lessonplans[0]
+    assert entry.source_status == "OK"
+    assert Path(entry.source_path).resolve() == upload_file.resolve()
+    zf = zipfile.ZipFile(io.BytesIO(b"".join(svc.stream_zip(plan))))
+    assert zf.read(entry.archive_path) == pdf
