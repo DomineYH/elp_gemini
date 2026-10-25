@@ -10,6 +10,7 @@
         <p class="eyebrow">3 / 4 · 전체 대화록</p>
         <h1 class="text-2xl font-bold mt-1">시간순 대화 기록</h1>
         <p class="note mt-1" id="trMeta"></p>
+        <p class="note mt-1 hidden" id="simPlan"></p>
     </div>
     <div class="flex flex-wrap gap-2 no-print">
         <label for="trFilter" class="sr-only">국면으로 거르기</label>
@@ -21,6 +22,7 @@
         <a id="feedbackLink" href="/simulation/sessions/{{ sid }}/feedback" class="hidden bg-blue-600 text-white text-sm font-semibold px-4 py-2 rounded-lg">AI 피드백 받기 →</a>
     </div>
 </div>
+{% include "user/_sim_report_meta.html" %}
 <div class="card p-5">
     <ol class="timeline space-y-3 text-sm" id="transcript"></ol>
     <p id="trStatus" class="note mt-3" role="status"></p>
@@ -112,6 +114,7 @@
         const finished = state.session.status === "finished";
         $(finished ? "feedbackLink" : "runLink").classList.remove("hidden");
         if (!finished) $("trStatus").textContent = "수업을 종료하면 AI 피드백을 받을 수 있습니다.";
+        renderReportMeta(state);
         render();
     }
 

@@ -134,6 +134,7 @@ class SessionInfo(BaseModel):
     persona_count: int
     model_name: str
     upload_id: int
+    lessonplan_filename: str
     created_at: datetime
     finished_at: datetime | None
     teacher_turns_used: int

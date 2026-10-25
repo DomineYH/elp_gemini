@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.simulation_persona import SimulationPersona
 from app.models.simulation_phase import SimulationPhase
 from app.models.simulation_session import SimulationSession
@@ -373,6 +374,7 @@ async def enter_phase(
 async def load_state(db: AsyncSession, session: SimulationSession) -> dict:
     sid = session.id
     latest = await lessonplan_source.get_latest_upload(db, session.user_id)
+    upload = await db.get(LessonPlanUpload, session.upload_id)
     return {
         "session": {
             "id": sid,
@@ -381,6 +383,7 @@ async def load_state(db: AsyncSession, session: SimulationSession) -> dict:
             "persona_count": session.persona_count,
             "model_name": session.model_name,
             "upload_id": session.upload_id,
+            "lessonplan_filename": upload.original_filename or upload.filename,
             "created_at": utc_iso(session.created_at),
             "finished_at": utc_iso(session.finished_at),
             "teacher_turns_used": await _teacher_turns_used(db, sid),

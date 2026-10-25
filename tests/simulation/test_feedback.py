@@ -211,6 +211,35 @@ def test_transcript_and_feedback_pages_render(ready):
     assert r.text.count(feedback.SECTION_NOTE) == 2
 
 
+def test_report_pages_include_plan_and_people_section(ready):
+    # 지도안 파일명·참여 학생 공용 include (#283)
+    sid = _finished(ready)
+    for page in ("transcript", "feedback"):
+        r = ready.get(f"/simulation/sessions/{sid}/{page}")
+        assert r.status_code == 200
+        assert 'id="simPlan"' in r.text
+        assert 'id="simPeople"' in r.text
+        assert "renderReportMeta(state)" in r.text
+
+
+@pytest.mark.parametrize(
+    "original, expected",
+    [("우리 교실 지도안.pdf", "우리 교실 지도안.pdf"), (None, "plan_0.pdf")],
+)
+def test_state_has_lessonplan_filename(ready, tmp_path, original, expected):
+    sid = _create(ready)
+    conn = sqlite3.connect(tmp_path / "sim.db")
+    with conn:
+        conn.execute(
+            "UPDATE lessonplan_uploads SET original_filename=?", (original,)
+        )
+    conn.close()
+    state = ready.get(_api(sid)).json()
+    assert state["session"]["lessonplan_filename"] == expected
+    assert state["personas"]
+    assert all("raw_profile" not in p for p in state["personas"])
+
+
 def test_concurrent_generation_returns_first_envelope_and_one_file(
     ready, fake_gemini, tmp_path, monkeypatch
 ):

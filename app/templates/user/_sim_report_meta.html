@@ -1,0 +1,47 @@
+<section id="simPeople" class="hidden mb-5" aria-labelledby="simPeopleTitle">
+    <h2 id="simPeopleTitle" class="eyebrow mb-2">참여 학생</h2>
+    <div id="simPeopleList" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"></div>
+</section>
+<script>
+// 피드백·대화록 보고서 공용 (#283): 지도안 파일명(#simPlan)과 참여 학생 번안 프로필. 값이 없는 항목은 뺀다
+function renderReportMeta(state) {
+    function el(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+
+    const plan = document.getElementById("simPlan");
+    if (plan && state.session.lessonplan_filename) {
+        plan.textContent = "지도안: " + state.session.lessonplan_filename;
+        plan.classList.remove("hidden");
+    }
+
+    const list = document.getElementById("simPeopleList");
+    list.replaceChildren(...state.personas.map(p => {
+        const prof = p.adapted_profile || {};
+        const card = el("div", "card p-4 text-sm space-y-2");
+        const head = el("div", "flex items-center gap-2 min-w-0");
+        head.append(
+            el("span", "dot " + p.color_key + " w-2.5 h-2.5 rounded-full shrink-0"),
+            el("b", "name " + p.color_key, p.display_name)
+        );
+        if (p.adapted_level) head.append(el("span", "note", p.adapted_level));
+        card.append(head);
+        if (prof.behavior_summary) card.append(el("p", "", prof.behavior_summary));
+        for (const [key, label] of [["strengths", "강점"], ["weaknesses", "약점"]]) {
+            const items = (prof[key] || []).filter(Boolean);
+            if (!items.length) continue;
+            const ul = el("ul", "list-disc ml-5 space-y-1");
+            ul.append(...items.map(t => el("li", "", t)));
+            card.append(el("p", "eyebrow", label), ul);
+        }
+        for (const [key, label] of [["speech_style", "말투"], ["support_needs", "지원 필요"]]) {
+            if (prof[key]) card.append(el("p", "", label + ": " + prof[key]));
+        }
+        return card;
+    }));
+    document.getElementById("simPeople").classList.toggle("hidden", !state.personas.length);
+}
+</script>

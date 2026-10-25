@@ -10,6 +10,7 @@
         <p class="eyebrow">4 / 4 · AI 지도안 피드백</p>
         <h1 class="text-2xl font-bold mt-1">시뮬레이션으로 드러난 지도안의 잠재적 취약점</h1>
         <p class="note mt-1">{{ disclaimer }}</p>
+        <p class="note mt-1 hidden" id="simPlan"></p>
     </div>
     <span class="phase-pill hidden" id="fbMeta"></span>
 </div>
@@ -20,6 +21,7 @@
 </div>
 
 <div id="fbBody" class="hidden">
+    {% include "user/_sim_report_meta.html" %}
     <h2 class="eyebrow mb-2">위험 시나리오</h2>
     <p class="note mb-2">{{ section_note }}</p>
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-5" id="risks"></div>
@@ -150,6 +152,7 @@
             // 이미 있으면 캐시를 돌려주고 생성하지 않는다
             const [envelope, state] = await Promise.all([api("POST", API + "/feedback"), api("GET", API)]);
             render(envelope, state.phases);
+            renderReportMeta(state);
             // 설정 화면은 최신 지도안만 쓰므로 지도안이 바뀌었으면 막는다
             if (!state.session.is_latest_upload) {
                 const btn = $("rerunBtn");
