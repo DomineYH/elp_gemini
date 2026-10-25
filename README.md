@@ -206,8 +206,9 @@ DEBUG=false              # 디버그 모드
 DATABASE_URL=            # 데이터베이스 경로
 MAX_UPLOAD_SIZE=52428800 # 최대 업로드 크기 (50MB)
 UPLOAD_DIR=./data/uploads
-GEMINI_QNA_MODEL=gemini-3.1-flash-lite
-GEMINI_EVAL_MODEL=gemini-3.1-flash-lite
+GEMINI_QNA_MODEL=gemini-3.1-flash-lite   # QnA
+GEMINI_EVAL_MODEL=gemini-3.1-flash-lite  # 지도안 분석(평가)
+GEMINI_SIM_MODEL=gemini-3.1-flash-lite   # 수업 시뮬레이션
 FS_MAIN_STORE_NAME=main-store
 FS_RUBRIC_STORE_NAME=rubric-store
 ```
