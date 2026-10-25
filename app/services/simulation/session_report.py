@@ -13,12 +13,17 @@ STATUS_LABEL = {"setup": "준비", "running": "진행 중", "finished": "종료"
 NO_FEEDBACK = "피드백이 아직 생성되지 않았습니다."
 
 
+def _clean(text) -> str:
+    return strip_emojis(str(text)).strip()
+
+
 def render_session_markdown(
     session, username, phases, personas, utterances
 ) -> str:
     """phases·personas·utterances는 ORM 객체 목록(utterances는 seq 순)."""
-    names = {p.id: p.display_name for p in personas}
-    phase_names = {p.idx: p.name for p in phases}
+    # 국면·페르소나 이름도 모델이 만들 수 있어 이모지를 뺀다
+    names = {p.id: _clean(p.display_name) for p in personas}
+    phase_names = {p.idx: _clean(p.name) for p in phases}
     out = [
         f"# 수업 시뮬레이션 세션 {session.id}",
         "",
@@ -34,7 +39,7 @@ def render_session_markdown(
         "",
     ]
     out += [
-        f"- {p.display_name} · {p.adapted_level} · {p.source}" for p in personas
+        f"- {names[p.id]} · {p.adapted_level} · {p.source}" for p in personas
     ]
     out += ["", "## 대화록"]
 
@@ -51,7 +56,7 @@ def render_session_markdown(
             speaker = names.get(u.persona_id, "시스템")
         if u.target_persona_id:
             speaker += f" ({names.get(u.target_persona_id)}에게)"
-        content = strip_emojis(u.content).strip().replace("\n", "\n  ")
+        content = _clean(u.content).replace("\n", "\n  ")
         if u.speaker_type == "student" and u.structured is None:
             content = f"(파싱 실패) {content}"
         out.append(f"- **{speaker}**: {content}")

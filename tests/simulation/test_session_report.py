@@ -45,7 +45,7 @@ def _u(seq, speaker, content, phase=0, persona=None, target=None, ok=True):
     )
 
 
-def _render(feedback_json=None, utterances=None):
+def _render(feedback_json=None, utterances=None, emoji=""):
     session = SimpleNamespace(
         id=7,
         status="finished",
@@ -56,12 +56,15 @@ def _render(feedback_json=None, utterances=None):
         feedback_json=feedback_json,
     )
     phases = [
-        SimpleNamespace(idx=0, name="도입"),
+        SimpleNamespace(idx=0, name="도입" + emoji),
         SimpleNamespace(idx=1, name="전개"),
     ]
     personas = [
         SimpleNamespace(
-            id=11, display_name="민준", adapted_level="중", source="dataset"
+            id=11,
+            display_name="민준" + emoji,
+            adapted_level="중",
+            source="dataset",
         ),
         SimpleNamespace(
             id=12, display_name="서연", adapted_level="상", source="custom"
@@ -142,7 +145,15 @@ def test_emojis_are_stripped_from_utterances_and_feedback():
     }
     md = _render(
         feedback_json=envelope,
-        utterances=[_u(1, "student", "좋아요 \U0001f525", persona=11)],
+        utterances=[
+            _u(1, "student", "좋아요 \U0001f525", persona=11),
+            _u(2, "teacher", "너는?", target=11),
+        ],
+        emoji=" \U0001f600",
     )
-    assert "\U0001f525" not in md and "\U0001f449" not in md
-    assert "- **민준**: 좋아요" in md.splitlines()
+    assert not any(e in md for e in ("\U0001f600", "\U0001f525", "\U0001f449"))
+    lines = md.splitlines()
+    assert "### 도입" in lines
+    assert "- 민준 · 중 · dataset" in lines
+    assert "- **민준**: 좋아요" in lines
+    assert "- **교사 (민준에게)**: 너는?" in lines
