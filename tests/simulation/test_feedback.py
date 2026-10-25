@@ -2,14 +2,17 @@
 
 import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 
+from app.models.simulation_session import SimulationSession
 from app.services.simulation import feedback, gemini
 from app.services.simulation.llm_schemas import (
     StudentReaction,
     UtteranceSuggestion,
 )
+from tests.simulation.conftest import run
 
 
 def _api(sid, path=""):
@@ -40,6 +43,16 @@ def _create(client):
     sid = r.json()["session"]["id"]
     assert client.post(_api(sid, "/phases/0/enter")).status_code == 200
     return sid
+
+
+def _saved_report(sim_db, sid):
+    """generate()가 feedback_report_path에 저장한 Markdown (#279)."""
+
+    async def _go():
+        async with sim_db() as db:
+            return (await db.get(SimulationSession, sid)).feedback_report_path
+
+    return Path(run(_go())).read_text(encoding="utf-8")
 
 
 def _finished(client):
@@ -152,17 +165,15 @@ def test_quota_is_429_with_retry_after(ready, fake_gemini):
     assert _code(ready.get(_api(sid, "/feedback"))) == "NO_FEEDBACK"
 
 
-def test_download_returns_markdown_report(ready, tmp_path):
+def test_download_route_is_gone_but_report_is_saved(ready, sim_db, tmp_path):
     sid = _finished(ready)
-    assert _code(ready.get(_api(sid, "/feedback/download"))) == "NO_FEEDBACK"
     ready.post(_api(sid, "/feedback"))
 
-    r = ready.get(_api(sid, "/feedback/download"))
-    assert r.status_code == 200
-    assert r.headers["content-type"].startswith("text/markdown")
-    assert "attachment" in r.headers["content-disposition"]
-    assert r.text.startswith("# 수업 시뮬레이션 피드백(가설)")
-    assert feedback.DISCLAIMER in r.text
+    # 사용자 Markdown 다운로드는 인쇄로 대체했다 (#279)
+    assert ready.get(_api(sid, "/feedback/download")).status_code == 404
+    md = _saved_report(sim_db, sid)
+    assert md.startswith("# 수업 시뮬레이션 피드백(가설)")
+    assert feedback.DISCLAIMER in md
     # 분석 보고서와 같은 저장 서비스·디렉터리 규칙(ADR 0001)
     saved = list(
         (tmp_path / "reports").glob(f"*/*simulation_{sid}_*_reports.md")
@@ -177,7 +188,6 @@ def test_other_user_gets_404_everywhere(ready, as_user, other_teacher):
     for r in (
         ready.post(_api(sid, "/feedback")),
         ready.get(_api(sid, "/feedback")),
-        ready.get(_api(sid, "/feedback/download")),
     ):
         assert r.status_code == 404
         assert _code(r) == "SESSION_NOT_FOUND"
@@ -191,9 +201,11 @@ def test_transcript_and_feedback_pages_render(ready):
     r = ready.get(f"/simulation/sessions/{sid}/transcript")
     assert r.status_code == 200
     assert "AI 피드백 받기" in r.text
+    assert "인쇄 / PDF 저장" in r.text
     r = ready.get(f"/simulation/sessions/{sid}/feedback")
     assert r.status_code == 200
-    assert "보고서 Markdown 저장" in r.text
+    assert "인쇄 / PDF 저장" in r.text
+    assert "보고서 Markdown 저장" not in r.text
     assert feedback.DISCLAIMER in r.text
     # 위험 시나리오 아래 1번, ①②③ 탭 본문 위 1번
     assert r.text.count(feedback.SECTION_NOTE) == 2
@@ -263,7 +275,7 @@ def _suggest(fake_gemini, teacher_seq):
     )
 
 
-def test_actual_is_quoted_verbatim_from_transcript(ready, fake_gemini):
+def test_actual_is_quoted_verbatim_from_transcript(ready, fake_gemini, sim_db):
     """모델이 요약해도 teacher_seq로 대화록 원문을 인용한다 (#178)."""
     sid = _finished(ready)
     _suggest(fake_gemini, _teacher_seq(ready, sid))
@@ -271,7 +283,7 @@ def test_actual_is_quoted_verbatim_from_transcript(ready, fake_gemini):
     r = ready.post(_api(sid, "/feedback"))
     assert r.status_code == 200
     assert r.json()["feedback"]["utterance_suggestions"][0]["actual"] == "질문"
-    md = ready.get(_api(sid, "/feedback/download")).text
+    md = _saved_report(sim_db, sid)
     assert "- 실제 발화: 질문" in md
     assert "요약문" not in md
 

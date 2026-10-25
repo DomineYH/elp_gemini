@@ -25,19 +25,22 @@
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-5" id="risks"></div>
 
     <div class="card">
-        <div class="flex border-b text-sm overflow-x-auto" role="tablist">
+        <div class="flex border-b text-sm overflow-x-auto no-print" role="tablist">
             <button type="button" role="tab" class="fbtab px-4 py-3 font-medium border-b-2 whitespace-nowrap" data-fb="f1">① 교사 발화 추천</button>
             <button type="button" role="tab" class="fbtab px-4 py-3 font-medium border-b-2 whitespace-nowrap" data-fb="f2">② 진행 방향</button>
             <button type="button" role="tab" class="fbtab px-4 py-3 font-medium border-b-2 whitespace-nowrap" data-fb="f3">③ 변경 방향</button>
         </div>
         <div class="p-5 text-sm">
             <p class="note mb-3">{{ section_note }}</p>
+            <h3 class="print-only font-semibold mb-2">① 교사 발화 추천</h3>
             <div id="f1" class="fbpanel space-y-3" role="tabpanel"></div>
+            <h3 class="print-only font-semibold mt-5 mb-2">② 진행 방향</h3>
             <ul id="f2" class="fbpanel list-disc ml-5 space-y-1" role="tabpanel"></ul>
+            <h3 class="print-only font-semibold mt-5 mb-2">③ 변경 방향</h3>
             <ol id="f3" class="fbpanel list-decimal ml-5 space-y-1" role="tabpanel"></ol>
         </div>
-        <div class="border-t p-4 flex flex-wrap justify-between gap-2 text-sm">
-            <a href="/api/simulation/sessions/{{ sid }}/feedback/download" class="text-gray-600 hover:underline py-2">보고서 Markdown 저장</a>
+        <div class="border-t p-4 flex flex-wrap justify-between gap-2 text-sm no-print">
+            <button type="button" id="printBtn" class="px-4 py-2 rounded-lg border">인쇄 / PDF 저장</button>
             <div class="flex flex-wrap items-center gap-2">
                 <p id="rerunNote" class="note hidden">지도안이 바뀌어 이 세션은 다시 실행할 수 없습니다.</p>
                 <a href="/simulation/setup" id="rerunBtn" class="px-4 py-2 rounded-lg border">다른 학생으로 다시 실행</a>
@@ -66,6 +69,16 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error((data.detail && data.detail.message) || "요청을 처리하지 못했습니다.");
         return data;
+    }
+
+    // "PDF로 저장" 기본 파일명이 의미 있도록 인쇄하는 동안만 제목을 바꾼다 (dashboard.html과 같은 방식)
+    function printAs(name) {
+        const now = new Date();
+        const ymd = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0");
+        const prevTitle = document.title;
+        document.title = name + "_" + ymd;
+        window.addEventListener("afterprint", () => { document.title = prevTitle; }, { once: true });
+        window.print();
     }
 
     function showTab(id) {
@@ -155,6 +168,7 @@
         tab.addEventListener("click", () => showTab(tab.dataset.fb));
     }
     $("retryBtn").addEventListener("click", load);
+    $("printBtn").addEventListener("click", () => printAs("수업시뮬레이션_피드백_세션" + SID));
     load();
 })();
 </script>

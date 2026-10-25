@@ -11,11 +11,12 @@
         <h1 class="text-2xl font-bold mt-1">시간순 대화 기록</h1>
         <p class="note mt-1" id="trMeta"></p>
     </div>
-    <div class="flex flex-wrap gap-2">
+    <div class="flex flex-wrap gap-2 no-print">
         <label for="trFilter" class="sr-only">국면으로 거르기</label>
         <select id="trFilter" class="text-sm border rounded-lg px-2 py-1.5 bg-white">
             <option value="">전체 국면</option>
         </select>
+        <button type="button" id="printBtn" class="text-sm px-4 py-2 rounded-lg border">인쇄 / PDF 저장</button>
         <a id="runLink" href="/simulation/sessions/{{ sid }}" class="hidden text-sm px-4 py-2 rounded-lg border">시뮬레이션으로 돌아가기</a>
         <a id="feedbackLink" href="/simulation/sessions/{{ sid }}/feedback" class="hidden bg-blue-600 text-white text-sm font-semibold px-4 py-2 rounded-lg">AI 피드백 받기 →</a>
     </div>
@@ -40,6 +41,16 @@
 
     // 서버 시각은 `+00:00` 오프셋이 붙은 ISO
     const utc = at => new Date(at);
+
+    // "PDF로 저장" 기본 파일명이 의미 있도록 인쇄하는 동안만 제목을 바꾼다 (dashboard.html과 같은 방식)
+    function printAs(name) {
+        const now = new Date();
+        const ymd = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0");
+        const prevTitle = document.title;
+        document.title = name + "_" + ymd;
+        window.addEventListener("afterprint", () => { document.title = prevTitle; }, { once: true });
+        window.print();
+    }
 
     function clock(at) {
         const secs = Math.max(0, Math.round((utc(at) - utc(state.session.created_at)) / 1000));
@@ -105,6 +116,7 @@
     }
 
     $("trFilter").addEventListener("change", render);
+    $("printBtn").addEventListener("click", () => printAs("수업시뮬레이션_대화록_세션" + SID));
     init();
 })();
 </script>

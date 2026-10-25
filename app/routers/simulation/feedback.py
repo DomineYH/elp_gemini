@@ -2,10 +2,8 @@
 수업 시뮬레이션 대화록·피드백 라우터 (#156)
 """
 
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -98,24 +96,3 @@ async def get_feedback(
     except SimulationError as e:
         raise e.to_http() from e
     return session.feedback_json
-
-
-@router.get("/api/simulation/sessions/{sid}/feedback/download")
-async def download_feedback(
-    sid: int,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    try:
-        session = await _feedback_session(db, sid, current_user.id)
-        # 경로는 DB 행에서만 온다
-        path = Path(session.feedback_report_path or "")
-        if not path.is_file():
-            raise SimulationError("NO_FEEDBACK")
-    except SimulationError as e:
-        raise e.to_http() from e
-    return FileResponse(
-        path,
-        media_type="text/markdown; charset=utf-8",
-        filename=f"simulation_{sid}_feedback.md",
-    )

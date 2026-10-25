@@ -47,4 +47,13 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .timeline li.p3::before{background:var(--p3)}.timeline li.p4::before{background:var(--p4)}
 .timeline li.p5::before{background:var(--p5)}.timeline li.p6::before{background:var(--p6)}
 .timeline li.teacher::before{background:var(--teacher)}
+.print-only{display:none}
+/* 인쇄·PDF 저장 (#279): 탭으로 숨긴 패널도 펼치고, 탐색용 요소는 뺀다 */
+@media print{
+  body{background:#fff!important}
+  body > nav,body > footer,.no-print,select,[role=tablist]{display:none!important}
+  .print-only{display:block!important;break-after:avoid}
+  .fbpanel.hidden{display:block!important}
+  #risks > .card,.fbpanel > *,.bubble,.timeline li{break-inside:avoid}
+}
 </style>

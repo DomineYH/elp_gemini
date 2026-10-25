@@ -14,7 +14,7 @@ from app.models.simulation_session import SimulationSession
 from app.services.simulation import feedback
 from app.utils.admin_csrf import ADMIN_CSRF_HEADER
 from tests.simulation.conftest import run
-from tests.simulation.test_feedback import _finished
+from tests.simulation.test_feedback import _finished, _saved_report
 
 PAGE = "/admin/simulation/settings"
 API = "/admin/api/simulation/feedback-guidelines"
@@ -129,7 +129,7 @@ def test_preview_without_any_finished_session_is_409(
     assert fake_gemini.count("feedback") == 0
 
 
-def _feedback_after_save(client, as_user, teacher, admin, body):
+def _feedback_after_save(client, as_user, teacher, admin, body, sim_db):
     as_user(admin)
     client.headers[ADMIN_CSRF_HEADER] = _token(client)
     assert client.post(API, json=body).status_code == 201
@@ -137,7 +137,7 @@ def _feedback_after_save(client, as_user, teacher, admin, body):
     sid = _finished(client)
     r = client.post(f"/api/simulation/sessions/{sid}/feedback")
     assert r.status_code == 200
-    md = client.get(f"/api/simulation/sessions/{sid}/feedback/download").text
+    md = _saved_report(sim_db, sid)
     return sid, r.json(), md
 
 
@@ -155,7 +155,7 @@ def test_feedback_records_enabled_guideline_version(
 ):
     make_upload(teacher)
     sid, envelope, md = _feedback_after_save(
-        client, as_user, teacher, admin, BODY
+        client, as_user, teacher, admin, BODY, sim_db
     )
     assert envelope["guideline_version"] == 1
     assert _session_version(sim_db, sid) == 1
@@ -167,7 +167,7 @@ def test_disabled_guideline_records_default(
 ):
     make_upload(teacher)
     sid, envelope, md = _feedback_after_save(
-        client, as_user, teacher, admin, {**BODY, "enabled": False}
+        client, as_user, teacher, admin, {**BODY, "enabled": False}, sim_db
     )
     assert envelope["guideline_version"] is None
     assert _session_version(sim_db, sid) is None
