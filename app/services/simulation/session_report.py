@@ -78,7 +78,7 @@ def render_session_markdown(
         "",
         f"- 세션: {session.id}",
         f"- 사용자: {username}",
-        f"- 지도안: {lessonplan_name}",
+        f"- 지도안: {_clean(lessonplan_name)}",
         f"- 생성 시각: {utc_iso(session.created_at)}",
         f"- 종료 시각: {utc_iso(session.finished_at) or '-'}",
         f"- 상태: {STATUS_LABEL.get(session.status, session.status)}",

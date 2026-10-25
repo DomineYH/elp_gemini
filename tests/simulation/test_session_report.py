@@ -195,9 +195,11 @@ def test_emojis_are_stripped_from_utterances_and_feedback():
             _u(2, "teacher", "너는?", target=11),
         ],
         emoji=" \U0001f600",
+        lessonplan="우리 교실\U0001f600.pdf",
     )
     assert not any(e in md for e in ("\U0001f600", "\U0001f525", "\U0001f449"))
     lines = md.splitlines()
+    assert "- 지도안: 우리 교실.pdf" in lines
     assert "### 도입" in lines
     assert "### 민준" in lines
     assert "- 행동 요약: 조용히 따른다" in lines
