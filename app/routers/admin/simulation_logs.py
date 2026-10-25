@@ -3,6 +3,8 @@
 세션 목록·상세(원본 프로필 포함) 조회
 """
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import func, select
@@ -10,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.dependencies import get_current_admin
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.simulation_session import SimulationSession
 from app.models.simulation_utterance import SimulationUtterance
 from app.models.users import User
@@ -17,6 +20,7 @@ from app.services.simulation import session_service
 from app.services.simulation.errors import SimulationError
 from app.services.simulation.session_report import render_session_markdown
 from app.templating import templates
+from app.utils.admin_export_naming import build_simsession_basename
 from app.utils.timestamps import utc_iso
 
 router = APIRouter(tags=["관리자-시뮬레이션로그"])
@@ -109,19 +113,27 @@ async def download_simulation_session(
     if session is None:
         raise SimulationError("SESSION_NOT_FOUND").to_http()
     owner = await db.get(User, session.user_id)
+    upload = await db.get(LessonPlanUpload, session.upload_id)
+    lessonplan_name = upload.original_filename or upload.filename
     md = render_session_markdown(
         session,
         owner.username,
+        lessonplan_name,
         await session_service._phases(db, sid),
         await session_service._personas(db, sid),
         await session_service._utterances(db, sid),
     )
+    basename = build_simsession_basename(
+        session.user_id, session.upload_id, lessonplan_name, sid
+    )
+    # 한글 이름은 latin-1 헤더에 못 넣으므로 RFC 5987 + ASCII 대체 이름
     return Response(
         content=md,
         media_type="text/markdown; charset=utf-8",
         headers={
             "Content-Disposition": (
-                f'attachment; filename="simulation_{sid}.md"'
+                f'attachment; filename="simulation_{sid}.md"; '
+                f"filename*=UTF-8''{quote(basename + '.md')}"
             )
         },
     )

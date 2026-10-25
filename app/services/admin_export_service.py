@@ -30,6 +30,7 @@ from app.schemas.admin_export import ExportFilters
 from app.services.simulation.session_report import render_session_markdown
 from app.utils.admin_export_naming import (
     build_filename_prefix,
+    build_simsession_basename,
     slugify_original_name,
 )
 from app.utils.timestamps import kst_date_start_utc_naive
@@ -457,12 +458,25 @@ class AdminExportService:
         if upper_bound:
             stmt = stmt.where(SimulationSession.created_at < upper_bound)
         rows = (await self.db.execute(stmt)).scalars().all()
+        # 지도안 이름은 한 번에 모은다 (세션마다 조회하지 않는다)
+        uploads = {
+            u.id: u.original_filename or u.filename
+            for u in await self.db.scalars(
+                select(LessonPlanUpload).where(
+                    LessonPlanUpload.id.in_({s.upload_id for s in rows})
+                )
+            )
+        }
 
         entries: list[SimulationEntry] = []
         utterances: dict[int, list[SimulationUtterance]] = {}
         reports: list[SimulationReportEntry] = []
         for s in rows:
             ctx = ctx_by_id[s.user_id]
+            lessonplan_name = uploads[s.upload_id]
+            basename = build_simsession_basename(
+                s.user_id, s.upload_id, lessonplan_name, s.id
+            )
             personas = list(
                 await self.db.scalars(
                     select(SimulationPersona)
@@ -484,10 +498,7 @@ class AdminExportService:
                     resource_id=s.id,
                     session_id=s.id,
                     created_at=s.created_at,
-                    archive_path=(
-                        f"simulations/{ctx.filename_prefix}"
-                        f"__simsession_{s.id}.jsonl"
-                    ),
+                    archive_path=f"simulations/{basename}.jsonl",
                     persona_names={p.id: p.display_name for p in personas},
                 )
             )
@@ -505,12 +516,14 @@ class AdminExportService:
                     resource_id=s.id,
                     session_id=s.id,
                     created_at=s.created_at,
-                    archive_path=(
-                        f"simulations/{ctx.filename_prefix}"
-                        f"__simsession_{s.id}.md"
-                    ),
+                    archive_path=f"simulations/{basename}.md",
                     markdown=render_session_markdown(
-                        s, ctx.username, phases, personas, utterances[s.id]
+                        s,
+                        ctx.username,
+                        lessonplan_name,
+                        phases,
+                        personas,
+                        utterances[s.id],
                     ),
                 )
             )
@@ -831,5 +844,7 @@ def build_readme(plan: ExportPlan) -> bytes:
         "",
         "파일명 규칙:",
         "  u{user_id}__{resource_kind}_{resource_id}" "__{original_name}.{ext}",
+        "  시뮬레이션: u{user_id}__simsession_{지도안번호}__{지도안이름}"
+        "__s{세션번호}.{md|jsonl}",
     ]
     return ("\n".join(lines) + "\n").encode("utf-8")

@@ -86,7 +86,7 @@ def _plan(tmp_path, include=None) -> ExportPlan:
                 resource_id=7,
                 session_id=7,
                 created_at=NOW,
-                archive_path="simulations/u00004__simsession_7.jsonl",
+                archive_path="simulations/u00004__simsession_3__lesson__s7.jsonl",
                 persona_names={},
             )
         ],
@@ -98,7 +98,7 @@ def _plan(tmp_path, include=None) -> ExportPlan:
                 resource_id=7,
                 session_id=7,
                 created_at=NOW,
-                archive_path="simulations/u00004__simsession_7.md",
+                archive_path="simulations/u00004__simsession_3__lesson__s7.md",
                 markdown="# 세션 7\n",
             )
         ],
@@ -122,8 +122,8 @@ def test_manifest_records_real_size_and_sha(tmp_path):
 
     for path in (
         "reports/u00004__report_1__lesson.md",
-        "simulations/u00004__simsession_7.jsonl",
-        "simulations/u00004__simsession_7.md",
+        "simulations/u00004__simsession_3__lesson__s7.jsonl",
+        "simulations/u00004__simsession_3__lesson__s7.md",
     ):
         data = zf.read(path)
         assert data
@@ -146,7 +146,7 @@ def test_manifest_missing_file_has_zero_size_and_no_hash(tmp_path):
 
 def test_manifest_includes_simulations(tmp_path):
     rows = _manifest(_zip(_plan(tmp_path)))
-    row = rows["simulations/u00004__simsession_7.jsonl"]
+    row = rows["simulations/u00004__simsession_3__lesson__s7.jsonl"]
     assert row["kind"] == "simulation"
     assert row["session_id"] == "7"
 

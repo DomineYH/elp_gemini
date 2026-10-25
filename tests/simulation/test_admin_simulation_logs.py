@@ -1,12 +1,21 @@
 """관리자 시뮬레이션 로그 페이지와 API (#160, #280)."""
 
+import io
+import zipfile
+from urllib.parse import unquote
+
 import pytest
 from sqlalchemy import update
 
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.simulation_session import SimulationSession
+from app.schemas.admin_export import ExportFilters
+from app.services.admin_export_service import AdminExportService
 
 from .conftest import run
 from .test_session_report import ENVELOPE
+
+KOREAN_PLAN = "우리나라 미래 인구 구성비 및 우리 교실 내의 변화를 예측하기.pdf"
 
 
 @pytest.fixture
@@ -128,8 +137,9 @@ def test_download_markdown_with_feedback(
     r = client.get(f"/admin/api/simulation/sessions/{session_id}/download")
     assert r.status_code == 200
     assert r.headers["content-type"] == "text/markdown; charset=utf-8"
-    assert r.headers["content-disposition"] == (
-        f'attachment; filename="simulation_{session_id}.md"'
+    assert r.headers["content-disposition"].startswith(
+        f'attachment; filename="simulation_{session_id}.md"; '
+        "filename*=UTF-8''"
     )
     assert "teacher1" in r.text
     assert "- **교사**: 질문" in r.text.splitlines()
@@ -159,3 +169,77 @@ def test_page_has_feedback_section_and_download_link(client, as_user, admin):
     assert "Markdown 다운로드" in r.text
     assert "/download" in r.text
     assert "피드백 없음" in r.text
+
+
+def _rename_upload(sim_db, sid, original, filename=None):
+    async def _go():
+        async with sim_db() as db:
+            session = await db.get(SimulationSession, sid)
+            values = {"original_filename": original}
+            if filename:
+                values["filename"] = filename
+            await db.execute(
+                update(LessonPlanUpload)
+                .where(LessonPlanUpload.id == session.upload_id)
+                .values(**values)
+            )
+            await db.commit()
+            return session.user_id, session.upload_id
+
+    return run(_go())
+
+
+def _disposition_name(header):
+    return unquote(header.split("filename*=UTF-8''", 1)[1])
+
+
+def test_download_korean_lessonplan_name_in_header_and_body(
+    client, sim_db, as_user, admin, session_id
+):
+    user_id, upload_id = _rename_upload(sim_db, session_id, KOREAN_PLAN)
+    as_user(admin)
+    r = client.get(f"/admin/api/simulation/sessions/{session_id}/download")
+    assert r.status_code == 200
+    assert _disposition_name(r.headers["content-disposition"]) == (
+        f"u{user_id:05d}__simsession_{upload_id}__"
+        f"{KOREAN_PLAN.removesuffix('.pdf')}__s{session_id}.md"
+    )
+    assert f"- 지도안: {KOREAN_PLAN}" in r.text.splitlines()
+
+
+def test_download_falls_back_to_stored_filename(
+    client, sim_db, as_user, admin, session_id
+):
+    user_id, upload_id = _rename_upload(
+        sim_db, session_id, None, filename="saved_1.pdf"
+    )
+    as_user(admin)
+    r = client.get(f"/admin/api/simulation/sessions/{session_id}/download")
+    assert "- 지도안: saved_1.pdf" in r.text.splitlines()
+    assert _disposition_name(r.headers["content-disposition"]) == (
+        f"u{user_id:05d}__simsession_{upload_id}__saved_1__s{session_id}.md"
+    )
+
+
+def test_download_matches_export_zip_bytes(
+    client, sim_db, as_user, admin, session_id
+):
+    _rename_upload(sim_db, session_id, KOREAN_PLAN)
+    as_user(admin)
+    r = client.get(f"/admin/api/simulation/sessions/{session_id}/download")
+    name = _disposition_name(r.headers["content-disposition"])
+
+    async def _go():
+        async with sim_db() as db:
+            svc = AdminExportService(db)
+            return b"".join(svc.stream_zip(await svc.collect(ExportFilters())))
+
+    zf = zipfile.ZipFile(io.BytesIO(run(_go())))
+    assert zf.read(f"simulations/{name}") == r.content
+
+
+def test_page_shows_lessonplan_name_via_text_content(client, as_user, admin):
+    as_user(admin)
+    r = client.get("/admin/simulation/logs")
+    assert 'id="detailLessonplan"' in r.text
+    assert "`지도안: ${state.session.lessonplan_filename}`" in r.text

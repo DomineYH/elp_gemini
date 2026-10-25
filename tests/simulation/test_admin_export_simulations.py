@@ -15,7 +15,7 @@ from .conftest import run
 
 
 def _session_with_utterances(client, teacher, make_upload):
-    make_upload(teacher)
+    upload_id = make_upload(teacher)
     r = client.post(
         "/api/simulation/sessions",
         json={
@@ -34,7 +34,15 @@ def _session_with_utterances(client, teacher, make_upload):
         json={"content": "너는?", "target_persona_id": target["id"]},
     )
     assert r.status_code == 200
-    return sid, target
+    return sid, target, upload_id
+
+
+def _name(teacher, upload_id, sid, ext):
+    # make_upload 첫 파일은 plan_0.pdf
+    return (
+        f"simulations/u{teacher.id:05d}__simsession_{upload_id}"
+        f"__plan_0__s{sid}.{ext}"
+    )
 
 
 def _zip(sim_db, filters):
@@ -50,10 +58,12 @@ def _zip(sim_db, filters):
 def test_zip_contains_session_jsonl_in_seq_order(
     client, sim_db, teacher, make_upload, fake_gemini
 ):
-    sid, target = _session_with_utterances(client, teacher, make_upload)
+    sid, target, upload_id = _session_with_utterances(
+        client, teacher, make_upload
+    )
     zf = _zip(sim_db, ExportFilters())
 
-    name = f"simulations/u{teacher.id:05d}__simsession_{sid}.jsonl"
+    name = _name(teacher, upload_id, sid, "jsonl")
     assert name in zf.namelist()
     lines = [json.loads(x) for x in zf.read(name).decode().splitlines()]
     # 입장: system, teacher, student x2 / 1:1 말하기: teacher, target student
@@ -85,6 +95,10 @@ def test_zip_contains_session_jsonl_in_seq_order(
     }
     readme = zf.read("README.txt").decode()
     assert "simulations/      수업 시뮬레이션 대화록·피드백 (.md)" in readme
+    assert (
+        "u{user_id}__simsession_{지도안번호}__{지도안이름}"
+        "__s{세션번호}.{md|jsonl}" in readme
+    )
 
 
 def test_zip_excludes_simulations_without_conversations(
@@ -107,14 +121,17 @@ def test_zip_respects_user_filter(
 def test_zip_contains_session_markdown_with_manifest_digest(
     client, sim_db, teacher, make_upload, fake_gemini, by_user
 ):
-    sid, target = _session_with_utterances(client, teacher, make_upload)
+    sid, target, upload_id = _session_with_utterances(
+        client, teacher, make_upload
+    )
     filters = ExportFilters(user_ids=[teacher.id] if by_user else None)
     zf = _zip(sim_db, filters)
 
-    name = f"simulations/u{teacher.id:05d}__simsession_{sid}.md"
+    name = _name(teacher, upload_id, sid, "md")
     data = zf.read(name)
     md = data.decode()
     assert "teacher1" in md
+    assert "- 지도안: plan_0.pdf" in md
     assert f"- **교사 ({target['display_name']}에게)**: 너는?" in md
     assert "피드백이 아직 생성되지 않았습니다." in md
 

@@ -45,7 +45,36 @@ def _u(seq, speaker, content, phase=0, persona=None, target=None, ok=True):
     )
 
 
-def _render(feedback_json=None, utterances=None, emoji=""):
+DATASET_RAW = {
+    "id": 7701,
+    "age": 12,
+    "gender": "male",
+    "grade": 6,
+    "academic_level": "Low",
+    "academic_level_desc": "Top 30%-50% of school",
+    "personality": "PERSONALITY-TEXT",
+    "values": "VALUES-TEXT",
+    "mental_health": "MENTAL-TEXT",
+    "social_relationships": "SOCIAL-TEXT",
+    "creativity": "CREATIVITY-TEXT",
+    "development_stage": {"piaget_cognitive_stage": "PIAGET-TEXT"},
+    "strong_subjects": ["STRONG-SUBJ"],
+    "weak_subjects": ["WEAK-SUBJ"],
+}
+# 커스텀은 academic_level_desc가 없다
+CUSTOM_RAW = {
+    "id": 3,
+    "age": 10,
+    "gender": "female",
+    "grade": 4,
+    "academic_level": "High",
+    "personality": "PERSONALITY-TEXT",
+}
+
+
+def _render(
+    feedback_json=None, utterances=None, emoji="", lessonplan="지도안.pdf"
+):
     session = SimpleNamespace(
         id=7,
         status="finished",
@@ -63,11 +92,28 @@ def _render(feedback_json=None, utterances=None, emoji=""):
         SimpleNamespace(
             id=11,
             display_name="민준" + emoji,
-            adapted_level="중",
+            adapted_level="부분 도달",
             source="dataset",
+            source_record_id=7701,
+            raw_profile=DATASET_RAW,
+            adapted_profile={
+                "behavior_summary": "조용히 따른다" + emoji,
+                "strengths": ["차분함", "책임감" + emoji],
+                "weaknesses": ["자신감 부족"],
+                "speech_style": "말수가 적다",
+                "support_needs": "작게 나눈 과제",
+                "adapted_level": "부분 도달",
+            },
         ),
         SimpleNamespace(
-            id=12, display_name="서연", adapted_level="상", source="custom"
+            id=12,
+            display_name="서연",
+            adapted_level="상",
+            source="custom",
+            source_record_id=3,
+            raw_profile=CUSTOM_RAW,
+            # 값 없는 항목은 줄째 생략
+            adapted_profile={"strengths": [], "speech_style": " "},
         ),
     ]
     if utterances is None:
@@ -79,7 +125,7 @@ def _render(feedback_json=None, utterances=None, emoji=""):
             _u(5, "student", "모르겠어요", phase=1, persona=12),
         ]
     return render_session_markdown(
-        session, "teacher1", phases, personas, utterances
+        session, "teacher1", lessonplan, phases, personas, utterances
     )
 
 
@@ -92,9 +138,8 @@ def test_header_personas_and_transcript_grouped_by_phase():
         "2026-10-21T09:00:00+00:00",
         "2026-10-21T09:30:00+00:00",
         "sim-model",
+        "- 지도안: 지도안.pdf",
         "## 페르소나",
-        "- 민준 · 중 · dataset",
-        "- 서연 · 상 · custom",
         "## 대화록",
     ):
         assert text in md, text
@@ -154,6 +199,52 @@ def test_emojis_are_stripped_from_utterances_and_feedback():
     assert not any(e in md for e in ("\U0001f600", "\U0001f525", "\U0001f449"))
     lines = md.splitlines()
     assert "### 도입" in lines
-    assert "- 민준 · 중 · dataset" in lines
+    assert "### 민준" in lines
+    assert "- 행동 요약: 조용히 따른다" in lines
+    assert "- 강점: 차분함; 책임감" in lines
     assert "- **민준**: 좋아요" in lines
     assert "- **교사 (민준에게)**: 너는?" in lines
+
+
+def test_personas_expand_to_subsections_in_seat_order():
+    md = _render()
+    section = md.split("## 페르소나", 1)[1].split("## 대화록", 1)[0]
+    assert section.strip().splitlines() == [
+        "### 민준",
+        "",
+        "- 학업 수준(번안): 부분 도달",
+        "- 출처: dataset #7701",
+        "- 원본 요약: 12세 · 남 · 6학년 · 학업 수준 Low"
+        " (Top 30%-50% of school)",
+        "- 행동 요약: 조용히 따른다",
+        "- 강점: 차분함; 책임감",
+        "- 약점: 자신감 부족",
+        "- 말투: 말수가 적다",
+        "- 지원 필요: 작게 나눈 과제",
+        "",
+        "### 서연",
+        "",
+        "- 학업 수준(번안): 상",
+        "- 출처: custom #3",
+        "- 원본 요약: 10세 · 여 · 4학년 · 학업 수준 High",
+    ]
+
+
+def test_raw_narrative_fields_are_not_in_document():
+    md = _render()
+    for text in (
+        "PERSONALITY-TEXT",
+        "VALUES-TEXT",
+        "MENTAL-TEXT",
+        "SOCIAL-TEXT",
+        "CREATIVITY-TEXT",
+        "PIAGET-TEXT",
+        "STRONG-SUBJ",
+        "WEAK-SUBJ",
+    ):
+        assert text not in md, text
+
+
+def test_header_shows_lessonplan_name():
+    md = _render(lessonplan="우리 교실.hwp")
+    assert "- 지도안: 우리 교실.hwp" in md.split("## 페르소나", 1)[0]
