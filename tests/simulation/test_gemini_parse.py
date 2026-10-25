@@ -1,5 +1,6 @@
-"""Gemini 응답 파싱 (#152)과 클라이언트 timeout (#260)."""
+"""Gemini 응답 파싱 (#152), 클라이언트 timeout (#260), 클라이언트 수명 (#275)."""
 
+import gc
 import logging
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -75,3 +76,32 @@ def test_client_is_created_with_timeout():
     opts = client.call_args.kwargs["http_options"]
     assert opts.api_version == "v1beta"
     assert opts.timeout == settings.GEMINI_HTTP_TIMEOUT_MS == 120_000
+
+
+def test_uncached_client_stays_alive_during_call(monkeypatch):
+    # 첫 호출 lru_cache 경합에서 진 스레드는 캐시되지 않은 Client를 받는다 (#275)
+    api = SimpleNamespace(closed=False)
+
+    class FakeModels:
+        def generate_content(self, **kw):
+            gc.collect()
+            if api.closed:
+                raise RuntimeError(
+                    "Cannot send a request, as the client has been closed."
+                )
+            return SimpleNamespace(text=GOOD, parsed=None)
+
+    class FakeClient:
+        def __init__(self):
+            self.models = FakeModels()
+
+        def __del__(self):
+            api.closed = True
+
+    monkeypatch.setattr(gemini, "_client", lambda: FakeClient())
+
+    result = gemini.call_structured(
+        "student", system="sys", user="usr", schema=StudentReaction
+    )
+
+    assert result.parsed == parse_structured(StudentReaction, GOOD)

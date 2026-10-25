@@ -96,7 +96,9 @@ def call_structured(
         max_attempts=3, initial_wait=2.0, max_wait=16.0
     )
     def _generate():
-        return _client().models.generate_content(
+        # 첫 호출 lru_cache 경합의 미캐시 Client가 호출 중 닫히지 않게 참조를 잡아 둔다 (#275)
+        client = _client()
+        return client.models.generate_content(
             model=model,
             contents=user,
             config=types.GenerateContentConfig(
