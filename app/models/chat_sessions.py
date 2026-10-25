@@ -29,6 +29,13 @@ class ChatSession(Base):
     document_id = Column(
         String(512), nullable=True, index=True, comment="File Search 문서 경로"
     )
+    upload_id = Column(
+        Integer,
+        ForeignKey("lessonplan_uploads.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="세션을 만든 시점의 지도안 업로드 (#290)",
+    )
     created_at = Column(
         DateTime, nullable=False, server_default=func.now(), index=True
     )

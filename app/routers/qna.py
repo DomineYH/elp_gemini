@@ -509,6 +509,7 @@ async def chat_with_document(
                 title=title[:255],  # chat_sessions.title 길이
                 user_type=session_segment,
                 document_id=document_id,
+                upload_id=upload.id if upload else None,
             )
             await db.commit()
             created_session = session

@@ -140,3 +140,28 @@ async def test_legacy_session_is_reused_after_backfill(client, user):
     listed = response.json()["sessions"]
     assert [s["title"] for s in listed] == ["업로드한 지도안"]
     assert "fileSearchStores/" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_new_session_stores_upload_id(client, user):
+    async with SessionLocal() as db:
+        upload = LessonPlanUpload(
+            user_id=user.id,
+            filename="title_user_lesson.pdf",
+            original_filename="lesson.pdf",
+        )
+        db.add(upload)
+        await db.commit()
+
+    await _ask(client)
+
+    sessions = await _sessions()
+    assert [s.upload_id for s in sessions] == [upload.id]
+
+
+@pytest.mark.asyncio
+async def test_without_upload_upload_id_is_null(client):
+    await _ask(client)
+
+    sessions = await _sessions()
+    assert [s.upload_id for s in sessions] == [None]

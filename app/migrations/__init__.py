@@ -5,6 +5,7 @@
 from .chat_sessions_document_id import (
     ensure_chat_sessions_document_id_column,
 )
+from .chat_sessions_upload_id import ensure_chat_sessions_upload_id_column
 from .chat_sessions_user_type_rename import (
     rename_chat_session_in_service_teacher_label,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "drop_users_email_column",
     "ensure_app_state_table",
     "ensure_chat_sessions_document_id_column",
+    "ensure_chat_sessions_upload_id_column",
     "ensure_criteria_file_path_column",
     "ensure_criteria_display_alias_column",
     "ensure_criteria_stable_id_column",
