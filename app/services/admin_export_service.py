@@ -29,6 +29,7 @@ from app.models.users import User
 from app.schemas.admin_export import ExportFilters
 from app.services.simulation.session_report import render_session_markdown
 from app.utils.admin_export_naming import (
+    build_conversation_basename,
     build_filename_prefix,
     build_lessonplan_basename,
     build_report_basename,
@@ -72,6 +73,7 @@ class SessionEntry:
     original_name: str  # session title or ""
     archive_path: str
     message_count: int
+    upload_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -450,12 +452,31 @@ class AdminExportService:
         if upper_bound:
             stmt = stmt.where(ChatSession.created_at < upper_bound)
         rows = (await self.db.execute(stmt)).scalars().all()
+        # 지도안 이름은 한 번에 모은다 (세션마다 조회하지 않는다)
+        upload_ids = {s.upload_id for s in rows if s.upload_id is not None}
+        uploads = (
+            {
+                u.id: u.original_filename or u.filename
+                for u in await self.db.scalars(
+                    select(LessonPlanUpload).where(
+                        LessonPlanUpload.id.in_(upload_ids),
+                        LessonPlanUpload.user_id.in_(user_ids),
+                    )
+                )
+            }
+            if upload_ids
+            else {}
+        )
 
         sessions: list[SessionEntry] = []
         msgs: dict[int, list[ChatMessage]] = {}
         for s in rows:
-            ctx = ctx_by_id[s.user_id]
-            fname = f"{ctx.filename_prefix}__session_{s.id}.jsonl"
+            basename = build_conversation_basename(
+                s.user_id,
+                s.id,
+                upload_id=s.upload_id,
+                lessonplan_name=uploads.get(s.upload_id),
+            )
             sorted_msgs = sorted(s.messages, key=lambda m: (m.created_at, m.id))
             sessions.append(
                 SessionEntry(
@@ -465,8 +486,9 @@ class AdminExportService:
                     session_id=s.id,
                     created_at=s.created_at,
                     original_name=s.title or "",
-                    archive_path=f"conversations/{fname}",
+                    archive_path=f"conversations/{basename}.jsonl",
                     message_count=len(sorted_msgs),
+                    upload_id=s.upload_id,
                 )
             )
             msgs[s.id] = sorted_msgs
@@ -886,5 +908,7 @@ def build_readme(plan: ExportPlan) -> bytes:
         "  simsession은 끝에 __s{세션번호}가 붙는다:",
         "  u{user_id}__simsession_{지도안번호}__{지도안이름}"
         "__s{세션번호}.{md|jsonl}",
+        "  conversation도 끝에 __s{세션번호}가 붙고,"
+        " 번호가 없는 옛 세션은 u{user_id}__conversation_s{세션번호}.jsonl.",
     ]
     return ("\n".join(lines) + "\n").encode("utf-8")

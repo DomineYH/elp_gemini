@@ -76,3 +76,21 @@ def build_lessonplan_basename(
         f"{build_filename_prefix(user_id)}__lessonplan_{number}__"
         f"{slugify_original_name(original_name)}"
     )
+
+
+def build_conversation_basename(
+    user_id: int,
+    session_id: int,
+    *,
+    upload_id: int | None = None,
+    lessonplan_name: str | None = None,
+) -> str:
+    """QnA 대화 이름 (확장자 없음). 지도안 번호가 없는 옛 세션은 s{session_id}만."""
+    prefix = build_filename_prefix(user_id)
+    if upload_id is None:
+        return f"{prefix}__conversation_s{session_id}"
+    stem = os.path.splitext(lessonplan_name)[0] if lessonplan_name else ""
+    return (
+        f"{prefix}__conversation_{upload_id}__"
+        f"{slugify_original_name(stem)}__s{session_id}"
+    )

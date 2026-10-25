@@ -2,6 +2,7 @@
 import pytest
 
 from app.utils.admin_export_naming import (
+    build_conversation_basename,
     build_filename_prefix,
     build_lessonplan_basename,
     build_report_basename,
@@ -97,3 +98,23 @@ def test_build_lessonplan_basename_slugifies(name, expected):
 def test_build_lessonplan_basename_requires_a_number():
     with pytest.raises(ValueError):
         build_lessonplan_basename(1, "plan.pdf")
+
+
+@pytest.mark.parametrize(
+    "kwargs,expected",
+    [
+        (
+            {"upload_id": 25, "lessonplan_name": "plan.pdf"},
+            "u00001__conversation_25__plan__s7",
+        ),
+        (
+            {"upload_id": 25, "lessonplan_name": "a/b:c.hwp"},
+            "u00001__conversation_25__a_b_c__s7",
+        ),
+        ({"upload_id": 25}, "u00001__conversation_25__untitled__s7"),
+        ({}, "u00001__conversation_s7"),
+        ({"lessonplan_name": "plan.pdf"}, "u00001__conversation_s7"),
+    ],
+)
+def test_build_conversation_basename(kwargs, expected):
+    assert build_conversation_basename(1, 7, **kwargs) == expected

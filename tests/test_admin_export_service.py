@@ -819,3 +819,33 @@ async def test_drifted_report_filename_falls_back_to_upload_file(
     assert Path(entry.source_path).resolve() == upload_file.resolve()
     zf = zipfile.ZipFile(io.BytesIO(b"".join(svc.stream_zip(plan))))
     assert zf.read(entry.archive_path) == pdf
+
+
+@pytest.mark.asyncio
+async def test_conversation_names_use_upload_number(db_session):
+    await _seed_user(db_session, user_id=1)
+    upload = LessonPlanUpload(
+        user_id=1,
+        filename="u1_20260101000000_plan.pdf",
+        original_filename="plan.pdf",
+        file_hash="e" * 64,
+    )
+    db_session.add(upload)
+    await db_session.flush()
+    linked = ChatSession(user_id=1, title="t1", upload_id=upload.id)
+    old = ChatSession(user_id=1, title="old")
+    db_session.add_all([linked, old])
+    await db_session.commit()
+
+    plan = await AdminExportService(db_session).collect(ExportFilters())
+
+    by_id = {e.session_id: e for e in plan.sessions}
+    linked_path = f"conversations/u00001__conversation_{upload.id}__plan__s{linked.id}.jsonl"
+    old_path = f"conversations/u00001__conversation_s{old.id}.jsonl"
+    assert by_id[linked.id].archive_path == linked_path
+    assert by_id[old.id].archive_path == old_path
+    assert by_id[linked.id].resource_id == linked.id
+    assert by_id[old.id].resource_id == old.id
+    rows = _manifest_rows(plan)
+    assert rows[linked_path]["upload_id"] == str(upload.id)
+    assert rows[old_path]["upload_id"] == ""
