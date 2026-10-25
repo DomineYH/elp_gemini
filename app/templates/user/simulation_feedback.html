@@ -47,8 +47,38 @@
                 <p id="rerunNote" class="note hidden">지도안이 바뀌어 이 세션은 다시 실행할 수 없습니다.</p>
                 <a href="/simulation/setup" id="rerunBtn" class="px-4 py-2 rounded-lg border">다른 학생으로 다시 실행</a>
                 <a href="/simulation/sessions/{{ sid }}/transcript" class="px-4 py-2 rounded-lg border">대화록 보기</a>
-                <a href="/dashboard" class="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold">지도안으로 돌아가기</a>
+                <a href="/dashboard" id="backBtn" class="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold">지도안으로 돌아가기</a>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- 피드백 화면을 떠날 때 설문 참여 안내 (#289, dashboard.html 분석 설문과 같은 마크업) -->
+<div id="surveyModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] hidden no-print">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md m-4">
+        <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-indigo-600 text-white rounded-t-lg">
+            <h3 class="text-lg font-bold">설문 참여 안내</h3>
+            <button type="button" id="surveyCloseBtn" class="hover:text-gray-200" aria-label="닫기">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        <div class="p-6">
+            <p class="text-red-600 font-semibold text-center">
+                설문에 참여하셨으면 '설문참여 완료'를 눌러주세요
+            </p>
+        </div>
+        <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-center space-x-3 rounded-b-lg">
+            <button type="button" id="surveyGoBtn"
+                class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 transition-colors">
+                설문참여
+            </button>
+            <button type="button" id="surveyDoneBtn"
+                class="bg-gray-600 text-white px-6 py-2 rounded hover:bg-gray-700 transition-colors">
+                설문참여 완료
+            </button>
         </div>
     </div>
 </div>
@@ -166,6 +196,29 @@
             $("retryBtn").classList.remove("hidden");
         }
     }
+
+    const SURVEY_URL = "https://docs.google.com/forms/d/e/1FAIpQLSfXwRv2PdV4izYZGdJADiRUWdopZPbW0gXlESBATjqx9ZnBmg/viewform?usp=publish-editor";
+    let pendingHref = null;
+    function openSurvey(href) { pendingHref = href; $("surveyModal").classList.remove("hidden"); }
+    function leave() {
+        const h = pendingHref;
+        pendingHref = null;
+        $("surveyModal").classList.add("hidden");
+        if (h) window.location.assign(h);
+    }
+    // 비활성화된 #rerunBtn은 href가 없으므로 가로채지 않는다
+    for (const a of [$("rerunBtn"), $("backBtn")]) {
+        a.addEventListener("click", e => {
+            const href = a.getAttribute("href");
+            if (!href) return;
+            e.preventDefault();
+            openSurvey(href);
+        });
+    }
+    $("surveyGoBtn").addEventListener("click", () => { window.open(SURVEY_URL, "_blank", "noopener"); leave(); });
+    $("surveyDoneBtn").addEventListener("click", leave);
+    $("surveyCloseBtn").addEventListener("click", leave);
+    $("surveyModal").addEventListener("click", e => { if (e.target === e.currentTarget) leave(); });
 
     for (const tab of document.querySelectorAll(".fbtab")) {
         tab.addEventListener("click", () => showTab(tab.dataset.fb));
