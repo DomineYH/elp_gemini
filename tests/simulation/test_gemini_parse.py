@@ -55,6 +55,46 @@ def test_misconception_caps_understanding(misconception, raw, expected):
 
 
 @pytest.mark.parametrize(
+    "misconception, raw, kept, expected",
+    [
+        (
+            "과거와 현재의 학교 모습 비교를 어떻게 시작해야 할지 모름",
+            85,
+            "",
+            79,
+        ),
+        (
+            "엑셀 파일을 여는 방법이나 첫 줄의 제목을 확인하는 방법을 모르고 막혀 있음",
+            60,
+            "",
+            60,
+        ),
+        (
+            "인구 그래프를 그리는 과업 도중에 급식 이야기로 주제가 바뀌어"
+            " 과업 범위를 헷갈림.",
+            90,
+            "",
+            79,
+        ),
+        ("분모끼리 더함", 95, "분모끼리 더함", 79),
+        ("모름이라는 단어를 잘못 씀", 95, "모름이라는 단어를 잘못 씀", 79),
+        ("그래프를 그리지 못함 ", 85, "", 79),
+        ("표를 읽지 못함", 85, "", 79),
+        ("순서를 헷갈려함", 85, "", 79),
+    ],
+)
+def test_stuck_summary_is_not_a_misconception(
+    misconception, raw, kept, expected
+):
+    """'모름·막힘'은 오개념이 아니다: 79 상한은 원문 기준, 텍스트는 비운다 (#302)."""
+    text = GOOD.replace(
+        '"misconception": ""', f'"misconception": "{misconception}"'
+    ).replace('"understanding": 85', f'"understanding": {raw}')
+    parsed = parse_structured(StudentReaction, text)
+    assert (parsed.misconception, parsed.understanding) == (kept, expected)
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "not json",

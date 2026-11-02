@@ -134,6 +134,33 @@ def test_feedback_input_has_student_artifact_and_misconception(
     assert "3/4" in user and "분모끼리 더함" in user
 
 
+def test_feedback_input_drops_stuck_summary_misconception(
+    ready, fake_gemini, monkeypatch
+):
+    """'…모름'은 오개념이 아니므로 [오개념:] 태그로 넘기지 않는다 (#302)."""
+    fake_gemini.results["student"] = StudentReaction(
+        action="고민한다",
+        utterance="어떻게 시작하죠?",
+        artifact="",
+        misconception="비교를 어떻게 시작해야 할지 모름",
+        ready_for_next=False,
+        understanding=50,
+        confidence=0.5,
+    )
+    sid = _finished(ready)
+    prompts = []
+
+    def recording(kind, **kw):
+        prompts.append((kind, kw["user"]))
+        return fake_gemini(kind, **kw)
+
+    monkeypatch.setattr(gemini, "call_structured", recording)
+    assert ready.post(_api(sid, "/feedback")).status_code == 200
+    [(_, user)] = prompts
+    assert "어떻게 시작하죠?" in user
+    assert "[오개념:" not in user and "시작해야 할지 모름" not in user
+
+
 def test_running_session_is_refused(ready, fake_gemini):
     sid = _create(ready)
     r = ready.post(_api(sid, "/feedback"))
