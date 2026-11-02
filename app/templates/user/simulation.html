@@ -63,8 +63,9 @@
                 <div class="min-w-0">
                     <div class="flex items-center gap-2 min-w-0">
                         <p id="dmTitle" class="font-semibold text-sm truncate">학생</p>
-                        <span id="dmAgree" class="shrink-0 flex items-center gap-2" aria-live="polite"></span>
+                        <span id="dmAgree" class="shrink-0" aria-live="polite"></span>
                     </div>
+                    <div id="dmBar" class="mt-1"></div>
                     <p id="dmSub" class="note truncate"></p>
                 </div>
             </div>
@@ -263,7 +264,8 @@
         const ok = state.agreement.agreed_persona_ids.includes(p.id);
         const dmBar = understandBar(p, state.agreement.understanding[p.id], ok);
         dmBar.style.width = "7rem";
-        $("dmAgree").replaceChildren(agreeBadge(ok), dmBar);
+        $("dmAgree").replaceChildren(agreeBadge(ok));
+        $("dmBar").replaceChildren(dmBar);
         $("dmSub").textContent = [p.adapted_level, p.adapted_profile.behavior_summary].filter(Boolean).join(" · ");
         $("dmDot").style.background = "var(--" + p.color_key + ")";
         const feed = $("dmFeed");
