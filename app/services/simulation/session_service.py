@@ -280,9 +280,14 @@ def student_utterance(
     seq: int,
     persona: SimulationPersona,
     result: gemini.LLMResult,
+    first: bool = False,
 ) -> SimulationUtterance:
     """파싱 실패면 structured=NULL, content=모델 원문."""
     reaction = result.parsed
+    structured = reaction.model_dump() if reaction else None
+    if first and structured and not structured["artifact"].strip():
+        # 프롬프트 규칙 "과업을 아직 하지 않았으면 80 미만"을 모델이 어긴다 (#302)
+        structured["understanding"] = min(structured["understanding"], 79)
     return SimulationUtterance(
         session_id=session_id,
         phase_idx=phase_idx,
@@ -294,7 +299,7 @@ def student_utterance(
             if reaction
             else result.text
         ),
-        structured=reaction.model_dump() if reaction else None,
+        structured=structured,
         model_name=result.model,
         temperature=result.temperature,
         latency_ms=result.latency_ms,
@@ -358,7 +363,7 @@ async def enter_phase(
         ),
     ]
     rows += [
-        student_utterance(session.id, idx, seq + 2 + i, p, r)
+        student_utterance(session.id, idx, seq + 2 + i, p, r, first=True)
         for i, (p, r) in enumerate(zip(personas, results))
     ]
     db.add_all(rows)
@@ -625,7 +630,9 @@ async def regenerate(
     )
     await _lock_running(db, session, idx)
 
-    fresh = student_utterance(sid, idx, row.seq, persona, result)
+    fresh = student_utterance(
+        sid, idx, row.seq, persona, result, first=len(mine) == 1
+    )
     for field in (
         "content",
         "structured",

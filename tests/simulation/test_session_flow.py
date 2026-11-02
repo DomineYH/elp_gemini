@@ -107,7 +107,9 @@ def test_agree_with_one_not_ready_is_409_skip_passes(ready, fake_gemini):
     sid = state["session"]["id"]
     holdout = str(state["personas"][0]["source_record_id"])
     fake_gemini.results["student"] = lambda key: _reaction(key != holdout)
-    turn = ready.post(_api(sid, "/phases/0/enter")).json()
+    ready.post(_api(sid, "/phases/0/enter"))
+    # 장면 첫 반응은 79로 제한되므로(#302) 한 번 더 말한 뒤 동의를 본다
+    turn = ready.post(_api(sid, "/say"), json={"content": "어때?"}).json()
     assert turn["agreement"]["count"] == 3
     assert turn["agreement"]["all_agreed"] is False
     holdout_id = str(state["personas"][0]["id"])
@@ -137,7 +139,8 @@ def test_agree_with_one_not_ready_is_409_skip_passes(ready, fake_gemini):
 def test_failed_latest_reaction_keeps_agreement(ready, fake_gemini):
     state = _create(ready)
     sid = state["session"]["id"]
-    turn = ready.post(_api(sid, "/phases/0/enter")).json()
+    ready.post(_api(sid, "/phases/0/enter"))
+    turn = ready.post(_api(sid, "/say"), json={"content": "어때?"}).json()
     assert turn["agreement"]["all_agreed"] is True
 
     failing = str(state["personas"][0]["source_record_id"])
@@ -158,7 +161,8 @@ def test_support_level_agrees_on_understanding_alone(ready):
     state = _create(ready, level="Poor")
     sid = state["session"]["id"]
     assert {p["adapted_level"] for p in state["personas"]} == {"추가 지원 필요"}
-    turn = ready.post(_api(sid, "/phases/0/enter")).json()
+    ready.post(_api(sid, "/phases/0/enter"))
+    turn = ready.post(_api(sid, "/say"), json={"content": "어때?"}).json()
     assert turn["agreement"]["count"] == 4
     r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
     assert r.status_code == 200
@@ -167,7 +171,8 @@ def test_support_level_agrees_on_understanding_alone(ready):
 def test_understanding_drop_after_agree_keeps_agree(ready, fake_gemini):
     state = _create(ready)
     sid = state["session"]["id"]
-    turn = ready.post(_api(sid, "/phases/0/enter")).json()
+    ready.post(_api(sid, "/phases/0/enter"))
+    turn = ready.post(_api(sid, "/say"), json={"content": "어때?"}).json()
     assert turn["agreement"]["all_agreed"] is True
 
     one = str(state["personas"][0]["source_record_id"])
@@ -183,6 +188,66 @@ def test_understanding_drop_after_agree_keeps_agree(ready, fake_gemini):
         u for u in rows if u["structured"] == {"type": "agree_advance"}
     ]
     assert agree_row["content"] == "장면0: 전원 동의로 다음 장면"
+
+
+def test_first_reaction_without_artifact_is_capped_until_say(ready):
+    """과업을 아직 하지 않은 장면 첫 반응은 80 미만으로 저장한다 (#302)."""
+    state = _create(ready)
+    sid = state["session"]["id"]
+    ids = [str(p["id"]) for p in state["personas"]]
+    turn = ready.post(_api(sid, "/phases/0/enter")).json()
+    assert turn["agreement"]["understanding"] == {i: 79 for i in ids}
+    assert turn["agreement"]["count"] == 0
+    assert turn["agreement"]["all_agreed"] is False
+    r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
+    assert r.status_code == 409
+
+    turn = ready.post(_api(sid, "/say"), json={"content": "해 볼까?"}).json()
+    assert turn["agreement"]["understanding"] == {i: 90 for i in ids}
+    assert turn["agreement"]["all_agreed"] is True
+    r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
+    assert r.status_code == 200
+
+
+def test_first_reaction_with_artifact_is_not_capped(ready, fake_gemini):
+    fake_gemini.results["student"] = _reaction(True).model_copy(
+        update={"artifact": "3/4"}
+    )
+    state = _create(ready)
+    sid = state["session"]["id"]
+    ids = [str(p["id"]) for p in state["personas"]]
+    turn = ready.post(_api(sid, "/phases/0/enter")).json()
+    assert turn["agreement"]["understanding"] == {i: 90 for i in ids}
+    assert turn["agreement"]["all_agreed"] is True
+
+
+def test_regenerated_first_reaction_is_capped(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/phases/0/enter"))
+
+    fake_gemini.parse_fail.clear()
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [fixed] = r.json()["utterances"]
+    assert fixed["structured"]["understanding"] == 79
+
+
+def test_regenerated_later_reaction_is_not_capped(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/say"), json={"content": "어때?"})
+
+    fake_gemini.parse_fail.clear()
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [fixed] = r.json()["utterances"]
+    assert fixed["structured"]["understanding"] == 90
 
 
 def test_legacy_row_without_understanding_renders_dash(ready, sim_db):
@@ -337,7 +402,11 @@ def test_after_finish_everything_is_409(ready, fake_gemini):
     assert fake_gemini.count() == calls
 
 
-def test_restore_returns_everything_in_seq_order(ready):
+def test_restore_returns_everything_in_seq_order(ready, fake_gemini):
+    # 산출물이 있는 첫 반응은 79 제한을 받지 않는다(#302): phase 1 진입 직후 동의
+    fake_gemini.results["student"] = _reaction(True).model_copy(
+        update={"artifact": "메모"}
+    )
     state = _create(ready)
     sid = state["session"]["id"]
     ready.post(_api(sid, "/phases/0/enter"))
