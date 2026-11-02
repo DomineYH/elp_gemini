@@ -347,3 +347,20 @@ def test_sim_student_misconception_excludes_not_knowing_and_copying():
 
     for phrase in ("모름", "막힘", "오개념이 아니", "옮겨 적지 않"):
         assert phrase in item, phrase
+
+
+def test_sim_phase_split_splits_stage_into_sub_activity_scenes():
+    """장면 단위는 세부 활동이고 '전개' 단독 장면을 만들지 않는다 (#295)."""
+    prompt = PromptLoaderService().get_prompt("sim_phase_split")
+
+    for phrase in (
+        "장면 하나는 교수·학습 활동 하나입니다",
+        "단계 전체를 장면 하나로 만들지 말고",
+        '이름이 "전개"뿐인 장면은 만들지 않습니다',
+        "전개 전체를 장면 하나로 합치지 않습니다",
+        "운영 항목은 학습 활동이 아닙니다",
+        "도입과 정리 안에서도 학생이 과업을 하는 학습 활동",
+    ):
+        assert phrase in prompt, phrase
+    # 도입·정리의 학습 활동까지 막던 예외 문구가 돌아오면 안 된다
+    assert "세부 활동마다 나누는 규칙은 전개 단계에 적용합니다" not in prompt
