@@ -374,6 +374,7 @@ def test_sim_student_understanding_is_cumulative_in_scene():
     assert "누적" in line
     assert "낮추지도" in line
     assert "올리지도" in line
+    assert "과업과 관련이 없는 틀린 생각이어도" in line
     assert "이 학생이 보인 변화만 근거로 삼습니다" not in prompt
     assert "서로 맞아야 합니다" not in prompt
 
