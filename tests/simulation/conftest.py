@@ -204,6 +204,7 @@ def _default_results():
             artifact="",
             misconception="",
             ready_for_next=True,
+            understanding=90,
             confidence=0.8,
         ),
         "feedback": FeedbackResult(

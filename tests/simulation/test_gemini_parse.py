@@ -14,7 +14,8 @@ from app.services.simulation.llm_schemas import StudentReaction
 
 GOOD = (
     '{"action": "손을 든다", "utterance": "저요!", "artifact": "",'
-    ' "misconception": "", "ready_for_next": true, "confidence": 0.7}'
+    ' "misconception": "", "ready_for_next": true, "understanding": 85,'
+    ' "confidence": 0.7}'
 )
 
 
@@ -26,8 +27,31 @@ def test_valid_json_parses():
         artifact="",
         misconception="",
         ready_for_next=True,
+        understanding=85,
         confidence=0.7,
     )
+
+
+@pytest.mark.parametrize("raw, expected", [(150, 100), (-5, 0), (80, 80)])
+def test_understanding_is_clamped(raw, expected):
+    text = GOOD.replace('"understanding": 85', f'"understanding": {raw}')
+    assert parse_structured(StudentReaction, text).understanding == expected
+
+
+def test_missing_understanding_fails_parse():
+    text = GOOD.replace(' "understanding": 85,', "")
+    assert "understanding" not in text
+    assert parse_structured(StudentReaction, text) is None
+
+
+@pytest.mark.parametrize(
+    "misconception, raw, expected", [("x", 95, 79), ("x", 60, 60), ("", 95, 95)]
+)
+def test_misconception_caps_understanding(misconception, raw, expected):
+    text = GOOD.replace(
+        '"misconception": ""', f'"misconception": "{misconception}"'
+    ).replace('"understanding": 85', f'"understanding": {raw}')
+    assert parse_structured(StudentReaction, text).understanding == expected
 
 
 @pytest.mark.parametrize(
