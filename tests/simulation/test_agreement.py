@@ -1,6 +1,7 @@
 """학생별 이해도 동의 계산 (#153, #296, 순수 함수).
 
-래치 규칙은 폐기됐다(#296): 그 장면 최신 유효 반응의 이해도가 80 이상이면 동의.
+#296의 최신값 규칙 위에 #301 래치: 그 장면에서 한 번 80 이상이면 장면 끝까지 동의,
+막대는 최신 값.
 """
 
 from types import SimpleNamespace
@@ -51,8 +52,8 @@ def test_threshold_boundary(value, agreed):
     assert r["agreed_persona_ids"] == ([1] if agreed else [])
 
 
-def test_latest_wins_drop():
-    assert _one([_student(1, 90), _student(1, 60)]) == ([], 60)
+def test_drop_after_agree_keeps_agree_bar_shows_latest():
+    assert _one([_student(1, 90), _student(1, 60)]) == ([1], 60)
 
 
 def test_latest_wins_rise():
@@ -74,8 +75,33 @@ def test_legacy_row_fallback():
     assert _one([_student(1, ready=False)]) == ([], None)
 
 
-def test_legacy_then_new():
-    assert _one([_student(1, ready=True), _student(1, 60)]) == ([], 60)
+def test_legacy_agree_latches_over_new_low_row():
+    assert _one([_student(1, ready=True), _student(1, 60)]) == ([1], 60)
+
+
+def test_misconception_after_agree_keeps_agree():
+    utts = [_student(1, 85), _student(1, 79, misconception="x")]
+    assert _one(utts) == ([1], 79)
+
+
+def test_latch_is_per_phase():
+    personas = [_persona(1)]
+    utts = [_student(1, 85, phase_idx=0), _student(1, 40, phase_idx=1)]
+    r = compute_agreement(1, personas, utts)
+    assert r["count"] == 0
+    assert r["understanding"] == {1: 40}
+    assert compute_agreement(0, personas, utts)["count"] == 1
+
+
+def test_failed_row_after_agree_and_drop():
+    utts = [_student(1, 85), _student(1, 40), _student(1, failed=True)]
+    assert _one(utts) == ([1], 40)
+
+
+def test_latch_does_not_leak_between_personas():
+    personas = [_persona(1), _persona(2)]
+    utts = [_student(1, 85), _student(2, 40)]
+    assert compute_agreement(0, personas, utts)["agreed_persona_ids"] == [1]
 
 
 def test_other_phase_is_ignored():
