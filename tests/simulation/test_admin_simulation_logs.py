@@ -20,7 +20,7 @@ KOREAN_PLAN = "우리나라 미래 인구 구성비 및 우리 교실 내의 변
 
 @pytest.fixture
 def session_id(client, teacher, make_upload, fake_gemini):
-    """교사 세션 1개: 국면 0 입장(시스템+교사+학생 2) + 말하기 1회."""
+    """교사 세션 1개: 장면 0 입장(시스템+교사+학생 2) + 말하기 1회."""
     make_upload(teacher)
     r = client.post(
         "/api/simulation/sessions",

@@ -185,7 +185,7 @@ def test_mixed_session_snapshots_custom_persona(
     assert custom["adapted_level"] == "추가 지원 필요"
     assert custom["adapted_profile"] == item["adapted_profile"]
 
-    # 첫 국면 학생 호출의 persona_key도 custom ref
+    # 첫 장면 학생 호출의 persona_key도 custom ref
     lib.post(f"/api/simulation/sessions/{sid}/phases/0/enter")
     assert ("student", item["ref"]) in fake_gemini.calls
 

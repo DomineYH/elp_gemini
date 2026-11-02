@@ -1,5 +1,5 @@
 """
-수업 시뮬레이션 국면 (세션마다 편집된 지도안 국면의 사본)
+수업 시뮬레이션 장면 (세션마다 편집된 지도안 장면의 사본)
 """
 
 from sqlalchemy import Column, ForeignKey, Index, Integer, String, Text

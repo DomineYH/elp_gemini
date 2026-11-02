@@ -1,4 +1,4 @@
-"""세션 생성과 첫 국면 진입 (#152)."""
+"""세션 생성과 첫 장면 진입 (#152)."""
 
 import pytest
 from sqlalchemy import func, select

@@ -70,7 +70,7 @@ def render_session_markdown(
 
     personas는 좌석 순이다.
     """
-    # 국면·페르소나 이름도 모델이 만들 수 있어 이모지를 뺀다
+    # 장면·페르소나 이름도 모델이 만들 수 있어 이모지를 뺀다
     names = {p.id: _clean(p.display_name) for p in personas}
     phase_names = {p.idx: _clean(p.name) for p in phases}
     out = [
@@ -97,7 +97,7 @@ def render_session_markdown(
     for u in utterances:
         if u.phase_idx != current:
             current = u.phase_idx
-            name = phase_names.get(current, f"국면 {current + 1}")
+            name = phase_names.get(current, f"장면 {current + 1}")
             out += ["", f"### {name}", ""]
         if u.speaker_type == "teacher":
             speaker = "교사"

@@ -13,9 +13,9 @@
         <p class="note mt-1 hidden" id="simPlan"></p>
     </div>
     <div class="flex flex-wrap gap-2 no-print">
-        <label for="trFilter" class="sr-only">국면으로 거르기</label>
+        <label for="trFilter" class="sr-only">장면으로 거르기</label>
         <select id="trFilter" class="text-sm border rounded-lg px-2 py-1.5 bg-white">
-            <option value="">전체 국면</option>
+            <option value="">전체 장면</option>
         </select>
         <button type="button" id="printBtn" class="text-sm px-4 py-2 rounded-lg border">인쇄 / PDF 저장</button>
         <a id="runLink" href="/simulation/sessions/{{ sid }}" class="hidden text-sm px-4 py-2 rounded-lg border">시뮬레이션으로 돌아가기</a>
@@ -110,7 +110,7 @@
         }
         $("trMeta").textContent =
             "세션 #" + SID + " · " + utc(state.session.created_at).toLocaleString("ko-KR") +
-            " 시작 · 국면 " + state.phases.length + " · 발화 " + state.utterances.length + "건";
+            " 시작 · 장면 " + state.phases.length + " · 발화 " + state.utterances.length + "건";
         const finished = state.session.status === "finished";
         $(finished ? "feedbackLink" : "runLink").classList.remove("hidden");
         if (!finished) $("trStatus").textContent = "수업을 종료하면 AI 피드백을 받을 수 있습니다.";

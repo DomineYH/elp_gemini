@@ -44,7 +44,7 @@
                 open.append(link);
                 const status = s.status === "finished"
                     ? "종료"
-                    : "진행 중 · 국면 " + (s.current_phase_idx + 1) + "/" + s.phase_count;
+                    : "진행 중 · 장면 " + (s.current_phase_idx + 1) + "/" + s.phase_count;
                 const tr = document.createElement("tr");
                 tr.append(
                     cell(new Date(s.created_at).toLocaleString("ko-KR")),

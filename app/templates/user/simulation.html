@@ -17,12 +17,12 @@
         </div>
     </div>
 
-    <!-- 국면 스테퍼 -->
+    <!-- 장면 스테퍼 -->
     <div class="flex items-center gap-2 overflow-x-auto pb-2 mb-3" id="stepper"></div>
 
-    <!-- 현재 국면 카드 -->
+    <!-- 현재 장면 카드 -->
     <div class="card p-4 mb-3 border-blue-200 bg-blue-50/40">
-        <p class="eyebrow" id="phaseEyebrow">지도안의 현재 국면</p>
+        <p class="eyebrow" id="phaseEyebrow">지도안의 현재 장면</p>
         <p class="text-sm mt-1" id="phasePrompt"></p>
         <p class="note mt-1" id="phaseDetail"></p>
     </div>
@@ -40,13 +40,13 @@
 
         <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
             <div class="text-sm">
-                <span class="note">다음 국면 동의</span>
+                <span class="note">다음 장면 동의</span>
                 <span id="agreeCount" class="mono font-medium ml-1">0 / {{ persona_count }}</span>
                 <span class="note ml-2 hidden sm:inline">· 학생 이해도가 80% 이상이면 그 학생이 동의로 바뀌고, 모두 동의하면 다음 장면으로 넘어갈 수 있습니다</span>
             </div>
             <div class="flex gap-2">
-                <button type="button" id="skipBtn" class="px-4 py-2 rounded-lg border text-sm text-gray-700 hover:bg-gray-50" title="학생 동의 없이 다음 국면으로" disabled>Skip ▸</button>
-                <button type="button" id="nextBtn" class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gray-400 cursor-not-allowed" disabled>다음 국면으로 →</button>
+                <button type="button" id="skipBtn" class="px-4 py-2 rounded-lg border text-sm text-gray-700 hover:bg-gray-50" title="학생 동의 없이 다음 장면으로" disabled>Skip ▸</button>
+                <button type="button" id="nextBtn" class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gray-400 cursor-not-allowed" disabled>다음 장면으로 →</button>
             </div>
         </div>
         <p id="simStatus" class="note mt-3" role="status"></p>
@@ -207,7 +207,7 @@
                 (u.target_persona_id === p.id || u.target_persona_id == null)));
     }
 
-    // 상단 말풍선: 이번 국면의 마지막 전체 대상 교사 발화 (1:1 발화 제외, #256)
+    // 상단 말풍선: 이번 장면의 마지막 전체 대상 교사 발화 (1:1 발화 제외, #256)
     function classTeacher(utts) {
         return utts.filter(u => u.speaker_type === "teacher" && u.target_persona_id == null).pop();
     }
@@ -232,7 +232,7 @@
         return (c - 0xAC00) % 28 === 0 ? "와" : "과";
     }
     function agreeBadge(ok) {
-        return el("span", "agree" + (ok ? " yes" : ""), ok ? "✓ 다음 국면 동의" : "대기");
+        return el("span", "agree" + (ok ? " yes" : ""), ok ? "✓ 다음 장면 동의" : "대기");
     }
     function understandBar(p, value, ok) {
         const bar = el("div", "relative h-5 rounded-full overflow-hidden border");
@@ -272,7 +272,7 @@
         $("dmDot").style.background = "var(--" + p.color_key + ")";
         const feed = $("dmFeed");
         feed.replaceChildren(el("p", "note text-center",
-            currentPhase().name + " 국면 · " + p.display_name + josaWa(p.display_name) + "의 1:1 대화. 여기서 한 말과 반응은 교실 화면과 대화록에도 기록됩니다."));
+            currentPhase().name + " 장면 · " + p.display_name + josaWa(p.display_name) + "의 1:1 대화. 여기서 한 말과 반응은 교실 화면과 대화록에도 기록됩니다."));
         seatUtterances(utts, p).forEach(u => {
             const row = el("div", "flex " + (u.speaker_type === "teacher" ? "justify-end" : "justify-start"));
             if (u.speaker_type === "teacher") {
@@ -323,7 +323,7 @@
 
         const phase = currentPhase();
         $("phaseEyebrow").textContent =
-            "지도안의 현재 국면 · " + phase.name + (phase.minutes ? " (" + phase.minutes + "분)" : "");
+            "지도안의 현재 장면 · " + phase.name + (phase.minutes ? " (" + phase.minutes + "분)" : "");
         const prompt = $("phasePrompt");
         prompt.replaceChildren(el("b", "", "교사 발문 "), phase.teacher_prompt);
         if (phase.task) prompt.append(" · ", el("b", "", "과업 "), phase.task);
@@ -495,7 +495,7 @@
     $("nextBtn").addEventListener("click", () => advance("agree"));
     $("skipBtn").addEventListener("click", () => advance("skip"));
     $("endBtn").addEventListener("click", async () => {
-        if (!confirm("수업을 종료할까요? 종료 후에는 더 말하거나 국면을 넘길 수 없습니다.")) return;
+        if (!confirm("수업을 종료할까요? 종료 후에는 더 말하거나 장면을 넘길 수 없습니다.")) return;
         let done = false;
         await run(new Set(), async () => {
             await api("POST", API + "/finish");
@@ -522,7 +522,7 @@
             status.append(link);
             return;
         }
-        // 복원: 현재 국면에 발화가 없을 때만 진입한다
+        // 복원: 현재 장면에 발화가 없을 때만 진입한다
         if (phaseUtterances().length === 0) {
             await enterCurrentPhase();
         }

@@ -36,7 +36,7 @@ class CandidatesResponse(BaseModel):
 
 
 class PhaseIn(BaseModel):
-    """설정 화면에서 편집한 국면 1개"""
+    """설정 화면에서 편집한 장면 1개"""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -50,7 +50,7 @@ class PhaseIn(BaseModel):
 
 
 class Phase(PhaseIn):
-    # 출력 모델: strip 이전에 저장된 공백 국면도 읽을 수 있어야 한다.
+    # 출력 모델: strip 이전에 저장된 공백 장면도 읽을 수 있어야 한다.
     model_config = ConfigDict(str_strip_whitespace=False)
 
     idx: int

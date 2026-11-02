@@ -1,4 +1,4 @@
-"""지도안 국면 자동 분해 초안 (#155)."""
+"""지도안 장면 자동 분해 초안 (#155)."""
 
 import pytest
 from sqlalchemy import func, select
@@ -18,7 +18,7 @@ def _split(n):
     return PhaseSplitResult(
         phases=[
             PhaseDraftItem(
-                name=f"국면{i}",
+                name=f"장면{i}",
                 minutes=5,
                 teacher_prompt=f"발문 {i}",
                 task="",
@@ -101,7 +101,7 @@ def test_more_than_eight_keeps_first_eight(ready, fake_gemini):
     fake_gemini.results["phase_split"] = _split(10)
     body = ready.get(DRAFT).json()
     assert body["source"] == "generated"
-    assert [p["name"] for p in body["phases"]] == [f"국면{i}" for i in range(8)]
+    assert [p["name"] for p in body["phases"]] == [f"장면{i}" for i in range(8)]
 
 
 @pytest.mark.parametrize("key", ["quota", "overload"])

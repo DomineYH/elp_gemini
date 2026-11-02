@@ -32,7 +32,7 @@ def _create(client, n_phases=5, level="High"):
             {"ref": c["ref"], "pseudonym": c["pseudonym"]} for c in cands
         ],
         "phases": [
-            {"name": f"국면{i}", "teacher_prompt": f"발문 {i}"}
+            {"name": f"장면{i}", "teacher_prompt": f"발문 {i}"}
             for i in range(n_phases)
         ],
     }
@@ -79,7 +79,7 @@ def test_five_phases_enter_say_agree_to_finished(ready, fake_gemini):
             assert body["status"] == "running"
             assert body["current_phase_idx"] == idx + 1
             assert body["next_phase"]["idx"] == idx + 1
-            assert body["next_phase"]["name"] == f"국면{idx + 1}"
+            assert body["next_phase"]["name"] == f"장면{idx + 1}"
         else:
             assert body == {
                 "status": "finished",
@@ -123,7 +123,7 @@ def test_agree_with_one_not_ready_is_409_skip_passes(ready, fake_gemini):
     state = ready.get(_api(sid)).json()
     assert state["utterances"][-1]["structured"] == {"type": "skip"}
     assert state["utterances"][-1]["phase_idx"] == 0
-    # 새 국면은 아직 발화가 없고, 동의는 0
+    # 새 장면은 아직 발화가 없고, 동의는 0
     assert state["agreement"] == {
         "phase_idx": 1,
         "agreed_persona_ids": [],
@@ -189,7 +189,7 @@ def test_understanding_drop_unagrees_and_rise_reagrees(ready, fake_gemini):
     [agree_row] = [
         u for u in rows if u["structured"] == {"type": "agree_advance"}
     ]
-    assert agree_row["content"] == "국면0: 전원 동의로 다음 국면"
+    assert agree_row["content"] == "장면0: 전원 동의로 다음 장면"
 
 
 def test_legacy_row_without_understanding_renders_dash(ready, sim_db):
