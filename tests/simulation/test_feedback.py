@@ -117,6 +117,7 @@ def test_feedback_input_has_student_artifact_and_misconception(
         artifact="3/4",
         misconception="분모끼리 더함",
         ready_for_next=True,
+        understanding=70,
         confidence=0.5,
     )
     sid = _finished(ready)

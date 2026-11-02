@@ -42,7 +42,7 @@
             <div class="text-sm">
                 <span class="note">다음 국면 동의</span>
                 <span id="agreeCount" class="mono font-medium ml-1">0 / {{ persona_count }}</span>
-                <span class="note ml-2 hidden sm:inline">· 학생이 넘어가기에 동의하거나 내용을 이해한 것으로 보이면 자동으로 표시됩니다. 오개념이 드러나면 해제됩니다</span>
+                <span class="note ml-2 hidden sm:inline">· 학생 이해도가 80% 이상이면 그 학생이 동의로 바뀌고, 모두 동의하면 다음 장면으로 넘어갈 수 있습니다</span>
             </div>
             <div class="flex gap-2">
                 <button type="button" id="skipBtn" class="px-4 py-2 rounded-lg border text-sm text-gray-700 hover:bg-gray-50" title="학생 동의 없이 다음 국면으로" disabled>Skip ▸</button>
@@ -65,6 +65,7 @@
                         <p id="dmTitle" class="font-semibold text-sm truncate">학생</p>
                         <span id="dmAgree" class="shrink-0" aria-live="polite"></span>
                     </div>
+                    <div id="dmBar" class="mt-1"></div>
                     <p id="dmSub" class="note truncate"></p>
                 </div>
             </div>
@@ -233,12 +234,40 @@
     function agreeBadge(ok) {
         return el("span", "agree" + (ok ? " yes" : ""), ok ? "✓ 다음 국면 동의" : "대기");
     }
+    function understandBar(p, value, ok) {
+        const bar = el("div", "relative h-5 rounded-full overflow-hidden border");
+        bar.style.background = "var(--line)";
+        bar.setAttribute("role", "progressbar");
+        bar.setAttribute("aria-valuemin", "0");
+        bar.setAttribute("aria-valuemax", "100");
+        bar.setAttribute("aria-label", p.display_name + " 이해도");
+        if (value == null) bar.setAttribute("aria-valuetext", "이해도 값 없음");
+        else bar.setAttribute("aria-valuenow", value);
+        const fill = el("div", "h-full transition-all");
+        fill.style.width = (value ?? 0) + "%";
+        fill.style.background = ok ? "#047857" : "var(--muted)";
+        // 채움 경계와 무관하게 대비가 같도록 % 글자는 자기 배경(알약) 위에 둔다
+        const pill = el("span", "px-1 rounded-full text-xs font-semibold", value == null ? "–" : value + "%");
+        pill.style.cssText = "background:rgba(255,255,255,.92);color:var(--ink)";
+        const label = el("span", "absolute inset-0 flex items-center justify-center");
+        label.append(pill);
+        const mark = el("span", "absolute");
+        mark.style.cssText = "left:80%;top:0;bottom:0;width:1px;background:var(--ink);opacity:.5";
+        mark.setAttribute("aria-hidden", "true");
+        bar.append(fill, mark, label);
+        bar.title = "이해도 80% 이상이면 동의";
+        return bar;
+    }
 
     function renderDM(utts, pending) {
         if (!dmPersona) return;
         const p = dmPersona;
         $("dmTitle").textContent = p.display_name;
-        $("dmAgree").replaceChildren(agreeBadge(state.agreement.agreed_persona_ids.includes(p.id)));
+        const ok = state.agreement.agreed_persona_ids.includes(p.id);
+        const dmBar = understandBar(p, state.agreement.understanding[p.id], ok);
+        dmBar.style.width = "7rem";
+        $("dmAgree").replaceChildren(agreeBadge(ok));
+        $("dmBar").replaceChildren(dmBar);
         $("dmSub").textContent = [p.adapted_level, p.adapted_profile.behavior_summary].filter(Boolean).join(" · ");
         $("dmDot").style.background = "var(--" + p.color_key + ")";
         const feed = $("dmFeed");
@@ -335,7 +364,7 @@
             mine.forEach(u =>
                 feed.append(u.speaker_type === "teacher" ? teacherBubble(u) : bubble(p, u, u === last)));
             if (pending.has(p.id)) feed.append(typing(p));
-            seat.append(head, feed);
+            seat.append(head, understandBar(p, state.agreement.understanding[p.id], agreed.has(p.id)), feed);
             if (p.adapted_profile.behavior_summary) {
                 seat.append(el("p", "note", p.adapted_profile.behavior_summary));
             }

@@ -349,6 +349,21 @@ def test_sim_student_misconception_excludes_not_knowing_and_copying():
         assert phrase in item, phrase
 
 
+def test_sim_student_unknown_concept_can_be_learned_only_with_teacher():
+    """모르는 개념은 교사가 직접 다룰 때만 조금씩 이해한다 (#296)."""
+    prompt = PromptLoaderService().get_prompt("sim_student")
+
+    for phrase in (
+        "모르는 개념은 교사의 개입 없이는 모르는 상태를 유지합니다",
+        "직접 가르치거나 다루면 조금씩 이해할 수 있지만",
+        "말이나 산출물에 드러난 만큼만",
+        "교사의 개입 없이 스스로 과업을 해결하지 않습니다",
+    ):
+        assert phrase in prompt, phrase
+    old = "프로필상 모르는 개념은 대화 중에도 모르는 상태를 유지합니다."
+    assert old not in prompt
+
+
 def test_sim_phase_split_splits_stage_into_sub_activity_scenes():
     """장면 단위는 세부 활동이고 '전개' 단독 장면을 만들지 않는다 (#295)."""
     prompt = PromptLoaderService().get_prompt("sim_phase_split")

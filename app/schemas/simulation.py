@@ -146,6 +146,9 @@ class SessionInfo(BaseModel):
 class Agreement(BaseModel):
     phase_idx: int
     agreed_persona_ids: list[int]
+    understanding: dict[
+        int, int | None
+    ]  # persona_id -> 최신 이해도, 과거 행은 None
     count: int
     total: int
     all_agreed: bool

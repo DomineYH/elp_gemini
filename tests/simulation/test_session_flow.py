@@ -1,10 +1,13 @@
 """말하기, 동의/Skip 전이, 종료, 복원 (#153)."""
 
 import pytest
+from sqlalchemy import select
 
 from app.models.simulation_utterance import SimulationUtterance
 from app.services.simulation import gemini, session_service
 from app.services.simulation.llm_schemas import StudentReaction
+
+from .conftest import run
 
 
 def _reaction(ready):
@@ -14,6 +17,7 @@ def _reaction(ready):
         artifact="",
         misconception="",
         ready_for_next=ready,
+        understanding=90 if ready else 40,
         confidence=0.5,
     )
 
@@ -106,6 +110,8 @@ def test_agree_with_one_not_ready_is_409_skip_passes(ready, fake_gemini):
     turn = ready.post(_api(sid, "/phases/0/enter")).json()
     assert turn["agreement"]["count"] == 3
     assert turn["agreement"]["all_agreed"] is False
+    holdout_id = str(state["personas"][0]["id"])
+    assert turn["agreement"]["understanding"][holdout_id] == 40
 
     r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
     assert r.status_code == 409
@@ -121,6 +127,7 @@ def test_agree_with_one_not_ready_is_409_skip_passes(ready, fake_gemini):
     assert state["agreement"] == {
         "phase_idx": 1,
         "agreed_persona_ids": [],
+        "understanding": {str(p["id"]): None for p in state["personas"]},
         "count": 0,
         "total": 4,
         "all_agreed": False,
@@ -139,23 +146,77 @@ def test_failed_latest_reaction_keeps_agreement(ready, fake_gemini):
     assert turn["failed_persona_ids"] == [state["personas"][0]["id"]]
     # 파싱 실패는 이전 동의를 유지한다 (#254)
     assert turn["agreement"]["count"] == 4
+    failed_id = str(state["personas"][0]["id"])
+    assert turn["agreement"]["understanding"][failed_id] == 90
 
     r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
     assert r.status_code == 200
 
 
-def test_support_level_guard_lifts_after_user_turn(ready):
+def test_support_level_agrees_on_understanding_alone(ready):
+    # 교사 도달 게이트는 폐기됐다(#296): 이해도 80 이상이면 바로 동의
     state = _create(ready, level="Poor")
     sid = state["session"]["id"]
     assert {p["adapted_level"] for p in state["personas"]} == {"추가 지원 필요"}
     turn = ready.post(_api(sid, "/phases/0/enter")).json()
-    assert turn["agreement"]["count"] == 0
-    r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
-    assert _code(r) == "NOT_ALL_AGREED"
-    turn = ready.post(_api(sid, "/say"), json={"content": "천천히 해 보자"})
-    assert turn.json()["agreement"]["all_agreed"] is True
+    assert turn["agreement"]["count"] == 4
     r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
     assert r.status_code == 200
+
+
+def test_understanding_drop_unagrees_and_rise_reagrees(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    turn = ready.post(_api(sid, "/phases/0/enter")).json()
+    assert turn["agreement"]["all_agreed"] is True
+
+    one = str(state["personas"][0]["source_record_id"])
+    one_id = str(state["personas"][0]["id"])
+    fake_gemini.results["student"] = lambda key: _reaction(key != one)
+    turn = ready.post(_api(sid, "/say"), json={"content": "다시 볼까"}).json()
+    assert turn["agreement"]["count"] == 3
+    assert turn["agreement"]["understanding"][one_id] == 40
+    r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
+    assert r.status_code == 409 and _code(r) == "NOT_ALL_AGREED"
+
+    fake_gemini.results["student"] = lambda key: _reaction(True)
+    turn = ready.post(_api(sid, "/say"), json={"content": "정리해 보자"}).json()
+    assert turn["agreement"]["count"] == 4
+    assert turn["agreement"]["understanding"][one_id] == 90
+    r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
+    assert r.status_code == 200
+    rows = ready.get(_api(sid)).json()["utterances"]
+    [agree_row] = [
+        u for u in rows if u["structured"] == {"type": "agree_advance"}
+    ]
+    assert agree_row["content"] == "국면0: 전원 동의로 다음 국면"
+
+
+def test_legacy_row_without_understanding_renders_dash(ready, sim_db):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    ready.post(_api(sid, "/phases/0/enter"))
+
+    async def _strip():
+        # #296 이전에 저장된 행처럼 understanding 키를 지운다
+        async with sim_db() as db:
+            rows = await db.scalars(
+                select(SimulationUtterance).where(
+                    SimulationUtterance.session_id == sid,
+                    SimulationUtterance.speaker_type == "student",
+                )
+            )
+            for u in rows:
+                s = dict(u.structured)
+                s.pop("understanding")
+                u.structured = s
+            await db.commit()
+
+    run(_strip())
+    agreement = ready.get(_api(sid)).json()["agreement"]
+    ids = [p["id"] for p in state["personas"]]
+    assert agreement["understanding"] == {str(i): None for i in ids}
+    assert agreement["agreed_persona_ids"] == ids
 
 
 def test_targeted_say_only_target_reacts(ready, fake_gemini):
@@ -194,6 +255,7 @@ def test_next_student_call_sees_artifact_but_not_misconception(
         artifact="3/4",
         misconception="분모끼리 더함",
         ready_for_next=True,
+        understanding=70,
         confidence=0.5,
     )
     prompts = []
