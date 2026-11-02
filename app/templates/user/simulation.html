@@ -235,7 +235,7 @@
         return el("span", "agree" + (ok ? " yes" : ""), ok ? "✓ 다음 국면 동의" : "대기");
     }
     function understandBar(p, value, ok) {
-        const bar = el("div", "relative h-4 rounded-full overflow-hidden border");
+        const bar = el("div", "relative h-5 rounded-full overflow-hidden border");
         bar.style.background = "var(--line)";
         bar.setAttribute("role", "progressbar");
         bar.setAttribute("aria-valuemin", "0");
@@ -246,13 +246,15 @@
         const fill = el("div", "h-full transition-all");
         fill.style.width = (value ?? 0) + "%";
         fill.style.background = ok ? "#047857" : "var(--muted)";
-        const label = el("span", "absolute inset-0 flex items-center justify-center text-xs font-semibold",
-            value == null ? "–" : value + "%");
-        label.style.color = (value ?? 0) >= 50 ? "#fff" : "var(--ink)";
+        // 채움 경계와 무관하게 대비가 같도록 % 글자는 자기 배경(알약) 위에 둔다
+        const pill = el("span", "px-1 rounded-full text-xs font-semibold", value == null ? "–" : value + "%");
+        pill.style.cssText = "background:rgba(255,255,255,.92);color:var(--ink)";
+        const label = el("span", "absolute inset-0 flex items-center justify-center");
+        label.append(pill);
         const mark = el("span", "absolute");
         mark.style.cssText = "left:80%;top:0;bottom:0;width:1px;background:var(--ink);opacity:.5";
         mark.setAttribute("aria-hidden", "true");
-        bar.append(fill, label, mark);
+        bar.append(fill, mark, label);
         bar.title = "이해도 80% 이상이면 동의";
         return bar;
     }
