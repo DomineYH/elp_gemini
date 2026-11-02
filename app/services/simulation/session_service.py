@@ -1,5 +1,5 @@
 """
-시뮬레이션 세션: 생성, 국면 진입, 말하기, 전이, 종료, 상태 조회 (PLAN 2.6)
+시뮬레이션 세션: 생성, 장면 진입, 말하기, 전이, 종료, 상태 조회 (PLAN 2.6)
 
 Gemini 호출이 모두 끝난 뒤에만 DB에 쓴다(실패 시 아무것도 남기지 않음).
 """
@@ -217,7 +217,7 @@ async def _teacher_turns_used(db, sid) -> int:
 
 
 async def _agreement(db, sid) -> dict:
-    """현재 국면의 동의 상태."""
+    """현재 장면의 동의 상태."""
     idx = (await db.get(SimulationSession, sid)).current_phase_idx
     return compute_agreement(
         idx, await _personas(db, sid), await _utterances(db, sid, idx)
@@ -238,7 +238,7 @@ async def _turn_result(db, sid, utterances) -> dict:
 
 
 def student_call(persona: SimulationPersona, phase, transcript: list[str]):
-    """학생 반응 1건의 call_structured 인자. transcript = 이번 국면 대화 줄."""
+    """학생 반응 1건의 call_structured 인자. transcript = 이번 장면 대화 줄."""
     profile = {
         "가명": persona.display_name,
         "학년": persona.raw_profile.get("grade"),
@@ -252,12 +252,12 @@ def student_call(persona: SimulationPersona, phase, transcript: list[str]):
     )
     user = "\n".join(
         [
-            f"[현재 국면] {phase.name}"
+            f"[현재 장면] {phase.name}"
             + (f" ({phase.minutes}분)" if phase.minutes else ""),
             f"과업: {phase.task or '(없음)'}",
             f"자료: {phase.materials or '(없음)'}",
             "",
-            "[이번 국면 대화]",
+            "[이번 장면 대화]",
             *transcript,
         ]
     )
@@ -315,7 +315,7 @@ async def enter_phase(
 ) -> dict:
     """phase_enter → 교사(지도안 발문) → 학생 반응(좌석 순).
 
-    이미 들어온 국면이면 저장본을 돌려준다.
+    이미 들어온 장면이면 저장본을 돌려준다.
     """
     if session.status == "finished":
         raise SimulationError("SESSION_FINISHED")
@@ -345,7 +345,7 @@ async def enter_phase(
             phase_idx=idx,
             seq=seq,
             speaker_type="system",
-            content=f"{phase.name} 국면 시작",
+            content=f"{phase.name} 장면 시작",
             structured={"type": "phase_enter"},
         ),
         SimulationUtterance(
@@ -435,7 +435,7 @@ async def _commit_or_conflict(db) -> None:
 async def _lock_running(
     db, session: SimulationSession, idx: int, moved="CONFLICT_RETRY"
 ) -> None:
-    """쓰기 잠금을 잡은 채 진행 중·같은 국면인지 확인한다.
+    """쓰기 잠금을 잡은 채 진행 중·같은 장면인지 확인한다.
 
     잠금은 이 요청의 커밋·롤백까지 유지되므로 그 사이 다른 요청의 종료·전이·
     발화가 끼어들 수 없다. 이미 바뀌었으면 아무것도 쓰지 않는다.
@@ -530,7 +530,7 @@ def _finish_now(session) -> None:
 
 
 async def advance(db: AsyncSession, session: SimulationSession, mode) -> dict:
-    """agree(전원 동의일 때만) / skip(항상). 마지막 국면이면 종료."""
+    """agree(전원 동의일 때만) / skip(항상). 마지막 장면이면 종료."""
     if session.status == "finished":
         raise SimulationError("SESSION_FINISHED")
     await _lock_running(db, session, session.current_phase_idx)
@@ -544,7 +544,7 @@ async def advance(db: AsyncSession, session: SimulationSession, mode) -> dict:
             _system(
                 session,
                 seq,
-                f"{phase.name}: 전원 동의로 다음 국면",
+                f"{phase.name}: 전원 동의로 다음 장면",
                 {"type": "agree_advance"},
             )
         ]
@@ -562,7 +562,7 @@ async def advance(db: AsyncSession, session: SimulationSession, mode) -> dict:
             _system(
                 session,
                 seq + 1,
-                "수업 종료 (마지막 국면)",
+                "수업 종료 (마지막 장면)",
                 {"type": "end", "reason": "last_phase"},
             )
         )
@@ -593,7 +593,7 @@ async def finish(db: AsyncSession, session: SimulationSession) -> dict:
 async def regenerate(
     db: AsyncSession, session: SimulationSession, persona_id: int
 ) -> dict:
-    """현재 국면에서 파싱 실패한 마지막 반응을 같은 맥락으로 다시 만든다.
+    """현재 장면에서 파싱 실패한 마지막 반응을 같은 맥락으로 다시 만든다.
 
     그 행을 그대로 고친다(seq 유지, 교사 발화 없음, 발화 수 미포함).
     """

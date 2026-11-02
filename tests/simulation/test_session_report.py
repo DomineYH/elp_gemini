@@ -118,7 +118,7 @@ def _render(
     ]
     if utterances is None:
         utterances = [
-            _u(1, "system", "도입 국면 시작", ok=False),
+            _u(1, "system", "도입 장면 시작", ok=False),
             _u(2, "teacher", "질문해 보세요."),
             _u(3, "student", "저요!", persona=11),
             _u(4, "teacher", "너는?", phase=1, target=12),
@@ -145,7 +145,7 @@ def test_header_personas_and_transcript_grouped_by_phase():
         assert text in md, text
     lines = md.splitlines()
     intro, develop = lines.index("### 도입"), lines.index("### 전개")
-    assert intro < lines.index("- **시스템**: 도입 국면 시작") < develop
+    assert intro < lines.index("- **시스템**: 도입 장면 시작") < develop
     assert intro < lines.index("- **교사**: 질문해 보세요.") < develop
     assert lines.index("- **민준**: 저요!") < develop
     assert develop < lines.index("- **서연**: 모르겠어요")

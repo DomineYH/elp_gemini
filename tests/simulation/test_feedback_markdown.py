@@ -69,7 +69,7 @@ def test_title_then_disclaimer_first_then_sections():
         "변경 방향",
     ):
         assert heading in md
-    assert "활동1" in md  # 발화 추천의 국면 이름
+    assert "활동1" in md  # 발화 추천의 장면 이름
     assert "질문해 보세요." in md and "발언 기회 분산" in md
     assert "반례 자료를 함께 제시한다." in md
 

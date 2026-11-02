@@ -17,7 +17,7 @@ def _create(client, n_phases=2):
             {"ref": c["ref"], "pseudonym": c["pseudonym"]} for c in cands
         ],
         "phases": [
-            {"name": f"국면{i}", "teacher_prompt": f"발문 {i}"}
+            {"name": f"장면{i}", "teacher_prompt": f"발문 {i}"}
             for i in range(n_phases)
         ],
     }
@@ -115,7 +115,7 @@ def test_turn_limit_blocks_say_but_not_transitions(
     assert _code(r) == "TURN_LIMIT"
     assert fake_gemini.count() == calls
 
-    # 지도안 발문(plan)은 세지 않는다: 다음 국면 진입 후에도 3
+    # 지도안 발문(plan)은 세지 않는다: 다음 장면 진입 후에도 3
     skip = {"mode": "skip"}
     assert ready.post(_api(sid, "/advance"), json=skip).status_code == 200
     ready.post(_api(sid, "/phases/1/enter"))
@@ -291,7 +291,7 @@ def test_regenerate_after_concurrent_finish_keeps_failed_row(
     assert ready.get(_api(sid)).json()["utterances"] == before
 
 
-# 다른 탭이 같은 국면 진입을 먼저 끝냈다 (호출마다 실행되므로 OR IGNORE)
+# 다른 탭이 같은 장면 진입을 먼저 끝냈다 (호출마다 실행되므로 OR IGNORE)
 OTHER_TAB_ENTER = (
     "INSERT OR IGNORE INTO simulation_utterances (session_id, phase_idx,"
     " seq, speaker_type, content, structured) VALUES"
@@ -405,7 +405,7 @@ def test_regenerate_foreign_persona_is_422(ready, fake_gemini):
 
 
 def test_say_accepts_a_full_length_plan_prompt(ready):
-    # 지도안 발문(국면 teacher_prompt)은 그대로 보낼 수 있어야 한다
+    # 지도안 발문(장면 teacher_prompt)은 그대로 보낼 수 있어야 한다
     cands = ready.get(
         "/api/simulation/candidates", params={"n": 4, "seed": 7}
     ).json()["candidates"]
@@ -464,7 +464,7 @@ def test_create_session_rejects_whitespace_teacher_prompt(ready):
 
 
 def test_get_session_with_legacy_whitespace_phase_is_200(ready, tmp_path):
-    # 입력 strip 이전에 저장된 공백 국면도 응답 모델이 그대로 읽어야 한다.
+    # 입력 strip 이전에 저장된 공백 장면도 응답 모델이 그대로 읽어야 한다.
     state, _ = _create(ready)
     sid = state["session"]["id"]
     conn = sqlite3.connect(tmp_path / "sim.db")

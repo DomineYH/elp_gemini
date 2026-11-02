@@ -40,7 +40,7 @@ TRANSITIONS = {
 
 
 async def build_inputs(db: AsyncSession, session: SimulationSession) -> str:
-    """지도안 전문 + 국면 + 페르소나 요약 + 전이 이력 + 대화록(seq 순)."""
+    """지도안 전문 + 장면 + 페르소나 요약 + 전이 이력 + 대화록(seq 순)."""
     sid = session.id
     upload = await db.get(LessonPlanUpload, session.upload_id)
     phases = await session_service._phases(db, sid)
@@ -50,7 +50,7 @@ async def build_inputs(db: AsyncSession, session: SimulationSession) -> str:
     phase_name = {p.idx: p.name for p in phases}
 
     lines = ["[지도안 전문]", lessonplan_source.extract_text(upload), ""]
-    lines.append("[국면]")
+    lines.append("[장면]")
     for p in phases:
         minutes = f" ({p.minutes}분)" if p.minutes else ""
         lines.append(f"{p.idx + 1}. {p.name}{minutes}")
@@ -74,7 +74,7 @@ async def build_inputs(db: AsyncSession, session: SimulationSession) -> str:
             f"/ 지원 요구: {profile.get('support_needs', '')}"
         )
 
-    lines += ["", "[국면 전이 이력]"]
+    lines += ["", "[장면 전이 이력]"]
     for u in utterances:
         kind = (u.structured or {}).get("type")
         if u.speaker_type == "system" and kind in TRANSITIONS:
@@ -145,7 +145,7 @@ def render_markdown(
         return strip_emojis(str(text)).strip()
 
     def phase_label(idx: int) -> str:
-        return names[idx] if 0 <= idx < len(names) else f"국면 {idx + 1}"
+        return names[idx] if 0 <= idx < len(names) else f"장면 {idx + 1}"
 
     out = [
         TITLE,

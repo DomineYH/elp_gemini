@@ -174,7 +174,7 @@ function renderFeedback(envelope, phaseNames) {
     const suggestions = section('① 교사 발화 추천');
     for (const s of fb.utterance_suggestions) {
         const ul = el('ul', 'list-disc ml-5 mb-2');
-        ul.appendChild(el('li', null, `[${phaseNames[s.phase_idx] ?? `국면 ${s.phase_idx + 1}`}] 실제: ${s.actual}`));
+        ul.appendChild(el('li', null, `[${phaseNames[s.phase_idx] ?? `장면 ${s.phase_idx + 1}`}] 실제: ${s.actual}`));
         ul.appendChild(el('li', null, `추천: ${s.suggested}`));
         ul.appendChild(el('li', null, `의도: ${s.intent}`));
         suggestions.appendChild(ul);

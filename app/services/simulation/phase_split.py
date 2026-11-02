@@ -1,5 +1,5 @@
 """
-국면 초안: 직전 세션 승계 → 지도안 자동 분해 → 실패 시 빈 3행(도입/활동1/정리)
+장면 초안: 직전 세션 승계 → 지도안 자동 분해 → 실패 시 빈 3행(도입/활동1/정리)
 """
 
 from sqlalchemy import select
@@ -14,8 +14,8 @@ from app.services.simulation.llm_schemas import PhaseSplitResult
 
 FALLBACK_NAMES = ("도입", "활동1", "정리")
 FALLBACK_NOTICE = (
-    "지도안에서 국면을 찾지 못했습니다. "
-    "국면 이름과 교사 발문을 직접 입력해 주세요."
+    "지도안에서 장면을 찾지 못했습니다. "
+    "장면 이름과 교사 발문을 직접 입력해 주세요."
 )
 MAX_PHASES = 8
 # PhaseIn 길이 제한. 모델 출력이 넘으면 잘라서 세션 생성 422를 막는다.

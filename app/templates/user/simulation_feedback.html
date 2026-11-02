@@ -151,7 +151,7 @@
         const f1 = $("f1");
         f1.replaceChildren();
         for (const s of fb.utterance_suggestions) {
-            const phase = (phases[s.phase_idx] || {}).name || "국면 " + (s.phase_idx + 1);
+            const phase = (phases[s.phase_idx] || {}).name || "장면 " + (s.phase_idx + 1);
             const actual = el("div", "rounded-lg bg-gray-50 p-3");
             actual.append(el("p", "eyebrow", phase + " · 실제 발화"), el("p", "mt-1", s.actual));
             const suggested = el("div", "rounded-lg p-3");
