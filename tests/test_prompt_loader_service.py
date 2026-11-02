@@ -364,6 +364,21 @@ def test_sim_student_unknown_concept_can_be_learned_only_with_teacher():
     assert old not in prompt
 
 
+def test_sim_student_understanding_is_cumulative_in_scene():
+    """이해도는 장면 안에서 누적되고 곁가지 반응으로 낮추지도 올리지도 않는다 (#301)."""
+    prompt = PromptLoaderService().get_prompt("sim_student")
+
+    [line] = [
+        ln for ln in prompt.splitlines() if ln.startswith("- understanding:")
+    ]
+    assert "누적" in line
+    assert "낮추지도" in line
+    assert "올리지도" in line
+    assert "과업과 관련이 없는 틀린 생각이어도" in line
+    assert "이 학생이 보인 변화만 근거로 삼습니다" not in prompt
+    assert "서로 맞아야 합니다" not in prompt
+
+
 def test_sim_phase_split_splits_stage_into_sub_activity_scenes():
     """장면 단위는 세부 활동이고 '전개' 단독 장면을 만들지 않는다 (#295)."""
     prompt = PromptLoaderService().get_prompt("sim_phase_split")

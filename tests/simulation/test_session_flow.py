@@ -164,7 +164,7 @@ def test_support_level_agrees_on_understanding_alone(ready):
     assert r.status_code == 200
 
 
-def test_understanding_drop_unagrees_and_rise_reagrees(ready, fake_gemini):
+def test_understanding_drop_after_agree_keeps_agree(ready, fake_gemini):
     state = _create(ready)
     sid = state["session"]["id"]
     turn = ready.post(_api(sid, "/phases/0/enter")).json()
@@ -174,15 +174,8 @@ def test_understanding_drop_unagrees_and_rise_reagrees(ready, fake_gemini):
     one_id = str(state["personas"][0]["id"])
     fake_gemini.results["student"] = lambda key: _reaction(key != one)
     turn = ready.post(_api(sid, "/say"), json={"content": "다시 볼까"}).json()
-    assert turn["agreement"]["count"] == 3
-    assert turn["agreement"]["understanding"][one_id] == 40
-    r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
-    assert r.status_code == 409 and _code(r) == "NOT_ALL_AGREED"
-
-    fake_gemini.results["student"] = lambda key: _reaction(True)
-    turn = ready.post(_api(sid, "/say"), json={"content": "정리해 보자"}).json()
     assert turn["agreement"]["count"] == 4
-    assert turn["agreement"]["understanding"][one_id] == 90
+    assert turn["agreement"]["understanding"][one_id] == 40
     r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
     assert r.status_code == 200
     rows = ready.get(_api(sid)).json()["utterances"]
