@@ -80,3 +80,6 @@ app/static/uploads/test01_*.pdf
 prompt/prompt.md.bak-*
 # Tailwind standalone CLI cache (scripts/build_tailwind.sh)
 .cache/
+
+# 외부 지도안 예시 자료(저작권·작성자 실명 포함, 공개 저장소에 올리지 않음)
+example/*.pdf

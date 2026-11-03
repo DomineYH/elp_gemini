@@ -104,7 +104,7 @@
     },
     "tester": {
       "harness": "opencode",
-      "model": "opencode/deepseek-v4.1-flash-free",
+      "model": "zai-coding-plan/glm-5.3-flash",
       "effort": "max",
       "responsibility": "Under a coordinator test order, execute the uncovered specialized integration/E2E, performance, migration/recovery or post-deployment checks. Report the target revision, environment, commands, actual results and evidence; distinguish unrun/skipped checks from passes. Reuse valid implementer/CI evidence and send failures to the coordinator, not repair instructions to implementer.",
       "when": "Only for a coordinator-issued genuine special-test gap, or a distinct post-deployment gap when deployment_requested is true and deploy is authorized. A post-deployment item waits for actual deployment of the target change. Existing CI, high risk, or deploy permission alone does not trigger this role.",
