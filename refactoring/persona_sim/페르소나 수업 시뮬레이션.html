@@ -1,0 +1,636 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>페르소나 수업 시뮬레이션</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<style>
+/* Layout: classroom board — teacher at the front (center), students in seats; each persona owns a hue. Single-theme (light) to match elp_gemini. */
+:root{
+  color-scheme: light;
+  --bg:#f3f4f6; --surface:#ffffff; --ink:#111827; --muted:#6b7280; --line:#e5e7eb;
+  --teacher:#1d4ed8; --teacher-soft:#dbeafe;
+  --p1:#be123c; --p1s:#ffe4e6;   /* 높은 도달 · 외향 */
+  --p2:#0f766e; --p2s:#ccfbf1;   /* 안정적 도달 · 서면 선호 */
+  --p3:#b45309; --p3s:#fef3c7;   /* 부분 도달 · 시각 선호 */
+  --p4:#6d28d9; --p4s:#ede9fe;   /* 추가 지원 · 주의 분산 */
+  --ok:#16a34a; --warn:#d97706;
+  --font-body:"Noto Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);margin:0;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0}
+h1,h2,h3{text-wrap:balance}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.screen{display:none}.screen.active{display:block}
+.tab{cursor:pointer}
+/* Student bubble by persona */
+.bubble{position:relative;border-radius:14px;padding:.6rem .85rem;font-size:.9rem;line-height:1.5;max-width:100%;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.bubble.p1{background:var(--p1s);border-left:4px solid var(--p1)}
+.bubble.p2{background:var(--p2s);border-left:4px solid var(--p2)}
+.bubble.p3{background:var(--p3s);border-left:4px solid var(--p3)}
+.bubble.p4{background:var(--p4s);border-left:4px solid var(--p4)}
+.bubble.teacher{background:var(--teacher);color:#fff;border-radius:16px;padding:.75rem 1.1rem;font-size:.95rem}
+.name.p1{color:var(--p1)}.name.p2{color:var(--p2)}.name.p3{color:var(--p3)}.name.p4{color:var(--p4)}
+.dot.p1{background:var(--p1)}.dot.p2{background:var(--p2)}.dot.p3{background:var(--p3)}.dot.p4{background:var(--p4)}
+.seat{min-width:0}
+.seat .bubble{opacity:0;transform:translateY(6px);transition:opacity .25s,transform .25s}
+.seat .bubble.in{opacity:1;transform:none}
+.typing span{display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.4;animation:blink 1.2s infinite}
+.typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.3}40%{opacity:1}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.phase-pill{font-size:.75rem;padding:.25rem .6rem;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--muted);white-space:nowrap}
+.phase-pill.done{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+.phase-pill.now{background:var(--teacher);color:#fff;border-color:var(--teacher)}
+.fab{box-shadow:0 10px 25px -5px rgba(0,0,0,.2),0 8px 10px -6px rgba(0,0,0,.1)}
+.fab.sim{animation:pulse 2.2s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(109,40,217,.45)}50%{box-shadow:0 0 0 12px rgba(109,40,217,0)}}
+.agree{font-size:.72rem;padding:.15rem .5rem;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:#fff}
+.agree.yes{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--teacher);outline-offset:2px}
+.note{font-size:.78rem;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.timeline li{position:relative;padding-left:1.25rem}
+.timeline li::before{content:"";position:absolute;left:0;top:.55rem;width:8px;height:8px;border-radius:50%;background:var(--line)}
+.timeline li.p1::before{background:var(--p1)}.timeline li.p2::before{background:var(--p2)}.timeline li.p3::before{background:var(--p3)}.timeline li.p4::before{background:var(--p4)}.timeline li.teacher::before{background:var(--teacher)}
+</style>
+
+<!-- ───────── Top bar: mimics elp_gemini base.html nav ───────── -->
+<nav class="bg-white shadow-sm -mx-4 px-4">
+  <div class="container mx-auto py-3 flex justify-between items-center gap-4">
+    <a class="text-lg font-bold text-blue-600 truncate">AI기반 수업설계 피드백 시스템</a>
+    <div class="flex items-center gap-3 text-sm text-gray-600">
+      <span class="hidden sm:inline">예비교사 · 김수진</span>
+      <span class="phase-pill">UI/UX 시안 v0.1</span>
+    </div>
+  </div>
+</nav>
+
+<!-- Screen switcher (prototype only) -->
+<div class="container mx-auto mt-3 mb-2">
+  <div class="flex flex-wrap gap-2 text-xs">
+    <span class="eyebrow self-center mr-1">화면 흐름</span>
+    <button class="tab phase-pill now" data-go="s0">0 · 대시보드(FAB)</button>
+    <button class="tab phase-pill" data-go="s1">1 · 페르소나 설정</button>
+    <button class="tab phase-pill" data-go="s2">2 · 수업 시뮬레이션</button>
+    <button class="tab phase-pill" data-go="s3">3 · 전체 대화록</button>
+    <button class="tab phase-pill" data-go="s4">4 · AI 지도안 피드백</button>
+    <button class="tab phase-pill" data-go="s5">A · 관리자 · 피드백 설정</button>
+  </div>
+</div>
+
+<main class="container mx-auto pb-28">
+
+<!-- ═══════════ S0: dashboard after upload, with FAB ═══════════ -->
+<section id="s0" class="screen active">
+  <div class="card p-5 mb-4">
+    <div class="flex flex-wrap justify-between gap-3 items-start">
+      <div>
+        <p class="eyebrow">업로드된 지도안</p>
+        <h1 class="text-xl font-bold mt-1">6학년 사회 — 여행하고 싶은 나라의 위치와 생활 모습 추측하기.pdf</h1>
+        <p class="note mt-1">1.8 MB · 상태 <span class="text-green-700 font-medium">ready</span> · 국면 5개 감지(도입 / 활동1 / 활동2 / 활동3 / 정리)</p>
+      </div>
+      <span class="phase-pill done">지도안 구조 추출 완료</span>
+    </div>
+  </div>
+  <div class="card h-[52vh] grid place-items-center text-gray-400 text-sm">
+    PDF 미리보기 영역 (기존 dashboard.html의 &lt;embed&gt; 그대로)
+  </div>
+  <p class="note mt-3">↓ 하단 중앙 FAB에 <b>수업 시뮬레이션</b> 버튼이 세 번째로 추가됩니다. (issue #101 가로 배치 유지)</p>
+
+  <!-- FAB row -->
+  <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex flex-row gap-3" style="bottom:calc(24px + env(safe-area-inset-bottom,0px))">
+    <button class="fab bg-blue-600 text-white px-4 py-3 rounded-lg flex items-center gap-2 text-sm font-semibold">
+      <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+      QnA 챗봇
+    </button>
+    <button class="fab bg-indigo-600 text-white px-4 py-3 rounded-lg flex items-center gap-2 text-sm font-semibold">
+      <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+      분석 시작
+    </button>
+    <button class="fab sim text-white px-4 py-3 rounded-lg flex items-center gap-2 text-sm font-semibold" style="background:var(--p4)" data-go="s1" title="가상 학생과 수업 실행해 보기">
+      <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      수업 시뮬레이션
+    </button>
+  </div>
+</section>
+
+<!-- ═══════════ S1: persona setup ═══════════ -->
+<section id="s1" class="screen">
+  <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+    <div>
+      <p class="eyebrow">1 / 4 · 가상 학생 구성</p>
+      <h1 class="text-2xl font-bold mt-1">누구와 수업해 볼까요?</h1>
+      <p class="note mt-1">HACHIMI-1M 공개 표본(10,000건)에서 학생 페르소나를 고릅니다. 이름은 한국식 가명으로 무작위 부여됩니다.</p>
+    </div>
+    <span class="phase-pill">지도안: 6학년 사회 · 40분 · 국면 5</span>
+  </div>
+
+  <div class="grid gap-4 lg:grid-cols-[320px_1fr]">
+    <!-- left: mode -->
+    <div class="card p-5 space-y-5">
+      <div>
+        <p class="eyebrow mb-2">선택 방식</p>
+        <div class="space-y-2 text-sm">
+          <label class="flex items-start gap-2 p-2 rounded-lg border border-blue-200 bg-blue-50 cursor-pointer">
+            <input type="radio" name="mode" id="modeRandom" checked class="mt-1">
+            <span><b>무작위</b><br><span class="note">학년·학업 수준 분포를 맞춰 자동 추출</span></span>
+          </label>
+          <label class="flex items-start gap-2 p-2 rounded-lg border border-gray-200 cursor-pointer">
+            <input type="radio" name="mode" id="modePick" class="mt-1">
+            <span><b>직접 선택</b><br><span class="note">오른쪽 표에서 체크</span></span>
+          </label>
+          <label class="flex items-start gap-2 p-2 rounded-lg border border-gray-200 cursor-pointer">
+            <input type="radio" name="mode" id="modeCustom" class="mt-1">
+            <span><b>직접 만들기</b><br><span class="note">HACHIMI-1M 형식으로 내 학생 작성</span></span>
+          </label>
+        </div>
+        <button id="openCustom" class="mt-2 w-full text-sm px-3 py-2 rounded-lg border border-dashed border-gray-300 text-gray-700 hover:bg-gray-50">+ 새 페르소나 만들기</button>
+      </div>
+      <div>
+        <label class="eyebrow" for="count">학생 수</label>
+        <div class="flex items-center gap-3 mt-2">
+          <input id="count" type="range" min="2" max="6" value="4" class="flex-1">
+          <span id="countVal" class="mono text-lg font-medium w-6 text-right">4</span>
+        </div>
+        <p class="note mt-1">권장 3~5명. 많을수록 응답 생성 시간과 비용이 늘어납니다.</p>
+      </div>
+      <div>
+        <p class="eyebrow mb-2">필터</p>
+        <div class="grid grid-cols-2 gap-2 text-sm">
+          <select id="fGrade" class="border rounded-lg px-2 py-1.5 bg-white"><option>Grade 6 (초6)</option><option>Grade 5</option><option>전체</option></select>
+          <select id="fLevel" class="border rounded-lg px-2 py-1.5 bg-white"><option>학업 수준: 골고루</option><option>High</option><option>Medium</option><option>Low</option><option>Poor</option></select>
+        </div>
+      </div>
+      <div class="border-t pt-4">
+        <p class="eyebrow mb-1">한국 맥락 번안</p>
+        <p class="note">석차 기반 수준 → <b>높은/안정적/부분 도달·추가 지원</b>으로 재명명, 교과명 매핑, 가치관·심리 필드는 관찰 가능한 행동으로 서술 (논문 §3.2, §4.4).</p>
+      </div>
+    </div>
+
+    <!-- right: candidate table + chosen -->
+    <div class="space-y-4 min-w-0">
+      <div class="card overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b">
+          <p class="font-medium text-sm">후보 페르소나 <span class="note">(sample_data/merged_students_10k_EN.jsonl)</span></p>
+          <button class="text-xs text-blue-600 hover:underline" id="reroll">다시 추출</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-left text-xs text-gray-500">
+              <tr><th class="px-3 py-2"></th><th class="px-3 py-2">id</th><th class="px-3 py-2">가명</th><th class="px-3 py-2">학업(번안)</th><th class="px-3 py-2">강점/약점</th><th class="px-3 py-2">행동 특성(요약)</th></tr>
+            </thead>
+            <tbody id="candRows" class="divide-y"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap gap-2" id="chosenChips"></div>
+        <button data-go="s2" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-semibold text-sm">시뮬레이션 시작 →</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ S2: classroom simulation ═══════════ -->
+<section id="s2" class="screen">
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+    <div class="min-w-0">
+      <p class="eyebrow">2 / 4 · 수업 시뮬레이션</p>
+      <h1 class="text-xl font-bold truncate">6학년 사회 — 여행하고 싶은 나라의 위치와 생활 모습</h1>
+    </div>
+    <div class="flex items-center gap-2 text-xs">
+      <span class="mono note" id="clock">00:00</span>
+      <button class="phase-pill" data-go="s3">대화록</button>
+      <button class="phase-pill" id="endBtn">수업 종료</button>
+    </div>
+  </div>
+
+  <!-- phase stepper -->
+  <div class="flex items-center gap-2 overflow-x-auto pb-2 mb-3" id="stepper">
+    <span class="phase-pill done" data-ph="0">도입 · 나라 떠올리기</span>
+    <span class="phase-pill now" data-ph="1">활동1 · 스무고개로 위치 찾기</span>
+    <span class="phase-pill" data-ph="2">활동2 · Padlet 댓글로 환경 추측</span>
+    <span class="phase-pill" data-ph="3">활동3 · 생활 모습 이어 쓰기</span>
+    <span class="phase-pill" data-ph="4">정리</span>
+  </div>
+
+  <!-- current task card -->
+  <div class="card p-4 mb-3 border-blue-200 bg-blue-50/40">
+    <div class="flex flex-wrap gap-3 justify-between">
+      <div class="min-w-0">
+        <p class="eyebrow">지도안의 현재 국면 · 활동 1 (10분)</p>
+        <p class="text-sm mt-1"><b>교사 발문</b> "모둠 친구가 고른 나라를 질문으로 알아맞혀 봅시다. 위치를 묻는 질문만 할 수 있어요." · <b>자료</b> Google Earth, 질문 카드</p>
+      </div>
+      <p class="note self-end">지도안 유의점: 질문은 위치(대륙·반구·적도 기준)로 제한</p>
+    </div>
+  </div>
+
+  <!-- classroom board -->
+  <div class="card p-4 md:p-6">
+    <!-- teacher row (center) -->
+    <div class="flex flex-col items-center gap-2 mb-5" id="teacherRow">
+      <div class="flex items-center gap-2 text-xs text-gray-500"><span class="w-2.5 h-2.5 rounded-full" style="background:var(--teacher)"></span>교사 (나)</div>
+      <div class="bubble teacher max-w-2xl text-center" id="teacherLast">자, 모둠 친구가 고른 나라를 스무고개로 맞혀 봅시다. 위치를 묻는 질문만 할 수 있어요.</div>
+    </div>
+
+    <!-- seats -->
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" id="seats"></div>
+
+    <!-- advance strip -->
+    <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+      <div class="text-sm">
+        <span class="note">다음 단계 동의</span>
+        <span id="agreeCount" class="mono font-medium ml-1">0 / 4</span>
+        <span class="note ml-2">· 학생이 과업을 끝냈다고 판단하면 자동으로 표시됩니다</span>
+      </div>
+      <div class="flex gap-2">
+        <button id="skipBtn" class="px-4 py-2 rounded-lg border text-sm text-gray-700 hover:bg-gray-50" title="학생 동의 없이 다음 국면으로">Skip ▸</button>
+        <button id="nextBtn" class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gray-400 cursor-not-allowed" disabled>다음 국면으로 →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- teacher input (sticky bottom, centered) -->
+  <div class="fixed left-0 right-0 z-40" style="bottom:0;padding:0 max(16px,env(safe-area-inset-left,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-right,0px))">
+    <form id="tForm" class="container mx-auto max-w-3xl bg-white border rounded-2xl shadow-lg p-2 flex items-end gap-2">
+      <span class="text-xs px-2 py-2 rounded-lg bg-gray-100 text-gray-600 shrink-0 whitespace-nowrap" title="학생 개인에게는 좌석을 클릭해 말하기">전체에게</span>
+      <textarea id="tInput" rows="1" placeholder="전체 학생에게 말하기 (Enter 전송, Shift+Enter 줄바꿈) · 개인에게는 학생 카드를 클릭" class="flex-1 min-w-0 resize-none px-3 py-2 text-sm focus:outline-none"></textarea>
+      <button type="button" id="hintBtn" class="text-xs px-3 py-2 rounded-lg border text-gray-600 hover:bg-gray-50 shrink-0" title="지도안 발문 불러오기">지도안 발문</button>
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shrink-0">말하기</button>
+    </form>
+  </div>
+</section>
+
+<!-- Custom persona editor (HACHIMI-1M schema) -->
+<div id="customModal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" style="padding:max(16px,env(safe-area-inset-left,0px))">
+  <form id="customForm" class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col overflow-hidden" role="dialog">
+    <div class="flex items-center justify-between px-5 py-3 border-b">
+      <div><p class="font-semibold">새 페르소나 만들기</p><p class="note">필드명은 HACHIMI-1M <span class="mono">merged_students_10k_EN.jsonl</span> 스키마와 동일. 저장하면 내 라이브러리에 남고 후보 표에 추가됩니다.</p></div>
+      <button type="button" id="customClose" class="text-gray-500 hover:text-gray-800 p-1" aria-label="닫기"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-5 grid gap-3 sm:grid-cols-2 text-sm">
+      <label class="block"><span class="eyebrow">age</span><input id="cf_age" type="number" value="12" class="mt-1 w-full border rounded-lg px-2 py-1.5"></label>
+      <label class="block"><span class="eyebrow">gender</span><select id="cf_gender" class="mt-1 w-full border rounded-lg px-2 py-1.5 bg-white"><option>Female</option><option>Male</option></select></label>
+      <label class="block"><span class="eyebrow">grade</span><select id="cf_grade" class="mt-1 w-full border rounded-lg px-2 py-1.5 bg-white"><option>Grade 6</option><option>Grade 5</option><option>Grade 4</option><option>Grade 3</option></select></label>
+      <label class="block"><span class="eyebrow">academic_level</span><select id="cf_level" class="mt-1 w-full border rounded-lg px-2 py-1.5 bg-white"><option value="High">High → 높은 도달</option><option value="Medium" selected>Medium → 안정적 도달</option><option value="Low">Low → 부분 도달</option><option value="Poor">Poor → 추가 지원 필요</option></select></label>
+      <div class="sm:col-span-2 rounded-lg bg-gray-50 p-3 grid gap-2 sm:grid-cols-3">
+        <p class="eyebrow sm:col-span-3">developmental_stage <span class="note normal-case tracking-normal">(학년에 맞춰 자동 제안, 수정 가능)</span></p>
+        <label class="block"><span class="note">piaget_cognitive_stage</span><select id="cf_piaget" class="mt-1 w-full border rounded-lg px-2 py-1.5 bg-white"><option>Concrete Operational Stage</option><option>Formal Operational Stage</option></select></label>
+        <label class="block"><span class="note">erikson_psychosocial_stage</span><select id="cf_erikson" class="mt-1 w-full border rounded-lg px-2 py-1.5 bg-white"><option>Industry vs. Inferiority</option><option>Identity vs. Role Confusion</option></select></label>
+        <label class="block"><span class="note">kohlberg_moral_stage</span><select id="cf_kohlberg" class="mt-1 w-full border rounded-lg px-2 py-1.5 bg-white"><option>Conventional Level</option><option>Pre-conventional Level</option></select></label>
+      </div>
+      <label class="block"><span class="eyebrow">strengths</span><input id="cf_str" placeholder="사회, 체육 (쉼표 구분)" class="mt-1 w-full border rounded-lg px-2 py-1.5"></label>
+      <label class="block"><span class="eyebrow">weaknesses</span><input id="cf_wk" placeholder="수학" class="mt-1 w-full border rounded-lg px-2 py-1.5"></label>
+      <label class="block sm:col-span-2"><span class="eyebrow">personality</span><textarea id="cf_pers" rows="2" placeholder="예: 발표를 좋아하고 먼저 손을 들지만, 빠르게 끝낸 뒤에는 기다리지 못하고 옆 친구에게 말을 건다." class="mt-1 w-full border rounded-lg px-2 py-1.5"></textarea></label>
+      <label class="block sm:col-span-2"><span class="eyebrow">values</span><textarea id="cf_val" rows="2" placeholder="관찰 가능한 행동으로 서술 (예: 모둠 규칙을 지키려 하고 친구가 틀려도 비웃지 않는다)" class="mt-1 w-full border rounded-lg px-2 py-1.5"></textarea></label>
+      <label class="block sm:col-span-2"><span class="eyebrow">social_relationships</span><textarea id="cf_soc" rows="2" class="mt-1 w-full border rounded-lg px-2 py-1.5"></textarea></label>
+      <label class="block"><span class="eyebrow">creativity</span><textarea id="cf_cre" rows="2" class="mt-1 w-full border rounded-lg px-2 py-1.5"></textarea></label>
+      <label class="block"><span class="eyebrow">mental_health</span><textarea id="cf_mh" rows="2" placeholder="임상 용어·진단명 없이, 수업 중 보이는 행동으로" class="mt-1 w-full border rounded-lg px-2 py-1.5"></textarea></label>
+      <details class="sm:col-span-2 rounded-lg border p-3"><summary class="text-sm cursor-pointer">JSON 미리보기 / 붙여넣기 가져오기</summary><textarea id="cf_json" rows="6" class="mt-2 w-full border rounded-lg px-2 py-1.5 mono text-xs" placeholder='{"age":12,"gender":"Female","grade":"Grade 6", ...}'></textarea><div class="flex gap-2 mt-2"><button type="button" id="cf_import" class="text-xs px-3 py-1.5 rounded-lg border">JSON → 폼</button><button type="button" id="cf_export" class="text-xs px-3 py-1.5 rounded-lg border">폼 → JSON</button></div></details>
+    </div>
+    <div class="p-4 border-t flex flex-wrap justify-between gap-2 bg-white">
+      <p class="note self-center">저장 시 한국 맥락 번안(학업 범주 재명명·행동 기술)이 자동 적용됩니다.</p>
+      <div class="flex gap-2"><button type="button" id="customCancel" class="px-4 py-2 rounded-lg border text-sm">취소</button><button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold">저장하고 후보에 추가</button></div>
+    </div>
+  </form>
+</div>
+
+<!-- 1:1 student dialog (floating) -->
+<div id="dmModal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" style="padding:max(16px,env(safe-area-inset-left,0px))">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden" role="dialog" aria-labelledby="dmTitle">
+    <div class="flex items-center justify-between gap-3 px-4 py-3 border-b" id="dmHeader">
+      <div class="flex items-center gap-2 min-w-0">
+        <span id="dmDot" class="w-3 h-3 rounded-full shrink-0"></span>
+        <div class="min-w-0">
+          <p id="dmTitle" class="font-semibold text-sm truncate">학생</p>
+          <p id="dmSub" class="note truncate"></p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="phase-pill">1:1 대화 · 교실에도 기록됨</span>
+        <button id="dmClose" class="text-gray-500 hover:text-gray-800 p-1" aria-label="닫기">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="dmFeed" class="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50 min-h-[12rem]"></div>
+    <form id="dmForm" class="p-3 border-t flex items-end gap-2 bg-white">
+      <textarea id="dmInput" rows="1" placeholder="이 학생에게만 말하기 (Enter 전송)" class="flex-1 min-w-0 resize-none px-3 py-2 text-sm border rounded-lg focus:outline-none"></textarea>
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shrink-0">말하기</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════ S3: transcript ═══════════ -->
+<section id="s3" class="screen">
+  <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+    <div>
+      <p class="eyebrow">3 / 4 · 전체 대화록</p>
+      <h1 class="text-2xl font-bold mt-1">시간순 대화 기록</h1>
+      <p class="note mt-1">세션 #0421 · 2026-10-20 23:31 시작 · 국면 5 · 발화 <span id="trCount" class="mono">0</span>건 · 모든 발화는 simulation_messages 테이블에 저장</p>
+    </div>
+    <div class="flex gap-2">
+      <select id="trFilter" class="text-sm border rounded-lg px-2 py-1.5 bg-white"><option value="">전체 국면</option><option value="0">도입</option><option value="1">활동1</option><option value="2">활동2</option><option value="3">활동3</option><option value="4">정리</option></select>
+      <button data-go="s4" class="bg-blue-600 text-white text-sm font-semibold px-4 py-2 rounded-lg">AI 피드백 받기 →</button>
+    </div>
+  </div>
+  <div class="card p-5">
+    <ol class="timeline space-y-3 text-sm" id="transcript"></ol>
+  </div>
+</section>
+
+<!-- ═══════════ S4: AI feedback ═══════════ -->
+<section id="s4" class="screen">
+  <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+    <div>
+      <p class="eyebrow">4 / 4 · AI 지도안 피드백</p>
+      <h1 class="text-2xl font-bold mt-1">시뮬레이션으로 드러난 지도안의 잠재적 취약점</h1>
+      <p class="note mt-1">예측이 아니라 <b>가설</b>입니다. 생성 반응은 프로필을 조건화한 결과이며 실제 학생 행동이 아닙니다 (논문 §5).</p>
+    </div>
+    <span class="phase-pill">gemini-3.1-flash-lite · 응답 8.2s</span>
+  </div>
+
+  <!-- risk summary -->
+  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-5">
+    <div class="card p-4 border-l-4" style="border-left-color:var(--p1)"><p class="eyebrow">R1 참여 편중</p><p class="text-sm mt-1">활동1 질문 8회 중 <b>민준 6회</b>. 다른 학생의 질문이 검증되지 못함.</p><p class="note mt-2">근거: 입력 재현</p></div>
+    <div class="card p-4 border-l-4" style="border-left-color:var(--p3)"><p class="eyebrow">R2 미검증 정보</p><p class="text-sm mt-1"><b>서연</b>의 적도 어림 답변이 모둠 추론에 그대로 쓰임.</p><p class="note mt-2">근거: 상호작용</p></div>
+    <div class="card p-4 border-l-4" style="border-left-color:var(--p4)"><p class="eyebrow">R3 진입 실패</p><p class="text-sm mt-1"><b>도윤</b> 활동2 댓글 미작성 → 활동3 이어 쓰기 진입 불가.</p><p class="note mt-2">근거: 프로필 + 단계 의존</p></div>
+    <div class="card p-4 border-l-4" style="border-left-color:var(--warn)"><p class="eyebrow">R4 도구 이탈</p><p class="text-sm mt-1">Google Earth 3D 탐색·핀 반복 입력.</p><p class="note mt-2">근거: 입력 재현</p></div>
+  </div>
+
+  <!-- 3 tabs -->
+  <div class="card">
+    <div class="flex border-b text-sm overflow-x-auto">
+      <button class="fbtab px-4 py-3 font-medium border-b-2 border-blue-600 text-blue-700" data-fb="f1">① 교사 발화 추천</button>
+      <button class="fbtab px-4 py-3 font-medium border-b-2 border-transparent text-gray-500" data-fb="f2">② 수업 활동 진행 방향</button>
+      <button class="fbtab px-4 py-3 font-medium border-b-2 border-transparent text-gray-500" data-fb="f3">③ 수업 활동 변경 방향</button>
+    </div>
+    <div class="p-5 text-sm space-y-4">
+      <div id="f1" class="fbpanel space-y-3">
+        <div class="grid md:grid-cols-[1fr_1fr] gap-3">
+          <div class="rounded-lg bg-gray-50 p-3"><p class="eyebrow">활동1 · 실제 발화</p><p class="mt-1">"모둠 친구가 고른 나라를 스무고개로 맞혀 봅시다."</p><p class="note mt-2">→ 민준이 연속 질문 6회, 지안 질문은 작은 목소리로 묻혀 미검증</p></div>
+          <div class="rounded-lg p-3" style="background:var(--teacher-soft)"><p class="eyebrow">추천 발화</p><p class="mt-1">"한 사람씩 <b>돌아가며 질문 1개</b>, 질문 카드에 적은 뒤 말해요. 지안이부터 시작할게요."</p><p class="note mt-2">의도: 1인 1질문 구조로 발언 점유 분산, 서면 선호(지안) 참여 경로 확보</p></div>
+        </div>
+        <div class="grid md:grid-cols-[1fr_1fr] gap-3">
+          <div class="rounded-lg bg-gray-50 p-3"><p class="eyebrow">활동1 · 실제 발화</p><p class="mt-1">(서연의 "적도 근처면 더운 거 아니에요?"에 응답 없음)</p></div>
+          <div class="rounded-lg p-3" style="background:var(--teacher-soft)"><p class="eyebrow">추천 발화</p><p class="mt-1">"좋은 가설이야. 그런데 <b>확인된 사실인지 추측인지</b> 표시해 볼까? Google Earth에서 적도선을 켜고 같이 보자."</p><p class="note mt-2">의도: 미검증 단서를 가설로 라벨링, 자료로 검토하는 습관 (R2)</p></div>
+        </div>
+      </div>
+      <div id="f2" class="fbpanel hidden space-y-2">
+        <p>현재 순서(활동1 → 2 → 3)의 <b>단계 의존 구조</b>는 유지하되, 활동2 완료 여부를 활동3 진입 조건으로 두지 않는 <b>대안 경로</b>를 둡니다.</p>
+        <ul class="list-disc ml-5 space-y-1">
+          <li>활동2 종료 시 교사 순회로 "댓글 1개 이상" 확인 → 미작성 학생은 <b>교사 제공 예시 댓글</b>로 활동3 진입</li>
+          <li>Google Earth 탐색은 <b>2분 자유 탐색 → 전환 신호</b>(화면 끄기 구호)로 분리</li>
+          <li>정리 국면에서 위도·경도 어휘 회상을 전체 발표가 아닌 <b>짝 점검</b>으로 변경 (도윤·서연 부분 회상 보완)</li>
+        </ul>
+      </div>
+      <div id="f3" class="fbpanel hidden space-y-2">
+        <p>지도안 수정 아이디어 8건 중 우선순위 상위 4건:</p>
+        <ol class="list-decimal ml-5 space-y-1">
+          <li><b>발문 수정</b> "질문해 보세요" → "1인 1질문, 카드에 적고 말하기"</li>
+          <li><b>비계 추가</b> 활동2 Padlet 댓글 문장 틀 제공 ("이 나라는 ___에 있어서 ___할 것 같다. 왜냐하면 ___")</li>
+          <li><b>자료 보완</b> 위치→기후 단정 방지: 기후 그래프·사진·통계 등 복수 자료와 반례 제시 (환경결정론·지역 편견 유의, 논문 §4.4)</li>
+          <li><b>평가 변경</b> 구두 발표만이 아닌 서면 댓글도 성취 근거로 인정</li>
+        </ol>
+        <p class="note">성취기준 연계: [6사09-02] 외에 활동 2·3은 [6사10-01], [6사10-02]와도 연계됨을 명시</p>
+      </div>
+    </div>
+    <div class="border-t p-4 flex flex-wrap justify-between gap-2 text-sm">
+      <button class="text-gray-600 hover:underline">보고서 Markdown 저장</button>
+      <div class="flex gap-2">
+        <button data-go="s1" class="px-4 py-2 rounded-lg border">다른 학생으로 다시 실행</button>
+        <button data-go="s0" class="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold">지도안으로 돌아가기</button>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ═══════════ S5: admin · feedback prompt settings ═══════════ -->
+<section id="s5" class="screen">
+  <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+    <div>
+      <p class="eyebrow">관리자 · /admin/simulation/settings</p>
+      <h1 class="text-2xl font-bold mt-1">수업 시뮬레이션 피드백 설정</h1>
+      <p class="note mt-1">여기서 지정한 내용이 AI 지도안 피드백 생성 시 시스템 프롬프트에 적용됩니다. 비워 두면 기본값(prompt.md의 <span class="mono">sim_feedback</span>)을 그대로 씁니다.</p>
+    </div>
+    <span class="phase-pill" id="fbMode">현재: 기본값 사용 중</span>
+  </div>
+
+  <div class="grid gap-4 lg:grid-cols-[1fr_300px]">
+    <div class="space-y-4 min-w-0">
+      <div class="card p-5 space-y-4">
+        <label class="flex items-center gap-3 text-sm">
+          <input type="checkbox" id="useCustom" class="h-4 w-4">
+          <span><b>커스텀 피드백 지침 사용</b> <span class="note">· 끄면 아래 내용은 보관만 되고 적용되지 않습니다</span></span>
+        </label>
+        <div id="customArea" class="space-y-4 opacity-50">
+          <div>
+            <p class="eyebrow mb-1">피드백에 반드시 포함할 관점 <span class="note normal-case tracking-normal">(체크한 항목이 프롬프트에 추가됨)</span></p>
+            <div class="grid sm:grid-cols-2 gap-2 text-sm">
+              <label class="flex gap-2 p-2 rounded-lg border"><input type="checkbox" checked disabled class="mt-0.5"><span>① 교사 발화 추천 <span class="note">(고정)</span></span></label>
+              <label class="flex gap-2 p-2 rounded-lg border"><input type="checkbox" checked disabled class="mt-0.5"><span>② 수업 활동 진행 방향 <span class="note">(고정)</span></span></label>
+              <label class="flex gap-2 p-2 rounded-lg border"><input type="checkbox" checked disabled class="mt-0.5"><span>③ 수업 활동 변경 방향 <span class="note">(고정)</span></span></label>
+              <label class="flex gap-2 p-2 rounded-lg border"><input type="checkbox" class="mt-0.5"><span>성취기준·교육과정 연계 점검</span></label>
+              <label class="flex gap-2 p-2 rounded-lg border"><input type="checkbox" class="mt-0.5"><span>보편적 학습설계(UDL) 관점</span></label>
+              <label class="flex gap-2 p-2 rounded-lg border"><input type="checkbox" class="mt-0.5"><span>디지털 도구 사용 유의점</span></label>
+              <label class="flex gap-2 p-2 rounded-lg border"><input type="checkbox" class="mt-0.5"><span>발문 유형 분석(확산/수렴)</span></label>
+              <label class="flex gap-2 p-2 rounded-lg border"><input type="checkbox" class="mt-0.5"><span>형성평가 시점 제안</span></label>
+            </div>
+          </div>
+          <div>
+            <p class="eyebrow mb-1">평가 기준 문서 연결 <span class="note normal-case tracking-normal">(기존 /admin/criteria 활성 문서 중 선택)</span></p>
+            <div class="flex flex-wrap gap-2 text-sm">
+              <label class="phase-pill flex items-center gap-1"><input type="checkbox" checked> 초등정보교육과정.pdf</label>
+              <label class="phase-pill flex items-center gap-1"><input type="checkbox"> 2_curicurum.pdf</label>
+              <label class="phase-pill flex items-center gap-1"><input type="checkbox"> 1_information.pdf</label>
+            </div>
+          </div>
+          <div>
+            <p class="eyebrow mb-1">추가 지침 (자유 서술)</p>
+            <textarea id="customPrompt" rows="7" class="w-full border rounded-lg px-3 py-2 text-sm mono" placeholder="예) 피드백은 예비교사가 공개수업 전 30분 안에 반영할 수 있는 수준으로 구체화할 것. 교사 발화 추천은 국면당 최대 2개. 학생 이름을 그대로 인용하고, 학생의 '성격'을 평가하는 문장은 쓰지 말 것."></textarea>
+            <p class="note mt-1">기본 제약(가설로만 제시, 단정 금지, 낙인 금지)은 커스텀 여부와 관계없이 항상 적용됩니다.</p>
+          </div>
+        </div>
+      </div>
+      <div class="flex flex-wrap justify-between gap-2">
+        <button class="text-sm text-gray-600 hover:underline">기본 프롬프트 보기</button>
+        <div class="flex gap-2">
+          <button class="px-4 py-2 rounded-lg border text-sm">미리보기 (샘플 세션으로 생성)</button>
+          <button id="saveFb" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold">저장 (새 버전)</button>
+        </div>
+      </div>
+    </div>
+    <div class="space-y-4 min-w-0">
+      <div class="card p-4">
+        <p class="eyebrow mb-2">버전 이력</p>
+        <ul class="text-sm space-y-2">
+          <li class="flex justify-between gap-2"><span>v3 · 커스텀</span><span class="note">10-20 23:40 · admin</span></li>
+          <li class="flex justify-between gap-2"><span>v2 · 커스텀</span><span class="note">10-18 · admin</span></li>
+          <li class="flex justify-between gap-2"><span>v1 · 기본값</span><span class="note">시스템</span></li>
+        </ul>
+        <p class="note mt-3">피드백 보고서에는 생성 당시 적용된 버전이 기록됩니다.</p>
+      </div>
+      <div class="card p-4">
+        <p class="eyebrow mb-2">적용 범위</p>
+        <p class="text-sm">전체 사용자 공통. 세션별 재정의는 없음(Phase 5 검토).</p>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<script>
+// ---------- mock data (personas mirror P1–P4 in the paper, names randomized) ----------
+const KOREAN_NAMES = ["민준","서연","지안","도윤","하은","시우","예린","준서"];
+const CANDIDATES = [
+  {id:4821, key:"p1", level:"높은 도달", lvRaw:"High", st:"사회", wk:"미술", trait:"외향, 먼저 발언, 심화 질문 많음, 빠른 완료 후 대기"},
+  {id:1377, key:"p2", level:"안정적 도달", lvRaw:"Medium", st:"국어", wk:"사회", trait:"서면 선호, 발표 부담, 작은 목소리"},
+  {id:9054, key:"p3", level:"부분 도달", lvRaw:"Low", st:"체육", wk:"수학·사회", trait:"시각 자료 선호, 추상 어휘 부담, 어림 답변"},
+  {id:2610, key:"p4", level:"추가 지원 필요", lvRaw:"Poor", st:"정보기기 조작", wk:"국어·사회·수학", trait:"과업 시작 지연, 디지털 자극에 주의 분산"},
+  {id:7733, key:"p2", level:"안정적 도달", lvRaw:"Medium", st:"음악", wk:"과학", trait:"협력적, 모둠 조정 역할"},
+  {id:5102, key:"p3", level:"부분 도달", lvRaw:"Low", st:"미술", wk:"사회", trait:"그림으로 표현, 문장 완성 어려움"},
+];
+let chosen = CANDIDATES.slice(0,4).map((c,i)=>({...c, name:KOREAN_NAMES[i]}));
+let phase = 1;
+let agreed = new Set();
+const log = []; // {t, who, key, text, phase}
+let sec = 0; setInterval(()=>{sec++; const m=String(Math.floor(sec/60)).padStart(2,"0"), s=String(sec%60).padStart(2,"0"); clock.textContent=`${m}:${s}`;},1000);
+
+// scripted student responses per phase, keyed by persona
+const SCRIPT = {
+ 1:{p1:["이 나라 북반구에 있어요? 적도 위에요? 그럼 유럽 쪽이에요? 아시아는 아니죠? 바다랑 붙어 있어요? 대륙이 커요?","(연속 6회 질문 후) 다 맞혔어요! 다음 거 해도 돼요?"],
+    p2:["(작은 목소리로) 적도… 기준으로 위쪽이에요?","(카드에 질문을 적고 조용히 들고 있음)"],
+    p3:["적도 근처면 더운 거 아니에요? 그럼 더운 나라겠다.","(화면의 사막 사진을 가리키며) 낙타 있는 데!"],
+    p4:["이거 어떻게 돌려요? 3D 되네, 우리 집도 찾을 수 있어요?","(핀을 세 번 반복해서 찍는다)"]},
+ 2:{p1:["이집트는 사막이지만 나일강이 있어서 농사도 지었을 거예요. 근데 적도에 가까우면 무조건 더운 건가요?"],
+    p2:["(댓글) 지중해성 기후라 여름은 건조하고 겨울에 비가 올 것 같아요.", "(발표 요청에 시선을 피함)"],
+    p3:["(댓글) 사막 → 낙타. 남쪽이니까 더움.","아… 옷이 얇겠다. 이 나라는 더워서 얇은 옷을 입을 것 같다."],
+    p4:["(댓글) 피라미드 멋있다","(Padlet 배경색을 바꾸는 중)"]},
+ 3:{p1:["앞 댓글에 이어서: 강 근처에 사람들이 모여 살고 시장이 있을 것 같아요."],
+    p2:["(이어 쓰기 완료, 제출 버튼 앞에서 망설임)"],
+    p3:["선생님 뭐 이어 써요? 내 댓글 어디 갔지…"],
+    p4:["(활동2 댓글이 없어 이어 쓰기에 진입하지 못함. 옆자리 화면을 보고 따라 쓰려 함)"]},
+ 4:{p1:["위도랑 경도를 알아야 위치를 정확히 말할 수 있어요."],
+    p2:["(학습지에 정리 문장을 적음)"],
+    p3:["적도… 가까우면… 음, 더운 거?"],
+    p4:["(학습지 절반 작성 후 중단)"]}
+};
+const PLAN_PROMPTS = {1:"모둠 친구가 고른 나라를 스무고개로 맞혀 봅시다. 위치를 묻는 질문만 할 수 있어요.",2:"Padlet에 이 나라의 자연환경을 추측하는 댓글을 하나씩 써 봅시다.",3:"친구 댓글에 이어서 사람들의 생활 모습을 상상해 써 봅시다.",4:"오늘 배운 것을 한 문장으로 정리해 볼까요?"};
+const PHASE_NAMES=["도입","활동1","활동2","활동3","정리"];
+
+// ---------- screen nav ----------
+function go(id){ document.querySelectorAll(".screen").forEach(s=>s.classList.toggle("active",s.id===id));
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("now",t.dataset.go===id));
+  if(id==="s2") renderSeats(); if(id==="s3") renderTranscript(); window.scrollTo(0,0);}
+document.addEventListener("click",e=>{const b=e.target.closest("[data-go]"); if(b) go(b.dataset.go);});
+
+// ---------- S1 ----------
+function renderCands(){ candRows.innerHTML=CANDIDATES.map((c,i)=>`<tr>
+  <td class="px-3 py-2"><input type="checkbox" data-i="${i}" ${chosen.some(x=>x.id===c.id)?"checked":""}></td>
+  <td class="px-3 py-2 mono text-gray-500">${c.id}${c.custom?' <span class="phase-pill" style="font-size:.6rem">내가 만듦</span>':''}</td>
+  <td class="px-3 py-2 font-medium name ${c.key}">${chosen.find(x=>x.id===c.id)?.name||"—"}</td>
+  <td class="px-3 py-2">${c.level} <span class="note">(${c.lvRaw})</span></td>
+  <td class="px-3 py-2"><span class="text-green-700">${c.st}</span> / <span class="text-red-700">${c.wk}</span></td>
+  <td class="px-3 py-2 note">${c.trait}</td></tr>`).join("");
+  chosenChips.innerHTML=chosen.map(c=>`<span class="phase-pill" style="border-color:var(--${c.key});color:var(--${c.key})">● ${c.name} · ${c.level}</span>`).join("");
+}
+candRows.addEventListener("change",e=>{const c=CANDIDATES[e.target.dataset.i]; if(e.target.checked){ if(!chosen.some(x=>x.id===c.id)) chosen.push({...c,name:KOREAN_NAMES[chosen.length%KOREAN_NAMES.length]}); } else chosen=chosen.filter(x=>x.id!==c.id); count.value=chosen.length; countVal.textContent=chosen.length; renderCands();});
+count.addEventListener("input",()=>{countVal.textContent=count.value; chosen=CANDIDATES.slice(0,+count.value).map((c,i)=>({...c,name:KOREAN_NAMES[i]})); renderCands();});
+reroll.addEventListener("click",()=>{const shuffled=[...KOREAN_NAMES].sort(()=>Math.random()-.5); chosen=chosen.map((c,i)=>({...c,name:shuffled[i]})); renderCands();});
+renderCands();
+
+// ---------- custom persona (HACHIMI-1M schema) ----------
+function cfOpen(){ customModal.classList.remove("hidden"); modeCustom.checked=true; }
+function cfClose(){ customModal.classList.add("hidden"); }
+openCustom.addEventListener("click",cfOpen); modeCustom.addEventListener("change",()=>{if(modeCustom.checked)cfOpen();});
+customClose.addEventListener("click",cfClose); customCancel.addEventListener("click",cfClose);
+customModal.addEventListener("click",e=>{if(e.target===customModal)cfClose();});
+const LEVEL_KO={High:["높은 도달","p1"],Medium:["안정적 도달","p2"],Low:["부분 도달","p3"],Poor:["추가 지원 필요","p4"]};
+function cfToJSON(){ return {age:+cf_age.value,gender:cf_gender.value,grade:cf_grade.value,
+  developmental_stage:{piaget_cognitive_stage:cf_piaget.value,erikson_psychosocial_stage:cf_erikson.value,kohlberg_moral_stage:cf_kohlberg.value},
+  strengths:cf_str.value.split(",").map(s=>s.trim()).filter(Boolean),weaknesses:cf_wk.value.split(",").map(s=>s.trim()).filter(Boolean),
+  academic_level:cf_level.value,personality:cf_pers.value,values:cf_val.value,social_relationships:cf_soc.value,creativity:cf_cre.value,mental_health:cf_mh.value}; }
+cf_export.addEventListener("click",()=>{cf_json.value=JSON.stringify(cfToJSON(),null,2);});
+cf_import.addEventListener("click",()=>{try{const j=JSON.parse(cf_json.value); if(j.age)cf_age.value=j.age; if(j.gender)cf_gender.value=j.gender; if(j.grade)cf_grade.value=j.grade;
+  const lv=(j.academic_level||"").split(":")[0].trim(); if(LEVEL_KO[lv])cf_level.value=lv; const d=j.developmental_stage||{}; if(d.piaget_cognitive_stage)cf_piaget.value=d.piaget_cognitive_stage; if(d.erikson_psychosocial_stage)cf_erikson.value=d.erikson_psychosocial_stage; if(d.kohlberg_moral_stage)cf_kohlberg.value=d.kohlberg_moral_stage;
+  cf_str.value=(j.strengths||[]).join(", "); cf_wk.value=(j.weaknesses||[]).join(", "); cf_pers.value=j.personality||""; cf_val.value=j.values||""; cf_soc.value=j.social_relationships||""; cf_cre.value=j.creativity||""; cf_mh.value=j.mental_health||"";}catch(e){cf_json.value="JSON 형식이 올바르지 않습니다.\n"+cf_json.value;}});
+customForm.addEventListener("submit",e=>{e.preventDefault(); const j=cfToJSON(); const [level,key]=LEVEL_KO[j.academic_level];
+  const c={id:"C"+String(CANDIDATES.filter(x=>String(x.id).startsWith("C")).length+1).padStart(3,"0"),key,level,lvRaw:j.academic_level,st:j.strengths.join("·")||"—",wk:j.weaknesses.join("·")||"—",trait:(j.personality||"(행동 특성 미입력)").slice(0,40),custom:true,raw:j};
+  CANDIDATES.unshift(c); chosen.push({...c,name:KOREAN_NAMES[chosen.length%KOREAN_NAMES.length]}); count.value=chosen.length; countVal.textContent=chosen.length; renderCands(); cfClose(); });
+
+// ---------- S5 admin feedback settings ----------
+useCustom.addEventListener("change",()=>{customArea.classList.toggle("opacity-50",!useCustom.checked); customArea.querySelectorAll("input:not([disabled]),textarea").forEach(el=>el.disabled=!useCustom.checked); fbMode.textContent=useCustom.checked?"현재: 커스텀 v3 적용":"현재: 기본값 사용 중";});
+useCustom.dispatchEvent(new Event("change"));
+saveFb.addEventListener("click",()=>{saveFb.textContent="저장됨 ✓"; setTimeout(()=>saveFb.textContent="저장 (새 버전)",1500);});
+
+// ---------- S2 ----------
+function renderSeats(){
+  seats.innerHTML=chosen.map(c=>`<div class="seat card p-3 flex flex-col gap-2 cursor-pointer hover:shadow-md hover:border-gray-300 transition" data-key="${c.key}" data-name="${c.name}" title="클릭하면 ${c.name}에게 1:1로 말할 수 있어요" tabindex="0" role="button">
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2 min-w-0"><span class="dot ${c.key} w-2.5 h-2.5 rounded-full shrink-0"></span><span class="name ${c.key} font-semibold text-sm truncate">${c.name}</span><span class="note truncate">${c.level}</span></div>
+      <span class="agree" data-agree="${c.name}">대기</span>
+    </div>
+    <div class="flex flex-col gap-2 min-h-[4.5rem]" data-feed="${c.name}"></div>
+    <p class="note text-right">💬 클릭해서 1:1 말하기</p>
+  </div>`).join("");
+  seats.querySelectorAll(".seat").forEach(s=>{ s.addEventListener("click",()=>openDM(s.dataset.name)); s.addEventListener("keydown",e=>{if(e.key==="Enter")openDM(s.dataset.name);}); });
+  agreed.clear(); updateAgree();
+  if(!log.length){ pushLog("teacher","teacher",teacherLast.textContent); chosen.forEach((c,i)=>setTimeout(()=>studentSay(c,0),600+i*700)); }
+}
+function pushLog(who,key,text){ log.push({t:sec,who,key,text,phase}); trCount.textContent=log.length; }
+function studentSay(c,idx){
+  const feed=document.querySelector(`[data-feed="${c.name}"]`); if(!feed) return;
+  const lines=(SCRIPT[phase]||{})[c.key]||["(반응 없음)"]; const text=lines[Math.min(idx,lines.length-1)];
+  const typing=document.createElement("div"); typing.className=`bubble ${c.key} typing in`; typing.innerHTML="<span></span><span></span><span></span>"; feed.appendChild(typing);
+  setTimeout(()=>{ typing.className=`bubble ${c.key}`; typing.textContent=text; requestAnimationFrame(()=>typing.classList.add("in")); pushLog(c.name,c.key,text);
+    if(dmOpen===c.name) dmAppend(c.key,c.name,text);
+    if(idx>=1 || c.key==="p1"){ agreed.add(c.name); updateAgree(); } },700+Math.random()*600);
+}
+// ---------- 1:1 dialog ----------
+let dmOpen=null;
+function dmAppend(key,who,text){ const d=document.createElement("div"); d.className="flex "+(who==="teacher"?"justify-end":"justify-start");
+  d.innerHTML=`<div class="bubble ${key} in max-w-[85%]">${who==="teacher"?"":`<span class="name ${key} text-xs font-semibold block mb-0.5">${who}</span>`}${text}</div>`; dmFeed.appendChild(d); dmFeed.scrollTop=dmFeed.scrollHeight; }
+function openDM(name){ const c=chosen.find(x=>x.name===name); if(!c) return; dmOpen=name;
+  dmTitle.textContent=c.name; dmSub.textContent=`${c.level} · ${c.trait}`; dmDot.style.background=`var(--${c.key})`;
+  dmFeed.innerHTML=`<p class="note text-center">${PHASE_NAMES[phase]} 국면 · ${c.name}과(와)의 1:1 대화. 여기서 한 말과 반응은 교실 화면과 대화록에도 그대로 기록됩니다.</p>`;
+  log.filter(l=>l.phase===phase && (l.who===name || (l.who==="teacher" && l.to===name))).forEach(l=>dmAppend(l.key,l.who,l.text));
+  dmModal.classList.remove("hidden"); setTimeout(()=>dmInput.focus(),50); }
+function closeDM(){ dmOpen=null; dmModal.classList.add("hidden"); }
+dmClose.addEventListener("click",closeDM); dmModal.addEventListener("click",e=>{if(e.target===dmModal) closeDM();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&dmOpen) closeDM();});
+dmForm.addEventListener("submit",e=>{e.preventDefault(); const text=dmInput.value.trim(); if(!text||!dmOpen) return; const c=chosen.find(x=>x.name===dmOpen);
+  dmInput.value=""; dmAppend("teacher","teacher",text); log.push({t:sec,who:"teacher",key:"teacher",text:`(${c.name}에게) ${text}`,phase,to:c.name}); trCount.textContent=log.length;
+  // also mirror the teacher's 1:1 line into that seat on the board
+  const feed=document.querySelector(`[data-feed="${c.name}"]`); if(feed){const d=document.createElement("div"); d.className="bubble teacher in text-xs self-end"; d.style.cssText="padding:.35rem .7rem;border-radius:10px;max-width:90%"; d.textContent=`교사 → ${c.name}: ${text}`; feed.appendChild(d);}
+  setTimeout(()=>studentSay(c,1),400); });
+dmInput.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault(); dmForm.requestSubmit();}});
+function updateAgree(){ agreeCount.textContent=`${agreed.size} / ${chosen.length}`;
+  document.querySelectorAll("[data-agree]").forEach(el=>{const y=agreed.has(el.dataset.agree); el.classList.toggle("yes",y); el.textContent=y?"✓ 다음 단계 OK":"대기";});
+  const all=agreed.size===chosen.length && chosen.length>0; nextBtn.disabled=!all; nextBtn.className=`px-4 py-2 rounded-lg text-sm font-semibold text-white ${all?"bg-blue-600 hover:bg-blue-700":"bg-gray-400 cursor-not-allowed"}`; }
+tForm.addEventListener("submit",e=>{e.preventDefault(); const text=tInput.value.trim(); if(!text) return;
+  teacherLast.textContent=text; pushLog("teacher","teacher",text); tInput.value="";
+  chosen.forEach((c,i)=>setTimeout(()=>studentSay(c,1),400+i*600)); });
+tInput.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault(); tForm.requestSubmit();}});
+hintBtn.addEventListener("click",()=>{tInput.value=PLAN_PROMPTS[phase]||""; tInput.focus();});
+function advance(skipped){ if(phase>=4){ go("s3"); return; } pushLog("system","system",skipped?`[Skip] ${PHASE_NAMES[phase]} → ${PHASE_NAMES[phase+1]}`:`[동의] ${PHASE_NAMES[phase]} 완료 → ${PHASE_NAMES[phase+1]}`);
+  phase++; document.querySelectorAll("[data-ph]").forEach(p=>{const n=+p.dataset.ph; p.className="phase-pill "+(n<phase?"done":n===phase?"now":"");});
+  document.querySelectorAll("[data-feed]").forEach(f=>f.innerHTML=""); agreed.clear(); updateAgree();
+  const prompt=PLAN_PROMPTS[phase]; teacherLast.textContent=prompt; pushLog("teacher","teacher",prompt);
+  chosen.forEach((c,i)=>setTimeout(()=>studentSay(c,0),500+i*700));
+  document.querySelector("#s2 .eyebrow").textContent=`지도안의 현재 국면 · ${PHASE_NAMES[phase]}`; }
+nextBtn.addEventListener("click",()=>advance(false)); skipBtn.addEventListener("click",()=>advance(true)); endBtn.addEventListener("click",()=>go("s3"));
+
+// ---------- S3 ----------
+function renderTranscript(){ const f=trFilter.value; const rows=log.filter(l=>f===""||l.phase===+f);
+  transcript.innerHTML=rows.map(l=>{ const m=String(Math.floor(l.t/60)).padStart(2,"0"), s=String(l.t%60).padStart(2,"0");
+    if(l.who==="system") return `<li class="note"><span class="mono mr-2">${m}:${s}</span>${l.text}</li>`;
+    const label=l.who==="teacher"?"교사":l.who; return `<li class="${l.key}"><span class="mono text-gray-400 mr-2">${m}:${s}</span><span class="phase-pill mr-2">${PHASE_NAMES[l.phase]}</span><b class="name ${l.key}">${label}</b> <span>${l.text}</span></li>`; }).join("")||`<li class="note">아직 기록이 없습니다.</li>`; }
+trFilter.addEventListener("change",renderTranscript);
+
+// ---------- S4 ----------
+document.querySelectorAll(".fbtab").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".fbtab").forEach(x=>{x.classList.remove("border-blue-600","text-blue-700");x.classList.add("border-transparent","text-gray-500");}); b.classList.add("border-blue-600","text-blue-700"); b.classList.remove("border-transparent","text-gray-500"); document.querySelectorAll(".fbpanel").forEach(p=>p.classList.toggle("hidden",p.id!==b.dataset.fb));}));
+</script>
+
+</body></html>

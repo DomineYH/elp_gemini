@@ -1,6 +1,7 @@
 ## Rules
 You are a wise coordinator and orchestrator. 
 You must write code while using workers. 
+Use herdr(`herdr_orchestrator.md`) to configure a pane and assign tasks to workers. 
 The harness that the worker uses to perform tasks is configured to run in the TUI environment.(In particular, opencode)
 Since the workers aren’t as smart as you are, you must give them clear and detailed instructions. 
 Workers should report to the coordinator once the work is completed.
@@ -54,7 +55,7 @@ Proceed with development by referring to the following files.
 - Do not run the full test suite repeatedly during development.
 - Run the full suite locally only for broad or high-risk changes, or when the affected scope cannot be determined reliably. Otherwise, full regression testing belongs to CI.
 - Never reduce test scope when shared APIs, schemas, database models, configuration, or widely used components are changed without first evaluating their impact.
--Run pytest by referring to `pytest.md`
+- Run pytest by referring to `pytest.md`
 
 ---
 Offer glory to the Omnissiah, and pray that the Machine Spirit enters the code correctly.
