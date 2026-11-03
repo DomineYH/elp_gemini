@@ -484,17 +484,6 @@ def test_off_task_reaction_cannot_drop_bar(ready, fake_gemini):
     assert turn["agreement"]["all_agreed"] is True
 
 
-def test_on_task_reaction_is_not_corrected(ready, fake_gemini):
-    state, turn = _enter_then_say(
-        ready,
-        fake_gemini,
-        _react(understanding=40),
-        _react(on_task=True, understanding=82),
-    )
-    assert _stored(turn) == {82}
-    assert turn["agreement"]["all_agreed"] is True
-
-
 @pytest.mark.parametrize("artifact, expected", [("", 79), ("3/4", 85)])
 def test_off_task_first_reaction_only_gets_first_cap(
     ready, fake_gemini, artifact, expected
@@ -532,6 +521,105 @@ def test_regenerated_off_task_reaction_keeps_previous(ready, fake_gemini):
     assert r.status_code == 200
     [fixed] = r.json()["utterances"]
     assert fixed["structured"]["understanding"] == 40
+
+
+# --- 한 반응당 이해도 상승은 직전 값 + 20까지 (#310) ---
+
+
+def test_on_task_rise_is_capped(ready, fake_gemini):
+    state, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=30),
+        _react(on_task=True, understanding=82),
+    )
+    ids = [str(p["id"]) for p in state["personas"]]
+    assert _stored(turn) == {50}
+    assert turn["agreement"]["understanding"] == {i: 50 for i in ids}
+    assert turn["agreement"]["agreed_persona_ids"] == []
+    assert turn["agreement"]["all_agreed"] is False
+
+
+@pytest.mark.parametrize("model, expected", [(60, 60), (61, 60)])
+def test_rise_cap_boundary(ready, fake_gemini, model, expected):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=40),
+        _react(understanding=model),
+    )
+    assert _stored(turn) == {expected}
+
+
+def test_rise_cap_applies_with_artifact(ready, fake_gemini):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=30),
+        _react(understanding=85, artifact="행정구역 코드 삭제"),
+    )
+    assert _stored(turn) == {50}
+
+
+def test_drop_is_not_capped(ready, fake_gemini):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=70),
+        _react(on_task=True, misconception="분모끼리 더함", understanding=30),
+    )
+    assert _stored(turn) == {30}
+
+
+def test_misconception_big_rise_is_capped(ready, fake_gemini):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=30),
+        _react(misconception="분모끼리 더함", understanding=95),
+    )
+    assert _stored(turn) == {50}
+
+
+def test_stepwise_rise_reaches_agree_and_latch_holds(ready, fake_gemini):
+    state, turn = _enter_then_say(
+        ready, fake_gemini, _react(understanding=30), _react(understanding=90)
+    )
+    assert _stored(turn) == {50}
+    turn = ready.post(
+        _api(state["session"]["id"], "/say"), json={"content": "다음"}
+    ).json()
+    assert _stored(turn) == {70}
+    assert turn["agreement"]["all_agreed"] is False
+    sid = state["session"]["id"]
+    turn = ready.post(_api(sid, "/say"), json={"content": "또"}).json()
+    assert _stored(turn) == {90}
+    assert turn["agreement"]["all_agreed"] is True
+
+    fake_gemini.results["student"] = _react(understanding=40)
+    turn = ready.post(_api(sid, "/say"), json={"content": "다시"}).json()
+    ids = [str(p["id"]) for p in state["personas"]]
+    assert turn["agreement"]["understanding"] == {i: 40 for i in ids}
+    assert turn["agreement"]["all_agreed"] is True
+    r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
+    assert r.status_code == 200
+
+
+def test_regenerated_reaction_rise_is_capped(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    fake_gemini.results["student"] = _react(understanding=40)
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/say"), json={"content": "인구는?"})
+
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(on_task=True, understanding=82)
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [fixed] = r.json()["utterances"]
+    assert fixed["structured"]["understanding"] == 60
 
 
 def test_student_call_sees_own_previous_understanding(
