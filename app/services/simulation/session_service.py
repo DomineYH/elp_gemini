@@ -292,6 +292,10 @@ def student_call(
     }
 
 
+# 한 반응당 이해도 상승 상한 (#310, prompt sim_student 규칙)
+UNDERSTANDING_MAX_RISE = 20
+
+
 def student_utterance(
     session_id: int,
     phase_idx: int,
@@ -312,6 +316,11 @@ def student_utterance(
     ):
         # 곁가지·진행 지시 반응은 직전 값 유지 규칙을 모델이 어긴다 (#306)
         structured["understanding"] = previous
+    if structured and previous is not None:
+        # 상승폭 규칙 "한 번에 20 넘게 오르지 않는다"를 모델이 어긴다 (#310)
+        structured["understanding"] = min(
+            structured["understanding"], previous + UNDERSTANDING_MAX_RISE
+        )
     if first and structured and not structured["artifact"].strip():
         # 프롬프트 규칙 "과업을 아직 하지 않았으면 80 미만"을 모델이 어긴다 (#302)
         structured["understanding"] = min(structured["understanding"], 79)
