@@ -223,6 +223,9 @@
     function closeDM() {
         dmPersona = null;
         dmModal.classList.add("hidden");
+        // 숨긴 창 안의 포커스는 다음 렌더링 때에야 body로 가므로 먼저 내려놓고 전체 입력창으로 돌려준다 (#314).
+        if (dmModal.contains(document.activeElement)) document.activeElement.blur();
+        refocus();
     }
 
     // 이름 끝 글자 받침 유무로 '와/과' 선택. 한글이 아니면 '와'로 폴백.
@@ -340,7 +343,9 @@
 
         const agreed = new Set(state.agreement.agreed_persona_ids);
         $("agreeCount").textContent = state.agreement.count + " / " + state.agreement.total;
-        $("seats").replaceChildren(...state.personas.map(p => {
+        const seats = $("seats");
+        const focusedSeat = [...seats.children].indexOf(document.activeElement);
+        seats.replaceChildren(...state.personas.map(p => {
             const seat = el("div", "seat card p-3 flex flex-col gap-2 cursor-pointer hover:shadow-md hover:border-gray-300 transition");
             seat.tabIndex = 0;
             seat.setAttribute("role", "button");
@@ -371,6 +376,8 @@
             seat.append(el("p", "note text-right", "클릭해서 1:1 말하기"));
             return seat;
         }));
+        // 좌석을 새로 그리면 포커스가 사라지므로 같은 자리의 좌석에 되돌린다. DM 창이 열려 있으면 창 뒤 좌석이 아니라 DM 입력창이 받는다 (#314).
+        if (focusedSeat >= 0 && !dmPersona && seats.children[focusedSeat]) seats.children[focusedSeat].focus({ preventScroll: true });
 
         // 전이·종료 기록은 회색 시스템 줄로
         $("sysLog").replaceChildren(...state.utterances
@@ -413,6 +420,16 @@
         $("retryBox").classList.remove("hidden");
     }
 
+    // 요청이 끝나 입력창이 다시 켜지면 보이는 입력창에 포커스를 돌려준다 (#314).
+    // 기다리는 동안 사용자가 다른 곳을 눌렀으면 빼앗지 않고, 터치 기기는 키보드가 올라오므로 건너뛴다.
+    function refocus() {
+        if (matchMedia("(pointer: coarse)").matches) return;
+        const active = document.activeElement;
+        if (active && active !== document.body) return;
+        const input = dmPersona ? dmInput : tInput;
+        if (!input.disabled) input.focus();
+    }
+
     async function run(pending, action) {
         busy = true;
         status.textContent = "";
@@ -428,6 +445,7 @@
         } finally {
             busy = false;
             render(new Set());
+            refocus();
         }
     }
 
@@ -522,6 +540,7 @@
             status.append(link);
             return;
         }
+        refocus();
         // 복원: 현재 장면에 발화가 없을 때만 진입한다
         if (phaseUtterances().length === 0) {
             await enterCurrentPhase();
