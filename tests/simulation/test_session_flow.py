@@ -19,6 +19,7 @@ def _reaction(ready):
         ready_for_next=ready,
         understanding=90 if ready else 40,
         confidence=0.5,
+        on_task=True,
     )
 
 
@@ -315,6 +316,7 @@ def test_next_student_call_sees_artifact_but_not_misconception(
         ready_for_next=True,
         understanding=70,
         confidence=0.5,
+        on_task=True,
     )
     prompts = []
 

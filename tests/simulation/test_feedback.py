@@ -119,6 +119,7 @@ def test_feedback_input_has_student_artifact_and_misconception(
         ready_for_next=True,
         understanding=70,
         confidence=0.5,
+        on_task=True,
     )
     sid = _finished(ready)
     prompts = []
@@ -146,6 +147,7 @@ def test_feedback_input_drops_stuck_summary_misconception(
         ready_for_next=False,
         understanding=50,
         confidence=0.5,
+        on_task=True,
     )
     sid = _finished(ready)
     prompts = []
