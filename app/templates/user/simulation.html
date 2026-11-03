@@ -376,8 +376,8 @@
             seat.append(el("p", "note text-right", "클릭해서 1:1 말하기"));
             return seat;
         }));
-        // 좌석을 새로 그리면 포커스가 사라지므로 같은 자리의 좌석에 되돌린다 (#314).
-        if (focusedSeat >= 0 && seats.children[focusedSeat]) seats.children[focusedSeat].focus({ preventScroll: true });
+        // 좌석을 새로 그리면 포커스가 사라지므로 같은 자리의 좌석에 되돌린다. DM 창이 열려 있으면 창 뒤 좌석이 아니라 DM 입력창이 받는다 (#314).
+        if (focusedSeat >= 0 && !dmPersona && seats.children[focusedSeat]) seats.children[focusedSeat].focus({ preventScroll: true });
 
         // 전이·종료 기록은 회색 시스템 줄로
         $("sysLog").replaceChildren(...state.utterances
