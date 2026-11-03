@@ -394,3 +394,12 @@ def test_sim_phase_split_splits_stage_into_sub_activity_scenes():
         assert phrase in prompt, phrase
     # 도입·정리의 학습 활동까지 막던 예외 문구가 돌아오면 안 된다
     assert "세부 활동마다 나누는 규칙은 전개 단계에 적용합니다" not in prompt
+
+
+def test_sim_student_off_task_uses_previous_understanding():
+    """곁가지 반응은 on_task=false로 [직전 이해도]를 그대로 쓴다 (#306)."""
+    prompt = PromptLoaderService().get_prompt("sim_student")
+
+    [line] = [ln for ln in prompt.splitlines() if ln.startswith("- on_task:")]
+    assert "[직전 이해도]" in line
+    assert "그 전 반응의 값을 유지" not in prompt

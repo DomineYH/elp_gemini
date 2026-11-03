@@ -206,6 +206,7 @@ def _default_results():
             ready_for_next=True,
             understanding=90,
             confidence=0.8,
+            on_task=True,
         ),
         "feedback": FeedbackResult(
             risk_scenarios=[

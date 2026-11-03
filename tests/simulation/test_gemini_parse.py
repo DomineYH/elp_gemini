@@ -15,7 +15,7 @@ from app.services.simulation.llm_schemas import StudentReaction
 GOOD = (
     '{"action": "손을 든다", "utterance": "저요!", "artifact": "",'
     ' "misconception": "", "ready_for_next": true, "understanding": 85,'
-    ' "confidence": 0.7}'
+    ' "confidence": 0.7, "on_task": true}'
 )
 
 
@@ -29,6 +29,7 @@ def test_valid_json_parses():
         ready_for_next=True,
         understanding=85,
         confidence=0.7,
+        on_task=True,
     )
 
 
@@ -42,6 +43,16 @@ def test_missing_understanding_fails_parse():
     text = GOOD.replace(' "understanding": 85,', "")
     assert "understanding" not in text
     assert parse_structured(StudentReaction, text) is None
+
+
+def test_on_task_is_required():
+    """곁가지 반응 표시 (#306): 기본값이 있으면 SDK가 선택 항목으로 보내 모델이 빠뜨린다."""
+    assert "on_task" in StudentReaction.model_json_schema()["required"]
+    missing = GOOD.replace(', "on_task": true', "")
+    assert "on_task" not in missing
+    assert parse_structured(StudentReaction, missing) is None
+    text = GOOD.replace('"on_task": true', '"on_task": false')
+    assert parse_structured(StudentReaction, text).on_task is False
 
 
 @pytest.mark.parametrize(
