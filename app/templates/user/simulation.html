@@ -223,6 +223,9 @@
     function closeDM() {
         dmPersona = null;
         dmModal.classList.add("hidden");
+        // 숨긴 창 안의 포커스는 다음 렌더링 때에야 body로 가므로 먼저 내려놓고 전체 입력창으로 돌려준다 (#314).
+        if (dmModal.contains(document.activeElement)) document.activeElement.blur();
+        refocus();
     }
 
     // 이름 끝 글자 받침 유무로 '와/과' 선택. 한글이 아니면 '와'로 폴백.
