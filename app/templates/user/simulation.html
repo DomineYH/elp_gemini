@@ -343,7 +343,9 @@
 
         const agreed = new Set(state.agreement.agreed_persona_ids);
         $("agreeCount").textContent = state.agreement.count + " / " + state.agreement.total;
-        $("seats").replaceChildren(...state.personas.map(p => {
+        const seats = $("seats");
+        const focusedSeat = [...seats.children].indexOf(document.activeElement);
+        seats.replaceChildren(...state.personas.map(p => {
             const seat = el("div", "seat card p-3 flex flex-col gap-2 cursor-pointer hover:shadow-md hover:border-gray-300 transition");
             seat.tabIndex = 0;
             seat.setAttribute("role", "button");
@@ -374,6 +376,8 @@
             seat.append(el("p", "note text-right", "클릭해서 1:1 말하기"));
             return seat;
         }));
+        // 좌석을 새로 그리면 포커스가 사라지므로 같은 자리의 좌석에 되돌린다 (#314).
+        if (focusedSeat >= 0 && seats.children[focusedSeat]) seats.children[focusedSeat].focus({ preventScroll: true });
 
         // 전이·종료 기록은 회색 시스템 줄로
         $("sysLog").replaceChildren(...state.utterances
