@@ -49,6 +49,8 @@ class StudentReaction(BaseModel):
     ready_for_next: bool
     understanding: int  # 0~100, 이번 장면 과업·발문 핵심 이해 정도 (#296)
     confidence: float
+    # 이 반응이 이번 장면 과업·발문에 대한 이해를 새로 보이거나 바꾸는가 (#306)
+    on_task: bool = True
 
     @field_validator("understanding")
     @classmethod

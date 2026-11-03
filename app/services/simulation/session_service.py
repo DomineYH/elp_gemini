@@ -237,7 +237,24 @@ async def _turn_result(db, sid, utterances) -> dict:
     }
 
 
-def student_call(persona: SimulationPersona, phase, transcript: list[str]):
+def _previous_understanding(utterances, persona_id) -> int | None:
+    """그 학생의 이번 장면 마지막 유효 반응의 이해도. 없으면 None."""
+    for u in reversed(utterances):
+        if (
+            u.speaker_type == "student"
+            and u.persona_id == persona_id
+            and u.structured is not None
+        ):
+            return u.structured.get("understanding")
+    return None
+
+
+def student_call(
+    persona: SimulationPersona,
+    phase,
+    transcript: list[str],
+    previous: int | None = None,
+):
     """학생 반응 1건의 call_structured 인자. transcript = 이번 장면 대화 줄."""
     profile = {
         "가명": persona.display_name,
@@ -257,6 +274,7 @@ def student_call(persona: SimulationPersona, phase, transcript: list[str]):
             f"과업: {phase.task or '(없음)'}",
             f"자료: {phase.materials or '(없음)'}",
             "",
+            *([f"[직전 이해도] {previous}"] if previous is not None else []),
             "[이번 장면 대화]",
             *transcript,
         ]
@@ -281,10 +299,19 @@ def student_utterance(
     persona: SimulationPersona,
     result: gemini.LLMResult,
     first: bool = False,
+    previous: int | None = None,
 ) -> SimulationUtterance:
     """파싱 실패면 structured=NULL, content=모델 원문."""
     reaction = result.parsed
     structured = reaction.model_dump() if reaction else None
+    if (
+        structured
+        and not structured["on_task"]
+        and previous is not None
+        and not structured["misconception"]
+    ):
+        # 곁가지·진행 지시 반응은 직전 값 유지 규칙을 모델이 어긴다 (#306)
+        structured["understanding"] = previous
     if first and structured and not structured["artifact"].strip():
         # 프롬프트 규칙 "과업을 아직 하지 않았으면 80 미만"을 모델이 어긴다 (#302)
         structured["understanding"] = min(structured["understanding"], 79)
@@ -497,8 +524,9 @@ async def say(
     ]
     phase = (await _phases(db, sid))[idx]
     responders = [p for p in personas if target in (None, p.id)]
+    prev = {p.id: _previous_understanding(stored, p.id) for p in responders}
     results = await gemini.call_many(
-        [student_call(p, phase, transcript) for p in responders]
+        [student_call(p, phase, transcript, prev[p.id]) for p in responders]
     )
     await _lock_running(db, session, idx)
     if await _teacher_turns_used(db, sid) >= settings.SIM_MAX_TEACHER_TURNS:
@@ -509,7 +537,7 @@ async def say(
     teacher.seq = seq
     db.add(teacher)
     db.add_all(
-        student_utterance(sid, idx, seq + 1 + i, p, r)
+        student_utterance(sid, idx, seq + 1 + i, p, r, previous=prev[p.id])
         for i, (p, r) in enumerate(zip(responders, results))
     )
     await _commit_or_conflict(db)
@@ -625,13 +653,20 @@ async def regenerate(
     ]
     persona = next(p for p in personas if p.id == persona_id)
     phase = (await _phases(db, sid))[idx]
+    prev = _previous_understanding(mine[:-1], persona_id)  # 실패한 그 행 제외
     [result] = await gemini.call_many(
-        [student_call(persona, phase, transcript)]
+        [student_call(persona, phase, transcript, prev)]
     )
     await _lock_running(db, session, idx)
 
     fresh = student_utterance(
-        sid, idx, row.seq, persona, result, first=len(mine) == 1
+        sid,
+        idx,
+        row.seq,
+        persona,
+        result,
+        first=len(mine) == 1,
+        previous=prev,
     )
     for field in (
         "content",

@@ -44,6 +44,15 @@ def test_missing_understanding_fails_parse():
     assert parse_structured(StudentReaction, text) is None
 
 
+def test_on_task_defaults_true_and_parses_false():
+    """곁가지 반응 표시 (#306): 키가 없으면 과업 반응으로 본다."""
+    assert parse_structured(StudentReaction, GOOD).on_task is True
+    text = GOOD.replace(
+        '"confidence": 0.7', '"confidence": 0.7, "on_task": false'
+    )
+    assert parse_structured(StudentReaction, text).on_task is False
+
+
 @pytest.mark.parametrize(
     "misconception, raw, expected", [("x", 95, 79), ("x", 60, 60), ("", 95, 95)]
 )

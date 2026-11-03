@@ -427,3 +427,145 @@ def test_restore_returns_everything_in_seq_order(ready, fake_gemini):
     assert restored["session"]["current_phase_idx"] == 1
     assert restored["agreement"]["phase_idx"] == 1
     assert restored["agreement"]["all_agreed"] is True
+
+
+# --- 곁가지 반응은 직전 이해도를 유지한다 (#306) ---
+
+
+def _react(**kw):
+    # model_copy와 달리 검증기(오개념 79 상한)를 거친다
+    return StudentReaction(**{**_reaction(False).model_dump(), **kw})
+
+
+def _enter_then_say(client, fake_gemini, first, then):
+    state = _create(client)
+    sid = state["session"]["id"]
+    fake_gemini.results["student"] = first
+    client.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.results["student"] = then
+    turn = client.post(_api(sid, "/say"), json={"content": "인구는?"}).json()
+    return state, turn
+
+
+def _stored(turn):
+    return {
+        u["structured"]["understanding"]
+        for u in turn["utterances"]
+        if u["speaker_type"] == "student"
+    }
+
+
+def test_off_task_reaction_cannot_raise_to_agree(ready, fake_gemini):
+    state, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=40),
+        _react(on_task=False, understanding=82, artifact="우리 동네 인구"),
+    )
+    ids = [str(p["id"]) for p in state["personas"]]
+    assert _stored(turn) == {40}
+    assert turn["agreement"]["understanding"] == {i: 40 for i in ids}
+    assert turn["agreement"]["agreed_persona_ids"] == []
+    assert turn["agreement"]["all_agreed"] is False
+
+
+def test_off_task_reaction_cannot_drop_bar(ready, fake_gemini):
+    state, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=90, artifact="3/4"),
+        _react(on_task=False, understanding=30),
+    )
+    ids = [str(p["id"]) for p in state["personas"]]
+    assert _stored(turn) == {90}
+    assert turn["agreement"]["understanding"] == {i: 90 for i in ids}
+    assert turn["agreement"]["all_agreed"] is True
+
+
+def test_on_task_reaction_is_not_corrected(ready, fake_gemini):
+    state, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=40),
+        _react(on_task=True, understanding=82),
+    )
+    assert _stored(turn) == {82}
+    assert turn["agreement"]["all_agreed"] is True
+
+
+@pytest.mark.parametrize("artifact, expected", [("", 79), ("3/4", 85)])
+def test_off_task_first_reaction_only_gets_first_cap(
+    ready, fake_gemini, artifact, expected
+):
+    fake_gemini.results["student"] = _react(
+        on_task=False, understanding=85, artifact=artifact
+    )
+    sid = _create(ready)["session"]["id"]
+    turn = ready.post(_api(sid, "/phases/0/enter")).json()
+    assert _stored(turn) == {expected}
+
+
+def test_off_task_misconception_keeps_validator_cap(ready, fake_gemini):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=60),
+        _react(on_task=False, misconception="분모끼리 더함", understanding=85),
+    )
+    assert _stored(turn) == {79}
+
+
+def test_regenerated_off_task_reaction_keeps_previous(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    fake_gemini.results["student"] = _react(understanding=40)
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/say"), json={"content": "인구는?"})
+
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(on_task=False, understanding=82)
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [fixed] = r.json()["utterances"]
+    assert fixed["structured"]["understanding"] == 40
+
+
+def test_student_call_sees_own_previous_understanding(
+    ready, fake_gemini, monkeypatch
+):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    keys = [str(p["source_record_id"]) for p in state["personas"]]
+    values = {k: 41 + i for i, k in enumerate(keys)}
+    fake_gemini.results["student"] = lambda key: _react(
+        understanding=values[key]
+    )
+    prompts = []
+
+    def recording(kind, **kw):
+        prompts.append((kw["persona_key"], kw["user"]))
+        return fake_gemini(kind, **kw)
+
+    monkeypatch.setattr(gemini, "call_structured", recording)
+    ready.post(_api(sid, "/phases/0/enter"))
+    assert prompts and not any("[직전 이해도]" in u for _, u in prompts)
+
+    prompts.clear()
+    ready.post(_api(sid, "/say"), json={"content": "인구는?"})
+    assert {k: u for k, u in prompts}.keys() == set(keys)
+    for k, u in prompts:
+        assert f"[직전 이해도] {values[k]}\n[이번 장면 대화]" in u
+
+    prompts.clear()
+    target = state["personas"][2]
+    ready.post(
+        _api(sid, "/say"),
+        json={"content": "너는?", "target_persona_id": target["id"]},
+    )
+    [(k, u)] = prompts
+    assert k == keys[2]
+    assert [ln for ln in u.splitlines() if ln.startswith("[직전 이해도]")] == [
+        f"[직전 이해도] {values[k]}"
+    ]
