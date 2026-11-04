@@ -218,6 +218,14 @@
     });
     count.addEventListener("input", () => chooseFirst(Number(count.value)));
 
+    // ref를 선택에 넣는다. 이미 있으면 그대로, 최대 인원이면 마지막을 빼고 넣는다
+    function pickInto(chosenArr, ref, max) {
+        if (chosenArr.includes(ref)) return { chosen: chosenArr, dropped: null };
+        const dropped = chosenArr.length >= max ? chosenArr[chosenArr.length - 1] : null;
+        const kept = dropped === null ? chosenArr : chosenArr.slice(0, -1);
+        return { chosen: [...kept, ref], dropped };
+    }
+
     async function load(newSeed, pickRef) {
         const params = new URLSearchParams({
             grade: document.getElementById("fGrade").value,
@@ -235,9 +243,13 @@
             status.textContent = "";
             chooseFirst(Math.min(Math.max(Number(count.value), MIN), candidates.length));
             if (pickRef) {
-                // 방금 만든 페르소나를 체크한다 (최대 인원이면 마지막 선택을 뺀다)
-                if (chosen.size >= MAX) chosen.delete([...chosen].pop());
-                chosen.add(pickRef);
+                // 방금 만든 페르소나를 체크한다 (최대 인원이면 마지막 선택을 빼고 알린다)
+                const picked = pickInto([...chosen], pickRef, MAX);
+                chosen = new Set(picked.chosen);
+                if (picked.dropped) {
+                    const name = ref => candidates.find(c => c.ref === ref)?.pseudonym || ref;
+                    status.textContent = "최대 " + MAX + "명 — " + name(picked.dropped) + " 빼고 " + name(pickRef) + " 추가";
+                }
                 render();
             }
         } catch (err) {
