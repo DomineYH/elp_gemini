@@ -251,13 +251,37 @@ def _previous_understanding(utterances, persona_id) -> int | None:
     return None
 
 
+def _shown_before(persona_id, idx, history) -> dict[int, str]:
+    """이 학생의 이전 장면별 마지막 비어 있지 않은 산출물, 없으면 마지막 발화."""
+    shown, with_artifact = {}, set()
+    for u in history:
+        if not (
+            u.phase_idx < idx
+            and u.speaker_type == "student"
+            and u.persona_id == persona_id
+        ):
+            continue
+        if artifact := (u.structured or {}).get("artifact"):
+            shown[u.phase_idx] = artifact
+            with_artifact.add(u.phase_idx)
+        elif u.phase_idx not in with_artifact:
+            shown[u.phase_idx] = u.content
+    return shown
+
+
 def student_call(
     persona: SimulationPersona,
     phase,
     transcript: list[str],
     previous: int | None = None,
+    *,
+    phases,
+    history,
 ):
-    """학생 반응 1건의 call_structured 인자. transcript = 이번 장면 대화 줄."""
+    """학생 반응 1건의 call_structured 인자.
+
+    transcript = 이번 장면 대화 줄, phases = 전체 장면, history = 세션 전체 발화.
+    """
     profile = {
         "가명": persona.display_name,
         "학년": persona.raw_profile.get("grade"),
@@ -282,6 +306,23 @@ def student_call(
             f"과업: {phase.task or '(없음)'}",
             f"자료: {phase.materials or '(없음)'}",
             "",
+            "[수업 흐름]",
+            *(
+                f"{p.idx + 1}. {p.name} — {p.task or '(없음)'}"
+                + (" (지금)" if p.idx == phase.idx else "")
+                for p in phases
+            ),
+            *(
+                [
+                    "[이전 장면에서 내가 보인 것]",
+                    *(
+                        f"{i + 1}. {phases[i].name}: {line}"
+                        for i, line in shown.items()
+                    ),
+                ]
+                if (shown := _shown_before(persona.id, phase.idx, history))
+                else []
+            ),
             *([f"[직전 이해도] {previous}"] if previous is not None else []),
             "[이번 장면 대화]",
             *transcript,
@@ -374,11 +415,16 @@ async def enter_phase(
     if stored:
         return await _turn_result(db, session.id, stored)
 
-    phase = (await _phases(db, session.id))[idx]
+    phases = await _phases(db, session.id)
+    phase = phases[idx]
     personas = await _personas(db, session.id)
     transcript = [f"교사(전체): {phase.teacher_prompt}"]
+    history = await _utterances(db, session.id)
     results = await gemini.call_many(
-        [student_call(p, phase, transcript) for p in personas]
+        [
+            student_call(p, phase, transcript, phases=phases, history=history)
+            for p in personas
+        ]
     )
     await _lock_running(db, session, idx, moved="PHASE_NOT_CURRENT")
     stored = await _utterances(db, session.id, idx)
@@ -539,11 +585,18 @@ async def say(
         for u in stored + [teacher]
         if u.speaker_type != "system"
     ]
-    phase = (await _phases(db, sid))[idx]
+    phases = await _phases(db, sid)
+    phase = phases[idx]
+    history = await _utterances(db, sid)
     responders = [p for p in personas if target in (None, p.id)]
     prev = {p.id: _previous_understanding(stored, p.id) for p in responders}
     results = await gemini.call_many(
-        [student_call(p, phase, transcript, prev[p.id]) for p in responders]
+        [
+            student_call(
+                p, phase, transcript, prev[p.id], phases=phases, history=history
+            )
+            for p in responders
+        ]
     )
     await _lock_running(db, session, idx)
     if await _teacher_turns_used(db, sid) >= settings.SIM_MAX_TEACHER_TURNS:
@@ -669,10 +722,17 @@ async def regenerate(
         if u.speaker_type != "system" and u.seq <= asked
     ]
     persona = next(p for p in personas if p.id == persona_id)
-    phase = (await _phases(db, sid))[idx]
+    phases = await _phases(db, sid)
+    phase = phases[idx]
     prev = _previous_understanding(mine[:-1], persona_id)  # 실패한 그 행 제외
+    # 실패한 행은 이번 장면이라 이전 장면 블록에 들어가지 않는다
+    history = await _utterances(db, sid)
     [result] = await gemini.call_many(
-        [student_call(persona, phase, transcript, prev)]
+        [
+            student_call(
+                persona, phase, transcript, prev, phases=phases, history=history
+            )
+        ]
     )
     await _lock_running(db, session, idx)
 

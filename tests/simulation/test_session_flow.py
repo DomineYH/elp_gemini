@@ -661,6 +661,158 @@ def test_student_call_sees_own_previous_understanding(
     ]
 
 
+def _flow_session(client):
+    """과업이 있는 3장면 세션 (#316)."""
+    cands = client.get(
+        "/api/simulation/candidates",
+        params={"n": 4, "seed": 7, "level": "High"},
+    ).json()["candidates"]
+    body = {
+        "personas": [
+            {"ref": c["ref"], "pseudonym": c["pseudonym"]} for c in cands
+        ],
+        "phases": [
+            {
+                "name": "도입",
+                "teacher_prompt": "발문 0",
+                "task": "인구 그래프 읽기",
+            },
+            {
+                "name": "활동1",
+                "teacher_prompt": "발문 1",
+                "task": "구성비 예측",
+            },
+            {"name": "정리", "teacher_prompt": "발문 2"},
+        ],
+    }
+    r = client.post("/api/simulation/sessions", json=body)
+    assert r.status_code == 201
+    return r.json()
+
+
+def _block(user, header):
+    """header 다음 줄부터 빈 줄이나 다음 [..] 머리줄 전까지."""
+    lines = user.splitlines()
+    if header not in lines:
+        return None
+    out = []
+    for ln in lines[lines.index(header) + 1 :]:
+        if not ln or ln.startswith("["):
+            break
+        out.append(ln)
+    return out
+
+
+def _recording(fake_gemini, monkeypatch):
+    prompts = {}
+
+    def recording(kind, **kw):
+        if kind == "student":
+            prompts[kw["persona_key"]] = kw["user"]
+        return fake_gemini(kind, **kw)
+
+    monkeypatch.setattr(gemini, "call_structured", recording)
+    return prompts
+
+
+def test_student_call_scene0_has_lesson_flow_only(
+    ready, fake_gemini, monkeypatch
+):
+    prompts = _recording(fake_gemini, monkeypatch)
+    state = _flow_session(ready)
+    ready.post(_api(state["session"]["id"], "/phases/0/enter"))
+    assert len(prompts) == 4
+    for u in prompts.values():
+        assert _block(u, "[수업 흐름]") == [
+            "1. 도입 — 인구 그래프 읽기 (지금)",
+            "2. 활동1 — 구성비 예측",
+            "3. 정리 — (없음)",
+        ]
+        assert "[이전 장면에서 내가 보인 것]" not in u
+        assert (
+            u.index("자료:")
+            < u.index("[수업 흐름]")
+            < u.index("[이번 장면 대화]")
+        )
+
+
+def _scene1_with_history(ready, fake_gemini):
+    """장면 0에서 학생마다 다른 산출물을 남기고 장면 1로 넘긴다.
+
+    keys[0]: 마지막 반응의 산출물이 비어 그 전 산출물, keys[3]: 산출물 없음 → 마지막 발화.
+    """
+    state = _flow_session(ready)
+    sid = state["session"]["id"]
+    keys = [str(p["source_record_id"]) for p in state["personas"]]
+    fake_gemini.results["student"] = lambda k: _react(
+        utterance=f"말0-{k}", artifact="" if k == keys[3] else f"A0-{k}"
+    )
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.results["student"] = lambda k: _react(
+        utterance=f"말1-{k}",
+        artifact="" if k in (keys[0], keys[3]) else f"A1-{k}",
+    )
+    ready.post(_api(sid, "/say"), json={"content": "다 했니?"})
+    r = ready.post(_api(sid, "/advance"), json={"mode": "skip"})
+    assert r.json()["current_phase_idx"] == 1
+    fake_gemini.results["student"] = lambda k: _react(utterance=f"새-{k}")
+    ready.post(_api(sid, "/phases/1/enter"))
+    expected = {
+        keys[0]: f"1. 도입: A0-{keys[0]}",
+        keys[1]: f"1. 도입: A1-{keys[1]}",
+        keys[2]: f"1. 도입: A1-{keys[2]}",
+        keys[3]: f"1. 도입: 말1-{keys[3]}",
+    }
+    return state, keys, expected
+
+
+def _assert_history(u, k, keys, expected):
+    assert _block(u, "[이전 장면에서 내가 보인 것]") == [expected[k]]
+    for other in keys:
+        if other != k:
+            assert (
+                f"0-{other}" not in u
+                and f"1-{other}" not in u.split("[이번 장면 대화]")[0]
+            )
+    flow = _block(u, "[수업 흐름]")
+    assert [ln.endswith(" (지금)") for ln in flow] == [False, True, False]
+    assert u.index("[이전 장면에서 내가 보인 것]") < u.index("[직전 이해도]")
+
+
+def test_student_call_scene1_say_sees_own_previous_scene(
+    ready, fake_gemini, monkeypatch
+):
+    prompts = _recording(fake_gemini, monkeypatch)
+    state, keys, expected = _scene1_with_history(ready, fake_gemini)
+    prompts.clear()
+    sid = state["session"]["id"]
+    ready.post(_api(sid, "/say"), json={"content": "예측해 볼까?"})
+    assert prompts.keys() == set(keys)
+    for k, u in prompts.items():
+        _assert_history(u, k, keys, expected)
+        talk = u.split("[이번 장면 대화]\n", 1)[1]
+        assert "발문 0" not in talk and "다 했니?" not in talk
+        assert "말0-" not in talk and "말1-" not in talk
+
+
+def test_student_call_regenerate_sees_own_previous_scene(
+    ready, fake_gemini, monkeypatch
+):
+    prompts = _recording(fake_gemini, monkeypatch)
+    state, keys, expected = _scene1_with_history(ready, fake_gemini)
+    sid = state["session"]["id"]
+    persona = state["personas"][3]
+    fake_gemini.parse_fail.add(keys[3])
+    ready.post(_api(sid, "/say"), json={"content": "예측해 볼까?"})
+    fake_gemini.parse_fail.clear()
+    prompts.clear()
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [(k, u)] = prompts.items()
+    assert k == keys[3]
+    _assert_history(u, k, keys, expected)
+
+
 def test_student_call_profile_has_gender(ready, fake_gemini, monkeypatch):
     import json
 
