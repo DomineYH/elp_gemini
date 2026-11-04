@@ -252,16 +252,20 @@ def _previous_understanding(utterances, persona_id) -> int | None:
 
 
 def _shown_before(persona_id, idx, history) -> dict[int, str]:
-    """이 학생의 이전 장면별 마지막 비어 있지 않은 산출물, 없으면 마지막 발화."""
+    """이 학생의 이전 장면별 마지막 비어 있지 않은 산출물, 없으면 마지막 발화.
+
+    파싱 실패 행(structured=None)의 content는 모델 원문이라 쓰지 않는다.
+    """
     shown, with_artifact = {}, set()
     for u in history:
         if not (
             u.phase_idx < idx
             and u.speaker_type == "student"
             and u.persona_id == persona_id
+            and u.structured is not None
         ):
             continue
-        if artifact := (u.structured or {}).get("artifact"):
+        if artifact := (u.structured.get("artifact") or "").strip():
             shown[u.phase_idx] = artifact
             with_artifact.add(u.phase_idx)
         elif u.phase_idx not in with_artifact:

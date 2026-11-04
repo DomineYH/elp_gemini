@@ -776,7 +776,8 @@ def _assert_history(u, k, keys, expected):
             )
     flow = _block(u, "[수업 흐름]")
     assert [ln.endswith(" (지금)") for ln in flow] == [False, True, False]
-    assert u.index("[이전 장면에서 내가 보인 것]") < u.index("[직전 이해도]")
+    after = "[직전 이해도]" if "[직전 이해도]" in u else "[이번 장면 대화]"
+    assert u.index("[이전 장면에서 내가 보인 것]") < u.index(after)
 
 
 def test_student_call_scene1_say_sees_own_previous_scene(
@@ -784,6 +785,9 @@ def test_student_call_scene1_say_sees_own_previous_scene(
 ):
     prompts = _recording(fake_gemini, monkeypatch)
     state, keys, expected = _scene1_with_history(ready, fake_gemini)
+    assert prompts.keys() == set(keys)  # 장면 1 진입 호출
+    for k, u in prompts.items():
+        _assert_history(u, k, keys, expected)
     prompts.clear()
     sid = state["session"]["id"]
     ready.post(_api(sid, "/say"), json={"content": "예측해 볼까?"})
@@ -811,6 +815,88 @@ def test_student_call_regenerate_sees_own_previous_scene(
     [(k, u)] = prompts.items()
     assert k == keys[3]
     _assert_history(u, k, keys, expected)
+    assert "not json" not in u  # 실패한 그 행의 원문
+
+
+def _row(phase_idx, content, artifact=None, persona_id=1, failed=False):
+    from types import SimpleNamespace
+
+    structured = None if failed else {"artifact": artifact or ""}
+    return SimpleNamespace(
+        phase_idx=phase_idx,
+        speaker_type="student",
+        persona_id=persona_id,
+        content=content,
+        structured=structured,
+    )
+
+
+def test_shown_before_ignores_whitespace_artifacts():
+    shown = session_service._shown_before
+    assert shown(1, 1, [_row(0, "말A", "답"), _row(0, "말B", "   ")]) == {
+        0: "답"
+    }
+    assert shown(1, 1, [_row(0, "말A", " \n"), _row(0, "말B", "  ")]) == {
+        0: "말B"
+    }
+    assert shown(1, 1, [_row(0, "말A", "  답 ")]) == {0: "답"}
+
+
+def test_shown_before_ignores_parse_failed_rows():
+    shown = session_service._shown_before
+    history = [_row(0, "말A"), _row(0, "{raw model text", failed=True)]
+    assert shown(1, 1, history) == {0: "말A"}
+    assert shown(1, 1, [_row(0, "{raw model text", failed=True)]) == {}
+
+
+def test_student_call_scene2_lists_each_previous_phase_by_number():
+    from types import SimpleNamespace
+
+    phases = [
+        SimpleNamespace(idx=i, name=n, task="", materials="", minutes=None)
+        for i, n in enumerate(["도입", "활동1", "활동2"])
+    ]
+    persona = SimpleNamespace(
+        id=1,
+        display_name="준서",
+        raw_profile={},
+        adapted_level="High",
+        adapted_profile={},
+        source="dataset",
+        source_record_id=7,
+    )
+    history = [
+        _row(0, "말0", "답0"),
+        _row(0, "남의 말", "남의 답", persona_id=2),
+        _row(1, "남의 말1", "남의 답1", persona_id=2),
+        _row(2, "지금 말", "지금 답"),
+    ]
+    user = session_service.student_call(
+        persona, phases[2], [], phases=phases, history=history
+    )["user"]
+    assert _block(user, "[이전 장면에서 내가 보인 것]") == ["1. 도입: 답0"]
+
+    history.insert(2, _row(1, "말1", "답1"))
+    user = session_service.student_call(
+        persona, phases[2], [], phases=phases, history=history
+    )["user"]
+    assert _block(user, "[이전 장면에서 내가 보인 것]") == [
+        "1. 도입: 답0",
+        "2. 활동1: 답1",
+    ]
+
+    history = [_row(0, "{raw", failed=True), _row(1, "말1", "  ")]
+    user = session_service.student_call(
+        persona, phases[2], [], phases=phases, history=history
+    )["user"]
+    assert _block(user, "[이전 장면에서 내가 보인 것]") == ["2. 활동1: 말1"]
+    assert "{raw" not in user
+
+    history = [_row(0, "{raw", failed=True)]
+    user = session_service.student_call(
+        persona, phases[2], [], phases=phases, history=history
+    )["user"]
+    assert "[이전 장면에서 내가 보인 것]" not in user
 
 
 def test_student_call_profile_has_gender(ready, fake_gemini, monkeypatch):
