@@ -1,0 +1,7 @@
+{
+  "_comment": "Per-project hook behaviour. Installed as .routing/hooks.json by init_routing.sh (only if absent). The hook itself is registered in Claude Code settings at the scope chosen with --hooks (user|project|local).",
+  "mode": "deny",
+  "allow_subagent_types": ["Explore"],
+  "unlisted_subagent_type": "ask",
+  "log": ".routing/hook_log.jsonl"
+}

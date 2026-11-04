@@ -1,5 +1,6 @@
 # 설치: uv tool install pre-commit && pre-commit install
 # 테스트는 넣지 않는다(전체 2~3분). CI 가 맡는다.
+exclude: ^\.routing/  # init_routing.sh가 관리
 repos:
   - repo: local
     hooks:

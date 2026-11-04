@@ -41,10 +41,11 @@ dev = [
 [tool.black]
 line-length = 80
 target-version = ['py310']
-extend-exclude = '/\.claude/'
+extend-exclude = '/(\.claude|\.routing)/'
 
 [tool.ruff]
 line-length = 80
+extend-exclude = [".routing"]  # init_routing.sh가 관리하는 외부 스크립트
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]

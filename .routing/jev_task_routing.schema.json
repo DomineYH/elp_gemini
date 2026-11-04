@@ -1,0 +1,2618 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/jev_task_routing.schema.json",
+  "title": "Jev task routing policy configuration",
+  "description": "Schema for jev_task_routing.json (v2.5.5-draft) and the runtime objects it defines. Model settings live in models.json (models.schema.json); the policy only references them.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "policy_doc",
+    "purpose",
+    "nature",
+    "provenance",
+    "precedence",
+    "host",
+    "model_routing",
+    "models_file",
+    "roles",
+    "delegation",
+    "work_order",
+    "jev",
+    "decision",
+    "evidence_orders",
+    "workflows",
+    "stages",
+    "modifiers",
+    "verification",
+    "enums",
+    "templates",
+    "validation",
+    "sources"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[a-z0-9.]+)?$"
+    },
+    "policy_doc": {
+      "type": "string"
+    },
+    "purpose": {
+      "type": "string"
+    },
+    "nature": {
+      "type": "string"
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "derived_from_version",
+        "source_sha256",
+        "restructured_on"
+      ],
+      "properties": {
+        "derived_from_version": {
+          "type": "string"
+        },
+        "source_file": {
+          "type": "string"
+        },
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "restructured_on": {
+          "type": "string",
+          "format": "date"
+        },
+        "verbatim_sections": {
+          "$ref": "#/$defs/stringList"
+        },
+        "semantic_changes": {
+          "$ref": "#/$defs/stringList"
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "required": [
+        "owner",
+        "configurable_as_role",
+        "spawn_as_worker",
+        "retired_role_ids",
+        "writes_product_code"
+      ],
+      "properties": {
+        "owner": {
+          "const": "current_host_session"
+        },
+        "configurable_as_role": {
+          "const": false
+        },
+        "spawn_as_worker": {
+          "const": false
+        },
+        "model_rule": {
+          "type": "string"
+        },
+        "retired_role_ids": {
+          "$ref": "#/$defs/stringList"
+        },
+        "rule_refs": {
+          "$ref": "#/$defs/ruleRefs"
+        },
+        "writes_product_code": {
+          "const": false
+        },
+        "aliases": {
+          "$ref": "#/$defs/stringList"
+        }
+      }
+    },
+    "model_routing": {
+      "type": "object",
+      "required": [
+        "applies_to",
+        "default",
+        "field_priority",
+        "missing_values",
+        "on_conflicting_overrides",
+        "on_incompatible_adapter_combination",
+        "models_file"
+      ],
+      "properties": {
+        "applies_to": {
+          "const": "delegated_roles_only"
+        },
+        "default": {
+          "$ref": "#/$defs/roleSettings"
+        },
+        "field_priority": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing_values": {
+          "$ref": "#/$defs/stringList"
+        },
+        "resolve_fields_independently": {
+          "type": "boolean"
+        },
+        "on_conflicting_overrides": {
+          "const": "BLOCKED"
+        },
+        "on_incompatible_adapter_combination": {
+          "const": "BLOCKED"
+        },
+        "preserve_strings_verbatim": {
+          "type": "boolean"
+        },
+        "record_source_per_field": {
+          "type": "boolean"
+        },
+        "rule_refs": {
+          "$ref": "#/$defs/ruleRefs"
+        },
+        "models_file": {
+          "type": "string"
+        }
+      }
+    },
+    "roles": {
+      "type": "object",
+      "description": "Exactly the registered delegated roles. Keys are role IDs; coordinator/final-verifier are retired and must not appear.",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$",
+        "not": {
+          "enum": [
+            "coordinator",
+            "final-verifier",
+            "final_verifier"
+          ]
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/role"
+      }
+    },
+    "delegation": {
+      "type": "object",
+      "required": [
+        "dispatch_owner",
+        "worker_reports_to",
+        "worker_to_worker_dispatch",
+        "worker_self_delegation",
+        "work_order_required",
+        "require_authenticated_host_order",
+        "liveness",
+        "launch_channel"
+      ],
+      "properties": {
+        "dispatch_owner": {
+          "const": "current_host_session"
+        },
+        "worker_reports_to": {
+          "const": "current_host_session"
+        },
+        "worker_to_worker_dispatch": {
+          "const": false
+        },
+        "worker_self_delegation": {
+          "const": false
+        },
+        "work_order_required": {
+          "const": true
+        },
+        "require_authenticated_host_order": {
+          "const": true
+        },
+        "local_discretion": {
+          "type": "string"
+        },
+        "host_only_decisions": {
+          "$ref": "#/$defs/stringList"
+        },
+        "worker_statuses": {
+          "$ref": "#/$defs/stringList"
+        },
+        "rule_refs": {
+          "$ref": "#/$defs/ruleRefs"
+        },
+        "liveness": {
+          "type": "object",
+          "required": [
+            "completion_signals",
+            "heartbeat_interval_ms",
+            "silent_checks_before_blocked",
+            "exit_without_report",
+            "host_actions_while_waiting",
+            "host_actions_forbidden_while_waiting",
+            "minimal_implementation_workers"
+          ],
+          "properties": {
+            "completion_signals": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            },
+            "heartbeat_interval_ms": {
+              "type": "integer",
+              "minimum": 10000
+            },
+            "silent_checks_before_blocked": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            },
+            "exit_without_report": {
+              "type": "string"
+            },
+            "host_actions_while_waiting": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "host_actions_forbidden_while_waiting": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "minimal_implementation_workers": {
+              "type": "string"
+            }
+          }
+        },
+        "launch_channel": {
+          "type": "object",
+          "required": [
+            "required",
+            "forbidden",
+            "applies_to",
+            "record",
+            "host_native_delegation_tools"
+          ],
+          "properties": {
+            "required": {
+              "const": "herdr_pane"
+            },
+            "forbidden": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            },
+            "applies_to": {
+              "type": "string"
+            },
+            "rationale": {
+              "type": "string"
+            },
+            "record": {
+              "$ref": "#/$defs/stringList"
+            },
+            "host_native_delegation_tools": {
+              "type": "string"
+            },
+            "future_option_B": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "work_order": {
+      "type": "object",
+      "required": [
+        "required_fields",
+        "conditional_fields",
+        "empty_semantics"
+      ],
+      "properties": {
+        "required_fields": {
+          "$ref": "#/$defs/stringList"
+        },
+        "conditional_fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "empty_semantics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "rule_refs": {
+          "$ref": "#/$defs/ruleRefs"
+        }
+      }
+    },
+    "jev": {
+      "type": "object",
+      "required": [
+        "connection",
+        "questions",
+        "required_choice_ids",
+        "risk_question_ids",
+        "request",
+        "retry_policy",
+        "cache_policy"
+      ],
+      "properties": {
+        "connection": {
+          "const": "models.json#/router"
+        },
+        "questions": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/jevQuestion"
+          }
+        },
+        "required_choice_ids": {
+          "$ref": "#/$defs/stringList"
+        },
+        "risk_question_ids": {
+          "$ref": "#/$defs/stringList"
+        },
+        "request": {
+          "type": "object",
+          "required": [
+            "single_call_all_questions",
+            "questions_independent",
+            "reserved_context_keys",
+            "exclude_from_state",
+            "response_fields"
+          ],
+          "properties": {
+            "single_call_all_questions": {
+              "const": true
+            },
+            "questions_independent": {
+              "const": true
+            },
+            "state_task": {
+              "type": "string"
+            },
+            "state_context": {
+              "type": "string"
+            },
+            "reserved_context_keys": {
+              "$ref": "#/$defs/stringList"
+            },
+            "exclude_from_state": {
+              "$ref": "#/$defs/stringList"
+            },
+            "question_language": {
+              "const": "en"
+            },
+            "korean_requests": {
+              "type": "string"
+            },
+            "response_fields": {
+              "type": "object",
+              "required": [
+                "choice",
+                "noul"
+              ],
+              "properties": {
+                "choice": {
+                  "$ref": "#/$defs/stringList"
+                },
+                "noul": {
+                  "$ref": "#/$defs/stringList"
+                }
+              }
+            },
+            "rule_refs": {
+              "$ref": "#/$defs/ruleRefs"
+            }
+          }
+        },
+        "retry_policy": {
+          "type": "object",
+          "required": [
+            "max_transport_attempts",
+            "retryable_statuses",
+            "single_retry_owner"
+          ],
+          "properties": {
+            "max_transport_attempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            },
+            "retryable_statuses": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 400,
+                "maximum": 599
+              }
+            },
+            "single_retry_owner": {
+              "const": true
+            },
+            "backoff": {
+              "type": "string"
+            },
+            "never_retry_for_different_semantic_result": {
+              "const": true
+            }
+          }
+        },
+        "cache_policy": {
+          "type": "object",
+          "required": [
+            "enabled",
+            "key_fields",
+            "caches",
+            "invalidate_on"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "key_fields": {
+              "$ref": "#/$defs/stringList"
+            },
+            "caches": {
+              "const": "raw_classification_only"
+            },
+            "invalidate_on": {
+              "$ref": "#/$defs/stringList"
+            },
+            "alias_models_require": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": [
+        "threshold_status",
+        "thresholds",
+        "risk_values",
+        "modes",
+        "statuses",
+        "trusted_flags",
+        "trusted_flag_semantics",
+        "rules",
+        "budgets"
+      ],
+      "properties": {
+        "threshold_status": {
+          "type": "string"
+        },
+        "thresholds": {
+          "type": "object",
+          "required": [
+            "choice_min_probability",
+            "choice_min_confidence",
+            "risk_clear_max",
+            "risk_high_min",
+            "minor_min_probability",
+            "context_clear_max",
+            "include_optional_signal_min"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "choice_min_probability": {
+              "$ref": "#/$defs/unit"
+            },
+            "choice_min_confidence": {
+              "$ref": "#/$defs/unit"
+            },
+            "risk_clear_max": {
+              "$ref": "#/$defs/unit"
+            },
+            "risk_high_min": {
+              "$ref": "#/$defs/unit"
+            },
+            "minor_min_probability": {
+              "$ref": "#/$defs/unit"
+            },
+            "context_clear_max": {
+              "$ref": "#/$defs/unit"
+            },
+            "include_optional_signal_min": {
+              "$ref": "#/$defs/unit"
+            }
+          }
+        },
+        "risk_values": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "minor",
+              "standard",
+              "high"
+            ]
+          },
+          "minItems": 3,
+          "uniqueItems": true
+        },
+        "modes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "delivery",
+              "exploration",
+              "emergency"
+            ]
+          },
+          "minItems": 3,
+          "uniqueItems": true
+        },
+        "statuses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/routerStatus"
+          },
+          "minItems": 5,
+          "uniqueItems": true
+        },
+        "trusted_flags": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "type",
+              "effect"
+            ],
+            "properties": {
+              "type": {
+                "const": "boolean|null"
+              },
+              "effect": {
+                "enum": [
+                  "risk_floor",
+                  "minor_gate",
+                  "mode_gate",
+                  "context_gate",
+                  "modifier",
+                  "e2e_scope",
+                  "role_candidate",
+                  "triage_hint",
+                  "post_deploy_schedule",
+                  "review_floor"
+                ]
+              },
+              "note": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "trusted_flag_semantics": {
+          "type": "object",
+          "required": [
+            "source",
+            "null_means",
+            "true_risk_flag",
+            "false_risk_flag"
+          ],
+          "properties": {
+            "source": {
+              "const": "host_inspection_only"
+            },
+            "null_means": {
+              "const": "unknown"
+            },
+            "true_risk_flag": {
+              "const": "imposes_risk_floor"
+            },
+            "false_risk_flag": {
+              "const": "cannot_cancel_positive_model_signal"
+            }
+          }
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "when",
+              "then"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/ruleId"
+              },
+              "when": {
+                "type": "string"
+              },
+              "then": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "budgets": {
+          "type": "object",
+          "required": [
+            "max_semantic_calls_per_task_revision",
+            "max_automatic_repair_cycles",
+            "advisor_consultations_per_question"
+          ],
+          "properties": {
+            "max_semantic_calls_per_task_revision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            },
+            "max_automatic_repair_cycles": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            },
+            "advisor_consultations_per_question": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            },
+            "budget_reset_on": {
+              "$ref": "#/$defs/stringList"
+            },
+            "budget_not_reset_on": {
+              "$ref": "#/$defs/stringList"
+            },
+            "on_exhaustion": {
+              "type": "string"
+            },
+            "max_semantic_calls_note": {
+              "type": "string"
+            },
+            "evidence_orders_consume_jev_budget": {
+              "const": false
+            }
+          }
+        }
+      }
+    },
+    "workflows": {
+      "type": "object",
+      "required": [
+        "minor",
+        "standard",
+        "high",
+        "exploration",
+        "emergency"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "minor": {
+          "$ref": "#/$defs/workflow"
+        },
+        "standard": {
+          "$ref": "#/$defs/workflow"
+        },
+        "high": {
+          "$ref": "#/$defs/workflow"
+        },
+        "exploration": {
+          "$ref": "#/$defs/workflow"
+        },
+        "emergency": {
+          "$ref": "#/$defs/workflow"
+        }
+      }
+    },
+    "stages": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "owner",
+          "summary"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "owner": {
+            "type": "string",
+            "pattern": "^(host|[a-z][a-z0-9-]*)$"
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "rule_refs": {
+            "$ref": "#/$defs/ruleRefs"
+          }
+        }
+      }
+    },
+    "modifiers": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "activate_when",
+          "checks"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "activate_when": {
+            "type": "string"
+          },
+          "checks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "rule_refs": {
+            "$ref": "#/$defs/ruleRefs"
+          }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "required": [
+        "testing_decision_owner",
+        "testing_question_id",
+        "default_mode",
+        "testing_modes",
+        "tdd_guards",
+        "mode_overrides",
+        "execution",
+        "evidence",
+        "runner_efficiency"
+      ],
+      "properties": {
+        "testing_decision_owner": {
+          "const": "jev"
+        },
+        "testing_question_id": {
+          "type": "string"
+        },
+        "default_mode": {
+          "type": "null",
+          "description": "There is deliberately no fallback testing mode (VER-1)."
+        },
+        "testing_modes": {
+          "type": "object",
+          "required": [
+            "test_first",
+            "preserve_behavior",
+            "test_with_change",
+            "checks_only"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "test_first": {
+              "type": "string"
+            },
+            "preserve_behavior": {
+              "type": "string"
+            },
+            "test_with_change": {
+              "type": "string"
+            },
+            "checks_only": {
+              "type": "string"
+            }
+          }
+        },
+        "tdd_guards": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/ruleId"
+              },
+              "reject_when": {
+                "type": "string"
+              },
+              "then": {
+                "type": "string"
+              },
+              "rule": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "mode_overrides": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "execution": {
+          "type": "object",
+          "required": [
+            "strategy",
+            "owner",
+            "gates",
+            "required_set",
+            "full_suite_triggers"
+          ],
+          "properties": {
+            "strategy": {
+              "const": "impact_scoped_staged"
+            },
+            "owner": {
+              "const": "current_host_session"
+            },
+            "gates": {
+              "type": "object",
+              "required": [
+                "development_iteration",
+                "pr_candidate",
+                "post_merge_or_release"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "development_iteration": {
+                  "type": "string"
+                },
+                "pr_candidate": {
+                  "type": "string"
+                },
+                "post_merge_or_release": {
+                  "type": "string"
+                }
+              }
+            },
+            "required_set": {
+              "type": "string"
+            },
+            "full_suite_triggers": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "layer_ownership": {
+              "type": "string"
+            },
+            "rule_refs": {
+              "$ref": "#/$defs/ruleRefs"
+            }
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "required": [
+            "labels",
+            "non_pass_results",
+            "validity_inputs",
+            "reuse",
+            "revalidation"
+          ],
+          "properties": {
+            "labels": {
+              "$ref": "#/$defs/stringList"
+            },
+            "non_pass_results": {
+              "$ref": "#/$defs/stringList"
+            },
+            "validity_inputs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "reuse": {
+              "type": "object",
+              "required": [
+                "same_target",
+                "cross_revision",
+                "required_ci_checks",
+                "provenance"
+              ],
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "revalidation": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "rule_refs": {
+              "$ref": "#/$defs/ruleRefs"
+            }
+          }
+        },
+        "runner_efficiency": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "enums": {
+      "type": "object",
+      "required": [
+        "change_kind",
+        "spec_status",
+        "test_seam_status",
+        "existing_check_result",
+        "testing_mode",
+        "worker_status",
+        "review_verdict",
+        "rollout_status",
+        "order_purpose",
+        "evidence_label",
+        "launch_channel"
+      ],
+      "additionalProperties": {
+        "$ref": "#/$defs/stringList"
+      }
+    },
+    "templates": {
+      "type": "object",
+      "required": [
+        "request",
+        "evidence_packet",
+        "work_order",
+        "worker_question",
+        "task_record"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "request": {
+          "$ref": "#/$defs/request"
+        },
+        "evidence_packet": {
+          "$ref": "#/$defs/evidencePacket"
+        },
+        "work_order": {
+          "$ref": "#/$defs/workOrder"
+        },
+        "worker_question": {
+          "$ref": "#/$defs/workerQuestion"
+        },
+        "task_record": {
+          "$ref": "#/$defs/taskRecord"
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": [
+        "deployment_status",
+        "priority_metrics",
+        "change_control"
+      ],
+      "properties": {
+        "deployment_status": {
+          "type": "string"
+        },
+        "priority_metrics": {
+          "$ref": "#/$defs/stringList"
+        },
+        "change_control": {
+          "type": "string"
+        },
+        "rule_refs": {
+          "$ref": "#/$defs/ruleRefs"
+        }
+      }
+    },
+    "sources": {
+      "type": "object",
+      "required": [
+        "checked_on",
+        "official_docs"
+      ],
+      "properties": {
+        "checked_on": {
+          "type": "string",
+          "format": "date"
+        },
+        "official_docs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      }
+    },
+    "evidence_orders": {
+      "type": "object",
+      "description": "Positive dispatch triggers and contracts for inspector/researcher. Without this section those roles are defined only by exclusion and are never dispatched (v2.4.0 defect).",
+      "required": [
+        "purpose",
+        "consume_jev_budget",
+        "position",
+        "host_self_inspection_cap",
+        "inspector_triggers",
+        "researcher_triggers",
+        "skip_record",
+        "order_defaults",
+        "output_contracts",
+        "tool_preflight"
+      ],
+      "properties": {
+        "purpose": {
+          "type": "string"
+        },
+        "consume_jev_budget": {
+          "const": false
+        },
+        "position": {
+          "type": "string"
+        },
+        "host_self_inspection_cap": {
+          "type": "object",
+          "required": [
+            "max_files_read",
+            "max_targeted_followups",
+            "on_exceeded"
+          ],
+          "properties": {
+            "max_files_read": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "max_targeted_followups": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            },
+            "on_exceeded": {
+              "type": "string"
+            }
+          }
+        },
+        "inspector_triggers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "when"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^(INS|RES)-\\d+$"
+              },
+              "when": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "researcher_triggers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "when"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^(INS|RES)-\\d+$"
+              },
+              "when": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "skip_record": {
+          "type": "object",
+          "required": [
+            "required",
+            "where",
+            "shape",
+            "allowed_skip_reasons",
+            "violation"
+          ],
+          "properties": {
+            "required": {
+              "const": true
+            },
+            "where": {
+              "type": "string"
+            },
+            "shape": {
+              "type": "object"
+            },
+            "allowed_skip_reasons": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "violation": {
+              "type": "string"
+            }
+          }
+        },
+        "order_defaults": {
+          "type": "object",
+          "required": [
+            "at_stage",
+            "inspector",
+            "researcher"
+          ],
+          "properties": {
+            "at_stage": {
+              "type": "null"
+            },
+            "inspector": {
+              "type": "object",
+              "required": [
+                "purpose",
+                "read_scope",
+                "write_scope",
+                "allowed_actions",
+                "stop_conditions"
+              ],
+              "properties": {
+                "purpose": {
+                  "type": "string"
+                },
+                "read_scope": {
+                  "$ref": "#/$defs/stringList"
+                },
+                "write_scope": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "allowed_actions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "stop_conditions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "researcher": {
+              "type": "object",
+              "required": [
+                "purpose",
+                "read_scope",
+                "write_scope",
+                "allowed_actions",
+                "stop_conditions"
+              ],
+              "properties": {
+                "purpose": {
+                  "type": "string"
+                },
+                "read_scope": {
+                  "$ref": "#/$defs/stringList"
+                },
+                "write_scope": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "allowed_actions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "stop_conditions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "output_contracts": {
+          "type": "object",
+          "required": [
+            "inspector",
+            "researcher"
+          ],
+          "properties": {
+            "inspector": {
+              "type": "object",
+              "required": [
+                "format",
+                "fields",
+                "rules"
+              ],
+              "properties": {
+                "format": {
+                  "type": "string"
+                },
+                "fields": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "rules": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "researcher": {
+              "type": "object",
+              "required": [
+                "format",
+                "fields",
+                "rules"
+              ],
+              "properties": {
+                "format": {
+                  "type": "string"
+                },
+                "fields": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "rules": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tool_preflight": {
+          "type": "object",
+          "required": [
+            "inspector",
+            "researcher",
+            "on_missing"
+          ],
+          "properties": {
+            "inspector": {
+              "$ref": "#/$defs/stringList"
+            },
+            "researcher": {
+              "$ref": "#/$defs/stringList"
+            },
+            "on_missing": {
+              "type": "string"
+            }
+          }
+        },
+        "rule_refs": {
+          "$ref": "#/$defs/ruleRefs"
+        }
+      }
+    },
+    "models_file": {
+      "type": "string",
+      "pattern": "^models\\.json$"
+    },
+    "precedence": {
+      "type": "object",
+      "required": [
+        "description",
+        "order"
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "order": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "string"
+          }
+        },
+        "rule_refs": {
+          "$ref": "#/$defs/ruleRefs"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stringList": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "unit": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "ruleId": {
+      "type": "string",
+      "pattern": "^(AUTH|MODEL|ROLE|ORDER|Q|EVID|CLS|WF|MOD|VER|SAFE|ENF|VAL)-\\d+[a-z]?$"
+    },
+    "ruleRefs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ruleId"
+      },
+      "uniqueItems": true
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "routerStatus": {
+      "enum": [
+        "READY_FOR_PREFLIGHT",
+        "NEEDS_CONTEXT",
+        "NEEDS_DECOMPOSITION",
+        "NOT_APPLICABLE",
+        "BLOCKED"
+      ]
+    },
+    "workerStatus": {
+      "enum": [
+        "RESULT_SUBMITTED",
+        "NEEDS_DECISION",
+        "BLOCKED"
+      ]
+    },
+    "riskValue": {
+      "enum": [
+        "minor",
+        "standard",
+        "high"
+      ]
+    },
+    "testingMode": {
+      "enum": [
+        "test_first",
+        "preserve_behavior",
+        "test_with_change",
+        "checks_only"
+      ]
+    },
+    "roleSettings": {
+      "type": "object",
+      "required": [
+        "harness",
+        "model",
+        "effort"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "harness": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "model": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "effort": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "role": {
+      "type": "object",
+      "required": [
+        "settings",
+        "mission",
+        "target_access",
+        "may_write",
+        "dispatch_when",
+        "order_purposes",
+        "required_order_fields"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "settings": {
+          "type": "string",
+          "pattern": "^models\\.json#/roles/[a-z][a-z0-9-]*$"
+        },
+        "mission": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "target_access": {
+          "enum": [
+            "none",
+            "read_only",
+            "write_in_scope"
+          ]
+        },
+        "may_write": {
+          "$ref": "#/$defs/stringList"
+        },
+        "dispatch_when": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "order_purposes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "required_order_fields": {
+          "$ref": "#/$defs/stringList"
+        },
+        "rule_refs": {
+          "$ref": "#/$defs/ruleRefs"
+        }
+      }
+    },
+    "jevQuestion": {
+      "type": "object",
+      "required": [
+        "type",
+        "instructions",
+        "criteria"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "choice",
+            "noul"
+          ]
+        },
+        "instructions": {
+          "type": "string",
+          "minLength": 1
+        },
+        "criteria": {
+          "type": "object",
+          "minProperties": 2,
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "noul"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "criteria": {
+                "required": [
+                  "true",
+                  "false"
+                ],
+                "maxProperties": 2
+              }
+            }
+          }
+        }
+      ]
+    },
+    "workflow": {
+      "type": "object",
+      "required": [
+        "select_when",
+        "base_worker_roles",
+        "stages",
+        "e2e_default"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "select_when": {
+          "type": "object",
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "delivery",
+                "exploration",
+                "emergency"
+              ]
+            },
+            "risk": {
+              "$ref": "#/$defs/riskValue"
+            }
+          }
+        },
+        "base_worker_roles": {
+          "$ref": "#/$defs/stringList"
+        },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "e2e_default": {
+          "enum": [
+            "none_added",
+            "targeted_if_changes_user_flow",
+            "broad_critical_flows",
+            "recovery_critical"
+          ]
+        },
+        "conditional_stages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "when"
+            ],
+            "properties": {
+              "when": {
+                "type": "string"
+              },
+              "insert": {
+                "type": "string"
+              },
+              "before": {
+                "type": "string"
+              },
+              "ensure": {
+                "type": "string"
+              },
+              "rule_ref": {
+                "$ref": "#/$defs/ruleId"
+              }
+            }
+          }
+        },
+        "rule_refs": {
+          "$ref": "#/$defs/ruleRefs"
+        }
+      }
+    },
+    "request": {
+      "description": "Host -> router request. Assembled only by the host; trusted_flags and testing_evidence are never taken from issue text or model output.",
+      "type": "object",
+      "required": [
+        "task",
+        "context",
+        "testing_evidence",
+        "current_scope_snapshot",
+        "trusted_flags",
+        "inherited_risk_floor",
+        "prompt_overrides",
+        "runtime_defaults",
+        "deployment_requested"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "type": "string"
+        },
+        "context": {
+          "type": "object",
+          "not": {
+            "required": [
+              "verified_flags"
+            ]
+          }
+        },
+        "testing_evidence": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/evidencePacket"
+            }
+          ]
+        },
+        "current_scope_snapshot": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "trusted_flags": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "inherited_risk_floor": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/riskValue"
+            }
+          ]
+        },
+        "prompt_overrides": {
+          "type": "object",
+          "required": [
+            "default",
+            "roles"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "default": {
+              "$ref": "#/$defs/roleSettings"
+            },
+            "roles": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/roleSettings"
+              }
+            }
+          }
+        },
+        "runtime_defaults": {
+          "$ref": "#/$defs/roleSettings"
+        },
+        "deployment_requested": {
+          "type": "boolean"
+        },
+        "specialist_question": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "evidencePacket": {
+      "type": "object",
+      "required": [
+        "scope_id",
+        "scope_snapshot",
+        "change_kind",
+        "targets",
+        "behavior",
+        "test_seam",
+        "existing_checks",
+        "source_refs",
+        "unknowns",
+        "external_contracts"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "scope_id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "scope_snapshot": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "change_kind": {
+          "enum": [
+            "nonbehavioral",
+            "test_only",
+            "preserve_behavior",
+            "change_behavior",
+            "read_only",
+            "disposable_prototype",
+            "unknown"
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "behavior": {
+          "type": "object",
+          "required": [
+            "spec_status",
+            "expected_examples",
+            "complexity_facts"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "spec_status": {
+              "enum": [
+                "precise_enough",
+                "unclear",
+                "not_applicable"
+              ]
+            },
+            "expected_examples": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "complexity_facts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "test_seam": {
+          "type": "object",
+          "required": [
+            "status",
+            "boundary",
+            "setup_observation"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "ready",
+                "local_adaptation",
+                "substantial_setup",
+                "unknown",
+                "not_applicable"
+              ]
+            },
+            "boundary": {
+              "$ref": "#/$defs/nullableString"
+            },
+            "setup_observation": {
+              "$ref": "#/$defs/nullableString"
+            }
+          }
+        },
+        "existing_checks": {
+          "type": "object",
+          "required": [
+            "commands",
+            "last_result",
+            "result_ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "commands": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "last_result": {
+              "enum": [
+                "passed",
+                "expected_failure",
+                "environment_failure",
+                "flaky",
+                "not_run",
+                "not_applicable"
+              ]
+            },
+            "result_ref": {
+              "$ref": "#/$defs/nullableString"
+            }
+          }
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(repo|external):"
+          }
+        },
+        "external_contracts": {
+          "type": "object",
+          "required": [
+            "status",
+            "refs"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "unverified",
+                "verified",
+                "not_applicable"
+              ]
+            },
+            "refs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "unknowns_convention": {
+          "type": "string"
+        }
+      }
+    },
+    "workOrder": {
+      "description": "A host-issued assignment. A template instance (all null/empty) is unissued; the executor must bind order_id/order_revision to its authenticated dispatch record before launch (ORDER-1).",
+      "type": "object",
+      "required": [
+        "task_id",
+        "order_id",
+        "order_revision",
+        "role_id",
+        "purpose",
+        "at_stage",
+        "run_when",
+        "objective",
+        "acceptance_criteria",
+        "input_refs",
+        "workspace",
+        "input_version",
+        "read_scope",
+        "write_scope",
+        "allowed_actions",
+        "constraints_and_local_discretion",
+        "testing_decision_ref",
+        "verification_plan_ref",
+        "verification",
+        "stop_conditions",
+        "deliverable",
+        "report_to",
+        "decision_question",
+        "launch_channel",
+        "pane_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "order_id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "order_revision": {
+          "type": [
+            "integer",
+            "string",
+            "null"
+          ]
+        },
+        "role_id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "purpose": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "at_stage": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "run_when": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "objective": {
+          "type": "string"
+        },
+        "acceptance_criteria": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "input_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "workspace": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "input_version": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "read_scope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "write_scope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allowed_actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "constraints_and_local_discretion": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "testing_decision_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "verification_plan_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "verification": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stop_conditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deliverable": {
+          "type": "string"
+        },
+        "report_to": {
+          "const": "current_host_session"
+        },
+        "decision_question": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "evidence_gap": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "For inspector/researcher orders: the specific gap (trigger id + question) the order must close."
+        },
+        "launch_channel": {
+          "const": "herdr_pane",
+          "description": "The only permitted launch channel (ORDER-9). Subagent/background execution is rejected by schema."
+        },
+        "pane_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Herdr pane id, filled by the host after launch."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "role_id": {
+                "const": "advisor"
+              }
+            },
+            "required": [
+              "role_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "decision_question": {
+                "type": "string",
+                "minLength": 1
+              },
+              "purpose": {
+                "const": "technical_consultation"
+              },
+              "write_scope": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role_id": {
+                "enum": [
+                  "task-verifier",
+                  "advisor"
+                ]
+              }
+            },
+            "required": [
+              "role_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "write_scope": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role_id": {
+                "enum": [
+                  "inspector",
+                  "researcher"
+                ]
+              }
+            },
+            "required": [
+              "role_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidence_gap": {
+                "type": "string",
+                "minLength": 1
+              },
+              "write_scope": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "workerQuestion": {
+      "type": "object",
+      "required": [
+        "task_id",
+        "order_id",
+        "order_revision",
+        "status",
+        "question",
+        "evidence_refs",
+        "affected_scope",
+        "risk_of_guessing",
+        "recommendation"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "order_id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "order_revision": {
+          "type": [
+            "integer",
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "NEEDS_DECISION",
+            "BLOCKED"
+          ]
+        },
+        "question": {
+          "type": "string"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "affected_scope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "risk_of_guessing": {
+          "type": "string"
+        },
+        "recommendation": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "verificationPlanEntry": {
+      "type": "object",
+      "required": [
+        "check_id",
+        "gate",
+        "objective",
+        "coverage_scope",
+        "required_by",
+        "executor_ref",
+        "command_or_family_ref",
+        "environment_ref",
+        "coverage_input_refs",
+        "evidence_refs"
+      ],
+      "properties": {
+        "check_id": {
+          "type": "string"
+        },
+        "gate": {
+          "enum": [
+            "development_iteration",
+            "pr_candidate",
+            "post_merge_or_release"
+          ]
+        },
+        "objective": {
+          "type": "string"
+        },
+        "coverage_scope": {
+          "type": "string"
+        },
+        "required_by": {
+          "type": "string"
+        },
+        "executor_ref": {
+          "type": "string"
+        },
+        "command_or_family_ref": {
+          "type": "string"
+        },
+        "environment_ref": {
+          "type": "string"
+        },
+        "coverage_input_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "taskRecord": {
+      "type": "object",
+      "required": [
+        "task_id",
+        "revision",
+        "state_digest",
+        "policy_version",
+        "router_requested_model",
+        "router_actual_model",
+        "status",
+        "task_type",
+        "mode",
+        "risk",
+        "provisional_risk",
+        "inherited_risk_floor",
+        "workflow_id",
+        "decision_rule_ids",
+        "jev_answers",
+        "trusted_evidence",
+        "assigned_roles",
+        "resolved_role_settings",
+        "setting_sources",
+        "adapter_preflight",
+        "authorized_actions",
+        "acceptance_criteria",
+        "verification_target",
+        "verification_plan",
+        "verification_results",
+        "not_run_with_reasons",
+        "unresolved_blockers",
+        "repair_cycles",
+        "rollout_status",
+        "testing_mode",
+        "testing_decision",
+        "host_execution",
+        "role_work_items",
+        "pending_questions",
+        "coordinator_decisions",
+        "evidence_orders_evaluated"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "revision": {
+          "type": [
+            "integer",
+            "string",
+            "null"
+          ]
+        },
+        "state_digest": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "policy_version": {
+          "type": "string"
+        },
+        "router_requested_model": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "router_actual_model": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "status": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/routerStatus"
+            }
+          ]
+        },
+        "task_type": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "mode": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "delivery",
+                "exploration",
+                "emergency"
+              ]
+            }
+          ]
+        },
+        "risk": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/riskValue"
+            }
+          ]
+        },
+        "provisional_risk": {
+          "type": "boolean"
+        },
+        "inherited_risk_floor": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/riskValue"
+            }
+          ]
+        },
+        "workflow_id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "decision_rule_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ruleId"
+          }
+        },
+        "jev_answers": {
+          "type": "object"
+        },
+        "trusted_evidence": {
+          "type": "object"
+        },
+        "assigned_roles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resolved_role_settings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/roleSettings"
+          }
+        },
+        "setting_sources": {
+          "type": "object"
+        },
+        "adapter_preflight": {
+          "type": "object"
+        },
+        "authorized_actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "acceptance_criteria": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "verification_target": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "verification_plan": {
+          "type": "object",
+          "required": [
+            "target_snapshot",
+            "affected_boundaries",
+            "impact_unknowns",
+            "required_check_refs",
+            "checks"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "target_snapshot": {
+              "$ref": "#/$defs/nullableString"
+            },
+            "affected_boundaries": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "impact_unknowns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "required_check_refs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "checks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/verificationPlanEntry"
+              }
+            }
+          }
+        },
+        "verification_results": {
+          "type": "array"
+        },
+        "not_run_with_reasons": {
+          "type": "array"
+        },
+        "unresolved_blockers": {
+          "type": "array"
+        },
+        "repair_cycles": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rollout_status": {
+          "enum": [
+            "not_performed",
+            "ready_to_merge",
+            "merged",
+            "deployed",
+            "production_verified"
+          ]
+        },
+        "testing_mode": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/testingMode"
+            }
+          ]
+        },
+        "testing_decision": {
+          "type": "object",
+          "required": [
+            "source",
+            "scope_id",
+            "scope_snapshot",
+            "probability",
+            "confidence",
+            "exception"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "source": {
+              "$ref": "#/$defs/nullableString"
+            },
+            "scope_id": {
+              "$ref": "#/$defs/nullableString"
+            },
+            "scope_snapshot": {
+              "$ref": "#/$defs/nullableString"
+            },
+            "probability": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/unit"
+                }
+              ]
+            },
+            "confidence": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/unit"
+                }
+              ]
+            },
+            "exception": {
+              "$ref": "#/$defs/nullableString"
+            }
+          }
+        },
+        "host_execution": {
+          "const": "current_session"
+        },
+        "role_work_items": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/workOrder"
+          }
+        },
+        "pending_questions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/workerQuestion"
+          }
+        },
+        "coordinator_decisions": {
+          "type": "array"
+        },
+        "evidence_orders_evaluated": {
+          "type": "object",
+          "required": [
+            "inspector_triggers",
+            "researcher_triggers",
+            "issued",
+            "skipped"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "inspector_triggers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^INS-\\d+$"
+              }
+            },
+            "researcher_triggers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^RES-\\d+$"
+              }
+            },
+            "issued": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "skipped": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "role_id",
+                  "trigger_ids",
+                  "skip_reason"
+                ],
+                "properties": {
+                  "role_id": {
+                    "enum": [
+                      "inspector",
+                      "researcher"
+                    ]
+                  },
+                  "trigger_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "skip_reason": {
+                    "enum": [
+                      "gap_already_closed_by_host_read",
+                      "valid_prior_evidence_reused",
+                      "trigger_false_positive",
+                      "tool_unavailable_in_worker_session"
+                    ]
+                  },
+                  "evidence_refs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
