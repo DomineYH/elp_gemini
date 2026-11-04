@@ -1,0 +1,16 @@
+{
+  "_comment": "Edit for your repository. The host copies these into verification_plan entries with required_by=repository (VER-5). Keep commands exactly as CI runs them.",
+  "required_ci": ["test", "lint"],
+  "commands": {
+    "test": "npm test",
+    "lint": "npm run lint"
+  },
+  "branch_protection": {
+    "require_review": true,
+    "required_status_checks": ["test", "lint"]
+  },
+  "e2e": {
+    "command": null,
+    "critical_flows": []
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "$schema": "./models.schema.json",
+  "version": "1.1.0",
+  "requires_policy_version": ">=2.5.2",
+  "note": "Edit this file to change which harness/model/effort each delegated role runs on. The policy file never carries model settings. Prompt overrides in a request still take precedence (MODEL-1).",
+  "default": {
+    "harness": null,
+    "model": null,
+    "effort": null
+  },
+  "roles": {
+    "planner": {
+      "harness": "claude",
+      "model": "fable-5-1",
+      "effort": "medium"
+    },
+    "implementer": {
+      "harness": "claude",
+      "model": "opus-5-5",
+      "effort": "high"
+    },
+    "task-verifier": {
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "effort": "xhigh"
+    },
+    "inspector": {
+      "harness": "agy",
+      "model": "gemini-4-argon",
+      "effort": "high"
+    },
+    "researcher": {
+      "harness": "agy",
+      "model": "gemini-4-argon",
+      "effort": "high"
+    },
+    "tester": {
+      "harness": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "effort": "max"
+    },
+    "advisor": {
+      "harness": "agy",
+      "model": "gemini-4-argon",
+      "effort": "high"
+    }
+  },
+  "active_profile": "standard",
+  "profiles": {
+    "standard": {
+      "description": "Settings as shipped; roles resolve from /roles.",
+      "roles": {}
+    },
+    "high_assurance": {
+      "description": "Independent review on a model at least as strong as the implementer; use for security/data-sensitive repositories.",
+      "roles": {
+        "task-verifier": {
+          "harness": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "high"
+        }
+      }
+    }
+  },
+  "router": {
+    "provider": "typesafe",
+    "base_url": "https://api.typesafe.ai",
+    "endpoint": "/v1/systemone",
+    "method": "POST",
+    "api_key_env": "TYPESAFE_API_KEY",
+    "model": "jev-1.13.0",
+    "model_checked_on": "2026-10-02",
+    "availability_reverified": false
+  },
+  "adapters": {
+    "codex": {
+      "efforts": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "notes": "verify effort strings against the installed codex adapter",
+      "launch_channels": [
+        "herdr_pane"
+      ]
+    },
+    "agy": {
+      "efforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "notes": "verify against the installed agy adapter",
+      "launch_channels": [
+        "herdr_pane"
+      ]
+    },
+    "opencode": {
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "notes": "'max' used by tester in shipped settings; confirm the adapter accepts it",
+      "launch_channels": [
+        "herdr_pane"
+      ]
+    },
+    "claude": {
+      "efforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "launch_channels": [
+        "herdr_pane"
+      ],
+      "notes": "same harness as a Claude Code host: still a Herdr pane, never the host's Agent/subagent tool (ORDER-9)"
+    }
+  },
+  "rule_refs": [
+    "MODEL-1",
+    "MODEL-3",
+    "MODEL-5"
+  ]
+}

@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/models.schema.json",
+  "title": "Model settings for jev_task_routing delegated roles",
+  "description": "The only place harness/model/effort are configured. Resolution order (MODEL-1): request prompt overrides -> profiles[active_profile].roles -> roles -> default -> request.runtime_defaults. Never configure the host session here (MODEL-4).",
+  "type": "object",
+  "required": [
+    "version",
+    "requires_policy_version",
+    "default",
+    "roles",
+    "active_profile",
+    "profiles",
+    "router",
+    "adapters"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "requires_policy_version": {
+      "type": "string"
+    },
+    "note": {
+      "type": "string"
+    },
+    "default": {
+      "type": "object",
+      "required": [
+        "harness",
+        "model",
+        "effort"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "harness": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effort": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "roles": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$",
+        "not": {
+          "enum": [
+            "coordinator",
+            "final-verifier",
+            "final_verifier",
+            "host"
+          ]
+        }
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "harness",
+          "model",
+          "effort"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "harness": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          },
+          "effort": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "active_profile": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "profiles": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "description",
+          "roles"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "object",
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "coordinator",
+                  "final-verifier",
+                  "final_verifier",
+                  "host"
+                ]
+              }
+            },
+            "additionalProperties": {
+              "type": "object",
+              "required": [
+                "harness",
+                "model",
+                "effort"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "harness": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "model": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "effort": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "router": {
+      "type": "object",
+      "required": [
+        "provider",
+        "base_url",
+        "endpoint",
+        "method",
+        "api_key_env",
+        "model"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "base_url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "endpoint": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "method": {
+          "enum": [
+            "POST"
+          ]
+        },
+        "api_key_env": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_checked_on": {
+          "type": "string",
+          "format": "date"
+        },
+        "availability_reverified": {
+          "type": "boolean"
+        }
+      }
+    },
+    "adapters": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "efforts",
+          "launch_channels"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "efforts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          },
+          "launch_channels": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "const": "herdr_pane"
+            },
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    "rule_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(MODEL|AUTH|ORDER)-\\d+$"
+      }
+    }
+  }
+}
