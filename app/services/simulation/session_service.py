@@ -99,7 +99,9 @@ async def create_session(
         raws = persona_pool.sample(
             persona_pool.load_pool(), pick.grade, pick.level, pick.n, seed
         )
-        names = persona_pool.assign_pseudonyms(len(raws), seed)
+        names = persona_pool.assign_pseudonyms(
+            [r["gender"] for r in raws], seed
+        )
         refs = [str(r["id"]) for r in raws]
         by_ref = dict(zip(refs, raws))
     adapted_by_ref = dict(zip(by_ref, await adapt_many(list(by_ref.items()))))
@@ -259,6 +261,12 @@ def student_call(
     profile = {
         "가명": persona.display_name,
         "학년": persona.raw_profile.get("grade"),
+        **(
+            {"성별": persona_pool.GENDER_LABEL[gender]}
+            if (gender := persona.raw_profile.get("gender"))
+            in persona_pool.GENDER_LABEL
+            else {}
+        ),
         "학업 수준": persona.adapted_level,
         **persona.adapted_profile,
     }

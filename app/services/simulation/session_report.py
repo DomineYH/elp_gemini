@@ -6,12 +6,12 @@
 """
 
 from app.services.simulation.feedback import render_markdown
+from app.services.simulation.persona_pool import GENDER_LABEL
 from app.utils.text_sanitizer import strip_emojis
 from app.utils.timestamps import utc_iso
 
 STATUS_LABEL = {"setup": "준비", "running": "진행 중", "finished": "종료"}
 NO_FEEDBACK = "피드백이 아직 생성되지 않았습니다."
-GENDER_LABEL = {"female": "여", "male": "남"}
 # 번안 프로필 키 → 문서 항목 이름 (원본 서술 필드는 넣지 않는다)
 ADAPTED_LABELS = (
     ("behavior_summary", "행동 요약"),
