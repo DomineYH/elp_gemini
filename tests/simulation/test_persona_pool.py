@@ -30,8 +30,9 @@ def test_same_seed_gives_same_records_and_names():
     a = persona_pool.sample(pool, "all", "all", 4, seed=42)
     b = persona_pool.sample(pool, "all", "all", 4, seed=42)
     assert _refs(a) == _refs(b)
-    assert persona_pool.assign_pseudonyms(4, 42) == (
-        persona_pool.assign_pseudonyms(4, 42)
+    genders = [r["gender"] for r in _with_genders(a)]
+    assert persona_pool.assign_pseudonyms(genders, 42) == (
+        persona_pool.assign_pseudonyms(genders, 42)
     )
 
 
@@ -58,11 +59,39 @@ def test_grade_and_fixed_level_filter():
     assert len(set(_refs(picked))) == 5
 
 
+def _with_genders(records):
+    return [
+        {**r, "gender": "female" if r["id"] % 3 else "male"} for r in records
+    ]
+
+
 def test_pseudonyms_unique_and_from_name_pool():
-    names = persona_pool.assign_pseudonyms(6, 123)
+    names = persona_pool.assign_pseudonyms(["female", "male", None] * 2, 123)
     assert len(set(names)) == 6
     assert set(names) <= set(persona_pool.NAME_POOL)
     assert len(set(persona_pool.NAME_POOL)) >= 50
+
+
+def test_name_pools_split_by_gender():
+    female, male = persona_pool.FEMALE_NAMES, persona_pool.MALE_NAMES
+    assert len(female) == 23 and len(male) == 30
+    assert not set(female) & set(male)
+    assert persona_pool.NAME_POOL == female + male + ("다온",)
+
+
+@pytest.mark.parametrize("seed", [0, 1, 7, 42, 123, 2**31 - 1])
+def test_pseudonyms_follow_gender_and_seed(seed):
+    genders = ["female", "male", "male", "female", "female", "male"]
+    names = persona_pool.assign_pseudonyms(genders, seed)
+    assert names == persona_pool.assign_pseudonyms(genders, seed)
+    assert len(set(names)) == 6
+    for gender, name in zip(genders, names):
+        pool = (
+            persona_pool.FEMALE_NAMES
+            if gender == "female"
+            else persona_pool.MALE_NAMES
+        )
+        assert name in pool
 
 
 def test_to_candidate_maps_labels_and_truncates_summary():

@@ -314,3 +314,28 @@ def test_setup_page_has_phase_panel_and_start_button(
     page = client.get("/simulation/setup").text
     assert 'id="phasePanel"' in page
     assert "시뮬레이션 시작" in page
+
+
+def test_custom_male_persona_gets_male_name_not_in_sample(ready):
+    from app.services.simulation import persona_pool
+
+    from .test_persona_library import PROFILE
+
+    for _ in range(3):
+        r = ready.post(
+            "/api/simulation/library", json={**PROFILE, "gender": "male"}
+        )
+        assert r.status_code == 201
+    cands = _candidates(ready, n=6, seed=5)
+    dataset, custom = cands[:6], cands[6:]
+    records = persona_pool.resolve_refs([c["ref"] for c in dataset])
+    for c, rec in zip(dataset, records):
+        pool = {
+            "female": persona_pool.FEMALE_NAMES,
+            "male": persona_pool.MALE_NAMES,
+        }[rec["gender"]]
+        assert c["pseudonym"] in pool
+    names = [c["pseudonym"] for c in custom]
+    assert len(names) == 3 and len(set(names)) == 3
+    assert set(names) <= set(persona_pool.MALE_NAMES)
+    assert not set(names) & {c["pseudonym"] for c in dataset}

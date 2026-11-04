@@ -53,16 +53,24 @@ SUBJECT_KO = {
     "Morality and Law": "도덕",
     "Moral Education": "도덕",
 }
-NAME_POOL = tuple(
+FEMALE_NAMES = tuple(
     """
     서연 서윤 지우 서현 민서 하은 하윤 윤서 지유 지민
     채원 수아 지아 다은 예은 수빈 소율 예린 지원 유나
+    은서 가은 시은
+    """.split()
+)
+MALE_NAMES = tuple(
+    """
     민준 서준 도윤 예준 시우 하준 주원 지호 지후 준우
     준서 도현 건우 현우 우진 선우 연우 유준 정우 승우
     승현 시윤 준혁 은우 지환 민재 윤우 이준 태윤 하람
-    다온 은서 가은 시은
     """.split()
 )
+# 직접 선택 생성의 가명 소속 검사용 전체 풀
+NAME_POOL = FEMALE_NAMES + MALE_NAMES + ("다온",)
+GENDER_NAMES = {"female": FEMALE_NAMES, "male": MALE_NAMES}
+GENDER_LABEL = {"female": "여", "male": "남"}
 
 
 def normalize_level(value: str) -> str:
@@ -103,12 +111,16 @@ def sample(pool, grade, level, n: int, seed: int) -> list[dict]:
     return picked
 
 
-def assign_pseudonyms(count: int, seed: int) -> list[str]:
+def assign_pseudonyms(genders: list[str | None], seed: int) -> list[str]:
+    """성별 풀에서 중복 없이 뽑는다. female/male이 아니면 전체 NAME_POOL."""
     rng = random.Random(seed)
-    names = rng.sample(NAME_POOL, min(count, len(NAME_POOL)))
-    # ponytail: count > len(NAME_POOL)이면 이름이 반복된다.
+    names: list[str] = []
+    # ponytail: 한 성별이 풀(여 23·남 30)보다 많으면 IndexError.
     # SIM_MAX_PERSONAS(6)가 풀보다 훨씬 작아 지금은 생기지 않는다.
-    return [names[i % len(names)] for i in range(count)]
+    for gender in genders:
+        pool = GENDER_NAMES.get(gender, NAME_POOL)
+        names.append(rng.choice([n for n in pool if n not in names]))
+    return names
 
 
 def _subject_ko(name: str) -> str:

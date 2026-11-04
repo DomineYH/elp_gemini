@@ -659,3 +659,26 @@ def test_student_call_sees_own_previous_understanding(
     assert [ln for ln in u.splitlines() if ln.startswith("[직전 이해도]")] == [
         f"[직전 이해도] {values[k]}"
     ]
+
+
+def test_student_call_profile_has_gender(ready, fake_gemini, monkeypatch):
+    import json
+
+    from app.services.simulation.persona_pool import GENDER_LABEL
+
+    systems = {}
+
+    def recording(kind, **kw):
+        if kind == "student":
+            systems[kw["persona_key"]] = kw["system"]
+        return fake_gemini(kind, **kw)
+
+    monkeypatch.setattr(gemini, "call_structured", recording)
+    state = _create(ready)
+    ready.post(_api(state["session"]["id"], "/phases/0/enter"))
+    assert len(systems) == 4
+    for p in state["personas"]:
+        system = systems[str(p["source_record_id"])]
+        profile = json.loads(system.split("[나의 프로필]\n", 1)[1])
+        assert list(profile)[:3] == ["가명", "학년", "성별"]
+        assert profile["성별"] in GENDER_LABEL.values()
