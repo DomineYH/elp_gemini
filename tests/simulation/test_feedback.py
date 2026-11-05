@@ -163,6 +163,34 @@ def test_feedback_input_drops_stuck_summary_misconception(
     assert "[오개념:" not in user and "시작해야 할지 모름" not in user
 
 
+def test_feedback_input_drops_stuck_only_misconception(
+    ready, fake_gemini, monkeypatch
+):
+    """질문·'모르겠어요'만 한 반응의 오개념은 [오개념:] 태그로 넘기지 않는다 (#330)."""
+    fake_gemini.results["student"] = StudentReaction(
+        action="고민한다",
+        utterance="피자... 조각이요...? 잘 모르겠어요...",
+        artifact="",
+        misconception="노인 인구 비율이 늘면 전체 사람 수도 늘어난다고 생각함",
+        ready_for_next=False,
+        understanding=30,
+        confidence=0.5,
+        on_task=True,
+    )
+    sid = _finished(ready)
+    prompts = []
+
+    def recording(kind, **kw):
+        prompts.append((kind, kw["user"]))
+        return fake_gemini(kind, **kw)
+
+    monkeypatch.setattr(gemini, "call_structured", recording)
+    assert ready.post(_api(sid, "/feedback")).status_code == 200
+    [(_, user)] = prompts
+    assert "피자... 조각이요...?" in user
+    assert "[오개념:" not in user and "전체 사람 수도" not in user
+
+
 def test_running_session_is_refused(ready, fake_gemini):
     sid = _create(ready)
     r = ready.post(_api(sid, "/feedback"))

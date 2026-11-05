@@ -1,6 +1,7 @@
 """Gemini 응답 파싱 (#152), 클라이언트 timeout (#260), 클라이언트 수명 (#275)."""
 
 import gc
+import json
 import logging
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -282,6 +283,39 @@ def test_stuck_summary_is_not_a_misconception(
         '"misconception": ""', f'"misconception": "{misconception}"'
     ).replace('"understanding": 85', f'"understanding": {raw}')
     parsed = parse_structured(StudentReaction, text)
+    assert (parsed.misconception, parsed.understanding) == (kept, expected)
+
+
+MISC = "비율이 늘면 전체 사람 수도 늘어난다고 생각함"
+
+
+@pytest.mark.parametrize(
+    "utterance, artifact, raw, kept, expected",
+    [
+        ("잘 모르겠어요...", "", 30, "", 30),
+        ("피자... 조각이요...? 잘 모르겠어요...", "", 30, "", 30),
+        ("어... 인구수가 늘어나는 게... 아니에요...?", "", 30, "", 30),
+        ("비율이 커지면 사람 수도 늘어나요.", "", 30, MISC, 30),
+        ("잘 모르겠어요. 근데 분모끼리 더하면 돼요.", "", 30, MISC, 30),
+        ("잘 모르겠어요.", "32명 - 22명 = 10명 감소", 30, MISC, 30),
+        ("많이 연습해서요...", "", 30, MISC, 30),
+        ("", "", 30, "", 30),
+        ("잘 모르겠어요...", "", 90, "", 79),
+    ],
+)
+def test_stuck_only_reaction_has_no_misconception(
+    utterance, artifact, raw, kept, expected
+):
+    """질문·'모르겠어요'만 있고 산출물이 없으면 오개념을 비운다. 79 상한은 먼저 (#330)."""
+    data = json.loads(GOOD) | {
+        "utterance": utterance,
+        "artifact": artifact,
+        "misconception": MISC,
+        "understanding": raw,
+    }
+    parsed = parse_structured(
+        StudentReaction, json.dumps(data, ensure_ascii=False)
+    )
     assert (parsed.misconception, parsed.understanding) == (kept, expected)
 
 

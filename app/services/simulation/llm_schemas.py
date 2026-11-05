@@ -51,6 +51,20 @@ STUCK_SUMMARY = re.compile(
     r"|가능성이 ?(있[음다]|높[음다])|우려가 ?있[음다])\s*\.?$"
 )
 
+# 문장은 ?, !, 마침표 하나에서 끝난다. 말줄임('...', '…')은 문장을 끝내지 않는다 (#330)
+_SENTENCE_END = re.compile(r"(?<=[?!])|(?<!\.)\.(?!\.)")
+_STUCK_WORDS = re.compile(r"모르겠|몰라|모르는데|헷갈")
+
+
+def _stuck_only(utterance: str, artifact: str) -> bool:
+    """산출물이 없고 모든 문장이 질문이거나 '모르겠어요'류다 (#330)."""
+    if artifact.strip():
+        return False
+    sentences = (s.strip() for s in _SENTENCE_END.split(utterance))
+    return all(
+        s.endswith("?") or _STUCK_WORDS.search(s) for s in sentences if s
+    )
+
 
 class StudentReaction(BaseModel):
     action: str
@@ -75,7 +89,11 @@ class StudentReaction(BaseModel):
         if self.misconception and self.understanding >= 80:
             self.understanding = 79
         # 상한은 원문 기준으로 먼저 걸고(막힘도 이해 부족), 텍스트만 비운다
-        if STUCK_SUMMARY.search(self.misconception.strip()):
+        # 질문·'모르겠어요'만 한 반응엔 드러난 생각이 없는데, 모델이 교사 질문이나
+        # 예전 오개념을 옮겨 적는다 (#330)
+        if STUCK_SUMMARY.search(self.misconception.strip()) or _stuck_only(
+            self.utterance, self.artifact
+        ):
             self.misconception = ""
         return self
 
