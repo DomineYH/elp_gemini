@@ -6,6 +6,7 @@ Gemini 호출이 모두 끝난 뒤에만 DB에 쓴다(실패 시 아무것도 �
 
 import json
 import random
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select, update
@@ -239,16 +240,25 @@ async def _turn_result(db, sid, utterances) -> dict:
     }
 
 
-def _previous_understanding(utterances, persona_id) -> int | None:
-    """그 학생의 이번 장면 마지막 유효 반응의 이해도. 없으면 None."""
+def _last_valid(utterances, persona_id) -> dict:
+    """그 학생의 이번 장면 마지막 유효 반응의 structured. 없으면 {}."""
     for u in reversed(utterances):
         if (
             u.speaker_type == "student"
             and u.persona_id == persona_id
             and u.structured is not None
         ):
-            return u.structured.get("understanding")
-    return None
+            return u.structured
+    return {}
+
+
+def _previous_understanding(utterances, persona_id) -> int | None:
+    """그 학생의 이번 장면 마지막 유효 반응의 이해도. 없으면 None."""
+    return _last_valid(utterances, persona_id).get("understanding")
+
+
+def _previous_artifact(utterances, persona_id) -> str:
+    return _last_valid(utterances, persona_id).get("artifact") or ""
 
 
 def _shown_before(persona_id, idx, history) -> dict[int, str]:
@@ -348,6 +358,24 @@ def student_call(
 # 한 반응당 이해도 상승 상한 (#310, prompt sim_student 규칙)
 UNDERSTANDING_MAX_RISE = 20
 
+# 따라 하기·같은 산출물 다시 말하기 판정 길이 (#319, 실세션 8–10 재생으로 정함)
+ECHO_MIN_CORE = 10
+SAME_ARTIFACT_MAX_CORE = 10
+_FILLER = re.compile(
+    r"^(?:[\s,.…!?~]*(?:어+|저기|저|음+|네|아+|응)(?=[\s,.…!?~]|$))+"
+)
+_SEPARATORS = re.compile(r"[\s\W_]+")
+
+
+def _plain(text: str) -> str:
+    return _SEPARATORS.sub("", text)
+
+
+def _core(utterance: str) -> str:
+    """앞쪽 군말, 공백·문장부호, 끝 '요' 하나를 뺀 발화 핵심."""
+    core = _plain(_FILLER.sub("", utterance))
+    return core[:-1] if core.endswith("요") else core
+
 
 def student_utterance(
     session_id: int,
@@ -357,6 +385,9 @@ def student_utterance(
     result: gemini.LLMResult,
     first: bool = False,
     previous: int | None = None,
+    *,
+    teacher: str = "",
+    previous_artifact: str = "",
 ) -> SimulationUtterance:
     """파싱 실패면 structured=NULL, content=모델 원문."""
     reaction = result.parsed
@@ -369,6 +400,19 @@ def student_utterance(
     ):
         # 곁가지·진행 지시 반응은 직전 값 유지 규칙을 모델이 어긴다 (#306)
         structured["understanding"] = previous
+    if structured and previous is not None:
+        core = _core(structured["utterance"])
+        artifact = structured["artifact"].strip()
+        if (len(core) >= ECHO_MIN_CORE and core in _plain(teacher)) or (
+            artifact
+            and artifact == previous_artifact.strip()
+            and len(core) <= SAME_ARTIFACT_MAX_CORE
+        ):
+            # 교사 말 따라 하기·같은 산출물 짧게 다시 말하기는 새로 보인 이해가 없는데
+            # 모델이 이해도를 올린다 (#319)
+            structured["understanding"] = min(
+                structured["understanding"], previous
+            )
     if structured and previous is not None:
         # 상승폭 규칙 "한 번에 20 넘게 오르지 않는다"를 모델이 어긴다 (#310)
         structured["understanding"] = min(
@@ -611,7 +655,16 @@ async def say(
     teacher.seq = seq
     db.add(teacher)
     db.add_all(
-        student_utterance(sid, idx, seq + 1 + i, p, r, previous=prev[p.id])
+        student_utterance(
+            sid,
+            idx,
+            seq + 1 + i,
+            p,
+            r,
+            previous=prev[p.id],
+            teacher=body.content,
+            previous_artifact=_previous_artifact(stored, p.id),
+        )
         for i, (p, r) in enumerate(zip(responders, results))
     )
     await _commit_or_conflict(db)
@@ -748,6 +801,8 @@ async def regenerate(
         result,
         first=len(mine) == 1,
         previous=prev,
+        teacher=next(u.content for u in stored if u.seq == asked),
+        previous_artifact=_previous_artifact(mine[:-1], persona_id),
     )
     for field in (
         "content",
