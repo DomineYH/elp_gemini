@@ -226,6 +226,11 @@
         return { chosen: [...kept, ref], dropped };
     }
 
+    // 다시 불러온 후보에 아직 있는 기존 선택만 이전 순서대로 남긴다
+    function keepChosen(prevArr, candidateRefs) {
+        return prevArr.filter(ref => candidateRefs.includes(ref));
+    }
+
     async function load(newSeed, pickRef) {
         const params = new URLSearchParams({
             grade: document.getElementById("fGrade").value,
@@ -241,7 +246,10 @@
             seed = body.seed;
             candidates = body.candidates;
             status.textContent = "";
-            chooseFirst(Math.min(Math.max(Number(count.value), MIN), candidates.length));
+            // 새 페르소나 저장 후(같은 seed)에는 교사가 고른 선택을 유지한다
+            const kept = pickRef ? keepChosen([...chosen], candidates.map(c => c.ref)) : [];
+            if (kept.length) chosen = new Set(kept);
+            else chooseFirst(Math.min(Math.max(Number(count.value), MIN), candidates.length));
             if (pickRef) {
                 // 방금 만든 페르소나를 체크한다 (최대 인원이면 마지막 선택을 빼고 알린다)
                 const picked = pickInto([...chosen], pickRef, MAX);
