@@ -769,6 +769,89 @@ def test_regenerated_echo_is_held(ready, fake_gemini):
     assert fixed["structured"]["understanding"] == 40
 
 
+# --- 따옴표로 알려 준 답에 짧은 꼬리만 붙인 반응도 이해도를 올리지 않는다 (#332) ---
+
+QUOTED_ASK = (
+    "맞아! 그럼 우리가 이 파일로 앞으로 확인하려는 건 뭘까? "
+    "'어느 나이대 사람이 늘고 줄어드는지'라고 말해 볼 수 있을까?"
+)
+TAILED = "어... 어느 나이대 사람이 늘고 줄어드는지... 보는 거요."
+
+
+def _say_after_60(
+    client, fake_gemini, utterance, understanding=80, content=QUOTED_ASK
+):
+    _, turn = _enter_then_say(
+        client,
+        fake_gemini,
+        _react(understanding=60),
+        _react(utterance=utterance, understanding=understanding),
+        content=content,
+    )
+    return _stored(turn)
+
+
+def test_quoted_echo_with_short_tail_is_held(ready, fake_gemini):
+    assert _say_after_60(ready, fake_gemini, TAILED) == {60}
+
+
+def test_quoted_echo_with_tail_drop_is_kept(ready, fake_gemini):
+    assert _say_after_60(ready, fake_gemini, TAILED, understanding=40) == {40}
+
+
+@pytest.mark.parametrize(
+    "tail, expected", [("일이삼사오요", 60), ("일이삼사오육요", 80)]
+)
+def test_quoted_echo_tail_boundary(ready, fake_gemini, tail, expected):
+    utterance = f"어느 나이대 사람이 늘고 줄어드는지 {tail}"
+    assert _say_after_60(ready, fake_gemini, utterance) == {expected}
+
+
+def test_short_quoted_span_with_tail_rises(ready, fake_gemini):
+    stored = _say_after_60(
+        ready,
+        fake_gemini,
+        "인구구성비_모둠이름 했어요",
+        content="'인구구성비_모둠이름'으로 저장해 볼까?",
+    )
+    assert stored == {80}
+
+
+def test_unquoted_teacher_with_tail_rises(ready, fake_gemini):
+    unquoted = QUOTED_ASK.replace("'", "")
+    assert _say_after_60(ready, fake_gemini, TAILED, content=unquoted) == {80}
+
+
+def test_quoted_phrase_with_own_words_rises(ready, fake_gemini):
+    own = "어느 나이대 사람이 늘고 줄어드는지 보면 아기가 줄어드는 걸 알 수 있어요"
+    assert _say_after_60(ready, fake_gemini, own) == {80}
+
+
+@pytest.mark.parametrize(
+    "open_, close", [("'", "'"), ('"', '"'), ("‘", "’"), ("“", "”")]
+)
+def test_quote_styles_are_all_matched(ready, fake_gemini, open_, close):
+    content = QUOTED_ASK.replace("'", open_, 1).replace("'", close, 1)
+    assert _say_after_60(ready, fake_gemini, TAILED, content=content) == {60}
+
+
+def test_regenerated_quoted_echo_with_tail_is_held(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    fake_gemini.results["student"] = _react(understanding=60)
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/say"), json={"content": QUOTED_ASK})
+
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(utterance=TAILED, understanding=80)
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [fixed] = r.json()["utterances"]
+    assert fixed["structured"]["understanding"] == 60
+
+
 def test_student_call_sees_own_previous_understanding(
     ready, fake_gemini, monkeypatch
 ):
