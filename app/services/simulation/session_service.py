@@ -360,11 +360,25 @@ UNDERSTANDING_MAX_RISE = 20
 
 # 따라 하기·같은 산출물 다시 말하기 판정 길이 (#319, 실세션 8–10 재생으로 정함)
 ECHO_MIN_CORE = 10
+# 따옴표로 알려 준 답 뒤 꼬리("보는 거요") 길이 상한 (#332, 실세션 8–11: 대상 3자·비대상 8자)
+ECHO_MAX_TAIL = 5
 SAME_ARTIFACT_MAX_CORE = 10
 _FILLER = re.compile(
     r"^(?:[\s,.…!?~]*(?:어+|저기|저|음+|네|아+|응)(?=[\s,.…!?~]|$))+"
 )
 _SEPARATORS = re.compile(r"[\s\W_]+")
+# 같은 따옴표 쌍만 구간으로 본다. ASCII 따옴표는 영문·숫자 뒤(It's)면 여는 따옴표가 아니다.
+# 모양별로 따로 찾아 다른 모양 안에 든 구간도 잡는다
+# ponytail: ASCII 홑따옴표 구간 안의 아포스트로피('It's …')는 구간을 끝낸다. 교사가 영어 문장을 인용하면 고친다
+_QUOTED = [
+    re.compile(p)
+    for p in (
+        r"(?<![A-Za-z0-9])'([^']+)'",
+        r"(?<![A-Za-z0-9])\"([^\"]+)\"",
+        r"‘([^’]+)’",
+        r"“([^”]+)”",
+    )
+]
 
 
 def _plain(text: str) -> str:
@@ -375,6 +389,17 @@ def _core(utterance: str) -> str:
     """앞쪽 군말, 공백·문장부호, 끝 '요' 하나를 뺀 발화 핵심."""
     core = _plain(_FILLER.sub("", utterance))
     return core[:-1] if core.endswith("요") else core
+
+
+def _quoted_echo(core: str, teacher: str) -> bool:
+    """교사가 따옴표로 준 문구를 담고 꼬리만 짧게 붙인 발화인지 (#332)."""
+    return any(
+        len(span) >= ECHO_MIN_CORE
+        and span in core
+        and len(core) - len(span) <= ECHO_MAX_TAIL
+        for quoted in _QUOTED
+        for span in map(_core, quoted.findall(teacher))
+    )
 
 
 def student_utterance(
@@ -403,13 +428,17 @@ def student_utterance(
     if structured and previous is not None:
         core = _core(structured["utterance"])
         artifact = structured["artifact"].strip()
-        if (len(core) >= ECHO_MIN_CORE and core in _plain(teacher)) or (
-            artifact
-            and artifact == previous_artifact.strip()
-            and len(core) <= SAME_ARTIFACT_MAX_CORE
+        if (
+            (len(core) >= ECHO_MIN_CORE and core in _plain(teacher))
+            or _quoted_echo(core, teacher)
+            or (
+                artifact
+                and artifact == previous_artifact.strip()
+                and len(core) <= SAME_ARTIFACT_MAX_CORE
+            )
         ):
-            # 교사 말 따라 하기·같은 산출물 짧게 다시 말하기는 새로 보인 이해가 없는데
-            # 모델이 이해도를 올린다 (#319)
+            # 교사 말 따라 하기(따옴표 답 + 짧은 꼬리 포함)·같은 산출물 짧게 다시 말하기는
+            # 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#319, #332)
             structured["understanding"] = min(
                 structured["understanding"], previous
             )
