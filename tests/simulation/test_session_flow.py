@@ -446,6 +446,10 @@ def test_restore_returns_everything_in_seq_order(ready, fake_gemini):
 # --- 곁가지 반응은 직전 이해도를 유지한다 (#306) ---
 
 
+# 서술문이 있어야 오개념이 남는다: 막힘뿐인 반응은 비워진다 (#330)
+STATEMENT = "분모끼리 더하면 돼요."
+
+
 def _react(**kw):
     # model_copy와 달리 검증기(오개념 79 상한)를 거친다
     return StudentReaction(**{**_reaction(False).model_dump(), **kw})
@@ -523,9 +527,41 @@ def test_off_task_misconception_keeps_validator_cap(ready, fake_gemini):
         ready,
         fake_gemini,
         _react(understanding=60),
-        _react(on_task=False, misconception="분모끼리 더함", understanding=85),
+        _react(
+            on_task=False,
+            utterance=STATEMENT,
+            misconception="분모끼리 더함",
+            understanding=85,
+        ),
     )
     assert _stored(turn) == {79}
+
+
+@pytest.mark.parametrize(
+    "utterance, misconception",
+    [
+        (
+            "분모끼리 더하면 돼요.",
+            "어떻게 시작해야 할지 모름",
+        ),  # 끝말 필터 (#302)
+        ("잘 모르겠어요.", "분모끼리 더함"),  # 막힘뿐 (#330)
+    ],
+)
+def test_off_task_cleared_misconception_keeps_previous(
+    ready, fake_gemini, utterance, misconception
+):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=60),
+        _react(
+            on_task=False,
+            utterance=utterance,
+            misconception=misconception,
+            understanding=85,
+        ),
+    )
+    assert _stored(turn) == {60}
 
 
 def test_regenerated_off_task_reaction_keeps_previous(ready, fake_gemini):
@@ -588,7 +624,12 @@ def test_drop_is_not_capped(ready, fake_gemini):
         ready,
         fake_gemini,
         _react(understanding=70),
-        _react(on_task=True, misconception="분모끼리 더함", understanding=30),
+        _react(
+            on_task=True,
+            utterance=STATEMENT,
+            misconception="분모끼리 더함",
+            understanding=30,
+        ),
     )
     assert _stored(turn) == {30}
 
@@ -598,7 +639,9 @@ def test_misconception_big_rise_is_capped(ready, fake_gemini):
         ready,
         fake_gemini,
         _react(understanding=30),
-        _react(misconception="분모끼리 더함", understanding=95),
+        _react(
+            utterance=STATEMENT, misconception="분모끼리 더함", understanding=95
+        ),
     )
     assert _stored(turn) == {50}
 
