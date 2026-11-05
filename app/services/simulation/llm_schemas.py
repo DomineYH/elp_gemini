@@ -51,8 +51,8 @@ STUCK_SUMMARY = re.compile(
     r"|가능성이 ?(있[음다]|높[음다])|우려가 ?있[음다])\s*\.?$"
 )
 
-# 문장은 ?, !, 마침표 하나에서 끝난다. 말줄임('...', '…')은 문장을 끝내지 않는다 (#330)
-_SENTENCE_END = re.compile(r"(?<=[?!])|(?<!\.)\.(?!\.)")
+# 문장은 ?, !, 마침표 하나, 줄바꿈에서 끝난다. 말줄임('...', '…')은 문장을 끝내지 않는다 (#330)
+_SENTENCE_END = re.compile(r"(?<=[?!])|(?<!\.)\.(?!\.)|\n")
 _STUCK_WORDS = re.compile(r"모르겠|몰라|모르는데|헷갈")
 
 
@@ -61,8 +61,11 @@ def _stuck_only(utterance: str, artifact: str) -> bool:
     if artifact.strip():
         return False
     sentences = (s.strip() for s in _SENTENCE_END.split(utterance))
+    # 글자 없는 조각('?!'의 '!', '...')은 문장이 아니다
     return all(
-        s.endswith("?") or _STUCK_WORDS.search(s) for s in sentences if s
+        s.endswith("?") or _STUCK_WORDS.search(s)
+        for s in sentences
+        if re.search(r"\w", s)
     )
 
 
