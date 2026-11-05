@@ -367,7 +367,10 @@ _FILLER = re.compile(
     r"^(?:[\s,.…!?~]*(?:어+|저기|저|음+|네|아+|응)(?=[\s,.…!?~]|$))+"
 )
 _SEPARATORS = re.compile(r"[\s\W_]+")
-_QUOTED = re.compile(r"['\"‘“]([^'\"‘’“”]+)['\"’”]")
+# 같은 따옴표 쌍만 구간으로 본다. ASCII 따옴표는 영문·숫자 뒤(It's)면 여는 따옴표가 아니다
+_QUOTED = re.compile(
+    r"(?<![A-Za-z0-9])'([^']+)'|(?<![A-Za-z0-9])\"([^\"]+)\"|‘([^’]+)’|“([^”]+)”"
+)
 
 
 def _plain(text: str) -> str:
@@ -386,7 +389,7 @@ def _quoted_echo(core: str, teacher: str) -> bool:
         len(span) >= ECHO_MIN_CORE
         and span in core
         and len(core) - len(span) <= ECHO_MAX_TAIL
-        for span in map(_core, _QUOTED.findall(teacher))
+        for span in (_core("".join(m)) for m in _QUOTED.findall(teacher))
     )
 
 

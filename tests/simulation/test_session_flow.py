@@ -835,6 +835,16 @@ def test_quote_styles_are_all_matched(ready, fake_gemini, open_, close):
     assert _say_after_60(ready, fake_gemini, TAILED, content=content) == {60}
 
 
+def test_mismatched_quote_styles_are_not_a_span(ready, fake_gemini):
+    content = QUOTED_ASK.replace("지'라고", '지"라고')
+    assert _say_after_60(ready, fake_gemini, TAILED, content=content) == {80}
+
+
+def test_word_internal_apostrophe_does_not_open_a_span(ready, fake_gemini):
+    content = "It's your turn. '어느 나이대 사람이 늘고 줄어드는지'라고 말해 봐"
+    assert _say_after_60(ready, fake_gemini, TAILED, content=content) == {60}
+
+
 def test_regenerated_quoted_echo_with_tail_is_held(ready, fake_gemini):
     state = _create(ready)
     sid = state["session"]["id"]
