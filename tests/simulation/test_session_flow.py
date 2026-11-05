@@ -212,7 +212,8 @@ def test_first_reaction_without_artifact_is_capped_until_say(ready):
 
 def test_first_reaction_with_artifact_is_capped_until_say(ready, fake_gemini):
     """산출물이 있어도 장면 첫 반응은 80 미만으로 저장한다 (#318)."""
-    # 같은 산출물을 짧게 다시 말하면 오르지 않으므로(#319) 풀이를 말로 설명한다
+    # 같은 산출물을 짧게 다시 말하거나(#319) 자기 직전 말을 되풀이하면(#336)
+    # 오르지 않으므로 풀이를 말로 설명하고, say에서는 다르게 설명한다
     fake_gemini.results["student"] = _reaction(True).model_copy(
         update={"artifact": "3/4", "utterance": "분모를 같게 만들어서 더했어요"}
     )
@@ -225,6 +226,9 @@ def test_first_reaction_with_artifact_is_capped_until_say(ready, fake_gemini):
     r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
     assert r.status_code == 409
 
+    fake_gemini.results["student"] = fake_gemini.results["student"].model_copy(
+        update={"utterance": "분모를 4로 같게 해서 1/4하고 2/4를 더했어요"}
+    )
     turn = ready.post(_api(sid, "/say"), json={"content": "해 볼까?"}).json()
     assert turn["agreement"]["understanding"] == {i: 90 for i in ids}
     assert turn["agreement"]["all_agreed"] is True
@@ -976,6 +980,124 @@ def test_regenerated_quoted_echo_with_tail_is_held(ready, fake_gemini):
     assert r.status_code == 200
     [fixed] = r.json()["utterances"]
     assert fixed["structured"]["understanding"] == 60
+
+
+# --- 자기 직전 말을 되풀이한 반응은 이해도를 올리지 않는다 (#336) ---
+
+# 교사 말에 학생 문장이 없어 규칙 A·A′로는 설명되지 않는다
+REPEAT_ASK = "좋아. 방금 말한 거 한 번만 더 짧게 말해 줄래?"
+SAID = "전체 인구 중에서 각 나이대가 차지하는 비율이요."
+
+
+def _repeat_after_20(
+    client,
+    fake_gemini,
+    utterance,
+    understanding=35,
+    before=SAID,
+    artifacts=("", ""),
+):
+    _, turn = _enter_then_say(
+        client,
+        fake_gemini,
+        _react(utterance=before, understanding=20, artifact=artifacts[0]),
+        _react(
+            utterance=utterance,
+            understanding=understanding,
+            artifact=artifacts[1],
+        ),
+        content=REPEAT_ASK,
+    )
+    return _stored(turn)
+
+
+def test_own_repeat_without_artifact_is_held(ready, fake_gemini):
+    assert _repeat_after_20(ready, fake_gemini, SAID[:-1] + "...") == {20}
+
+
+def test_own_repeat_shortened_is_held(ready, fake_gemini):
+    assert _repeat_after_20(
+        ready, fake_gemini, "각 나이대가 차지하는 비율이요."
+    ) == {20}
+
+
+def test_own_repeat_with_added_content_rises(ready, fake_gemini):
+    more = SAID + " 그래서 65세 이상이 늘면 그 비율이 커져요."
+    assert _repeat_after_20(ready, fake_gemini, more) == {35}
+
+
+@pytest.mark.parametrize(
+    "utterance, expected",
+    [("일이삼사오육칠팔구", 35), ("일이삼사오육칠팔구십", 20)],
+)
+def test_own_repeat_length_boundary(ready, fake_gemini, utterance, expected):
+    stored = _repeat_after_20(
+        ready, fake_gemini, utterance, before="일이삼사오육칠팔구십 하나요"
+    )
+    assert stored == {expected}
+
+
+@pytest.mark.parametrize(
+    "artifacts, expected",
+    [(("", XLSX), 35), (("a.xlsx", "b.xlsx"), 35), ((XLSX, XLSX), 20)],
+)
+def test_own_repeat_artifact(ready, fake_gemini, artifacts, expected):
+    stored = _repeat_after_20(ready, fake_gemini, SAID, artifacts=artifacts)
+    assert stored == {expected}
+
+
+def test_own_repeat_drop_is_kept(ready, fake_gemini):
+    assert _repeat_after_20(ready, fake_gemini, SAID, understanding=10) == {10}
+
+
+def test_own_repeat_without_previous_valid_reaction_rises(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    fake_gemini.parse_fail.add("student")
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(utterance=SAID, understanding=35)
+    turn = ready.post(_api(sid, "/say"), json={"content": REPEAT_ASK}).json()
+    assert _stored(turn) == {35}
+
+
+def test_other_students_repeat_is_not_held(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    speaker = str(state["personas"][0]["source_record_id"])
+    fake_gemini.results["student"] = lambda key: _react(
+        utterance=SAID if key == speaker else "잘 모르겠어요.", understanding=20
+    )
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.results["student"] = _react(utterance=SAID, understanding=35)
+    turn = ready.post(_api(sid, "/say"), json={"content": REPEAT_ASK}).json()
+    by_persona = {
+        u["persona_id"]: u["structured"]["understanding"]
+        for u in turn["utterances"]
+        if u["speaker_type"] == "student"
+    }
+    speaker_id = state["personas"][0]["id"]
+    assert by_persona.pop(speaker_id) == 20
+    assert set(by_persona.values()) == {35}
+
+
+def test_regenerated_own_repeat_is_held(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    fake_gemini.results["student"] = _react(utterance=SAID, understanding=20)
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/say"), json={"content": REPEAT_ASK})
+
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(
+        utterance=SAID[:-1] + "...", understanding=35
+    )
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [fixed] = r.json()["utterances"]
+    assert fixed["structured"]["understanding"] == 20
 
 
 def test_student_call_sees_own_previous_understanding(
