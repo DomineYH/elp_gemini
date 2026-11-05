@@ -413,6 +413,7 @@ def student_utterance(
     *,
     teacher: str = "",
     previous_artifact: str = "",
+    previous_utterance: str = "",
 ) -> SimulationUtterance:
     """파싱 실패면 structured=NULL, content=모델 원문."""
     reaction = result.parsed
@@ -436,9 +437,15 @@ def student_utterance(
                 and artifact == previous_artifact.strip()
                 and len(core) <= SAME_ARTIFACT_MAX_CORE
             )
+            or (
+                len(core) >= ECHO_MIN_CORE
+                and core in _core(previous_utterance)
+                and (not artifact or artifact == previous_artifact.strip())
+            )
         ):
-            # 교사 말 따라 하기(따옴표 답 + 짧은 꼬리 포함)·같은 산출물 짧게 다시 말하기는
-            # 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#319, #332)
+            # 교사 말 따라 하기(따옴표 답 + 짧은 꼬리 포함)·같은 산출물 짧게 다시 말하기·
+            # 새 산출물 없이 자기 직전 말(또는 그 일부) 되풀이는
+            # 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#319, #332, #336)
             structured["understanding"] = min(
                 structured["understanding"], previous
             )
@@ -693,6 +700,7 @@ async def say(
             previous=prev[p.id],
             teacher=body.content,
             previous_artifact=_previous_artifact(stored, p.id),
+            previous_utterance=_last_valid(stored, p.id).get("utterance") or "",
         )
         for i, (p, r) in enumerate(zip(responders, results))
     )
@@ -832,6 +840,8 @@ async def regenerate(
         previous=prev,
         teacher=next(u.content for u in stored if u.seq == asked),
         previous_artifact=_previous_artifact(mine[:-1], persona_id),
+        previous_utterance=_last_valid(mine[:-1], persona_id).get("utterance")
+        or "",
     )
     for field in (
         "content",
