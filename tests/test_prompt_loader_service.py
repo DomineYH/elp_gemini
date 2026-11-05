@@ -403,3 +403,14 @@ def test_sim_student_off_task_uses_previous_understanding():
     [line] = [ln for ln in prompt.splitlines() if ln.startswith("- on_task:")]
     assert "[직전 이해도]" in line
     assert "그 전 반응의 값을 유지" not in prompt
+
+
+def test_sim_student_echo_or_same_artifact_is_off_task():
+    """따라 하기·같은 산출물 다시 말하기는 on_task=false다 (#319)."""
+    prompt = PromptLoaderService().get_prompt("sim_student")
+
+    [line] = [ln for ln in prompt.splitlines() if ln.startswith("- on_task:")]
+    assert (
+        "직전 반응과 같은 산출물을 다시 말하기만 하거나 교사 말을 그대로 따라 하거나 "
+        "되묻기만 한 반응도 새로 보인 이해가 없으므로 false입니다." in line
+    )

@@ -212,8 +212,9 @@ def test_first_reaction_without_artifact_is_capped_until_say(ready):
 
 def test_first_reaction_with_artifact_is_capped_until_say(ready, fake_gemini):
     """산출물이 있어도 장면 첫 반응은 80 미만으로 저장한다 (#318)."""
+    # 같은 산출물을 짧게 다시 말하면 오르지 않으므로(#319) 풀이를 말로 설명한다
     fake_gemini.results["student"] = _reaction(True).model_copy(
-        update={"artifact": "3/4"}
+        update={"artifact": "3/4", "utterance": "분모를 같게 만들어서 더했어요"}
     )
     state = _create(ready)
     sid = state["session"]["id"]
@@ -450,13 +451,13 @@ def _react(**kw):
     return StudentReaction(**{**_reaction(False).model_dump(), **kw})
 
 
-def _enter_then_say(client, fake_gemini, first, then):
+def _enter_then_say(client, fake_gemini, first, then, content="인구는?"):
     state = _create(client)
     sid = state["session"]["id"]
     fake_gemini.results["student"] = first
     client.post(_api(sid, "/phases/0/enter"))
     fake_gemini.results["student"] = then
-    turn = client.post(_api(sid, "/say"), json={"content": "인구는?"}).json()
+    turn = client.post(_api(sid, "/say"), json={"content": content}).json()
     return state, turn
 
 
@@ -488,7 +489,12 @@ def test_off_task_reaction_cannot_drop_bar(ready, fake_gemini):
         ready,
         fake_gemini,
         _react(understanding=90, artifact="3/4"),
-        _react(understanding=90, artifact="3/4"),
+        # 같은 산출물을 짧게 다시 말하면 오르지 않으므로(#319) 풀이를 말로 설명한다
+        _react(
+            understanding=90,
+            artifact="3/4",
+            utterance="분모를 같게 만들어서 더했어요",
+        ),
     )
     assert _stored(turn) == {90}
     fake_gemini.results["student"] = _react(on_task=False, understanding=30)
@@ -636,6 +642,131 @@ def test_regenerated_reaction_rise_is_capped(ready, fake_gemini):
     assert r.status_code == 200
     [fixed] = r.json()["utterances"]
     assert fixed["structured"]["understanding"] == 60
+
+
+# --- 교사 말 따라 하기·같은 산출물 짧게 다시 말하기는 이해도를 올리지 않는다 (#319) ---
+
+ASK = (
+    "그럼 우리가 확인하려는 건 뭘까? "
+    "'어느 나이대 사람이 늘고 줄어드는지'라고 말해 볼 수 있을까?"
+)
+ECHO = "어... 어느 나이대 사람이 늘고 줄어드는지요?"
+OWN = "어... 줄어들 것 같아요. 애들이... 잘 안 태어나서요?"
+SAVED = "네, 저도 저장했어요..."
+XLSX = "인구구성비_모둠이름.xlsx"
+
+
+def test_core_strips_fillers_punctuation_and_final_yo():
+    core = session_service._core
+    assert core(ECHO) == "어느나이대사람이늘고줄어드는지"
+    assert core(SAVED) == "저도저장했어"
+    assert len(core(OWN)) == 16
+
+
+def test_echo_of_teacher_is_held(ready, fake_gemini):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=50),
+        _react(utterance=ECHO, understanding=70),
+        content=ASK,
+    )
+    assert _stored(turn) == {50}
+
+
+def test_echo_drop_is_kept(ready, fake_gemini):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=50),
+        _react(utterance=ECHO, understanding=30),
+        content=ASK,
+    )
+    assert _stored(turn) == {30}
+
+
+def test_own_words_with_same_artifact_rise(ready, fake_gemini):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=50, artifact=XLSX),
+        _react(utterance=OWN, understanding=70, artifact=XLSX),
+        content=ASK,
+    )
+    assert _stored(turn) == {70}
+
+
+@pytest.mark.parametrize(
+    "first, then, expected",
+    [(XLSX, XLSX, 60), ("a.xlsx", "b.xlsx", 80), ("", "", 80)],
+)
+def test_same_artifact_short_reaction_is_held(
+    ready, fake_gemini, first, then, expected
+):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=60, artifact=first),
+        _react(utterance=SAVED, understanding=80, artifact=then),
+    )
+    assert _stored(turn) == {expected}
+
+
+def test_short_echo_rises(ready, fake_gemini):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=50),
+        _react(utterance="65세 이상이요", understanding=70),
+        content="65세 이상은 몇 명일까?",
+    )
+    assert _stored(turn) == {70}
+
+
+@pytest.mark.parametrize(
+    "utterance, expected",
+    [("일이삼사오육칠팔구", 70), ("일이삼사오육칠팔구십", 50)],
+)
+def test_echo_length_boundary(ready, fake_gemini, utterance, expected):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=50),
+        _react(utterance=utterance, understanding=70),
+        content="일이삼사오육칠팔구십 하나",
+    )
+    assert _stored(turn) == {expected}
+
+
+@pytest.mark.parametrize(
+    "utterance, expected",
+    [("일이삼사오육칠팔구십", 50), ("일이삼사오육칠팔구십일", 70)],
+)
+def test_same_artifact_length_boundary(ready, fake_gemini, utterance, expected):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=50, artifact=XLSX),
+        _react(utterance=utterance, understanding=70, artifact=XLSX),
+    )
+    assert _stored(turn) == {expected}
+
+
+def test_regenerated_echo_is_held(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    fake_gemini.results["student"] = _react(understanding=40)
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/say"), json={"content": ASK})
+
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(utterance=ECHO, understanding=60)
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [fixed] = r.json()["utterances"]
+    assert fixed["structured"]["understanding"] == 40
 
 
 def test_student_call_sees_own_previous_understanding(
