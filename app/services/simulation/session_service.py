@@ -8,6 +8,7 @@ import json
 import random
 import re
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -360,7 +361,8 @@ UNDERSTANDING_MAX_RISE = 20
 
 # 따라 하기·같은 산출물 다시 말하기 판정 길이 (#319, 실세션 8–10 재생으로 정함)
 ECHO_MIN_CORE = 10
-# 따옴표로 알려 준 답 뒤 꼬리("보는 거요") 길이 상한 (#332, 실세션 8–11: 대상 3자·비대상 8자)
+# 따옴표로 알려 준 답과 겹친 부분 밖 나머지("보는 거요"·바뀐 어미) 길이 상한
+# (#332 꼬리, #337 공통 부분, 실세션 8–13: 대상 3자·비대상 8자)
 ECHO_MAX_TAIL = 5
 SAME_ARTIFACT_MAX_CORE = 10
 _FILLER = re.compile(
@@ -392,14 +394,24 @@ def _core(utterance: str) -> str:
 
 
 def _quoted_echo(core: str, teacher: str) -> bool:
-    """교사가 따옴표로 준 문구를 담고 꼬리만 짧게 붙인 발화인지 (#332)."""
-    return any(
-        len(span) >= ECHO_MIN_CORE
-        and span in core
-        and len(core) - len(span) <= ECHO_MAX_TAIL
-        for quoted in _QUOTED
-        for span in map(_core, quoted.findall(teacher))
-    )
+    """교사가 따옴표로 준 문구를 거의 그대로 따라 한 발화인지 (#332, #337).
+
+    따옴표 구간과의 가장 긴 공통 부분이 ECHO_MIN_CORE자 이상이고 그 밖의 나머지가
+    ECHO_MAX_TAIL자 이하면 따라 하기다. 앞 절을 빼거나 어미만 바꾼 경우(#337)도
+    잡는다. 구간 전체를 담은 경우(#332)는 공통 부분이 구간 전체인 특수한 경우다.
+    """
+    for quoted in _QUOTED:
+        for span in map(_core, quoted.findall(teacher)):
+            if len(span) < ECHO_MIN_CORE:
+                continue
+            common = (
+                SequenceMatcher(None, core, span, autojunk=False)
+                .find_longest_match(0, len(core), 0, len(span))
+                .size
+            )
+            if common >= ECHO_MIN_CORE and len(core) - common <= ECHO_MAX_TAIL:
+                return True
+    return False
 
 
 def student_utterance(

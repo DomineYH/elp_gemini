@@ -896,6 +896,71 @@ def test_nested_span_of_other_style_is_matched(ready, fake_gemini):
     assert _say_after_60(ready, fake_gemini, utterance, content=content) == {60}
 
 
+# 따옴표 문구 일부를 어미만 바꿔 따라 한 반응 (#337, 실세션 #13 seq 38·39)
+SEOYUN_ASK = (
+    "서윤아, '노인 비율이 커져도 전체 사람 수가 늘어나는 건 아니다'라고 "
+    "말해 볼 수 있을까?"
+)
+
+
+def test_partial_quoted_echo_with_changed_ending_is_held(ready, fake_gemini):
+    utterance = "전체 사람 수가... 늘어나는 건... 아닌가 봐요..."
+    assert _say_after_60(ready, fake_gemini, utterance, content=SEOYUN_ASK) == {
+        60
+    }
+
+
+def test_partial_quoted_echo_drop_is_kept(ready, fake_gemini):
+    utterance = "전체 사람 수가... 늘어나는 건... 아닌가 봐요..."
+    stored = _say_after_60(
+        ready, fake_gemini, utterance, understanding=40, content=SEOYUN_ASK
+    )
+    assert stored == {40}
+
+
+# 공통 부분 '전체사람수가늘어나는건아'(12자) 뒤 나머지 5자는 유지, 6자는 오른다
+@pytest.mark.parametrize(
+    "tail, expected", [("일이삼사요", 60), ("일이삼사오요", 80)]
+)
+def test_partial_quoted_echo_remainder_boundary(
+    ready, fake_gemini, tail, expected
+):
+    utterance = f"전체 사람 수가 늘어나는 건 아닌 {tail}"
+    stored = _say_after_60(ready, fake_gemini, utterance, content=SEOYUN_ASK)
+    assert stored == {expected}
+
+
+def test_partial_quoted_overlap_below_min_rises(ready, fake_gemini):
+    # 공통 부분 '사람수가늘어나는건' 9자, 나머지 1자
+    stored = _say_after_60(
+        ready, fake_gemini, "사람 수가 늘어나는 건가요", content=SEOYUN_ASK
+    )
+    assert stored == {80}
+
+
+def test_unquoted_instruction_paraphrase_rises(ready, fake_gemini):
+    content = (
+        "서준아, 선생님 말을 그대로 따라 해 볼래? 장래인구추계 파일에서 "
+        "연도와 나이대별 비율 열만 남기고 나머지는 지운다."
+    )
+    utterance = "네, 연도와 나이대별 비율 열만 남기고 다 지우면 되는 거죠? 바로 해 볼게요!"
+    assert _say_after_60(ready, fake_gemini, utterance, content=content) == {80}
+
+
+def test_learning_goal_restatement_rises(ready, fake_gemini):
+    content = (
+        "오늘은 '우리나라 인구 구성비가 앞으로 어떻게 바뀔지 데이터로 예측하고, "
+        "우리 교실에 생길 변화를 생각해 보기'를 공부할 거예요. "
+        "오늘 공부할 내용을 짝에게 한 문장으로 말해 볼까요?"
+    )
+    # 공통 41자, 나머지 11자 ('오늘공부할내용은' + '는거야')
+    utterance = (
+        "오늘 공부할 내용은 우리나라 인구 구성비가 앞으로 어떻게 바뀔지 데이터로 "
+        "예측하고, 우리 교실에 생길 변화를 생각해 보는 거야."
+    )
+    assert _say_after_60(ready, fake_gemini, utterance, content=content) == {80}
+
+
 def test_regenerated_quoted_echo_with_tail_is_held(ready, fake_gemini):
     state = _create(ready)
     sid = state["session"]["id"]
