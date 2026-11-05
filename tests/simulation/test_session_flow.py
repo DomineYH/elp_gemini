@@ -845,6 +845,14 @@ def test_word_internal_apostrophe_does_not_open_a_span(ready, fake_gemini):
     assert _say_after_60(ready, fake_gemini, TAILED, content=content) == {60}
 
 
+def test_nested_span_of_other_style_is_matched(ready, fake_gemini):
+    content = (
+        "'먼저 \"어느 나이대 사람이 늘고 줄어드는지\"를 확인해요'라고 말해 봐"
+    )
+    utterance = "어느 나이대 사람이 늘고 줄어드는지 보는 거요"
+    assert _say_after_60(ready, fake_gemini, utterance, content=content) == {60}
+
+
 def test_regenerated_quoted_echo_with_tail_is_held(ready, fake_gemini):
     state = _create(ready)
     sid = state["session"]["id"]

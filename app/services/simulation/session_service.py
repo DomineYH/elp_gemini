@@ -367,10 +367,18 @@ _FILLER = re.compile(
     r"^(?:[\s,.…!?~]*(?:어+|저기|저|음+|네|아+|응)(?=[\s,.…!?~]|$))+"
 )
 _SEPARATORS = re.compile(r"[\s\W_]+")
-# 같은 따옴표 쌍만 구간으로 본다. ASCII 따옴표는 영문·숫자 뒤(It's)면 여는 따옴표가 아니다
-_QUOTED = re.compile(
-    r"(?<![A-Za-z0-9])'([^']+)'|(?<![A-Za-z0-9])\"([^\"]+)\"|‘([^’]+)’|“([^”]+)”"
-)
+# 같은 따옴표 쌍만 구간으로 본다. ASCII 따옴표는 영문·숫자 뒤(It's)면 여는 따옴표가 아니다.
+# 모양별로 따로 찾아 다른 모양 안에 든 구간도 잡는다
+# ponytail: ASCII 홑따옴표 구간 안의 아포스트로피('It's …')는 구간을 끝낸다. 교사가 영어 문장을 인용하면 고친다
+_QUOTED = [
+    re.compile(p)
+    for p in (
+        r"(?<![A-Za-z0-9])'([^']+)'",
+        r"(?<![A-Za-z0-9])\"([^\"]+)\"",
+        r"‘([^’]+)’",
+        r"“([^”]+)”",
+    )
+]
 
 
 def _plain(text: str) -> str:
@@ -389,7 +397,8 @@ def _quoted_echo(core: str, teacher: str) -> bool:
         len(span) >= ECHO_MIN_CORE
         and span in core
         and len(core) - len(span) <= ECHO_MAX_TAIL
-        for span in (_core("".join(m)) for m in _QUOTED.findall(teacher))
+        for quoted in _QUOTED
+        for span in map(_core, quoted.findall(teacher))
     )
 
 
