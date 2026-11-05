@@ -129,3 +129,118 @@ def test_load_keeps_selection_on_pick_ref_reload():
     assert "keepChosen(" in body
     # chooseFirst는 pickRef가 없거나 남은 선택이 없을 때만 부른다
     assert not re.search(r"^ {12}chooseFirst\(", body, re.M)
+
+
+# 템플릿의 실제 스크립트를 작은 가짜 DOM과 fetch로 돌려 load()를 검증한다 (#324)
+
+_DOM_MOCK = r"""
+const els = {};
+const docListeners = {};
+function fake(tag) {
+    return {
+        tag, children: [], listeners: {}, dataset: {}, style: {}, value: "", textContent: "",
+        addEventListener(t, f) { this.listeners[t] = f; },
+        append(...c) { this.children.push(...c); },
+        replaceChildren(...c) { this.children = c; },
+        setAttribute() {},
+    };
+}
+globalThis.document = {
+    getElementById: id => (els[id] ??= fake("div")),
+    createElement: tag => fake(tag),
+    addEventListener: (t, f) => { docListeners[t] = f; },
+};
+globalThis.window = {};
+let cands = [];
+const cand = ref => ({
+    ref, pseudonym: ref.toUpperCase(), level: "mid", level_label: "중",
+    strong_subjects: [], weak_subjects: [], behavior_summary: "", source: "preset",
+});
+globalThis.fetch = async () => ({ ok: true, json: async () => ({ seed: 1, candidates: cands.map(cand) }) });
+const tick = () => new Promise(r => setTimeout(r, 0));
+const toggle = (ref, checked) =>
+    els.candRows.listeners.change({ target: { dataset: { ref }, checked } });
+const checked = () => els.candRows.children
+    .map(tr => tr.children[0].children[0]).filter(b => b.checked).map(b => b.dataset.ref);
+const saved = ref => docListeners["sim:persona-saved"]({ detail: { ref } });
+"""
+
+
+def _script_block():
+    src = TEMPLATE.read_text(encoding="utf-8")
+    m = re.search(r"<script>\n(\(\(\) => \{.*?\}\)\(\);)\n</script>", src, re.S)
+    assert m, "설정 화면 스크립트를 찾지 못함"
+    return (
+        m.group(1)
+        .replace("{{ min_personas }}", "1")
+        .replace("{{ max_personas }}", "4")
+        .replace("{{ absolute_max }}", "20")
+    )
+
+
+def _run_page(scenario, script=None):
+    """초기 후보 a..f, 인원 3명으로 화면을 연 뒤 scenario를 돌린다."""
+    js = (
+        _DOM_MOCK
+        + 'cands = ["a", "b", "c", "d", "e", "f"];\n'
+        + 'document.getElementById("count").value = "3";\n'
+        + (script or _script_block())
+        + "\n(async () => {\nawait tick();\n"
+        + scenario
+        + "\nconsole.log(JSON.stringify({ checked: checked(),"
+        + " status: els.candStatus.textContent }));\n})();"
+    )
+    res = subprocess.run(
+        ["node", "-e", js], capture_output=True, text=True, check=True
+    )
+    return json.loads(res.stdout)
+
+
+_MANUAL_ACE = 'toggle("b", false); toggle("e", true);\n'
+
+
+def test_load_after_save_keeps_manual_selection_and_adds_new():
+    out = _run_page(
+        _MANUAL_ACE + 'cands = [...cands, "n"]; saved("n"); await tick();'
+    )
+    assert out == {"checked": ["a", "c", "e", "n"], "status": ""}
+
+
+def test_load_after_save_at_max_drops_last_kept_and_notifies():
+    out = _run_page(
+        _MANUAL_ACE
+        + 'toggle("f", true); cands = [...cands, "n"]; saved("n"); await tick();'
+    )
+    assert out == {
+        "checked": ["a", "c", "e", "n"],
+        "status": "최대 4명 — F 빼고 N 추가",
+    }
+
+
+def test_load_after_save_without_previous_falls_back_to_first_n():
+    out = _run_page(
+        _MANUAL_ACE
+        + 'cands = ["g", "h", "i", "j", "n"]; saved("n"); await tick();'
+    )
+    # 이전 선택이 모두 사라지면 위에서부터 3명 + 새 페르소나
+    assert out["checked"] == ["g", "h", "i", "n"]
+
+
+def test_reroll_new_seed_picks_first_n():
+    out = _run_page(_MANUAL_ACE + "els.reroll.listeners.click(); await tick();")
+    assert out == {"checked": ["a", "b", "c"], "status": ""}
+
+
+def test_page_test_catches_selection_reset_mutation():
+    # 리뷰에서 찾은 변이: keepChosen 결과를 버리면 수동 선택이 초기화된다
+    script = _script_block()
+    good = "const kept = pickRef ? keepChosen([...chosen], candidates.map(c => c.ref)) : [];"
+    assert good in script
+    bad = script.replace(
+        good,
+        "const kept = (keepChosen([...chosen], candidates.map(c => c.ref)), []);",
+    )
+    out = _run_page(
+        _MANUAL_ACE + 'cands = [...cands, "n"]; saved("n"); await tick();', bad
+    )
+    assert out["checked"] == ["a", "b", "c", "n"]
