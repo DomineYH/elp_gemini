@@ -210,7 +210,8 @@ def test_first_reaction_without_artifact_is_capped_until_say(ready):
     assert r.status_code == 200
 
 
-def test_first_reaction_with_artifact_is_not_capped(ready, fake_gemini):
+def test_first_reaction_with_artifact_is_capped_until_say(ready, fake_gemini):
+    """산출물이 있어도 장면 첫 반응은 80 미만으로 저장한다 (#318)."""
     fake_gemini.results["student"] = _reaction(True).model_copy(
         update={"artifact": "3/4"}
     )
@@ -218,11 +219,23 @@ def test_first_reaction_with_artifact_is_not_capped(ready, fake_gemini):
     sid = state["session"]["id"]
     ids = [str(p["id"]) for p in state["personas"]]
     turn = ready.post(_api(sid, "/phases/0/enter")).json()
+    assert turn["agreement"]["understanding"] == {i: 79 for i in ids}
+    assert turn["agreement"]["all_agreed"] is False
+    r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
+    assert r.status_code == 409
+
+    turn = ready.post(_api(sid, "/say"), json={"content": "해 볼까?"}).json()
     assert turn["agreement"]["understanding"] == {i: 90 for i in ids}
     assert turn["agreement"]["all_agreed"] is True
+    r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
+    assert r.status_code == 200
 
 
-def test_regenerated_first_reaction_is_capped(ready, fake_gemini):
+@pytest.mark.parametrize("artifact", ["", "3/4"])
+def test_regenerated_first_reaction_is_capped(ready, fake_gemini, artifact):
+    fake_gemini.results["student"] = _reaction(True).model_copy(
+        update={"artifact": artifact}
+    )
     state = _create(ready)
     sid = state["session"]["id"]
     persona = state["personas"][0]
@@ -405,10 +418,6 @@ def test_after_finish_everything_is_409(ready, fake_gemini):
 
 
 def test_restore_returns_everything_in_seq_order(ready, fake_gemini):
-    # 산출물이 있는 첫 반응은 79 제한을 받지 않는다(#302): phase 1 진입 직후 동의
-    fake_gemini.results["student"] = _reaction(True).model_copy(
-        update={"artifact": "메모"}
-    )
     state = _create(ready)
     sid = state["session"]["id"]
     ready.post(_api(sid, "/phases/0/enter"))
@@ -419,11 +428,13 @@ def test_restore_returns_everything_in_seq_order(ready, fake_gemini):
     ready.post(_api(sid, "/say"), json={"content": "b"})
     ready.post(_api(sid, "/advance"), json={"mode": "agree"})
     ready.post(_api(sid, "/phases/1/enter"))
+    # 장면 첫 반응은 79로 제한되므로(#318) 한 번 더 말해 동의를 만든다
+    ready.post(_api(sid, "/say"), json={"content": "c"})
 
     restored = ready.get(_api(sid)).json()
     seqs = [u["seq"] for u in restored["utterances"]]
     assert seqs == list(range(1, len(seqs) + 1))
-    assert len(seqs) == (2 + 4) + (1 + 1) + (1 + 4) + 1 + (2 + 4)
+    assert len(seqs) == (2 + 4) + (1 + 1) + (1 + 4) + 1 + (2 + 4) + (1 + 4)
     assert len(restored["phases"]) == 5
     assert len(restored["personas"]) == 4
     assert restored["session"]["current_phase_idx"] == 1
@@ -472,19 +483,24 @@ def test_off_task_reaction_cannot_raise_to_agree(ready, fake_gemini):
 
 
 def test_off_task_reaction_cannot_drop_bar(ready, fake_gemini):
+    # 장면 첫 반응은 79로 제한되므로(#318) 한 번 더 말해 90에 올린 뒤 곁가지를 본다
     state, turn = _enter_then_say(
         ready,
         fake_gemini,
         _react(understanding=90, artifact="3/4"),
-        _react(on_task=False, understanding=30),
+        _react(understanding=90, artifact="3/4"),
     )
+    assert _stored(turn) == {90}
+    fake_gemini.results["student"] = _react(on_task=False, understanding=30)
+    sid = state["session"]["id"]
+    turn = ready.post(_api(sid, "/say"), json={"content": "인구는?"}).json()
     ids = [str(p["id"]) for p in state["personas"]]
     assert _stored(turn) == {90}
     assert turn["agreement"]["understanding"] == {i: 90 for i in ids}
     assert turn["agreement"]["all_agreed"] is True
 
 
-@pytest.mark.parametrize("artifact, expected", [("", 79), ("3/4", 85)])
+@pytest.mark.parametrize("artifact, expected", [("", 79), ("3/4", 79)])
 def test_off_task_first_reaction_only_gets_first_cap(
     ready, fake_gemini, artifact, expected
 ):

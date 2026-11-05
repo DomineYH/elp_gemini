@@ -329,8 +329,8 @@ def student_utterance(
         structured["understanding"] = min(
             structured["understanding"], previous + UNDERSTANDING_MAX_RISE
         )
-    if first and structured and not structured["artifact"].strip():
-        # 프롬프트 규칙 "과업을 아직 하지 않았으면 80 미만"을 모델이 어긴다 (#302)
+    if first and structured:
+        # 장면 첫 반응은 산출물과 무관하게 80 미만 (#318, #302)
         structured["understanding"] = min(structured["understanding"], 79)
     return SimulationUtterance(
         session_id=session_id,
