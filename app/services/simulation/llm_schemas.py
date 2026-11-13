@@ -35,6 +35,7 @@ class AdaptationResult(BaseModel):
 # 명사형(-음/-함)과 '-다' 평서형(#305)을 동사 계열별로 묶는다: 모르다·헷갈리다·막히다·못 하다
 # '잘못함/잘못했다'는 틀린 행동 서술이므로 남긴다(#311)
 # 혼란·머뭇거림·망설임 요약도 막힘이다(#320)
+# '혼란을 겪고 있다'류도 막힘이다(#341)
 # 추측으로 쓴 문장('…로 오해할 수 있다', '…것 같다', '…가능성이 있다')은 드러난 생각이 아니다(#317)
 # '수 있다'는 인지 동사 뒤만 본다: '0으로 나눌 수 있다' 같은 단정은 실제 오개념일 수 있다
 STUCK_SUMMARY = re.compile(
@@ -43,6 +44,7 @@ STUCK_SUMMARY = re.compile(
     r"|막힘|막혔다|막혀 ?있[음다]"
     r"|(?<!잘)못 ?(함|한다|했다|했음|하고 ?있[음다]|하겠[음다])"
     r"|혼란스러워 ?(함|한다)|혼란스러워 ?하고 ?있[음다]|혼란스럽다|혼란스러움"
+    r"|혼란을 ?(겪음|겪는다|겪고 ?있[음다])"
     r"|머뭇거림|머뭇거린다|머뭇거리고 ?있[음다]"
     r"|망설임|망설인다|망설이고 ?있[음다]"
     r"|((오해|착각|혼동|오인|생각|이해) ?[할될]|받아들일|받아들여질|여길|여겨질)"
@@ -54,18 +56,24 @@ STUCK_SUMMARY = re.compile(
 # 문장은 ?, !, 마침표 하나, 줄바꿈에서 끝난다. 말줄임('...', '…')은 문장을 끝내지 않는다 (#330)
 _SENTENCE_END = re.compile(r"(?<=[?!])|(?<!\.)\.(?!\.)|\n")
 _STUCK_WORDS = re.compile(r"모르겠|몰라|모르는데|헷갈")
+# 난이도·걱정 표현은 질문과 함께 나올 때만 막힘으로 본다 (#341)
+_HARD_WORDS = re.compile(r"어렵|어려[워운웠]|생소|걱정|이해가 ?(잘 ?)?안")
 
 
-def _stuck_only(utterance: str, artifact: str) -> bool:
-    """산출물이 없고 모든 문장이 질문이거나 '모르겠어요'류다 (#330)."""
+def stuck_only(utterance: str, artifact: str) -> bool:
+    """산출물이 없고 모든 문장이 질문이거나 '모르겠어요'류다 (#330, #341)."""
     if artifact.strip():
         return False
-    sentences = (s.strip() for s in _SENTENCE_END.split(utterance))
     # 글자 없는 조각('?!'의 '!', '...')은 문장이 아니다
+    sentences = [
+        s.strip() for s in _SENTENCE_END.split(utterance) if re.search(r"\w", s)
+    ]
+    asked = any(s.endswith("?") for s in sentences)
     return all(
-        s.endswith("?") or _STUCK_WORDS.search(s)
+        s.endswith("?")
+        or _STUCK_WORDS.search(s)
+        or (asked and _HARD_WORDS.search(s))
         for s in sentences
-        if re.search(r"\w", s)
     )
 
 
@@ -94,7 +102,7 @@ class StudentReaction(BaseModel):
         # 상한은 원문 기준으로 먼저 걸고(막힘도 이해 부족), 텍스트만 비운다
         # 질문·'모르겠어요'만 한 반응엔 드러난 생각이 없는데, 모델이 교사 질문이나
         # 예전 오개념을 옮겨 적는다 (#330)
-        if STUCK_SUMMARY.search(self.misconception.strip()) or _stuck_only(
+        if STUCK_SUMMARY.search(self.misconception.strip()) or stuck_only(
             self.utterance, self.artifact
         ):
             self.misconception = ""

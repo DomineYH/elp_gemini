@@ -31,7 +31,7 @@ from app.services.simulation import (
 from app.services.simulation.adaptation import adapt_many
 from app.services.simulation.agreement import compute_agreement
 from app.services.simulation.errors import SimulationError
-from app.services.simulation.llm_schemas import StudentReaction
+from app.services.simulation.llm_schemas import StudentReaction, stuck_only
 from app.utils.timestamps import utc_iso
 
 PHASE_FIELDS = (
@@ -430,6 +430,15 @@ def student_utterance(
     """파싱 실패면 structured=NULL, content=모델 원문."""
     reaction = result.parsed
     structured = reaction.model_dump() if reaction else None
+    if (
+        structured
+        and structured["misconception"]
+        and (same := structured["artifact"].strip())
+        and same == previous_artifact.strip()
+        and stuck_only(structured["utterance"], "")
+    ):
+        # 직전 산출물을 그대로 들고 온 질문·막힘 반응엔 새로 보인 생각이 없다 (#341)
+        structured["misconception"] = ""
     if (
         structured
         and not structured["on_task"]
