@@ -191,6 +191,38 @@ def test_feedback_input_drops_stuck_only_misconception(
     assert "[오개념:" not in user and "전체 사람 수도" not in user
 
 
+def test_feedback_input_drops_hard_words_question_misconception(
+    ready, fake_gemini, monkeypatch
+):
+    """질문과 함께 '어려운 내용 같은데요'만 한 반응은 [오개념:]이 없다 (#341)."""
+    fake_gemini.results["student"] = StudentReaction(
+        action="고개를 갸웃한다",
+        utterance=(
+            "선생님, 다중공선성이나 명분할 오류 같은 단어들은 중학교나 고등학교 "
+            "수학에서도 어려운 내용 같은데요. 저희가 오늘 실제로 엑셀이나 엔트리로 "
+            "그래프를 그릴 때 이 복잡한 계산을 전부 다 직접 해야 하는 건가요?"
+        ),
+        artifact="",
+        misconception="복잡한 계산을 전부 직접 해야 한다고 오해함",
+        ready_for_next=False,
+        understanding=30,
+        confidence=0.5,
+        on_task=True,
+    )
+    sid = _finished(ready)
+    prompts = []
+
+    def recording(kind, **kw):
+        prompts.append((kind, kw["user"]))
+        return fake_gemini(kind, **kw)
+
+    monkeypatch.setattr(gemini, "call_structured", recording)
+    assert ready.post(_api(sid, "/feedback")).status_code == 200
+    [(_, user)] = prompts
+    assert "다중공선성" in user
+    assert "[오개념:" not in user and "직접 해야 한다고 오해함" not in user
+
+
 def test_running_session_is_refused(ready, fake_gemini):
     sid = _create(ready)
     r = ready.post(_api(sid, "/feedback"))

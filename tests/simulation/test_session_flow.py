@@ -541,31 +541,114 @@ def test_off_task_misconception_keeps_validator_cap(ready, fake_gemini):
     assert _stored(turn) == {79}
 
 
+# 같은 장면에서 앞서 낸 산출물을 그대로 들고 온 질문 반응 (#341)
+ART = "2050년 예상 인구 그래프"
+F3 = (
+    "저... 중학교 수학에서 배운다는 말에 조금 걱정이 되는데, 우리가 엑셀이나 "
+    "엔트리로 직접 그래프를 그리면서 이해하는 방법이 따로 있는 건가요?"
+)
+
+
 @pytest.mark.parametrize(
-    "utterance, misconception",
+    "utterance, misconception, artifact",
     [
         (
             "분모끼리 더하면 돼요.",
             "어떻게 시작해야 할지 모름",
+            "",
         ),  # 끝말 필터 (#302)
-        ("잘 모르겠어요.", "분모끼리 더함"),  # 막힘뿐 (#330)
+        ("잘 모르겠어요.", "분모끼리 더함", ""),  # 막힘뿐 (#330)
+        (
+            F3,
+            "계산을 직접 해야 한다고 오해함",
+            ART,
+        ),  # 같은 산출물 + 질문 (#341)
     ],
 )
 def test_off_task_cleared_misconception_keeps_previous(
-    ready, fake_gemini, utterance, misconception
+    ready, fake_gemini, utterance, misconception, artifact
 ):
     _, turn = _enter_then_say(
         ready,
         fake_gemini,
-        _react(understanding=60),
+        _react(understanding=60, artifact=artifact),
         _react(
             on_task=False,
             utterance=utterance,
             misconception=misconception,
+            artifact=artifact,
             understanding=85,
         ),
     )
     assert _stored(turn) == {60}
+
+
+def _misconceptions(turn):
+    return {
+        u["structured"]["misconception"]
+        for u in turn["utterances"]
+        if u["speaker_type"] == "student"
+    }
+
+
+@pytest.mark.parametrize(
+    "first_artifact, utterance, artifact, kept",
+    [
+        (ART, F3, ART, ""),  # F3
+        (
+            ART,
+            "저... 중학교 내용이라고 하니까 더 어렵게 느껴져요. "
+            "2050년 미래를 예측하는 게 그렇게 복잡한 과정인가요?",
+            ART,
+            "",
+        ),  # F6: live 24
+        (
+            ART,
+            F3,
+            "2040년 예상 인구 그래프",
+            "계산을 직접 해야 한다고 오해함",
+        ),  # K6
+        (
+            ART,
+            "네, 분모끼리 더했어요.",
+            ART,
+            "계산을 직접 해야 한다고 오해함",
+        ),  # K7
+        ("", F3, ART, "계산을 직접 해야 한다고 오해함"),  # K8
+    ],
+)
+def test_same_artifact_question_has_no_misconception(
+    ready, fake_gemini, first_artifact, utterance, artifact, kept
+):
+    """직전 자기 산출물을 그대로 들고 온 질문·막힘 반응은 오개념을 비운다 (#341)."""
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=60, artifact=first_artifact),
+        _react(
+            utterance=utterance,
+            artifact=artifact,
+            misconception="계산을 직접 해야 한다고 오해함",
+            understanding=60,
+        ),
+    )
+    assert _misconceptions(turn) == {kept}
+
+
+def test_same_artifact_question_keeps_validator_cap(ready, fake_gemini):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=70, artifact=ART),
+        _react(
+            utterance=F3,
+            artifact=ART,
+            misconception="계산을 직접 해야 한다고 오해함",
+            understanding=90,
+        ),
+    )
+    assert _misconceptions(turn) == {""}
+    assert _stored(turn) == {79}
 
 
 def test_regenerated_off_task_reaction_keeps_previous(ready, fake_gemini):
