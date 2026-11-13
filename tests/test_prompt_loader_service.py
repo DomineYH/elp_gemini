@@ -433,3 +433,14 @@ def test_sim_student_echo_or_same_artifact_is_off_task():
         "직전 반응과 같은 산출물을 다시 말하기만 하거나 교사 말을 그대로 따라 하거나 "
         "되묻기만 한 반응도 새로 보인 이해가 없으므로 false입니다." in line
     )
+
+
+def test_sim_student_artifact_is_own_only():
+    """artifact에는 이 학생이 만든 것만 적고 다른 학생 산출물을 옮겨 적지 않는다 (#343)."""
+    prompt = PromptLoaderService().get_prompt("sim_student")
+
+    [line] = [ln for ln in prompt.splitlines() if ln.startswith("- artifact:")]
+    assert (
+        "이 학생이 직접 쓰거나 만든 것만 적고, "
+        "대화에 나온 다른 학생의 산출물을 옮겨 적지 않습니다." in line
+    )
