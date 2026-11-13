@@ -164,3 +164,57 @@ def test_no_upload_is_404(client, fake_gemini):
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "NO_UPLOAD"
     assert fake_gemini.count() == 0
+
+
+# 승계 초안 대신 지도안에서 다시 나누기 (#342)
+
+EDITED = [
+    {
+        "name": "교사가 고친 장면",
+        "teacher_prompt": "지도에서 우리 동네를 찾아볼까요?",
+    }
+]
+
+
+def test_fresh_skips_inheritance_without_writing(ready, fake_gemini, sim_db):
+    _create_session(ready, EDITED)
+    before = fake_gemini.count("phase_split")
+    body = ready.get(DRAFT, params={"fresh": 1}).json()
+    assert body["source"] == "generated"
+    assert [p["name"] for p in body["phases"]] == [
+        "도입",
+        "활동1",
+        "활동2",
+        "활동3",
+        "정리",
+    ]
+    assert fake_gemini.count("phase_split") == before + 1
+    assert _phase_count(sim_db) == 1
+    # 기본 동작은 그대로 승계
+    again = ready.get(DRAFT).json()
+    assert again["source"] == "inherited"
+    assert again["phases"][0]["name"] == "교사가 고친 장면"
+
+
+def test_fresh_failure_is_fallback(ready, fake_gemini):
+    _create_session(ready, EDITED)
+    fake_gemini.overload.add("phase_split")
+    r = ready.get(DRAFT, params={"fresh": 1})
+    assert r.status_code == 200
+    _assert_fallback(r.json())
+
+
+def test_inherited_keeps_cautions_and_source_span(ready, fake_gemini):
+    phase = {
+        "name": "도입 · 동기유발",
+        "minutes": 10,
+        "teacher_prompt": "과거와 현재의 학교 모습을 비교해 볼까요?",
+        "task": "",
+        "materials": "2006년 학급소개판",
+        "cautions": "인구에 초점을 맞춰 현재의 모습과 비교하도록 지도한다.",
+        "source_span": "도입동기유발(10)-과거와 현재의 학교 모습 비교하기",
+    }
+    _create_session(ready, [phase])
+    body = ready.get(DRAFT).json()
+    assert body["source"] == "inherited"
+    assert body["phases"] == [phase]

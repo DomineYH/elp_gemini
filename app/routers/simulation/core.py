@@ -107,12 +107,13 @@ async def get_candidates(
 
 @router.get("/api/simulation/phases/draft")
 async def get_phase_draft(
+    fresh: bool = False,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     # 빈 행은 PhaseIn 검증(teacher_prompt 1자 이상)에 걸리므로 dict 그대로
     try:
-        return await phase_split.draft_phases(db, current_user.id)
+        return await phase_split.draft_phases(db, current_user.id, fresh)
     except SimulationError as e:
         raise e.to_http() from e
 
