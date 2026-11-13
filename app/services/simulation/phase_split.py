@@ -96,13 +96,15 @@ async def _generated(text: str) -> list[dict]:
     return [_fit(p.model_dump()) for p in result.parsed.phases[:MAX_PHASES]]
 
 
-async def draft_phases(db: AsyncSession, user_id: int) -> dict:
-    """DB에 쓰지 않는다. 업로드가 없으면 NO_UPLOAD."""
+async def draft_phases(
+    db: AsyncSession, user_id: int, fresh: bool = False
+) -> dict:
+    """DB에 쓰지 않는다. 업로드가 없으면 NO_UPLOAD. fresh면 승계를 건너뛴다."""
     upload = await lessonplan_source.get_latest_upload(db, user_id)
     if upload is None:
         raise SimulationError("NO_UPLOAD")
     # 업로드는 사용자 소유이므로 upload_id만으로 본인 세션으로 좁혀진다
-    phases = await _inherited(db, upload.id)
+    phases = [] if fresh else await _inherited(db, upload.id)
     if phases:
         return {"source": "inherited", "phases": phases, "notice": None}
     text = lessonplan_source.extract_text(upload).strip()
