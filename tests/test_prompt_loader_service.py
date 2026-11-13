@@ -2,6 +2,7 @@
 PromptLoaderService 단위 테스트
 """
 
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -396,6 +397,24 @@ def test_sim_phase_split_splits_stage_into_sub_activity_scenes():
     assert "세부 활동마다 나누는 규칙은 전개 단계에 적용합니다" not in prompt
 
 
+def test_sim_phase_split_minutes_reads_attached_times_and_sums():
+    """활동 이름에 붙은 시간은 쓰고 묶은 장면은 더하되 N' 예시는 늘리지 않는다 (#340)."""
+    prompt = PromptLoaderService().get_prompt("sim_phase_split")
+
+    [line] = [ln for ln in prompt.splitlines() if ln.startswith("- minutes:")]
+    for phrase in (
+        "활동이나 세부 단계 이름에 바로 붙여 적은 시간"
+        "(예: 활동2(10), 동기유발(5분))은 그 활동의 시간이므로 그대로 씁니다.",
+        "시간이 붙은 항목 여러 개를 한 장면으로 묶었으면 그 시간들을 더합니다"
+        "(예: 동기유발(5)와 학습 문제 확인(3)을 묶은 도입 장면은 8).",
+        "단계 전체 시간(예: 전개 30')이 마지막 활동 뒤에 적혀 있어도"
+        " 그 활동의 시간이 아니므로 null입니다.",
+    ):
+        assert phrase in line, phrase
+    # N' 표기 예시를 늘리면 #295 fixture에서 전개 마지막 활동에 30이 들어간다
+    assert re.findall(r"\d+'", line) == ["30'"]
+
+
 def test_sim_student_off_task_uses_previous_understanding():
     """곁가지 반응은 on_task=false로 [직전 이해도]를 그대로 쓴다 (#306)."""
     prompt = PromptLoaderService().get_prompt("sim_student")
@@ -413,4 +432,15 @@ def test_sim_student_echo_or_same_artifact_is_off_task():
     assert (
         "직전 반응과 같은 산출물을 다시 말하기만 하거나 교사 말을 그대로 따라 하거나 "
         "되묻기만 한 반응도 새로 보인 이해가 없으므로 false입니다." in line
+    )
+
+
+def test_sim_student_artifact_is_own_only():
+    """artifact에는 이 학생이 만든 것만 적고 다른 학생 산출물을 옮겨 적지 않는다 (#343)."""
+    prompt = PromptLoaderService().get_prompt("sim_student")
+
+    [line] = [ln for ln in prompt.splitlines() if ln.startswith("- artifact:")]
+    assert (
+        "이 학생이 직접 쓰거나 만든 것만 적고, "
+        "대화에 나온 다른 학생의 산출물을 옮겨 적지 않습니다." in line
     )
