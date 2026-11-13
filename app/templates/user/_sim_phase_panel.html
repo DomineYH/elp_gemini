@@ -5,6 +5,8 @@
     <div class="space-y-3 mt-3" id="phaseRows"></div>
     <button type="button" id="phaseAdd"
         class="mt-3 border rounded-lg px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">+ 장면 추가</button>
+    <button type="button" id="phaseRegen" hidden
+        class="mt-3 border rounded-lg px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">지도안에서 다시 나누기</button>
 </details>
 <script>
 window.simPhasePanel = (() => {
@@ -12,7 +14,12 @@ window.simPhasePanel = (() => {
     const panel = document.getElementById("phasePanel");
     const rowsBox = document.getElementById("phaseRows");
     const addBtn = document.getElementById("phaseAdd");
+    const regenBtn = document.getElementById("phaseRegen");
+    const summary = document.getElementById("phaseSummary");
+    const notice = document.getElementById("phaseNotice");
     let phases = [];  // 자료·유의점·원문 발췌는 읽기 전용으로 보여 주고 그대로 돌려보낸다
+    let source = "";
+    let busy = false;  // 다시 나누는 중에는 옛 장면으로 시작하지 못하게 read()를 막는다
 
     function field(label, node) {
         const wrap = document.createElement("label");
@@ -33,7 +40,9 @@ window.simPhasePanel = (() => {
     }
 
     function render() {
-        document.getElementById("phaseSummary").textContent = "장면 " + phases.length + "개 감지 · 수정";
+        summary.textContent = "장면 " + phases.length
+            + (source === "inherited" ? "개 · 이전 시뮬레이션에서 가져옴 · 수정" : "개 감지 · 수정");
+        regenBtn.hidden = source !== "inherited";
         addBtn.disabled = phases.length >= MAX;
         rowsBox.replaceChildren(...phases.map((p, i) => {
             const row = document.createElement("div");
@@ -92,19 +101,49 @@ window.simPhasePanel = (() => {
             if (!res.ok) throw new Error(res.status);
             const body = await res.json();
             phases = body.phases;
-            document.getElementById("phaseNotice").textContent = body.notice || "";
-            panel.open = body.source === "fallback";
+            source = body.source;
+            notice.textContent = source === "inherited"
+                ? "이전 시뮬레이션에서 쓴 장면입니다. 지도안에서 새로 나누려면 '지도안에서 다시 나누기'를 누르세요."
+                : body.notice || "";
+            panel.open = source === "fallback";
             render();
         } catch (err) {
             panel.open = true;
-            document.getElementById("phaseNotice").textContent = "장면 초안을 불러오지 못했습니다. 새로고침해 주세요.";
+            notice.textContent = "장면 초안을 불러오지 못했습니다. 새로고침해 주세요.";
         }
     }
+
+    // 분해에 성공(generated)했을 때만 표를 바꾼다. fallback·오류면 교사가 고친 표를 그대로 둔다
+    regenBtn.addEventListener("click", async () => {
+        if (!confirm("지도안에서 장면을 다시 나눌까요? 지금 표의 장면은 고친 내용까지 새 결과로 바뀝니다.")) return;
+        busy = true;
+        regenBtn.disabled = true;
+        regenBtn.textContent = "다시 나누는 중...";
+        notice.textContent = "지도안에서 장면을 다시 나누는 중...";
+        try {
+            const res = await fetch("/api/simulation/phases/draft?fresh=1");
+            const body = res.ok ? await res.json() : {};
+            if (body.source !== "generated") throw new Error("regen failed");
+            phases = body.phases;
+            source = body.source;
+            panel.open = true;
+            render();
+            notice.textContent = "지도안에서 장면을 다시 나눴습니다. 이전 장면으로 돌아가려면 새로고침하세요.";
+            summary.focus();  // 버튼이 사라지므로
+        } catch (err) {
+            notice.textContent = "지도안에서 장면을 다시 나누지 못했습니다. 기존 장면을 그대로 둡니다.";
+        } finally {
+            busy = false;
+            regenBtn.disabled = false;
+            regenBtn.textContent = "지도안에서 다시 나누기";
+        }
+    });
 
     load();
     return {
         // 비어 있는 이름·교사 발문이 있으면 오류 문구를 던진다
         read() {
+            if (busy) throw new Error("장면을 다시 나누는 중입니다. 끝난 뒤 시작해 주세요.");
             const cleaned = phases.map(p => ({ ...p, name: p.name.trim(), teacher_prompt: p.teacher_prompt.trim() }));
             if (!cleaned.length || cleaned.some(p => !p.name || !p.teacher_prompt)) {
                 panel.open = true;
