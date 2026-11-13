@@ -7,6 +7,7 @@ import json
 import re
 import shutil
 import subprocess
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -61,7 +62,8 @@ function fake(tag) {
     };
 }
 globalThis.document = {
-    getElementById: id => (els[id] ??= Object.assign(fake("div"), { id })),
+    // 템플릿 마크업에 있는 id만 요소가 있다 (없는 id는 브라우저처럼 null)
+    getElementById: id => IDS.includes(id) ? (els[id] ??= Object.assign(fake("div"), { id })) : null,
     createElement: fake,
 };
 globalThis.window = {};
@@ -83,6 +85,30 @@ function readOut() {
 """
 
 
+class _Markup(HTMLParser):
+    """id가 있는 요소마다 태그, 속성, 조상 태그를 모은다."""
+
+    def __init__(self):
+        super().__init__()
+        self.stack, self.elements = [], {}
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if "id" in attrs:
+            self.elements[attrs["id"]] = (tag, attrs, list(self.stack))
+        self.stack.append(tag)
+
+    def handle_endtag(self, tag):
+        while self.stack and self.stack.pop() != tag:
+            pass
+
+
+def _elements():
+    parser = _Markup()
+    parser.feed(TEMPLATE.read_text(encoding="utf-8"))
+    return parser.elements
+
+
 def _script():
     src = TEMPLATE.read_text(encoding="utf-8")
     m = re.search(r"<script>\n(.*?)</script>", src, re.S)
@@ -95,14 +121,17 @@ def _run(responses, scenario="", confirm=True, script=None):
     js = (
         f"const RESPONSES = {json.dumps(responses, ensure_ascii=False)};\n"
         f"const CONFIRM = {json.dumps(confirm)};\n"
+        f"const IDS = {json.dumps(list(_elements()))};\n"
         + _DOM_MOCK
         + (script or _script())
         + "\n(async () => {\nawait tick();\n"
         + scenario
         + '\nconst b = document.getElementById("phaseRegen");'
         + "\nconsole.log(JSON.stringify({ ...readOut(), calls, focused,"
-        + " summary: els.phaseSummary.textContent, notice: els.phaseNotice.textContent,"
-        + " open: els.phasePanel.open, hidden: b.hidden, disabled: b.disabled,"
+        + ' summary: document.getElementById("phaseSummary").textContent,'
+        + ' notice: document.getElementById("phaseNotice").textContent,'
+        + ' open: document.getElementById("phasePanel").open,'
+        + " hidden: b.hidden, disabled: b.disabled,"
         + " label: b.textContent }));\n})();"
     )
     res = subprocess.run(
@@ -229,3 +258,16 @@ def test_regen_test_catches_overwrite_mutation():
     )
     assert "error" in out  # 빈 발문 행이 들어와 read()가 막힌다
     assert out["summary"] == "장면 3개 감지 · 수정"
+
+
+def test_markup_structure():
+    els = _elements()
+    tag, attrs, ancestors = els["phaseRegen"]
+    assert tag == "button" and attrs.get("type") == "button"
+    assert "hidden" in attrs
+    assert (
+        "summary" not in ancestors
+    )  # 대화형 요소를 <summary> 안에 넣지 않는다
+    assert ancestors[-1] == "details"
+    assert els["phaseNotice"][1].get("role") == "status"
+    assert els["phaseSummary"][0] == "summary"
