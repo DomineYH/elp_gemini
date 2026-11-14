@@ -351,7 +351,9 @@ def test_next_student_call_sees_artifact_but_not_misconception(
     assert r.status_code == 200
     student = [u for k, u in prompts if k == "student"]
     assert student
-    assert all("[산출물: 3/4]" in u for u in student)
+    assert all("의 산출물: 3/4]" in u for u in student)
+    # 주인 없는 산출물 태그는 없다 (#348)
+    assert not any("[산출물:" in u for u in student)
     assert not any("[오개념:" in u or "분모끼리 더함" in u for u in student)
     stored = ready.get(_api(sid)).json()["utterances"]
     assert {u["content"] for u in stored if u["speaker_type"] == "student"} == {
@@ -368,6 +370,26 @@ def test_student_evidence_keeps_both_tags_for_feedback():
     assert session_service.student_evidence(u) == (
         "다 했어요 [산출물: 3/4] [오개념: 분모끼리 더함]"
     )
+
+
+def test_transcript_line_labels_artifact_with_owner():
+    """남의 산출물 태그를 옮겨 적지 않도록 주인 이름을 붙인다 (#348)."""
+    u = SimulationUtterance(
+        speaker_type="student",
+        persona_id=1,
+        content="네",
+        structured={"artifact": "3/4", "misconception": "분모끼리 더함"},
+    )
+    assert session_service._transcript_line(u, {1: "현우"}) == (
+        "현우: 네 [현우의 산출물: 3/4]"
+    )
+
+
+def test_transcript_line_without_artifact_has_no_tag():
+    u = SimulationUtterance(
+        speaker_type="student", persona_id=1, content="몰라요", structured={}
+    )
+    assert session_service._transcript_line(u, {1: "현우"}) == "현우: 몰라요"
 
 
 def test_say_guards(ready, as_user, other_teacher):
