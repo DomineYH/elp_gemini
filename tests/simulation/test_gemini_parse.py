@@ -338,6 +338,15 @@ F6_LIKE = "저... 더 어렵게 느껴져요. 그렇게 복잡한 과정인가�
         ("많이 연습해서요...", "", 30, MISC, 30),
         ("", "", 30, "", 30),
         ("잘 모르겠어요...", "", 90, "", 79),
+        # 접두어뿐이면 빈 산출물, 상한 먼저 / 내용이 남으면 오개념 유지 (#350)
+        ("잘 모르겠어요...", "선우의 산출물:", 90, "", 79),
+        (
+            "잘 모르겠어요.",
+            "선우의 산출물: 32명 - 22명 = 10명 감소",
+            30,
+            MISC,
+            30,
+        ),
         ("아니에요?!", "", 30, "", 30),
         ("잘 모르겠어요\n분모끼리 더하면 돼요", "", 30, MISC, 30),
         # 질문과 함께 나온 난이도·걱정 문장도 막힘이다 (#341)
@@ -372,6 +381,47 @@ def test_stuck_only_reaction_has_no_misconception(
         StudentReaction, json.dumps(data, ensure_ascii=False)
     )
     assert (parsed.misconception, parsed.understanding) == (kept, expected)
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        (
+            "선우의 산출물: 용어 목록: 인구구성비, 전처리",
+            "용어 목록: 인구구성비, 전처리",
+        ),
+        ("산출물: 3/4", "3/4"),
+        ("  현우의 산출물 :3/4", "3/4"),
+        ("선우의 산출물:", ""),
+        ("선우의 산출물:\n1. 가\n2. 나", "1. 가\n2. 나"),
+        ("선우의 산출물: 선우의 산출물: X", "선우의 산출물: X"),
+        ("3/4", "3/4"),
+        ("", ""),
+        ("산출물 평가 기준표", "산출물 평가 기준표"),
+        ("산출물을 고쳤다", "산출물을 고쳤다"),
+        ("모둠 산출물: 발표 자료", "모둠 산출물: 발표 자료"),
+        ("김 선우의 산출물: X", "김 선우의 산출물: X"),
+        ("1번 답\n산출물: X", "1번 답\n산출물: X"),
+        (
+            "선우_인구조사.xlsx (첫 행: 연도, 인구)",
+            "선우_인구조사.xlsx (첫 행: 연도, 인구)",
+        ),
+    ],
+)
+def test_artifact_label_prefix_is_stripped(raw, expected):
+    """모델이 대화록 태그를 따라 쓴 '<이름>의 산출물:' 접두어는 한 번 뗀다 (#350)."""
+    data = json.loads(GOOD) | {"artifact": raw}
+    parsed = parse_structured(
+        StudentReaction, json.dumps(data, ensure_ascii=False)
+    )
+    assert parsed.artifact == expected
+
+
+def test_artifact_validator_keeps_response_schema():
+    assert StudentReaction.model_json_schema()["properties"]["artifact"] == {
+        "title": "Artifact",
+        "type": "string",
+    }
 
 
 @pytest.mark.parametrize(

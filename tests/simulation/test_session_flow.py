@@ -637,6 +637,7 @@ def _misconceptions(turn):
             "계산을 직접 해야 한다고 오해함",
         ),  # K7
         ("", F3, ART, "계산을 직접 해야 한다고 오해함"),  # K8
+        (ART, F3, "현우의 산출물: " + ART, ""),  # 접두어는 떼고 비교 (#350)
     ],
 )
 def test_same_artifact_question_has_no_misconception(
@@ -850,7 +851,12 @@ def test_own_words_with_same_artifact_rise(ready, fake_gemini):
 
 @pytest.mark.parametrize(
     "first, then, expected",
-    [(XLSX, XLSX, 60), ("a.xlsx", "b.xlsx", 80), ("", "", 80)],
+    [
+        (XLSX, XLSX, 60),
+        ("a.xlsx", "b.xlsx", 80),
+        ("", "", 80),
+        (XLSX, "산출물: " + XLSX, 60),  # 접두어는 떼고 비교 (#350)
+    ],
 )
 def test_same_artifact_short_reaction_is_held(
     ready, fake_gemini, first, then, expected
