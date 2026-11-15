@@ -31,7 +31,11 @@ from app.services.simulation import (
 from app.services.simulation.adaptation import adapt_many
 from app.services.simulation.agreement import compute_agreement
 from app.services.simulation.errors import SimulationError
-from app.services.simulation.llm_schemas import StudentReaction, stuck_only
+from app.services.simulation.llm_schemas import (
+    _STUCK_WORDS,
+    StudentReaction,
+    stuck_only,
+)
 from app.utils.timestamps import utc_iso
 
 PHASE_FIELDS = (
@@ -365,6 +369,10 @@ ECHO_MIN_CORE = 10
 # (#332 꼬리, #337 공통 부분, 실세션 8–13: 대상 3자·비대상 8자)
 ECHO_MAX_TAIL = 5
 SAME_ARTIFACT_MAX_CORE = 10
+# '모르겠어요'뿐인 발화의 core 길이 상한 (#352, 저장 세션 7–19 재생으로 정함)
+STUCK_MAX_CORE = 12
+# 군말을 뗀 core가 이것뿐이면 맞장구다 ("네, 알겠습니다." → "알겠습니다")
+_ACK = re.compile(r"알겠(어|습니다)?")
 _FILLER = re.compile(
     r"^(?:[\s,.…!?~]*(?:어+|저기|저|음+|네|아+|응)(?=[\s,.…!?~]|$))+"
 )
@@ -467,6 +475,20 @@ def student_utterance(
             # 교사 말 따라 하기(따옴표 답 + 짧은 꼬리 포함)·같은 산출물 짧게 다시 말하기·
             # 새 산출물 없이 자기 직전 말(또는 그 일부) 되풀이는
             # 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#319, #332, #336)
+            structured["understanding"] = min(
+                structured["understanding"], previous
+            )
+        if (not artifact or artifact == previous_artifact.strip()) and (
+            (
+                _STUCK_WORDS.search(structured["utterance"])
+                and len(core) <= STUCK_MAX_CORE
+            )
+            or not core
+            or _ACK.fullmatch(core)
+            or core == _core(previous_utterance)
+        ):
+            # 새 산출물 없이 '모르겠어요'뿐·맞장구뿐(침묵 포함)·자기 직전 말 그대로인
+            # 반응은 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#352)
             structured["understanding"] = min(
                 structured["understanding"], previous
             )
