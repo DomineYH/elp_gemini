@@ -1240,7 +1240,13 @@ STUCK12 = "얼마 차이나는지 잘 모르겠어요."  # core 12자: #319 같�
 
 @pytest.mark.parametrize(
     "utterance",
-    ["잘 모르겠어요...", "글쎄요... 잘 모르겠어요.", "헷갈려요.", STUCK12],
+    [
+        "잘 모르겠어요...",
+        "글쎄요... 잘 모르겠어요.",
+        "헷갈려요.",
+        STUCK12,
+        "잘 모르겠어요, 선생님.",
+    ],
 )
 def test_stuck_only_reaction_is_held(ready, fake_gemini, utterance):
     assert _repeat_after_20(ready, fake_gemini, utterance) == {20}
@@ -1269,6 +1275,9 @@ def test_identical_short_repeat_is_held(ready, fake_gemini):
         "잘 모르겠지만 한 삼 센티미터 정도 차이 나는 것 같아요.",
         "네, 알겠어요. 자로 재 볼게요.",
         "13이요",
+        "잘 모르겠지만 3cm 같아요.",
+        "모르겠는데 5센티요",
+        "몰라요, 그냥 큰 거요",
     ],
 )
 def test_reaction_with_content_rises(ready, fake_gemini, utterance):

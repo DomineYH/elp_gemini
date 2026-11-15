@@ -377,6 +377,17 @@ _FILLER = re.compile(
     r"^(?:[\s,.…!?~]*(?:어+|저기|저|음+|네|아+|응)(?=[\s,.…!?~]|$))+"
 )
 _SEPARATORS = re.compile(r"[\s\W_]+")
+_VOCATIVES = {"선생님", "쌤"}
+
+
+def _last_word(utterance: str) -> str:
+    """끝 호칭(선생님·쌤)을 뺀 마지막 낱말 (#352)."""
+    words = re.findall(r"\w+", utterance)
+    while words and words[-1] in _VOCATIVES:
+        words.pop()
+    return words[-1] if words else ""
+
+
 # 같은 따옴표 쌍만 구간으로 본다. ASCII 따옴표는 영문·숫자 뒤(It's)면 여는 따옴표가 아니다.
 # 모양별로 따로 찾아 다른 모양 안에 든 구간도 잡는다
 # ponytail: ASCII 홑따옴표 구간 안의 아포스트로피('It's …')는 구간을 끝낸다. 교사가 영어 문장을 인용하면 고친다
@@ -480,7 +491,7 @@ def student_utterance(
             )
         if (not artifact or artifact == previous_artifact.strip()) and (
             (
-                _STUCK_WORDS.search(structured["utterance"])
+                _STUCK_WORDS.search(_last_word(structured["utterance"]))
                 and len(core) <= STUCK_MAX_CORE
             )
             or not core
@@ -488,7 +499,8 @@ def student_utterance(
             or core == _core(previous_utterance)
         ):
             # 새 산출물 없이 '모르겠어요'뿐·맞장구뿐(침묵 포함)·자기 직전 말 그대로인
-            # 반응은 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#352)
+            # 반응은 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#352).
+            # 막힘 낱말 뒤에 추정이 붙은 답("모르겠는데 5센티요")은 막힘뿐이 아니다
             structured["understanding"] = min(
                 structured["understanding"], previous
             )
