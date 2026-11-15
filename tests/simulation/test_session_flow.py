@@ -1,5 +1,7 @@
 """말하기, 동의/Skip 전이, 종료, 복원 (#153)."""
 
+import itertools
+
 import pytest
 from sqlalchemy import select
 
@@ -20,6 +22,16 @@ def _reaction(ready):
         understanding=90 if ready else 40,
         confidence=0.5,
         on_task=True,
+    )
+
+
+_n = itertools.count(1)
+
+
+def _fresh(reaction):
+    """맞장구·같은 말 되풀이는 이해도가 오르지 않으므로(#352) 내용 있는 새 말로 바꾼다."""
+    return reaction.model_copy(
+        update={"utterance": f"자료 {next(_n)}번에서 답을 찾았어요."}
     )
 
 
@@ -45,6 +57,9 @@ def _create(client, n_phases=5, level="High"):
 @pytest.fixture
 def ready(client, teacher, make_upload, fake_gemini):
     make_upload(teacher)
+    # 기본 반응이 같은 말을 되풀이하면 say에서 오르지 않는다 (#352)
+    default = fake_gemini.results["student"]
+    fake_gemini.results["student"] = lambda key: _fresh(default)
     return client
 
 
@@ -107,7 +122,9 @@ def test_agree_with_one_not_ready_is_409_skip_passes(ready, fake_gemini):
     state = _create(ready)
     sid = state["session"]["id"]
     holdout = str(state["personas"][0]["source_record_id"])
-    fake_gemini.results["student"] = lambda key: _reaction(key != holdout)
+    fake_gemini.results["student"] = lambda key: _fresh(
+        _reaction(key != holdout)
+    )
     ready.post(_api(sid, "/phases/0/enter"))
     # 장면 첫 반응은 79로 제한되므로(#302) 한 번 더 말한 뒤 동의를 본다
     turn = ready.post(_api(sid, "/say"), json={"content": "어때?"}).json()
@@ -699,7 +716,7 @@ def test_on_task_rise_is_capped(ready, fake_gemini):
         ready,
         fake_gemini,
         _react(understanding=30),
-        _react(on_task=True, understanding=82),
+        _react(on_task=True, utterance=STATEMENT, understanding=82),
     )
     ids = [str(p["id"]) for p in state["personas"]]
     assert _stored(turn) == {50}
@@ -714,7 +731,7 @@ def test_rise_cap_boundary(ready, fake_gemini, model, expected):
         ready,
         fake_gemini,
         _react(understanding=40),
-        _react(understanding=model),
+        _react(utterance=STATEMENT, understanding=model),
     )
     assert _stored(turn) == {expected}
 
@@ -758,7 +775,10 @@ def test_misconception_big_rise_is_capped(ready, fake_gemini):
 
 def test_stepwise_rise_reaches_agree_and_latch_holds(ready, fake_gemini):
     state, turn = _enter_then_say(
-        ready, fake_gemini, _react(understanding=30), _react(understanding=90)
+        ready,
+        fake_gemini,
+        _react(understanding=30),
+        lambda key: _fresh(_react(understanding=90)),
     )
     assert _stored(turn) == {50}
     turn = ready.post(
@@ -790,7 +810,9 @@ def test_regenerated_reaction_rise_is_capped(ready, fake_gemini):
     ready.post(_api(sid, "/say"), json={"content": "인구는?"})
 
     fake_gemini.parse_fail.clear()
-    fake_gemini.results["student"] = _react(on_task=True, understanding=82)
+    fake_gemini.results["student"] = _react(
+        on_task=True, utterance=STATEMENT, understanding=82
+    )
     r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
     assert r.status_code == 200
     [fixed] = r.json()["utterances"]
@@ -1209,6 +1231,184 @@ def test_regenerated_own_repeat_is_held(ready, fake_gemini):
     assert r.status_code == 200
     [fixed] = r.json()["utterances"]
     assert fixed["structured"]["understanding"] == 20
+
+
+# --- 새 산출물 없는 맞장구·같은 말 되풀이는 이해도를 올리지 않는다 (#352) ---
+
+STUCK12 = "얼마 차이나는지 잘 모르겠어요."  # core 12자: #319 같은 산출물 기준(10자) 밖
+
+
+@pytest.mark.parametrize(
+    "utterance",
+    [
+        "네...",
+        "네!",
+        "",
+        "네, 알겠습니다.",
+        "아, 알겠어요!",
+        "네, 알겠어요, 선생님.",
+        "네 선생님",
+        "알겠어요 쌤",
+    ],
+)
+def test_ack_only_reaction_is_held(ready, fake_gemini, utterance):
+    assert _repeat_after_20(ready, fake_gemini, utterance) == {20}
+
+
+def test_identical_stuck_repeat_is_held(ready, fake_gemini):
+    assert _repeat_after_20(
+        ready, fake_gemini, "잘 모르겠어요.", before="잘 모르겠어요."
+    ) == {20}
+
+
+def test_identical_short_repeat_is_held(ready, fake_gemini):
+    # core가 둘 다 "12"라 #336의 10자 기준 밖이다
+    assert _repeat_after_20(ready, fake_gemini, "네, 12요.", before="12요") == {
+        20
+    }
+
+
+@pytest.mark.parametrize(
+    "before, utterance", [("1.2요", "12요"), ("3.5퍼센트요", "35퍼센트요")]
+)
+def test_corrected_number_rises(ready, fake_gemini, before, utterance):
+    # _core는 소수점을 떼어 core가 같지만 수치를 고친 답이다
+    assert _repeat_after_20(ready, fake_gemini, utterance, before=before) == {
+        35
+    }
+
+
+@pytest.mark.parametrize(
+    "before, utterance",
+    [("1,000명이요", "1000명이요"), ("1234명이요", "1,234명이요")],
+)
+def test_thousands_separator_repeat_is_held(
+    ready, fake_gemini, before, utterance
+):
+    # 천 단위 쉼표만 다른 같은 수는 되풀이다
+    assert _repeat_after_20(ready, fake_gemini, utterance, before=before) == {
+        20
+    }
+
+
+@pytest.mark.parametrize(
+    "utterance",
+    [
+        "아니요, 신어보고 골랐어요.",
+        "공부를 많이 해서요…?",
+        "잘... " + STUCK12,
+        "잘 모르겠지만 한 삼 센티미터 정도 차이 나는 것 같아요.",
+        "네, 알겠어요. 자로 재 볼게요.",
+        "13이요",
+        "잘 모르겠지만 3cm 같아요.",
+        "모르겠는데 5센티요",
+        "몰라요, 그냥 큰 거요",
+        "3cm 같아요. 헷갈려요.",
+        "스물일곱 명이요… 잘 모르겠어요.",
+        "모르겠어요. 자로 재면 되나요?",
+        # '모르겠어요'뿐 판정은 뺐다 (#352 리뷰 3): 직전과 다른 막힘 말은 오른다
+        "잘 모르겠어요...",
+        "잘은 모르겠고 3cm 같아요.",
+        "헷갈려서 3cm로 썼어요.",
+        "정확히는 몰라도 3cm 같아요.",
+    ],
+)
+def test_reaction_with_content_rises(ready, fake_gemini, utterance):
+    assert _repeat_after_20(ready, fake_gemini, utterance, before="12요") == {
+        35
+    }
+
+
+@pytest.mark.parametrize(
+    "utterance, artifacts, expected",
+    [
+        (STUCK12, ("", XLSX), 35),
+        (STUCK12, ("a.xlsx", "b.xlsx"), 35),
+        ("네...", (XLSX, XLSX), 20),
+        ("네...", ("", XLSX), 35),
+        ("12요", ("", XLSX), 35),
+    ],
+)
+def test_no_new_showing_artifact(
+    ready, fake_gemini, utterance, artifacts, expected
+):
+    stored = _repeat_after_20(
+        ready, fake_gemini, utterance, before="12요", artifacts=artifacts
+    )
+    assert stored == {expected}
+
+
+def test_no_new_showing_drop_is_kept(ready, fake_gemini):
+    assert _repeat_after_20(ready, fake_gemini, "네...", understanding=10) == {
+        10
+    }
+
+
+def test_first_reaction_ack_is_not_held(ready, fake_gemini):
+    fake_gemini.results["student"] = _react(utterance="네...", understanding=60)
+    state = _create(ready)
+    turn = ready.post(_api(state["session"]["id"], "/phases/0/enter")).json()
+    assert set(turn["agreement"]["understanding"].values()) == {60}
+
+
+def test_ack_without_previous_valid_reaction_rises(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    fake_gemini.parse_fail.add("student")
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(utterance="네...", understanding=35)
+    turn = ready.post(_api(sid, "/say"), json={"content": REPEAT_ASK}).json()
+    assert _stored(turn) == {35}
+
+
+def test_off_task_ack_keeps_previous(ready, fake_gemini):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(utterance=SAID, understanding=20),
+        _react(on_task=False, utterance="네...", understanding=10),
+    )
+    assert _stored(turn) == {20}
+
+
+def test_regenerated_ack_is_held(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    fake_gemini.results["student"] = _react(utterance=SAID, understanding=20)
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/say"), json={"content": REPEAT_ASK})
+
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(utterance="네...", understanding=35)
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [fixed] = r.json()["utterances"]
+    assert fixed["structured"]["understanding"] == 20
+
+
+def test_ack_only_never_reaches_agree(ready, fake_gemini):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(utterance=SAID, understanding=70),
+        _react(utterance="네, 알겠습니다.", understanding=90),
+    )
+    assert _stored(turn) == {70}
+    assert turn["agreement"]["all_agreed"] is False
+
+
+def test_vocative_ack_never_reaches_agree(ready, fake_gemini):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(utterance=SAID, understanding=70),
+        _react(utterance="네, 알겠어요, 선생님.", understanding=90),
+    )
+    assert _stored(turn) == {70}
+    assert turn["agreement"]["all_agreed"] is False
 
 
 def test_student_call_sees_own_previous_understanding(
