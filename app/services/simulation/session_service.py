@@ -31,10 +31,7 @@ from app.services.simulation import (
 from app.services.simulation.adaptation import adapt_many
 from app.services.simulation.agreement import compute_agreement
 from app.services.simulation.errors import SimulationError
-from app.services.simulation.llm_schemas import (
-    StudentReaction,
-    stuck_only,
-)
+from app.services.simulation.llm_schemas import StudentReaction, stuck_only
 from app.utils.timestamps import utc_iso
 
 PHASE_FIELDS = (
@@ -368,14 +365,14 @@ ECHO_MIN_CORE = 10
 # (#332 꼬리, #337 공통 부분, 실세션 8–13: 대상 3자·비대상 8자)
 ECHO_MAX_TAIL = 5
 SAME_ARTIFACT_MAX_CORE = 10
-# 군말을 뗀 core가 이것뿐이면 맞장구다 ("네, 알겠습니다." → "알겠습니다")
-_ACK = re.compile(r"알겠(어|습니다)?")
+# 군말을 뗀 core가 이것뿐이면 맞장구다 ("네, 알겠어요, 선생님." → "알겠어요선생님")
+_ACK = re.compile(r"(?:알겠(?:어요?|습니다)?)?(?:선생님|쌤)?")
+# _core는 소수점을 떼므로 "1.2요"→"12요" 같은 수치 고침은 숫자로 가린다
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
 _FILLER = re.compile(
     r"^(?:[\s,.…!?~]*(?:어+|저기|저|음+|네|아+|응)(?=[\s,.…!?~]|$))+"
 )
 _SEPARATORS = re.compile(r"[\s\W_]+")
-
-
 # 같은 따옴표 쌍만 구간으로 본다. ASCII 따옴표는 영문·숫자 뒤(It's)면 여는 따옴표가 아니다.
 # 모양별로 따로 찾아 다른 모양 안에 든 구간도 잡는다
 # ponytail: ASCII 홑따옴표 구간 안의 아포스트로피('It's …')는 구간을 끝낸다. 교사가 영어 문장을 인용하면 고친다
@@ -480,7 +477,11 @@ def student_utterance(
         if (not artifact or artifact == previous_artifact.strip()) and (
             not core
             or _ACK.fullmatch(core)
-            or core == _core(previous_utterance)
+            or (
+                core == _core(previous_utterance)
+                and _NUMBER.findall(structured["utterance"])
+                == _NUMBER.findall(previous_utterance)
+            )
         ):
             # 새 산출물 없이 맞장구뿐(침묵 포함)·자기 직전 말 그대로인 반응은
             # 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#352).

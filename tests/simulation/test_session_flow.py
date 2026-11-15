@@ -1239,7 +1239,17 @@ STUCK12 = "얼마 차이나는지 잘 모르겠어요."  # core 12자: #319 같�
 
 
 @pytest.mark.parametrize(
-    "utterance", ["네...", "네!", "", "네, 알겠습니다.", "아, 알겠어요!"]
+    "utterance",
+    [
+        "네...",
+        "네!",
+        "",
+        "네, 알겠습니다.",
+        "아, 알겠어요!",
+        "네, 알겠어요, 선생님.",
+        "네 선생님",
+        "알겠어요 쌤",
+    ],
 )
 def test_ack_only_reaction_is_held(ready, fake_gemini, utterance):
     assert _repeat_after_20(ready, fake_gemini, utterance) == {20}
@@ -1255,6 +1265,16 @@ def test_identical_short_repeat_is_held(ready, fake_gemini):
     # core가 둘 다 "12"라 #336의 10자 기준 밖이다
     assert _repeat_after_20(ready, fake_gemini, "네, 12요.", before="12요") == {
         20
+    }
+
+
+@pytest.mark.parametrize(
+    "before, utterance", [("1.2요", "12요"), ("3.5퍼센트요", "35퍼센트요")]
+)
+def test_corrected_number_rises(ready, fake_gemini, before, utterance):
+    # _core는 소수점을 떼어 core가 같지만 수치를 고친 답이다
+    assert _repeat_after_20(ready, fake_gemini, utterance, before=before) == {
+        35
     }
 
 
@@ -1362,6 +1382,17 @@ def test_ack_only_never_reaches_agree(ready, fake_gemini):
         fake_gemini,
         _react(utterance=SAID, understanding=70),
         _react(utterance="네, 알겠습니다.", understanding=90),
+    )
+    assert _stored(turn) == {70}
+    assert turn["agreement"]["all_agreed"] is False
+
+
+def test_vocative_ack_never_reaches_agree(ready, fake_gemini):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(utterance=SAID, understanding=70),
+        _react(utterance="네, 알겠어요, 선생님.", understanding=90),
     )
     assert _stored(turn) == {70}
     assert turn["agreement"]["all_agreed"] is False
