@@ -1279,6 +1279,19 @@ def test_corrected_number_rises(ready, fake_gemini, before, utterance):
 
 
 @pytest.mark.parametrize(
+    "before, utterance",
+    [("1,000명이요", "1000명이요"), ("1234명이요", "1,234명이요")],
+)
+def test_thousands_separator_repeat_is_held(
+    ready, fake_gemini, before, utterance
+):
+    # 천 단위 쉼표만 다른 같은 수는 되풀이다
+    assert _repeat_after_20(ready, fake_gemini, utterance, before=before) == {
+        20
+    }
+
+
+@pytest.mark.parametrize(
     "utterance",
     [
         "아니요, 신어보고 골랐어요.",

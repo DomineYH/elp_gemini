@@ -369,6 +369,8 @@ SAME_ARTIFACT_MAX_CORE = 10
 _ACK = re.compile(r"(?:알겠(?:어요?|습니다)?)?(?:선생님|쌤)?")
 # _core는 소수점을 떼므로 "1.2요"→"12요" 같은 수치 고침은 숫자로 가린다
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
+# 숫자 사이 천 단위 쉼표는 같은 값이다 ("1,000" = "1000")
+_THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
 _FILLER = re.compile(
     r"^(?:[\s,.…!?~]*(?:어+|저기|저|음+|네|아+|응)(?=[\s,.…!?~]|$))+"
 )
@@ -389,6 +391,10 @@ _QUOTED = [
 
 def _plain(text: str) -> str:
     return _SEPARATORS.sub("", text)
+
+
+def _numbers(utterance: str) -> list[str]:
+    return _NUMBER.findall(_THOUSANDS.sub("", utterance))
 
 
 def _core(utterance: str) -> str:
@@ -479,8 +485,8 @@ def student_utterance(
             or _ACK.fullmatch(core)
             or (
                 core == _core(previous_utterance)
-                and _NUMBER.findall(structured["utterance"])
-                == _NUMBER.findall(previous_utterance)
+                and _numbers(structured["utterance"])
+                == _numbers(previous_utterance)
             )
         ):
             # 새 산출물 없이 맞장구뿐(침묵 포함)·자기 직전 말 그대로인 반응은
