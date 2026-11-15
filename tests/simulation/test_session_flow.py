@@ -1233,29 +1233,9 @@ def test_regenerated_own_repeat_is_held(ready, fake_gemini):
     assert fixed["structured"]["understanding"] == 20
 
 
-# --- 새 산출물 없는 '모르겠어요'·맞장구·같은 말 되풀이는 이해도를 올리지 않는다 (#352) ---
+# --- 새 산출물 없는 맞장구·같은 말 되풀이는 이해도를 올리지 않는다 (#352) ---
 
 STUCK12 = "얼마 차이나는지 잘 모르겠어요."  # core 12자: #319 같은 산출물 기준(10자) 밖
-
-
-@pytest.mark.parametrize(
-    "utterance",
-    [
-        "잘 모르겠어요...",
-        "글쎄요... 잘 모르겠어요.",
-        "헷갈려요.",
-        STUCK12,
-        "잘 모르겠어요, 선생님.",
-        "몰라요 진짜",
-        "모르겠어요 ㅠ",
-        "모르겠어요ㅠ",
-        "모르겠어요, 네.",
-        "잘 모르겠어요…?",
-        "저... 그게... 잘 모르겠어요.",
-    ],
-)
-def test_stuck_only_reaction_is_held(ready, fake_gemini, utterance):
-    assert _repeat_after_20(ready, fake_gemini, utterance) == {20}
 
 
 @pytest.mark.parametrize(
@@ -1263,6 +1243,12 @@ def test_stuck_only_reaction_is_held(ready, fake_gemini, utterance):
 )
 def test_ack_only_reaction_is_held(ready, fake_gemini, utterance):
     assert _repeat_after_20(ready, fake_gemini, utterance) == {20}
+
+
+def test_identical_stuck_repeat_is_held(ready, fake_gemini):
+    assert _repeat_after_20(
+        ready, fake_gemini, "잘 모르겠어요.", before="잘 모르겠어요."
+    ) == {20}
 
 
 def test_identical_short_repeat_is_held(ready, fake_gemini):
@@ -1287,6 +1273,11 @@ def test_identical_short_repeat_is_held(ready, fake_gemini):
         "3cm 같아요. 헷갈려요.",
         "스물일곱 명이요… 잘 모르겠어요.",
         "모르겠어요. 자로 재면 되나요?",
+        # '모르겠어요'뿐 판정은 뺐다 (#352 리뷰 3): 직전과 다른 막힘 말은 오른다
+        "잘 모르겠어요...",
+        "잘은 모르겠고 3cm 같아요.",
+        "헷갈려서 3cm로 썼어요.",
+        "정확히는 몰라도 3cm 같아요.",
     ],
 )
 def test_reaction_with_content_rises(ready, fake_gemini, utterance):
@@ -1300,7 +1291,7 @@ def test_reaction_with_content_rises(ready, fake_gemini, utterance):
     [
         (STUCK12, ("", XLSX), 35),
         (STUCK12, ("a.xlsx", "b.xlsx"), 35),
-        (STUCK12, (XLSX, XLSX), 20),
+        ("네...", (XLSX, XLSX), 20),
         ("네...", ("", XLSX), 35),
         ("12요", ("", XLSX), 35),
     ],
