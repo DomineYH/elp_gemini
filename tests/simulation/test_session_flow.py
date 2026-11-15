@@ -1246,6 +1246,12 @@ STUCK12 = "얼마 차이나는지 잘 모르겠어요."  # core 12자: #319 같�
         "헷갈려요.",
         STUCK12,
         "잘 모르겠어요, 선생님.",
+        "몰라요 진짜",
+        "모르겠어요 ㅠ",
+        "모르겠어요ㅠ",
+        "모르겠어요, 네.",
+        "잘 모르겠어요…?",
+        "저... 그게... 잘 모르겠어요.",
     ],
 )
 def test_stuck_only_reaction_is_held(ready, fake_gemini, utterance):
@@ -1278,6 +1284,9 @@ def test_identical_short_repeat_is_held(ready, fake_gemini):
         "잘 모르겠지만 3cm 같아요.",
         "모르겠는데 5센티요",
         "몰라요, 그냥 큰 거요",
+        "3cm 같아요. 헷갈려요.",
+        "스물일곱 명이요… 잘 모르겠어요.",
+        "모르겠어요. 자로 재면 되나요?",
     ],
 )
 def test_reaction_with_content_rises(ready, fake_gemini, utterance):

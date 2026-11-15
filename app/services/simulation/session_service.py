@@ -377,15 +377,10 @@ _FILLER = re.compile(
     r"^(?:[\s,.…!?~]*(?:어+|저기|저|음+|네|아+|응)(?=[\s,.…!?~]|$))+"
 )
 _SEPARATORS = re.compile(r"[\s\W_]+")
-_VOCATIVES = {"선생님", "쌤"}
-
-
-def _last_word(utterance: str) -> str:
-    """끝 호칭(선생님·쌤)을 뺀 마지막 낱말 (#352)."""
-    words = re.findall(r"\w+", utterance)
-    while words and words[-1] in _VOCATIVES:
-        words.pop()
-    return words[-1] if words else ""
+# 문장부호와 '-지만'·'-는데' 뒤에서 절을 나눈다 (#352)
+_CLAUSE = re.compile(r"[.!?…,~]+|(?<=지만)|(?<=는데)")
+# 막힘 절 옆에 붙어도 새 내용이 아닌 말 (호칭·강조·군말·울음 표시)
+_TRIVIAL = re.compile(r"(?:선생님|쌤|진짜|정말|네|잘|글쎄|그게|ㅠ+|ㅜ+)*")
 
 
 # 같은 따옴표 쌍만 구간으로 본다. ASCII 따옴표는 영문·숫자 뒤(It's)면 여는 따옴표가 아니다.
@@ -410,6 +405,14 @@ def _core(utterance: str) -> str:
     """앞쪽 군말, 공백·문장부호, 끝 '요' 하나를 뺀 발화 핵심."""
     core = _plain(_FILLER.sub("", utterance))
     return core[:-1] if core.endswith("요") else core
+
+
+def _stuck_clauses_only(utterance: str) -> bool:
+    return all(
+        _STUCK_WORDS.search(c) or _TRIVIAL.fullmatch(_core(c))
+        for c in _CLAUSE.split(utterance)
+        if c.strip()
+    )
 
 
 def _quoted_echo(core: str, teacher: str) -> bool:
@@ -491,8 +494,9 @@ def student_utterance(
             )
         if (not artifact or artifact == previous_artifact.strip()) and (
             (
-                _STUCK_WORDS.search(_last_word(structured["utterance"]))
+                _STUCK_WORDS.search(structured["utterance"])
                 and len(core) <= STUCK_MAX_CORE
+                and _stuck_clauses_only(structured["utterance"])
             )
             or not core
             or _ACK.fullmatch(core)
