@@ -5,8 +5,10 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 
 from app.models.simulation_session import SimulationSession
+from app.models.simulation_utterance import SimulationUtterance
 from app.services.simulation import feedback, gemini
 from app.services.simulation.llm_schemas import (
     StudentReaction,
@@ -221,6 +223,40 @@ def test_feedback_input_drops_hard_words_question_misconception(
     [(_, user)] = prompts
     assert "다중공선성" in user
     assert "[오개념:" not in user and "직접 해야 한다고 오해함" not in user
+
+
+def test_turn_note_stays_out_of_stored_rows_feedback_and_report(
+    ready, fake_gemini, monkeypatch, sim_db
+):
+    """후속 턴 안내문은 학생 호출에만 붙고 저장·피드백·보고서로 새지 않는다 (#353)."""
+    prompts = []
+
+    def recording(kind, **kw):
+        prompts.append((kind, kw["user"]))
+        return fake_gemini(kind, **kw)
+
+    monkeypatch.setattr(gemini, "call_structured", recording)
+    sid = _finished(ready)
+    assert any(k == "student" and "[이번 반응]" in u for k, u in prompts)
+
+    prompts.clear()
+    assert ready.post(_api(sid, "/feedback")).status_code == 200
+    [(kind, user)] = prompts
+    assert kind == "feedback" and "[이번 반응]" not in user
+    assert "[이번 반응]" not in _saved_report(sim_db, sid)
+
+    async def _rows():
+        async with sim_db() as db:
+            q = select(SimulationUtterance).where(
+                SimulationUtterance.session_id == sid
+            )
+            return (await db.scalars(q)).all()
+
+    rows = run(_rows())
+    assert rows
+    for u in rows:
+        assert "[이번 반응]" not in u.content
+        assert "[이번 반응]" not in json.dumps(u.structured, ensure_ascii=False)
 
 
 def test_running_session_is_refused(ready, fake_gemini):

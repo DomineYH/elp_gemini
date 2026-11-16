@@ -284,6 +284,19 @@ def _shown_before(persona_id, idx, history) -> dict[int, str]:
     return shown
 
 
+# 후속 턴 안내: 대화록에 쌓인 자기 '모르겠어요'를 되풀이하지 않게 마지막 교사 줄 바로 뒤에 둔다.
+# 시스템 프롬프트 규칙과 자기 줄 표기는 효과가 없었다 (#353)
+TURN_NOTE = (
+    "[이번 반응] 바로 위 교사 발화에 대한 이 학생의 반응 1개를 만듭니다. "
+    "교사가 이 학생이 겪은 일, 지금 눈앞에 보이는 것, 예/아니오로 답할 수 있는 것, "
+    "교사가 방금 알려 준 것을 물었으면, 이 학생은 '모르겠어요'로 넘기지 않고 "
+    "프로필의 말투대로 짧게 그 물음에 답합니다. "
+    "눈앞의 것을 보고 크기나 차이를 어림해 보라고 했을 때도 짧게 어림해서 답합니다. "
+    "까닭, 원리, 방법, 용어를 물었으면 교사가 가르쳐 주기 전에는 프로필대로 모르는 상태를 유지합니다. "
+    "이 학생이 앞에서 한 말을 그대로 되풀이하지 않습니다."
+)
+
+
 def student_call(
     persona: SimulationPersona,
     phase,
@@ -341,6 +354,7 @@ def student_call(
             *([f"[직전 이해도] {previous}"] if previous is not None else []),
             "[이번 장면 대화]",
             *transcript,
+            *([TURN_NOTE] if previous is not None else []),
         ]
     )
     return {
@@ -367,6 +381,18 @@ ECHO_MAX_TAIL = 5
 SAME_ARTIFACT_MAX_CORE = 10
 # 군말을 뗀 core가 이것뿐이면 맞장구다 ("네, 알겠어요, 선생님." → "알겠어요선생님")
 _ACK = re.compile(r"(?:알겠(?:어요?|습니다)?)?(?:선생님|쌤)?")
+# '모르겠어요'뿐인 반응의 core. 낱말 규칙은 매번 샜으므로 재생에서 본 형태의 닫힌 목록만 쓴다 (#353)
+_STUCK_ONLY_CORES = frozenset(
+    {
+        "모르겠어",
+        "잘모르겠어",
+        "몰라",
+        "잘몰라",
+        "잘잘몰라",
+        "그게잘모르겠어",
+        "글쎄요잘모르겠어",
+    }
+)
 # _core는 소수점을 떼므로 "1.2요"→"12요" 같은 수치 고침은 숫자로 가린다
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 # 숫자 사이 천 단위 쉼표는 같은 값이다 ("1,000" = "1000")
@@ -483,15 +509,15 @@ def student_utterance(
         if (not artifact or artifact == previous_artifact.strip()) and (
             not core
             or _ACK.fullmatch(core)
+            or core in _STUCK_ONLY_CORES
             or (
                 core == _core(previous_utterance)
                 and _numbers(structured["utterance"])
                 == _numbers(previous_utterance)
             )
         ):
-            # 새 산출물 없이 맞장구뿐(침묵 포함)·자기 직전 말 그대로인 반응은
-            # 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#352).
-            # 낱말로 '모르겠어요'뿐을 가리는 판정은 매번 새어 나가 두지 않는다
+            # 새 산출물 없이 맞장구뿐(침묵 포함)·'모르겠어요'뿐·자기 직전 말 그대로인 반응은
+            # 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#352, #353).
             structured["understanding"] = min(
                 structured["understanding"], previous
             )
