@@ -1306,8 +1306,8 @@ def test_thousands_separator_repeat_is_held(
         "3cm 같아요. 헷갈려요.",
         "스물일곱 명이요… 잘 모르겠어요.",
         "모르겠어요. 자로 재면 되나요?",
-        # '모르겠어요'뿐 판정은 뺐다 (#352 리뷰 3): 직전과 다른 막힘 말은 오른다
-        "잘 모르겠어요...",
+        "아니요, 잘 모르겠어요.",
+        "얼마나 더 큰지는 잘 모르겠어요.",
         "잘은 모르겠고 3cm 같아요.",
         "헷갈려서 3cm로 썼어요.",
         "정확히는 몰라도 3cm 같아요.",
@@ -1327,6 +1327,8 @@ def test_reaction_with_content_rises(ready, fake_gemini, utterance):
         ("네...", (XLSX, XLSX), 20),
         ("네...", ("", XLSX), 35),
         ("12요", ("", XLSX), 35),
+        ("잘 모르겠어요.", ("", XLSX), 35),
+        ("잘 모르겠어요.", ("a.xlsx", "b.xlsx"), 35),
     ],
 )
 def test_no_new_showing_artifact(
@@ -1409,6 +1411,71 @@ def test_vocative_ack_never_reaches_agree(ready, fake_gemini):
     )
     assert _stored(turn) == {70}
     assert turn["agreement"]["all_agreed"] is False
+
+
+# --- '모르겠어요'뿐인 반응은 닫힌 목록으로 이해도를 올리지 않는다 (#353) ---
+
+STUCK = "잘 모르겠어요."
+
+
+@pytest.mark.parametrize(
+    "utterance",
+    [
+        "잘… 모르겠어요.",
+        "모르겠어요...",
+        "몰라요.",
+        "잘… 잘 몰라요.",
+        "네, 잘 모르겠어요.",
+        "글쎄요... 잘 모르겠어요.",
+        "잘 모르겠어요...",
+    ],
+)
+def test_stuck_only_reaction_is_held(ready, fake_gemini, utterance):
+    assert _repeat_after_20(ready, fake_gemini, utterance, before="12요") == {
+        20
+    }
+
+
+def test_stuck_only_drop_is_kept(ready, fake_gemini):
+    stored = _repeat_after_20(
+        ready, fake_gemini, STUCK, understanding=10, before="12요"
+    )
+    assert stored == {10}
+
+
+def test_first_reaction_stuck_only_is_not_held(ready, fake_gemini):
+    fake_gemini.results["student"] = _react(utterance=STUCK, understanding=60)
+    state = _create(ready)
+    turn = ready.post(_api(state["session"]["id"], "/phases/0/enter")).json()
+    assert set(turn["agreement"]["understanding"].values()) == {60}
+
+
+def test_stuck_only_without_previous_valid_reaction_rises(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    fake_gemini.parse_fail.add("student")
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(utterance=STUCK, understanding=35)
+    turn = ready.post(_api(sid, "/say"), json={"content": REPEAT_ASK}).json()
+    assert _stored(turn) == {35}
+
+
+def test_regenerated_stuck_only_is_held(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    fake_gemini.results["student"] = _react(utterance=SAID, understanding=20)
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/say"), json={"content": REPEAT_ASK})
+
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(utterance=STUCK, understanding=35)
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [fixed] = r.json()["utterances"]
+    assert fixed["structured"]["understanding"] == 20
 
 
 def test_student_call_sees_own_previous_understanding(
@@ -1709,3 +1776,89 @@ def test_student_call_profile_has_gender(ready, fake_gemini, monkeypatch):
         profile = json.loads(system.split("[나의 프로필]\n", 1)[1])
         assert list(profile)[:3] == ["가명", "학년", "성별"]
         assert profile["성별"] in GENDER_LABEL.values()
+
+
+# --- 후속 턴 안내문은 마지막 교사 줄 바로 뒤에 붙는다 (#353) ---
+
+
+def test_follow_up_say_ends_with_turn_note(ready, fake_gemini, monkeypatch):
+    prompts = _recording(fake_gemini, monkeypatch)
+    state = _create(ready)
+    sid = state["session"]["id"]
+    ready.post(_api(sid, "/phases/0/enter"))
+    prompts.clear()
+    ready.post(_api(sid, "/say"), json={"content": "신발 한번 볼래?"})
+    assert len(prompts) == 4
+    for u in prompts.values():
+        assert u.splitlines()[-2:] == [
+            "교사(전체): 신발 한번 볼래?",
+            session_service.TURN_NOTE,
+        ]
+        assert "[직전 이해도]" in u
+        assert u.count("[이번 반응]") == 1
+
+
+def test_targeted_follow_up_say_ends_with_turn_note(
+    ready, fake_gemini, monkeypatch
+):
+    prompts = _recording(fake_gemini, monkeypatch)
+    state = _create(ready)
+    sid = state["session"]["id"]
+    target = state["personas"][1]
+    ready.post(_api(sid, "/phases/0/enter"))
+    prompts.clear()
+    ready.post(
+        _api(sid, "/say"),
+        json={"content": "너는?", "target_persona_id": target["id"]},
+    )
+    [u] = prompts.values()
+    assert u.splitlines()[-2:] == [
+        f"교사({target['display_name']}에게): 너는?",
+        session_service.TURN_NOTE,
+    ]
+
+
+def test_enter_phase_call_has_no_turn_note(ready, fake_gemini, monkeypatch):
+    prompts = _recording(fake_gemini, monkeypatch)
+    state = _create(ready)
+    ready.post(_api(state["session"]["id"], "/phases/0/enter"))
+    assert len(prompts) == 4
+    for u in prompts.values():
+        assert "[이번 반응]" not in u
+        assert u.splitlines()[-1].startswith("교사(전체): ")
+
+
+def test_regenerate_follow_up_has_turn_note(ready, fake_gemini, monkeypatch):
+    prompts = _recording(fake_gemini, monkeypatch)
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/say"), json={"content": "어때?"})
+    fake_gemini.parse_fail.clear()
+    prompts.clear()
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [u] = prompts.values()
+    assert u.splitlines()[-2:] == [
+        "교사(전체): 어때?",
+        session_service.TURN_NOTE,
+    ]
+
+
+def test_regenerate_first_reaction_has_no_turn_note(
+    ready, fake_gemini, monkeypatch
+):
+    prompts = _recording(fake_gemini, monkeypatch)
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.clear()
+    prompts.clear()
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [u] = prompts.values()
+    assert "[이번 반응]" not in u
