@@ -359,7 +359,7 @@
             const who = el("div", "flex items-center gap-2 min-w-0");
             who.append(
                 el("span", "dot " + p.color_key + " w-2.5 h-2.5 rounded-full shrink-0"),
-                el("span", "name " + p.color_key + " font-semibold text-sm truncate", p.display_name),
+                el("span", "name " + p.color_key + " font-semibold text-sm shrink-0 truncate", p.display_name),
                 el("span", "note truncate", p.adapted_level),
             );
             head.append(who, agreeBadge(agreed.has(p.id), state.agreement.pledged_persona_ids.includes(p.id)));
