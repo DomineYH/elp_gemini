@@ -1429,12 +1429,53 @@ STUCK = "잘 모르겠어요."
         "네, 잘 모르겠어요.",
         "글쎄요... 잘 모르겠어요.",
         "잘 모르겠어요...",
+        # 기록에서 본 형태 (#357)
+        "그냥 잘 모르겠어요.",
+        "너무 어려워서 잘 모르겠어요...",
+        "모르겠어요, 너무 어려워요.",
+        "갑자기 어려운 말이 나와서 잘 모르겠어요.",
+        "갑자기 너무 어려워져서 잘 모르겠어요.",
+        "무슨 말씀이신지 잘 모르겠어요...",
+        "저기요, 무슨 말씀이신지 잘 모르겠어요.",
+        "글쎄요... 정확히는 잘 모르겠어요...",
+        "잘... 잘 모르겠어요.",
+        "혼자서는 잘 모르겠어요.",
+        "어떻게 하는지 잘 모르겠어요.",
+        "어떻게 해야 되는지 잘 모르겠어요.",
     ],
 )
 def test_stuck_only_reaction_is_held(ready, fake_gemini, utterance):
     assert _repeat_after_20(ready, fake_gemini, utterance, before="12요") == {
         20
     }
+
+
+@pytest.mark.parametrize(
+    "utterance",
+    [
+        "잘 모르겠는데… 조금 더 크신 것 같아요.",
+        "글쎄요... 한 스물여덟... 아니요, 잘 모르겠어요.",
+        "피자요...? 잘 모르겠어요.",
+        "아니요, 잘 몰라서 그냥 신어보고 샀어요.",
+        "잘... 모르겠어요. 연습해서요.",
+        "아니요, 잘 몰라요.",
+    ],
+)
+def test_stuck_with_content_still_rises(ready, fake_gemini, utterance):
+    assert _repeat_after_20(ready, fake_gemini, utterance, before="12요") == {
+        35
+    }
+
+
+def test_listed_stuck_with_new_artifact_rises(ready, fake_gemini):
+    stored = _repeat_after_20(
+        ready,
+        fake_gemini,
+        "혼자서는 잘 모르겠어요.",
+        before="12요",
+        artifacts=("", "표 초안"),
+    )
+    assert stored == {35}
 
 
 def test_stuck_only_drop_is_kept(ready, fake_gemini):
