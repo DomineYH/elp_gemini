@@ -393,6 +393,8 @@ _STUCK_ONLY_CORES = frozenset(
         "글쎄요잘모르겠어",
     }
 )
+# 다짐뿐인 반응의 core (#358). 닫힌 목록: '자로재어볼게' 같은 할 일 약속은 넣지 않는다
+_PLEDGE_CORES = frozenset({"열심히해볼게"})
 # _core는 소수점을 떼므로 "1.2요"→"12요" 같은 수치 고침은 숫자로 가린다
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 # 숫자 사이 천 단위 쉼표는 같은 값이다 ("1,000" = "1000")
@@ -521,6 +523,16 @@ def student_utterance(
             structured["understanding"] = min(
                 structured["understanding"], previous
             )
+        if (
+            core in _PLEDGE_CORES
+            and (not artifact or artifact == previous_artifact.strip())
+            and not structured["misconception"]
+        ):
+            # 다짐뿐인 후속 반응은 이해도를 올리지 않고 장면 동의로만 친다 (#358)
+            structured["understanding"] = min(
+                structured["understanding"], previous
+            )
+            structured["pledge"] = True
     if structured and previous is not None:
         # 상승폭 규칙 "한 번에 20 넘게 오르지 않는다"를 모델이 어긴다 (#310)
         structured["understanding"] = min(

@@ -42,7 +42,7 @@
             <div class="text-sm">
                 <span class="note">다음 장면 동의</span>
                 <span id="agreeCount" class="mono font-medium ml-1">0 / {{ persona_count }}</span>
-                <span class="note ml-2 hidden sm:inline">· 학생 이해도가 한 번 80% 이상이 되면 그 학생은 이 장면이 끝날 때까지 동의로 유지되고, 모두 동의하면 다음 장면으로 넘어갈 수 있습니다</span>
+                <span class="note ml-2 hidden sm:inline">· 학생 이해도가 한 번 80% 이상이 되거나 학생이 '열심히 해 볼게요'처럼 다짐으로 답하면 그 학생은 이 장면이 끝날 때까지 동의로 유지되고, 모두 동의하면 다음 장면으로 넘어갈 수 있습니다</span>
             </div>
             <div class="flex gap-2">
                 <button type="button" id="skipBtn" class="px-4 py-2 rounded-lg border text-sm text-gray-700 hover:bg-gray-50" title="학생 동의 없이 다음 장면으로" disabled>Skip ▸</button>
@@ -234,8 +234,8 @@
         if (c < 0xAC00 || c > 0xD7A3) return "와";
         return (c - 0xAC00) % 28 === 0 ? "와" : "과";
     }
-    function agreeBadge(ok) {
-        return el("span", "agree" + (ok ? " yes" : ""), ok ? "✓ 다음 장면 동의" : "대기");
+    function agreeBadge(ok, pledged) {
+        return el("span", "agree" + (ok ? " yes" : ""), ok ? (pledged ? "✓ 다짐으로 동의" : "✓ 다음 장면 동의") : "대기");
     }
     function understandBar(p, value, ok) {
         const bar = el("div", "relative h-5 rounded-full overflow-hidden border");
@@ -269,7 +269,7 @@
         const ok = state.agreement.agreed_persona_ids.includes(p.id);
         const dmBar = understandBar(p, state.agreement.understanding[p.id], ok);
         dmBar.style.width = "7rem";
-        $("dmAgree").replaceChildren(agreeBadge(ok));
+        $("dmAgree").replaceChildren(agreeBadge(ok, state.agreement.pledged_persona_ids.includes(p.id)));
         $("dmBar").replaceChildren(dmBar);
         $("dmSub").textContent = [p.adapted_level, p.adapted_profile.behavior_summary].filter(Boolean).join(" · ");
         $("dmDot").style.background = "var(--" + p.color_key + ")";
@@ -362,7 +362,7 @@
                 el("span", "name " + p.color_key + " font-semibold text-sm truncate", p.display_name),
                 el("span", "note truncate", p.adapted_level),
             );
-            head.append(who, agreeBadge(agreed.has(p.id)));
+            head.append(who, agreeBadge(agreed.has(p.id), state.agreement.pledged_persona_ids.includes(p.id)));
             const feed = el("div", "flex flex-col gap-2 min-h-[4.5rem]");
             const mine = seatUtterances(utts, p);
             const last = mine.filter(u => u.speaker_type === "student").pop();

@@ -22,9 +22,12 @@ def _student(
     misconception="",
     phase_idx=0,
     failed=False,
+    pledge=False,
 ):
     """understanding이 None이면 키를 넣지 않아 #296 이전 행을 흉내낸다."""
     structured = {"misconception": misconception}
+    if pledge:
+        structured["pledge"] = True
     if understanding is not None:
         structured["understanding"] = understanding
     if ready is not None:
@@ -116,11 +119,65 @@ def test_full_shape():
     assert compute_agreement(0, personas, utts) == {
         "phase_idx": 0,
         "agreed_persona_ids": [1],
+        "pledged_persona_ids": [],
         "understanding": {1: 85, 2: 70},
         "count": 1,
         "total": 2,
         "all_agreed": False,
     }
+
+
+# --- 다짐뿐인 후속 반응은 이해도와 따로 장면 동의로 친다 (#358) ---
+
+
+def _pledged(personas, utts, phase_idx=0):
+    r = compute_agreement(phase_idx, personas, utts)
+    return r["agreed_persona_ids"], r["pledged_persona_ids"]
+
+
+def test_pledge_row_agrees_below_threshold():
+    r = compute_agreement(0, [_persona(1)], [_student(1, 40, pledge=True)])
+    assert r["agreed_persona_ids"] == [1]
+    assert r["understanding"] == {1: 40}
+    assert r["pledged_persona_ids"] == [1]
+
+
+def test_pledge_latches_over_later_rows():
+    utts = [
+        _student(1, 40, pledge=True),
+        _student(1, 40),
+        _student(1, failed=True),
+    ]
+    r = compute_agreement(0, [_persona(1)], utts)
+    assert r["agreed_persona_ids"] == [1]
+    assert r["pledged_persona_ids"] == [1]
+    assert r["understanding"] == {1: 40}
+
+
+def test_reached_student_is_not_pledged():
+    assert _pledged([_persona(1)], [_student(1, 85)]) == ([1], [])
+
+
+def test_pledge_and_reached_either_order_is_not_pledged():
+    personas = [_persona(1)]
+    utts = [_student(1, 60, pledge=True), _student(1, 85)]
+    assert _pledged(personas, utts) == ([1], [])
+    utts = [_student(1, 85), _student(1, 85, pledge=True)]
+    assert _pledged(personas, utts) == ([1], [])
+
+
+def test_pledge_with_misconception_does_not_agree():
+    utts = [_student(1, 40, misconception="x", pledge=True)]
+    assert _pledged([_persona(1)], utts) == ([], [])
+
+
+def test_pledge_is_per_phase_and_per_persona():
+    personas = [_persona(1), _persona(2)]
+    utts = [_student(1, 40, pledge=True, phase_idx=0), _student(2, 40)]
+    r = compute_agreement(1, personas, utts)
+    assert r["count"] == 0
+    assert r["pledged_persona_ids"] == []
+    assert _pledged(personas, utts) == ([1], [1])
 
 
 def test_threshold_constant_is_80():
