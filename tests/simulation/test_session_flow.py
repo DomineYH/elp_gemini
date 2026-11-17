@@ -147,6 +147,7 @@ def test_agree_with_one_not_ready_is_409_skip_passes(ready, fake_gemini):
     assert state["agreement"] == {
         "phase_idx": 1,
         "agreed_persona_ids": [],
+        "pledged_persona_ids": [],
         "understanding": {str(p["id"]): None for p in state["personas"]},
         "count": 0,
         "total": 4,
@@ -1862,3 +1863,236 @@ def test_regenerate_first_reaction_has_no_turn_note(
     assert r.status_code == 200
     [u] = prompts.values()
     assert "[이번 반응]" not in u
+
+
+# --- 다짐뿐인 후속 반응은 이해도를 올리지 않고 장면 동의로 친다 (#358) ---
+
+PLEDGE = "네, 열심히 해 볼게요."
+ENCOURAGE = "잘 할 수 있어. 자신감을 가지고"
+
+
+def _pledge_turn(
+    client,
+    fake_gemini,
+    utterance=PLEDGE,
+    understanding=45,
+    artifacts=("", ""),
+    **kw,
+):
+    return _enter_then_say(
+        client,
+        fake_gemini,
+        _react(utterance=SAID, understanding=40, artifact=artifacts[0]),
+        _react(
+            utterance=utterance,
+            understanding=understanding,
+            artifact=artifacts[1],
+            **kw,
+        ),
+        content=ENCOURAGE,
+    )
+
+
+def _flags(turn):
+    return {
+        u["structured"].get("pledge")
+        for u in turn["utterances"]
+        if u["speaker_type"] == "student"
+    }
+
+
+def _ids(personas):
+    return sorted(p["id"] for p in personas)
+
+
+@pytest.mark.parametrize(
+    "utterance", [PLEDGE, "네, 열심히 해볼게요.", "열심히 해 볼게요!"]
+)
+def test_follow_up_pledge_is_held_and_agrees(ready, fake_gemini, utterance):
+    state, turn = _pledge_turn(ready, fake_gemini, utterance)
+    assert _stored(turn) == {40}
+    assert _flags(turn) == {True}
+    agreement = turn["agreement"]
+    assert agreement["count"] == 4
+    assert agreement["all_agreed"] is True
+    assert sorted(agreement["pledged_persona_ids"]) == _ids(state["personas"])
+    assert set(agreement["understanding"].values()) == {40}
+    sid = state["session"]["id"]
+    r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
+    assert r.status_code == 200
+
+
+def test_pledge_drop_is_kept(ready, fake_gemini):
+    _, turn = _pledge_turn(ready, fake_gemini, understanding=30)
+    assert _stored(turn) == {30}
+    assert _flags(turn) == {True}
+
+
+def test_off_task_pledge_keeps_previous_and_agrees(ready, fake_gemini):
+    _, turn = _pledge_turn(ready, fake_gemini, understanding=10, on_task=False)
+    assert _stored(turn) == {40}
+    assert _flags(turn) == {True}
+
+
+def test_pledge_with_same_carried_artifact_agrees(ready, fake_gemini):
+    _, turn = _pledge_turn(ready, fake_gemini, artifacts=("a.xlsx", "a.xlsx"))
+    assert _stored(turn) == {40}
+    assert _flags(turn) == {True}
+
+
+def test_first_reaction_pledge_is_not_consent(ready, fake_gemini):
+    fake_gemini.results["student"] = _react(utterance=PLEDGE, understanding=60)
+    state = _create(ready)
+    turn = ready.post(_api(state["session"]["id"], "/phases/0/enter")).json()
+    assert _flags(turn) == {None}
+    assert turn["agreement"]["count"] == 0
+    assert turn["agreement"]["pledged_persona_ids"] == []
+    assert set(turn["agreement"]["understanding"].values()) == {60}
+
+
+@pytest.mark.parametrize(
+    "utterance",
+    [
+        "네, 자로 재어 볼게요.",
+        "네… 재어 볼게요.",
+        "네, 알겠어요. 자로 재 볼게요.",
+        "네, 열심히 해 볼게요. 자로 재어 볼게요.",
+        STUCK,
+        "네, 알겠습니다.",
+    ],
+)
+def test_action_commitment_is_not_pledge(ready, fake_gemini, utterance):
+    _, turn = _pledge_turn(ready, fake_gemini, utterance)
+    assert _flags(turn) == {None}
+    assert turn["agreement"]["count"] == 0
+    assert turn["agreement"]["pledged_persona_ids"] == []
+
+
+@pytest.mark.parametrize("artifacts", [("", "메모.txt"), ("a.xlsx", "b.xlsx")])
+def test_pledge_with_new_artifact_is_not_consent(ready, fake_gemini, artifacts):
+    _, turn = _pledge_turn(ready, fake_gemini, artifacts=artifacts)
+    assert _flags(turn) == {None}
+    assert turn["agreement"]["count"] == 0
+    assert turn["agreement"]["pledged_persona_ids"] == []
+    assert _stored(turn) == {45}
+
+
+def test_pledge_with_misconception_is_not_consent(ready, fake_gemini):
+    _, turn = _pledge_turn(ready, fake_gemini, misconception="분모끼리 더한다")
+    assert _flags(turn) == {None}
+    assert turn["agreement"]["count"] == 0
+    assert turn["agreement"]["pledged_persona_ids"] == []
+    assert _stored(turn) == {45}
+
+
+def test_pledge_with_stuck_summary_misconception_agrees(ready, fake_gemini):
+    # '…모른다' 오개념은 검증기가 비운다(#302) → 다짐 동의로 친다
+    _, turn = _pledge_turn(
+        ready, fake_gemini, misconception="무엇을 해야 할지 모른다"
+    )
+    assert _flags(turn) == {True}
+    assert _stored(turn) == {40}
+
+
+def test_pledge_without_previous_valid_reaction_is_not_consent(
+    ready, fake_gemini
+):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    fake_gemini.parse_fail.add("student")
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(utterance=PLEDGE, understanding=35)
+    turn = ready.post(_api(sid, "/say"), json={"content": ENCOURAGE}).json()
+    assert _flags(turn) == {None}
+    assert turn["agreement"]["count"] == 0
+    assert turn["agreement"]["pledged_persona_ids"] == []
+
+
+def test_pledge_latch_survives_later_stuck(ready, fake_gemini):
+    state, _ = _pledge_turn(ready, fake_gemini)
+    sid = state["session"]["id"]
+    fake_gemini.results["student"] = _react(utterance=STUCK, understanding=40)
+    turn = ready.post(_api(sid, "/say"), json={"content": "어때?"}).json()
+    assert turn["agreement"]["count"] == 4
+    assert sorted(turn["agreement"]["pledged_persona_ids"]) == _ids(
+        state["personas"]
+    )
+
+
+def test_pledge_then_reaching_80_leaves_pledged_list(ready, fake_gemini):
+    state, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(utterance=SAID, understanding=70),
+        _react(utterance=PLEDGE, understanding=75),
+        content=ENCOURAGE,
+    )
+    assert _stored(turn) == {70}
+    assert _flags(turn) == {True}
+    sid = state["session"]["id"]
+    fake_gemini.results["student"] = _react(
+        utterance="자료에서 2050년 인구가 줄어드는 걸 찾았어요.",
+        understanding=90,
+    )
+    turn = ready.post(_api(sid, "/say"), json={"content": "찾았니?"}).json()
+    assert turn["agreement"]["count"] == 4
+    assert turn["agreement"]["pledged_persona_ids"] == []
+
+
+def test_one_holdout_blocks_agree_advance(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    holdout = str(state["personas"][0]["source_record_id"])
+    fake_gemini.results["student"] = _react(utterance=SAID, understanding=40)
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.results["student"] = lambda key: _react(
+        utterance=STUCK if key == holdout else PLEDGE, understanding=45
+    )
+    turn = ready.post(_api(sid, "/say"), json={"content": ENCOURAGE}).json()
+    assert turn["agreement"]["count"] == 3
+    assert sorted(turn["agreement"]["pledged_persona_ids"]) == _ids(
+        state["personas"][1:]
+    )
+    r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
+    assert r.status_code == 409
+    assert _code(r) == "NOT_ALL_AGREED"
+
+
+def test_regenerated_pledge_is_held_and_agrees(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    fake_gemini.results["student"] = _react(utterance=SAID, understanding=20)
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/say"), json={"content": ENCOURAGE})
+
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(utterance=PLEDGE, understanding=35)
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    body = r.json()
+    [fixed] = body["utterances"]
+    assert fixed["structured"]["understanding"] == 20
+    assert fixed["structured"]["pledge"] is True
+    assert persona["id"] in body["agreement"]["agreed_persona_ids"]
+    assert persona["id"] in body["agreement"]["pledged_persona_ids"]
+
+
+def test_next_student_call_does_not_see_pledge_flag(
+    ready, fake_gemini, monkeypatch
+):
+    state, turn = _pledge_turn(ready, fake_gemini)
+    assert _flags(turn) == {True}
+    prompts = []
+
+    def recording(kind, **kw):
+        if kind == "student":
+            prompts.extend([kw["user"], kw["system"]])
+        return fake_gemini(kind, **kw)
+
+    monkeypatch.setattr(gemini, "call_structured", recording)
+    ready.post(_api(state["session"]["id"], "/say"), json={"content": "어때?"})
+    assert len(prompts) == 8
+    assert not any("pledge" in p for p in prompts)

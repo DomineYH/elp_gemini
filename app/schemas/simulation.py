@@ -146,6 +146,8 @@ class SessionInfo(BaseModel):
 class Agreement(BaseModel):
     phase_idx: int
     agreed_persona_ids: list[int]
+    # 다짐으로만 동의한 학생 (#358), agreed_persona_ids의 부분집합
+    pledged_persona_ids: list[int]
     understanding: dict[
         int, int | None
     ]  # persona_id -> 최신 이해도, 과거 행은 None
