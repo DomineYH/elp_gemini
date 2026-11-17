@@ -405,8 +405,16 @@ _STUCK_ONLY_CORES = frozenset(
         "어떻게해야되는지잘모르겠어",
     }
 )
-# 다짐뿐인 반응의 core (#358). 닫힌 목록: '자로재어볼게' 같은 할 일 약속은 넣지 않는다
-_PLEDGE_CORES = frozenset({"열심히해볼게"})
+# 다짐뿐인 반응의 core 짜임 (#358, #361). core 전체가 맞아야 하므로 목적어·과업 내용이
+# 붙은 할 일 약속('자로재어볼게')은 빠진다. 앞에 '모르겠어요'뿐 형태(+그냥)가 와도 다짐이다.
+# '열심히' 같은 가운데 말 없이 '해볼게'만 한 말은 다짐이 아니다
+_PLEDGE = re.compile(
+    rf"(?:(?:{'|'.join(sorted(_STUCK_ONLY_CORES))})요?)?(?:그냥)?"
+    r"(?:선생님|쌤)?(?:저도|저)?(?:앞으로|이제|더|꼭|조금만더)*"
+    r"(?:(?:열심히|최선을다해|노력해서|잘|힘내서|포기하지않고)"
+    r"(?:해볼게|할게|하겠습니다|해보겠습니다|배울게|참여할게)"
+    r"|노력(?:할게|해볼게|하겠습니다)|최선을다(?:할게|하겠습니다))"
+)
 # _core는 소수점을 떼므로 "1.2요"→"12요" 같은 수치 고침은 숫자로 가린다
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 # 숫자 사이 천 단위 쉼표는 같은 값이다 ("1,000" = "1000")
@@ -536,11 +544,11 @@ def student_utterance(
                 structured["understanding"], previous
             )
         if (
-            core in _PLEDGE_CORES
+            _PLEDGE.fullmatch(core)
             and (not artifact or artifact == previous_artifact.strip())
             and not structured["misconception"]
         ):
-            # 다짐뿐인 후속 반응은 이해도를 올리지 않고 장면 동의로만 친다 (#358)
+            # 다짐뿐인 후속 반응은 이해도를 올리지 않고 장면 동의로만 친다 (#358, #361)
             structured["understanding"] = min(
                 structured["understanding"], previous
             )
