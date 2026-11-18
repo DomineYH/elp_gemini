@@ -80,6 +80,12 @@ def no_wait(monkeypatch):
     monkeypatch.setattr(time, "sleep", lambda s: None)
 
 
+@pytest.fixture(autouse=True)
+def restore_shared_client(monkeypatch):
+    # genai.Client 패치 중에 만들어진 가짜가 싱글턴에 남아 다른 테스트로 새지 않게 한다
+    monkeypatch.setattr(FileSearchService, "_client", FileSearchService._client)
+
+
 # --- QnA: 문서 대화 경로 (1패스 지도안 조회 + 최종 답변) ---------------------
 
 
