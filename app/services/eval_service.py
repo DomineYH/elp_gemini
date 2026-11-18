@@ -16,6 +16,7 @@ from app.services.analysis_storage_service import AnalysisStorageService
 from app.services.criteria_vector_service import CriteriaVectorService
 from app.services.eval_prompt_builder import EvaluationPromptBuilder
 from app.services.prompt_loader_service import PromptLoaderService
+from app.utils.gemini_retry import retry_on_resource_exhausted
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +153,9 @@ class EvaluationService:
         try:
             # API 호출
             response = await asyncio.to_thread(
-                self.client.models.generate_content,
+                retry_on_resource_exhausted()(
+                    self.client.models.generate_content
+                ),
                 model=self.eval_model_name,
                 contents=prompt,
                 config=types.GenerateContentConfig(

@@ -28,6 +28,7 @@ from app.services.lessonplan_analysis_service import (
     _LESSONPLAN_RETRIEVE_QUERY,
 )
 from app.services.prompt_loader_service import PromptLoaderService
+from app.utils.gemini_retry import retry_on_resource_exhausted
 
 logger = logging.getLogger(__name__)
 
@@ -388,7 +389,9 @@ class QnAService:
                 )
                 try:
                     pass1 = await asyncio.to_thread(
-                        self.client.models.generate_content,
+                        retry_on_resource_exhausted()(
+                            self.client.models.generate_content
+                        ),
                         model=self.qna_model_name,
                         contents=_LESSONPLAN_RETRIEVE_QUERY,
                         config=types.GenerateContentConfig(
@@ -428,7 +431,9 @@ class QnAService:
                     file_search_tools.append(rubric_tool)
 
             response = await asyncio.to_thread(
-                self.client.models.generate_content,
+                retry_on_resource_exhausted()(
+                    self.client.models.generate_content
+                ),
                 model=self.qna_model_name,
                 contents=contents,
                 config=types.GenerateContentConfig(

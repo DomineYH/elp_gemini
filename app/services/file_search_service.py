@@ -18,6 +18,7 @@ from google.genai import types
 
 from app.config import settings
 from app.services.operation_polling import poll_operation
+from app.utils.gemini_retry import retry_on_resource_exhausted
 
 logger = logging.getLogger(__name__)
 
@@ -545,7 +546,9 @@ class FileSearchService:
 
             # Generate Content 요청
             response = await asyncio.to_thread(
-                self.client.models.generate_content,
+                retry_on_resource_exhausted()(
+                    self.client.models.generate_content
+                ),
                 model=model,
                 contents=query,
                 config=types.GenerateContentConfig(
