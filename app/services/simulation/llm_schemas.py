@@ -6,7 +6,7 @@
 import re
 from typing import Literal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, PrivateAttr, field_validator, model_validator
 
 
 class PhaseDraftItem(BaseModel):
@@ -91,6 +91,8 @@ class StudentReaction(BaseModel):
     confidence: float
     # 이 반응이 이번 장면 과업·발문에 대한 이해를 새로 보이거나 바꾸는가 (#306)
     on_task: bool
+    # 아래 검증기가 비우기 전의 오개념. 스키마·model_dump()에는 나오지 않는다 (#361)
+    _raw_misconception: str = PrivateAttr(default="")
 
     @field_validator("understanding")
     @classmethod
@@ -111,6 +113,7 @@ class StudentReaction(BaseModel):
         # 상한은 원문 기준으로 먼저 걸고(막힘도 이해 부족), 텍스트만 비운다
         # 질문·'모르겠어요'만 한 반응엔 드러난 생각이 없는데, 모델이 교사 질문이나
         # 예전 오개념을 옮겨 적는다 (#330)
+        self._raw_misconception = self.misconception
         if STUCK_SUMMARY.search(self.misconception.strip()) or stuck_only(
             self.utterance, self.artifact
         ):

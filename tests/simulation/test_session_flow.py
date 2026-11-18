@@ -2077,6 +2077,70 @@ def test_pledge_with_stuck_summary_misconception_agrees(ready, fake_gemini):
     assert _stored(turn) == {40}
 
 
+STUCK_PLEDGE = "잘 모르겠어요… 그냥 열심히 해 볼게요."
+
+
+def _misconceptions(turn):
+    return {
+        u["structured"]["misconception"]
+        for u in turn["utterances"]
+        if u["speaker_type"] == "student"
+    }
+
+
+def test_stuck_pledge_with_cleared_misconception_is_not_consent(
+    ready, fake_gemini
+):
+    # 말줄임으로 이은 막힘+다짐은 #330이 오개념을 비우지만 실제 오개념이 있었다 (#361 리뷰)
+    state, turn = _pledge_turn(
+        ready, fake_gemini, STUCK_PLEDGE, misconception="분모끼리 더한다"
+    )
+    assert _misconceptions(turn) == {""}
+    assert _flags(turn) == {None}
+    assert turn["agreement"]["count"] == 0
+    assert turn["agreement"]["pledged_persona_ids"] == []
+    assert _stored(turn) == {45}
+    r = ready.post(
+        _api(state["session"]["id"], "/advance"), json={"mode": "agree"}
+    )
+    assert r.status_code == 409
+
+
+@pytest.mark.parametrize(
+    "utterance", [STUCK_PLEDGE, "잘 모르겠어요. 그냥 열심히 해 볼게요."]
+)
+def test_stuck_pledge_with_carried_artifact_and_misconception_is_not_consent(
+    ready, fake_gemini, utterance
+):
+    # 직전 산출물을 그대로 들면 #341 가드가 오개념을 비운다
+    _, turn = _pledge_turn(
+        ready,
+        fake_gemini,
+        utterance,
+        artifacts=("a.xlsx", "a.xlsx"),
+        misconception="분모끼리 더한다",
+    )
+    assert _flags(turn) == {None}
+    assert turn["agreement"]["count"] == 0
+    assert turn["agreement"]["pledged_persona_ids"] == []
+    assert _stored(turn) == {45}
+
+
+def test_stuck_pledge_with_stuck_summary_misconception_agrees(
+    ready, fake_gemini
+):
+    _, turn = _pledge_turn(
+        ready,
+        fake_gemini,
+        STUCK_PLEDGE,
+        misconception="무엇을 해야 할지 모른다",
+    )
+    assert _misconceptions(turn) == {""}
+    assert _flags(turn) == {True}
+    assert _stored(turn) == {40}
+    assert turn["agreement"]["count"] == 4
+
+
 def test_pledge_without_previous_valid_reaction_is_not_consent(
     ready, fake_gemini
 ):

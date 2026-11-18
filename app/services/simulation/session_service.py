@@ -31,7 +31,11 @@ from app.services.simulation import (
 from app.services.simulation.adaptation import adapt_many
 from app.services.simulation.agreement import compute_agreement
 from app.services.simulation.errors import SimulationError
-from app.services.simulation.llm_schemas import StudentReaction, stuck_only
+from app.services.simulation.llm_schemas import (
+    STUCK_SUMMARY,
+    StudentReaction,
+    stuck_only,
+)
 from app.utils.timestamps import utc_iso
 
 PHASE_FIELDS = (
@@ -547,6 +551,13 @@ def student_utterance(
             _PLEDGE.fullmatch(core)
             and (not artifact or artifact == previous_artifact.strip())
             and not structured["misconception"]
+            # #330·#341이 비운 실제 오개념도 본다. 막힘 요약만 비운 경우는 다짐이다
+            and not (
+                reaction._raw_misconception.strip()
+                and not STUCK_SUMMARY.search(
+                    reaction._raw_misconception.strip()
+                )
+            )
         ):
             # 다짐뿐인 후속 반응은 이해도를 올리지 않고 장면 동의로만 친다 (#358, #361)
             structured["understanding"] = min(
