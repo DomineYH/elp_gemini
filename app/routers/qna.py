@@ -15,7 +15,7 @@ from fastapi import (
     Query,
     status,
 )
-from sqlalchemy import func, select
+from sqlalchemy import delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -472,7 +472,7 @@ async def chat_with_document(
     Returns:
         답변 정보
     """
-    created_session = None
+    created_session_id = None
     try:
         from app.services.qna_service import QnAService
         from app.services.simulation.lessonplan_source import (
@@ -512,7 +512,7 @@ async def chat_with_document(
                 upload_id=upload.id if upload else None,
             )
             await db.commit()
-            created_session = session
+            created_session_id = _model_int(session.id)
             logger.info(f"새 세션 자동 생성: {session.id} for {document_id}")
 
         # 3. 질문 처리
@@ -537,10 +537,20 @@ async def chat_with_document(
     except Exception as e:
         await db.rollback()
         logger.error(f"문서 대화 처리 실패: {str(e)}", exc_info=True)
-        # 질문 실패로 빈 세션이 목록에 남지 않게 보상 삭제한다
-        if created_session is not None:
+        # 질문 실패로 빈 세션이 목록에 남지 않게 보상 삭제한다.
+        # 그사이 다른 탭이 이 세션에 대화를 남겼으면 지우지 않는다.
+        if created_session_id is not None:
             try:
-                await db.delete(created_session)
+                await db.execute(
+                    delete(ChatSession)
+                    .where(
+                        ChatSession.id == created_session_id,
+                        ~exists().where(
+                            ChatMessage.session_id == created_session_id
+                        ),
+                    )
+                    .execution_options(synchronize_session=False)
+                )
                 await db.commit()
             except Exception:
                 await db.rollback()
