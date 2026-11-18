@@ -219,7 +219,7 @@ async def test_analyze_allows_premigration_file_search_upload_without_row(
     svc.file_search_service.client.file_search_stores.list = MagicMock(
         return_value=[store]
     )
-    svc.file_search_service.client.file_search_stores.list_documents = (
+    svc.file_search_service.client.file_search_stores.documents.list = (
         MagicMock(return_value=[doc])
     )
 
