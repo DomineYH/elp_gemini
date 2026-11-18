@@ -341,6 +341,11 @@ def student_call(
             "[수업 흐름]",
             *(
                 f"{p.idx + 1}. {p.name} — {p.task or '(없음)'}"
+                + (
+                    f" / 교사 발문: {p.teacher_prompt}"
+                    if p.teacher_prompt
+                    else ""
+                )
                 + (" (지금)" if p.idx == phase.idx else "")
                 for p in phases
             ),

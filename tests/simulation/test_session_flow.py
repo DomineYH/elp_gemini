@@ -1711,9 +1711,9 @@ def test_student_call_scene0_has_lesson_flow_only(
     assert len(prompts) == 4
     for u in prompts.values():
         assert _block(u, "[수업 흐름]") == [
-            "1. 도입 — 인구 그래프 읽기 (지금)",
-            "2. 활동1 — 구성비 예측",
-            "3. 정리 — (없음)",
+            "1. 도입 — 인구 그래프 읽기 / 교사 발문: 발문 0 (지금)",
+            "2. 활동1 — 구성비 예측 / 교사 발문: 발문 1",
+            "3. 정리 — (없음) / 교사 발문: 발문 2",
         ]
         assert "[이전 장면에서 내가 보인 것]" not in u
         assert (
@@ -1761,8 +1761,11 @@ def _assert_history(u, k, keys, expected):
                 f"0-{other}" not in u
                 and f"1-{other}" not in u.split("[이번 장면 대화]")[0]
             )
-    flow = _block(u, "[수업 흐름]")
-    assert [ln.endswith(" (지금)") for ln in flow] == [False, True, False]
+    assert _block(u, "[수업 흐름]") == [
+        "1. 도입 — 인구 그래프 읽기 / 교사 발문: 발문 0",
+        "2. 활동1 — 구성비 예측 / 교사 발문: 발문 1 (지금)",
+        "3. 정리 — (없음) / 교사 발문: 발문 2",
+    ]
     after = "[직전 이해도]" if "[직전 이해도]" in u else "[이번 장면 대화]"
     assert u.index("[이전 장면에서 내가 보인 것]") < u.index(after)
 
@@ -1840,8 +1843,12 @@ def test_student_call_scene2_lists_each_previous_phase_by_number():
     from types import SimpleNamespace
 
     phases = [
-        SimpleNamespace(idx=i, name=n, task="", materials="", minutes=None)
-        for i, n in enumerate(["도입", "활동1", "활동2"])
+        SimpleNamespace(
+            idx=i, name=n, task=t, materials="", minutes=None, teacher_prompt=""
+        )
+        for i, (n, t) in enumerate(
+            [("도입", "인구 그래프 읽기"), ("활동1", ""), ("활동2", "")]
+        )
     ]
     persona = SimpleNamespace(
         id=1,
@@ -1862,6 +1869,12 @@ def test_student_call_scene2_lists_each_previous_phase_by_number():
         persona, phases[2], [], phases=phases, history=history
     )["user"]
     assert _block(user, "[이전 장면에서 내가 보인 것]") == ["1. 도입: 답0"]
+    # 발문이 빈 장면은 " / 교사 발문:"을 붙이지 않는다 (#367)
+    assert _block(user, "[수업 흐름]") == [
+        "1. 도입 — 인구 그래프 읽기",
+        "2. 활동1 — (없음)",
+        "3. 활동2 — (없음) (지금)",
+    ]
 
     history.insert(2, _row(1, "말1", "답1"))
     user = session_service.student_call(
