@@ -1947,7 +1947,34 @@ def _ids(personas):
 
 
 @pytest.mark.parametrize(
-    "utterance", [PLEDGE, "네, 열심히 해볼게요.", "열심히 해 볼게요!"]
+    "utterance",
+    [
+        PLEDGE,
+        "네, 열심히 해볼게요.",
+        "열심히 해 볼게요!",
+        "열심히 할게요.",
+        "네, 선생님. 열심히 해 볼게요.",
+        "쌤, 저도 이제 열심히 배울게요.",
+        "선생님, 저 열심히 할게요.",
+        "앞으로 더 열심히 참여할게요.",
+        "조금만 더 열심히 해 볼게요.",
+        "최선을 다해 해 보겠습니다.",
+        "꼭 노력해서 해 볼게요.",
+        "힘내서 할게요.",
+        "포기하지 않고 하겠습니다.",
+        "잘 해 볼게요.",
+        "잘할게요.",
+        "노력할게요.",
+        "노력해 볼게요.",
+        "노력하겠습니다.",
+        "최선을 다할게요.",
+        "최선을 다하겠습니다.",
+        "잘... 모르겠어요. 그냥 열심히 해볼게요.",
+        "잘 모르겠어요. 열심히 할게요.",
+        "몰라요. 그냥 잘 해 볼게요.",
+        "어떻게 하는지 잘 모르겠어요. 그냥 노력해 볼게요.",
+        "그냥 열심히 해 볼게요.",
+    ],
 )
 def test_follow_up_pledge_is_held_and_agrees(ready, fake_gemini, utterance):
     state, turn = _pledge_turn(ready, fake_gemini, utterance)
@@ -2000,6 +2027,21 @@ def test_first_reaction_pledge_is_not_consent(ready, fake_gemini):
         "네, 열심히 해 볼게요. 자로 재어 볼게요.",
         STUCK,
         "네, 알겠습니다.",
+        "그냥 해 볼게요.",
+        "네, 해 볼게요.",
+        "잘 모르겠어요… 그냥 해볼게요.",
+        "네, 엔트리 열고 데이터 불러오기 시작할게요.",
+        "네, 알겠습니다. 일단 해보고 잘 안 되면 다시 여쭤볼게요.",
+        "네… 잘 모르겠지만 재어 볼게요.",
+        "네… 잘 알아보겠습니다.",
+        "네… 잘 모르겠지만 잘 들어볼게요.",
+        "네, 저도 아직 열을 지우는 중이에요. 조금만 더 해 볼게요.",
+        "열심히... 해보는 거요.",
+        "열심히 배우는 거요?",
+        "열심히 해요.",
+        "네, 선생님! 배추 생산량 데이터와 관련된 프로그램을 어떻게 만들지 기대돼요. 열심히 참여하겠습니다.",
+        "잘 몰라요.",
+        "그냥 잘 모르겠어요.",
     ],
 )
 def test_action_commitment_is_not_pledge(ready, fake_gemini, utterance):
@@ -2033,6 +2075,70 @@ def test_pledge_with_stuck_summary_misconception_agrees(ready, fake_gemini):
     )
     assert _flags(turn) == {True}
     assert _stored(turn) == {40}
+
+
+STUCK_PLEDGE = "잘 모르겠어요… 그냥 열심히 해 볼게요."
+
+
+def _misconceptions(turn):
+    return {
+        u["structured"]["misconception"]
+        for u in turn["utterances"]
+        if u["speaker_type"] == "student"
+    }
+
+
+def test_stuck_pledge_with_cleared_misconception_is_not_consent(
+    ready, fake_gemini
+):
+    # 말줄임으로 이은 막힘+다짐은 #330이 오개념을 비우지만 실제 오개념이 있었다 (#361 리뷰)
+    state, turn = _pledge_turn(
+        ready, fake_gemini, STUCK_PLEDGE, misconception="분모끼리 더한다"
+    )
+    assert _misconceptions(turn) == {""}
+    assert _flags(turn) == {None}
+    assert turn["agreement"]["count"] == 0
+    assert turn["agreement"]["pledged_persona_ids"] == []
+    assert _stored(turn) == {45}
+    r = ready.post(
+        _api(state["session"]["id"], "/advance"), json={"mode": "agree"}
+    )
+    assert r.status_code == 409
+
+
+@pytest.mark.parametrize(
+    "utterance", [STUCK_PLEDGE, "잘 모르겠어요. 그냥 열심히 해 볼게요."]
+)
+def test_stuck_pledge_with_carried_artifact_and_misconception_is_not_consent(
+    ready, fake_gemini, utterance
+):
+    # 직전 산출물을 그대로 들면 #341 가드가 오개념을 비운다
+    _, turn = _pledge_turn(
+        ready,
+        fake_gemini,
+        utterance,
+        artifacts=("a.xlsx", "a.xlsx"),
+        misconception="분모끼리 더한다",
+    )
+    assert _flags(turn) == {None}
+    assert turn["agreement"]["count"] == 0
+    assert turn["agreement"]["pledged_persona_ids"] == []
+    assert _stored(turn) == {45}
+
+
+def test_stuck_pledge_with_stuck_summary_misconception_agrees(
+    ready, fake_gemini
+):
+    _, turn = _pledge_turn(
+        ready,
+        fake_gemini,
+        STUCK_PLEDGE,
+        misconception="무엇을 해야 할지 모른다",
+    )
+    assert _misconceptions(turn) == {""}
+    assert _flags(turn) == {True}
+    assert _stored(turn) == {40}
+    assert turn["agreement"]["count"] == 4
 
 
 def test_pledge_without_previous_valid_reaction_is_not_consent(
