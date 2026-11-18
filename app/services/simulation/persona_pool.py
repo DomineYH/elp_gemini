@@ -31,7 +31,7 @@ LEVEL_LABELS = {
     "Low": "부분 도달",
     "Poor": "추가 지원 필요",
 }
-# 표에 자주 나오는 교과만 매핑하고 나머지는 원문 그대로 둔다.
+# 데이터 파일의 모든 교과를 매핑한다(테스트가 지킨다). 없는 교과는 원문 그대로 나온다.
 SUBJECT_KO = {
     "Mathematics": "수학",
     "English": "영어",
@@ -52,6 +52,15 @@ SUBJECT_KO = {
     "Politics": "사회",
     "Morality and Law": "도덕",
     "Moral Education": "도덕",
+    "Moral Education and Rule of Law": "도덕",
+    "Labor and Technology": "실과",
+    "Comprehensive Practice": "창의적 체험활동",
+    "Calligraphy": "서예",
+    # 데이터 파일에 번역되지 않고 남은 한자 원문
+    "品德与社会": "도덕",
+    "信息科技": "정보",
+    "道法": "도덕",
+    "劳动技术": "실과",
 }
 FEMALE_NAMES = tuple(
     """

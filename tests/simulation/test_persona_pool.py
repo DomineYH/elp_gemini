@@ -146,3 +146,17 @@ def test_committed_pool_loads_grade_5_and_6_only():
     assert len(pool) > 1500
     assert {r["grade"] for r in pool} == {5, 6}
     assert {r["academic_level"] for r in pool} == set(persona_pool.LEVELS)
+
+
+def test_committed_pool_subjects_all_translated():
+    missing = [
+        s
+        for r in persona_pool.load_pool()
+        for s in r["strong_subjects"] + r["weak_subjects"]
+        if s.removeprefix("English: ") not in persona_pool.SUBJECT_KO
+    ]
+    assert missing == []
+
+
+def test_subject_ko_calligraphy():
+    assert persona_pool._subject_ko("Calligraphy") == "서예"
