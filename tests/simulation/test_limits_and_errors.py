@@ -516,11 +516,14 @@ class _FlakyModels:
 
 @pytest.fixture
 def flaky_client(monkeypatch):
-    """실제 call_structured + 가짜 generate_content, 재시도 대기는 건너뛴다."""
+    """실제 call_structured + 가짜 generate_content, 재시도 대기는 건너뛴다.
+
+    _install 전까지는 fake_gemini가 그대로 남아 세션 생성이 네트워크에 나가지 않는다.
+    """
     monkeypatch.setattr(time, "sleep", lambda s: None)
-    monkeypatch.setattr(gemini, "call_structured", _REAL_CALL_STRUCTURED)
 
     def _install(exc, fail_times=10**6):
+        monkeypatch.setattr(gemini, "call_structured", _REAL_CALL_STRUCTURED)
         models = _FlakyModels(exc, fail_times)
         client = SimpleNamespace(models=models)
         monkeypatch.setattr(gemini, "_client", lambda: client)
