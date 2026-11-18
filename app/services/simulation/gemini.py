@@ -147,10 +147,10 @@ async def call_many(calls: list[dict]) -> list[LLMResult]:
     transport = [e for e in errors if isinstance(e, httpx.TransportError)]
     if transport:
         e = (timeouts or transport)[0]
+        # str(e) can carry raw response header lines (h11), so log the class only
         logger.warning(
-            "simulation call_many %s: %s (failed %d/%d)",
+            "simulation call_many %s (failed %d/%d)",
             type(e).__name__,
-            e,
             len(errors),
             len(calls),
         )

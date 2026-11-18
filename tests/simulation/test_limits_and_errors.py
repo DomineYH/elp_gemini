@@ -557,6 +557,26 @@ def test_enter_persistent_transport_error_retries_then_503(
     assert any("RemoteProtocolError" in m for m in warnings)
 
 
+def test_enter_transport_warning_omits_exception_message(
+    ready, flaky_client, caplog
+):
+    # h11 puts the whole bad header line into the message, so it must not be logged
+    state, _ = _create(ready)
+    sid = state["session"]["id"]
+    marker = "x-goog-api-key: SECRET-MARKER"
+    flaky_client(httpx.RemoteProtocolError(f"illegal header line: {marker}"))
+
+    with caplog.at_level(logging.WARNING, logger=gemini.__name__):
+        r = ready.post(_api(sid, "/phases/0/enter"))
+    assert r.status_code == 503
+    assert _code(r) == "MODEL_UNAVAILABLE"
+    warnings = [
+        r.getMessage() for r in caplog.records if r.levelno == logging.WARNING
+    ]
+    assert any("RemoteProtocolError" in m for m in warnings)
+    assert not any("SECRET-MARKER" in m for m in warnings)
+
+
 def test_enter_timeout_is_not_retried(ready, flaky_client):
     state, _ = _create(ready)
     sid = state["session"]["id"]
