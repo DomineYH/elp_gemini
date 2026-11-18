@@ -9,7 +9,6 @@ import logging
 import os
 import re
 import tempfile
-import time
 import unicodedata
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -18,6 +17,7 @@ from google import genai
 from google.genai import types
 
 from app.config import settings
+from app.services.operation_polling import poll_operation
 
 logger = logging.getLogger(__name__)
 
@@ -426,40 +426,27 @@ class FileSearchService:
                 },
             )
 
-            # Polling 루프 (타임아웃 설정값 사용)
-            max_wait = settings.FS_UPLOAD_TIMEOUT
-            elapsed = 0
-            poll_interval = settings.FS_POLL_INTERVAL
-
             logger.info(f"파일 업로드 시작: {display_name}, 인덱싱 대기 중...")
-
-            while not operation.done and elapsed < max_wait:
-                await asyncio.sleep(poll_interval)
-                elapsed += poll_interval
-
-                try:
-                    operation = await asyncio.to_thread(
-                        self.client.operations.get, operation
-                    )
-                    logger.debug(f"인덱싱 진행 중... (경과: {elapsed}초)")
-                except Exception as e:
-                    logger.info(f"Operation 빠른 완료 감지: {str(e)}")
-                    break
-
-            if not operation.done:
-                raise TimeoutError(
-                    f"파일 업로드 타임아웃 ({max_wait}초 초과): {display_name}"
-                )
+            operation = await poll_operation(
+                self.client,
+                operation,
+                deadline_s=settings.FS_UPLOAD_TIMEOUT,
+                interval_s=settings.FS_POLL_INTERVAL,
+                label=f"파일 업로드 {display_name}",
+            )
 
             # API 응답 구조: document_name, parent 속성 사용
             document_id = operation.response.document_name
             store_id = operation.response.parent
+            if not store_id:
+                raise RuntimeError(
+                    f"업로드 응답에 parent가 없다: {display_name}"
+                )
 
             logger.info(
                 f"문서 업로드 및 인덱싱 완료: {display_name}\n"
                 f"  - Document ID: {document_id}\n"
-                f"  - Store ID: {store_id}\n"
-                f"  - 소요 시간: {elapsed}초"
+                f"  - Store ID: {store_id}"
             )
 
             return {
@@ -679,20 +666,14 @@ class FileSearchService:
                     "custom_metadata": _manifest_payload_metadata(content),
                 },
             )
-            deadline = time.monotonic() + 30
-            while not operation.done:
-                if time.monotonic() > deadline:
-                    raise TimeoutError(
-                        "manifest indexing did not finish in 30s"
-                    )
-                await asyncio.sleep(1)
-                operation = await asyncio.to_thread(
-                    self.client.operations.get, operation
-                )
-            doc_id = getattr(operation.response, "document_name", None)
-            if not doc_id:
-                raise RuntimeError("manifest upload returned no document_name")
-            return doc_id
+            operation = await poll_operation(
+                self.client,
+                operation,
+                deadline_s=30,
+                interval_s=1,
+                label=f"manifest 업로드 {safe_name}",
+            )
+            return operation.response.document_name
         finally:
             if tmp_path:
                 try:

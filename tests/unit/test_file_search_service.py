@@ -58,6 +58,7 @@ class TestFileSearchService:
                 # Mock operation 생성
                 mock_operation = Mock()
                 mock_operation.done = True
+                mock_operation.error = None
                 mock_operation.response = Mock()
                 mock_operation.response.document_name = "documents/test-doc-456"
                 mock_operation.response.parent = (

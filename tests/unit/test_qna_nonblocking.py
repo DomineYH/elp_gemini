@@ -127,7 +127,7 @@ async def test_upload_document_store_lookup_does_not_block_loop(tmp_path):
     service.client = Mock()
     service.main_store_name = "main"
     service._get_or_create_store = _slow(Mock(name="store"))
-    operation = Mock(done=True)
+    operation = Mock(done=True, error=None)
     operation.response.document_name = "fileSearchStores/u1/documents/d1"
     operation.response.parent = "fileSearchStores/u1"
     service.client.file_search_stores.upload_to_file_search_store = Mock(

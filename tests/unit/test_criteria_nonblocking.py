@@ -2,13 +2,12 @@
 
 import asyncio
 import time
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from app.schemas.alias_map import AliasMap
-from app.services import criteria_alias_map_service as alias_mod
+from app.services import operation_polling
 from app.services.alias_map_codec import (
     ALIAS_MAP_PAYLOAD_KEY,
     encode_alias_map_payload,
@@ -154,30 +153,34 @@ async def test_alias_map_fetch_does_not_block_loop(slow_call):
 async def test_alias_map_replace_does_not_block_loop(slow_call):
     client = Mock()
     pending = Mock(done=False)
-    finished = Mock(done=True)
+    finished = Mock(done=True, error=None)
     finished.response.document_name = "docs/alias-new"
     client.file_search_stores.list = Mock(return_value=[_store()])
     client.file_search_stores.upload_to_file_search_store = Mock(
         return_value=pending
     )
-    client.operations.get = Mock(return_value=finished)
     client.file_search_stores.documents.delete = Mock()
-    target = {
+    sync_target = {
         "stores": client.file_search_stores.list,
         "upload": client.file_search_stores.upload_to_file_search_store,
-        "poll": client.operations.get,
         "delete": client.file_search_stores.documents.delete,
-    }[slow_call]
-    target.side_effect = _slow(target.return_value).side_effect
+    }.get(slow_call)
+    if sync_target is not None:
+        sync_target.side_effect = _slow(sync_target.return_value).side_effect
+
+    async def poll(op, config=None):
+        if slow_call == "poll":
+            await asyncio.sleep(0.5)
+        return finished
+
+    # 폴링은 SDK의 async GET을 쓴다 (#373)
+    client.aio.operations.get = AsyncMock(side_effect=poll)
     alias_map = AliasMap(
         schema_version=1, updated_at="2026-10-02T00:00:00Z", entries={}
     )
 
     # polling의 2초 대기만 건너뛰고 to_thread는 실제로 쓴다.
-    fake_asyncio = SimpleNamespace(
-        sleep=AsyncMock(), to_thread=asyncio.to_thread
-    )
-    with patch.object(alias_mod, "asyncio", fake_asyncio):
+    with patch.object(operation_polling, "_sleep", AsyncMock()):
         result, ticks = await _ticks_while(
             CriteriaAliasMapService(client, "rubric-store").replace(
                 alias_map, "docs/alias-old"
@@ -185,7 +188,8 @@ async def test_alias_map_replace_does_not_block_loop(slow_call):
         )
 
     assert result == "docs/alias-new"
-    client.operations.get.assert_called_once_with(pending)
+    client.aio.operations.get.assert_awaited_once()
+    assert client.aio.operations.get.await_args.args == (pending,)
     client.file_search_stores.documents.delete.assert_called_once_with(
         name="docs/alias-old", config={"force": True}
     )
