@@ -110,6 +110,7 @@ async def _quote_actual(
     """모델이 요약한 actual을 teacher_seq가 가리키는 교사 발화 원문으로 바꾼다.
 
     번호가 없거나 맞는 교사 발화가 없으면 모델 문자열을 그대로 둔다.
+    phase_idx도 찾은 교사 발화의 장면으로 맞추고, 못 찾으면 장면 범위로 자른다 (#365).
     """
     names = {
         p.id: p.display_name
@@ -120,10 +121,13 @@ async def _quote_actual(
         for u in await session_service._utterances(db, session.id)
         if u.speaker_type == "teacher"
     }
+    last = len(await session_service._phases(db, session.id)) - 1
     for s in fb["utterance_suggestions"]:
         u = teacher.get(s.get("teacher_seq"))
         if u is None:
+            s["phase_idx"] = min(max(s["phase_idx"], 0), max(last, 0))
             continue
+        s["phase_idx"] = u.phase_idx
         to = names.get(u.target_persona_id)
         s["actual"] = f"({to}에게) {u.content}" if to else u.content
 
