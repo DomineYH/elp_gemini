@@ -170,7 +170,7 @@ async def test_cleanup_expired_sessions(service, mock_file_search_service):
     )
 
     # 빈 Store 문서 목록
-    (mock_file_search_service.client.file_search_stores.list_documents) = Mock(
+    (mock_file_search_service.client.file_search_stores.documents.list) = Mock(
         return_value=[]
     )
 
@@ -205,7 +205,7 @@ async def test_list_user_documents_success(service, mock_file_search_service):
     mock_doc2.name = "fileSearchStores/store1/documents/doc2"
     mock_doc2.display_name = "지도안2.pdf"
 
-    (mock_file_search_service.client.file_search_stores.list_documents) = Mock(
+    (mock_file_search_service.client.file_search_stores.documents.list) = Mock(
         return_value=[mock_doc1, mock_doc2]
     )
 

@@ -569,9 +569,7 @@ class LessonPlanAnalysisService:
             for store in file_search_stores.list():
                 if store.display_name not in {store_name, safe_store_name}:
                     continue
-                documents = file_search_stores.list_documents(
-                    file_search_store_name=store.name
-                )
+                documents = file_search_stores.documents.list(parent=store.name)
                 return any(True for _ in documents)
         except Exception as exc:
             logger.warning(f"사용자 File Search Store 문서 확인 실패: {exc}")

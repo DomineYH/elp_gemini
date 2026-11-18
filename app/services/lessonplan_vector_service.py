@@ -204,8 +204,8 @@ class LessonPlanVectorService:
                 # Store 생성 시간 확인 (API 제약으로 문서 기준)
                 try:
                     docs = list(
-                        client.file_search_stores.list_documents(
-                            file_search_store_name=store.name
+                        client.file_search_stores.documents.list(
+                            parent=store.name
                         )
                     )
 
@@ -263,8 +263,8 @@ class LessonPlanVectorService:
 
             # Store 내 문서 목록 조회
             documents = []
-            for doc in client.file_search_stores.list_documents(
-                file_search_store_name=store.name
+            for doc in client.file_search_stores.documents.list(
+                parent=store.name
             ):
                 documents.append(
                     {
