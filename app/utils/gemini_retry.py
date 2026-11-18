@@ -6,6 +6,8 @@ failures:
 - 429 RESOURCE_EXHAUSTED (ClientError) -> GeminiQuotaExhausted -> HTTP 429.
 - 5xx server overload (ServerError, e.g. 503 UNAVAILABLE "high demand")
   -> GeminiServerOverloaded -> HTTP 503.
+- Connection errors (httpx.TransportError except timeouts, e.g. a dropped
+  keep-alive RemoteProtocolError) -> re-raised as-is when exhausted (#368).
 
 After max attempts, raises the mapped exception so the caller can return a
 friendly "busy, retry later" response instead of a generic 500 (issue #120).
@@ -15,6 +17,7 @@ import functools
 import logging
 from typing import Callable, TypeVar
 
+import httpx
 from google.genai import errors as genai_errors
 from tenacity import (
     retry,
@@ -53,8 +56,19 @@ def _is_server_overloaded(exc: BaseException) -> bool:
     return False
 
 
+def _is_connection_error(exc: BaseException) -> bool:
+    # timeout은 이미 오래 기다린 뒤라 재시도하지 않는다 (#368)
+    return isinstance(exc, httpx.TransportError) and not isinstance(
+        exc, httpx.TimeoutException
+    )
+
+
 def _is_retryable(exc: BaseException) -> bool:
-    return _is_resource_exhausted(exc) or _is_server_overloaded(exc)
+    return (
+        _is_resource_exhausted(exc)
+        or _is_server_overloaded(exc)
+        or _is_connection_error(exc)
+    )
 
 
 def retry_on_resource_exhausted(
@@ -64,7 +78,8 @@ def retry_on_resource_exhausted(
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Decorator: retry the wrapped sync callable on transient Gemini errors
-    (429 RESOURCE_EXHAUSTED or 5xx server overload) with exponential backoff
+    (429 RESOURCE_EXHAUSTED, 5xx server overload or a non-timeout connection
+    error) with exponential backoff
     (initial_wait, 2x, 4x ... capped at max_wait).
     """
 
