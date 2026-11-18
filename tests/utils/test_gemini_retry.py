@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 from google.genai import errors as genai_errors
 
@@ -96,3 +97,45 @@ def test_raises_gemini_server_overloaded_after_max_attempts():
 
     with pytest.raises(GeminiServerOverloaded):
         always_503()
+
+
+def test_retries_on_transport_error_then_succeeds():
+    """끊긴 연결(RemoteProtocolError)도 재시도한다 (#368)."""
+    calls = {"n": 0}
+
+    @retry_on_resource_exhausted(max_attempts=3, initial_wait=0.0)
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise httpx.RemoteProtocolError("Server disconnected")
+        return "ok"
+
+    assert flaky() == "ok"
+    assert calls["n"] == 2
+
+
+def test_transport_error_is_reraised_after_max_attempts():
+    calls = {"n": 0}
+
+    @retry_on_resource_exhausted(max_attempts=3, initial_wait=0.0)
+    def always_disconnect():
+        calls["n"] += 1
+        raise httpx.ConnectError("refused")
+
+    with pytest.raises(httpx.ConnectError):
+        always_disconnect()
+    assert calls["n"] == 3
+
+
+def test_timeout_is_not_retried():
+    """timeout은 TransportError 하위지만 재시도하지 않는다 (#368)."""
+    calls = {"n": 0}
+
+    @retry_on_resource_exhausted(max_attempts=3, initial_wait=0.0)
+    def slow():
+        calls["n"] += 1
+        raise httpx.ReadTimeout("timed out")
+
+    with pytest.raises(httpx.ReadTimeout):
+        slow()
+    assert calls["n"] == 1

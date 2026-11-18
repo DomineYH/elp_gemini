@@ -1,11 +1,19 @@
 """발화 상한, 좌석 단위 재생성, 한도·과부하 오류 (#154)."""
 
+import logging
 import sqlite3
+import time
+from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from app.config import settings
 from app.services.simulation import gemini, session_service
+from app.services.simulation.llm_schemas import StudentReaction
+
+# fake_gemini가 바꾸기 전의 실제 함수 (#368: 재시도 경로를 거치게 한다)
+_REAL_CALL_STRUCTURED = gemini.call_structured
 
 
 def _create(client, n_phases=2):
@@ -479,3 +487,82 @@ def test_get_session_with_legacy_whitespace_phase_is_200(ready, tmp_path):
     r = ready.get(_api(sid))
     assert r.status_code == 200
     assert r.json()["phases"][0]["teacher_prompt"] == "   "
+
+
+class _FlakyModels:
+    """앞의 fail_times번은 exc를 던지고 그 뒤로는 응답을 준다."""
+
+    def __init__(self, exc, fail_times):
+        self.exc, self.fail_times, self.calls = exc, fail_times, 0
+
+    def generate_content(self, **kw):
+        self.calls += 1
+        if self.calls <= self.fail_times:
+            raise self.exc
+        return SimpleNamespace(
+            text=StudentReaction(
+                action="듣는다",
+                utterance="네",
+                artifact="",
+                misconception="",
+                ready_for_next=False,
+                understanding=50,
+                confidence=0.5,
+                on_task=True,
+            ).model_dump_json(),
+            parsed=None,
+        )
+
+
+@pytest.fixture
+def flaky_client(monkeypatch):
+    """실제 call_structured + 가짜 generate_content, 재시도 대기는 건너뛴다."""
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    monkeypatch.setattr(gemini, "call_structured", _REAL_CALL_STRUCTURED)
+
+    def _install(exc, fail_times=10**6):
+        models = _FlakyModels(exc, fail_times)
+        client = SimpleNamespace(models=models)
+        monkeypatch.setattr(gemini, "_client", lambda: client)
+        return models
+
+    return _install
+
+
+def test_transport_error_once_then_success_is_retried(flaky_client):
+    models = flaky_client(httpx.RemoteProtocolError("disconnected"), 1)
+    result = gemini.call_structured(
+        "student", system="s", user="u", schema=StudentReaction
+    )
+    assert result.parsed is not None
+    assert models.calls == 2
+
+
+def test_enter_persistent_transport_error_retries_then_503(
+    ready, flaky_client, caplog
+):
+    state, _ = _create(ready)
+    sid = state["session"]["id"]
+    models = flaky_client(httpx.RemoteProtocolError("Server disconnected"))
+
+    with caplog.at_level(logging.WARNING, logger=gemini.__name__):
+        r = ready.post(_api(sid, "/phases/0/enter"))
+    assert r.status_code == 503
+    assert _code(r) == "MODEL_UNAVAILABLE"
+    assert models.calls == 3 * len(state["personas"])
+    assert ready.get(_api(sid)).json()["utterances"] == []
+    warnings = [
+        r.getMessage() for r in caplog.records if r.levelno == logging.WARNING
+    ]
+    assert any("RemoteProtocolError" in m for m in warnings)
+
+
+def test_enter_timeout_is_not_retried(ready, flaky_client):
+    state, _ = _create(ready)
+    sid = state["session"]["id"]
+    models = flaky_client(httpx.ReadTimeout("timed out"))
+
+    r = ready.post(_api(sid, "/phases/0/enter"))
+    assert r.status_code == 503
+    assert _code(r) == "MODEL_TIMEOUT"
+    assert models.calls == len(state["personas"])

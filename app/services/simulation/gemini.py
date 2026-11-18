@@ -142,11 +142,21 @@ async def call_many(calls: list[dict]) -> list[LLMResult]:
         raise SimulationError("RESOURCE_EXHAUSTED")
     if any(isinstance(e, GeminiServerOverloaded) for e in errors):
         raise SimulationError("MODEL_OVERLOADED")
-    if any(isinstance(e, httpx.TimeoutException) for e in errors):
-        raise SimulationError("MODEL_TIMEOUT")
-    # TimeoutException 도 TransportError 하위라 timeout 검사 뒤에 둔다
-    if any(isinstance(e, httpx.TransportError) for e in errors):
-        raise SimulationError("MODEL_UNAVAILABLE")
+    timeouts = [e for e in errors if isinstance(e, httpx.TimeoutException)]
+    # TimeoutException 도 TransportError 하위라 timeout을 먼저 고른다
+    transport = [e for e in errors if isinstance(e, httpx.TransportError)]
+    if transport:
+        e = (timeouts or transport)[0]
+        logger.warning(
+            "simulation call_many %s: %s (failed %d/%d)",
+            type(e).__name__,
+            e,
+            len(errors),
+            len(calls),
+        )
+        raise SimulationError(
+            "MODEL_TIMEOUT" if timeouts else "MODEL_UNAVAILABLE"
+        )
     if errors:
         raise errors[0]
     return results
