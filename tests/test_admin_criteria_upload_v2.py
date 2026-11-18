@@ -265,8 +265,11 @@ async def test_upload_creates_active_entry():
 
 
 @pytest.mark.asyncio
-async def test_upload_poll_connection_error_hides_message():
-    """폴링 연결 오류 원문이 500 응답과 sync_error 저장값에 들어가지 않는다 (#373)."""
+async def test_upload_poll_connection_error_hides_message(caplog):
+    """폴링 연결 오류 원문이 500 응답, sync_error 저장값, 오류 로그 traceback에
+    들어가지 않는다 (#373)."""
+    import logging
+
     import httpx
 
     from app.repositories.app_state_repository import KEY_SYNC_ERROR
@@ -306,7 +309,10 @@ async def test_upload_poll_connection_error_hides_message():
         state = state_cls.return_value
         state.set = AsyncMock()
 
-        with pytest.raises(HTTPException) as exc_info:
+        with (
+            caplog.at_level(logging.ERROR),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             await upload_criteria(
                 file=file,
                 current_admin=SimpleNamespace(username="admin"),
@@ -316,6 +322,10 @@ async def test_upload_poll_connection_error_hides_message():
 
     assert exc_info.value.status_code == 500
     assert "SECRET-MARKER" not in exc_info.value.detail
+    errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert errors
+    rendered = "\n".join(logging.Formatter().format(r) for r in errors)
+    assert "SECRET-MARKER" not in rendered
     state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
     stored = [
         c.args[1]

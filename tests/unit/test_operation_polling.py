@@ -5,6 +5,7 @@
 
 import asyncio
 import time
+import traceback
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -356,6 +357,31 @@ async def test_exhausted_connection_error_hides_message(
 
     assert "SECRET-MARKER" not in str(exc_info.value)
     assert "RemoteProtocolError" in str(exc_info.value)
-    assert exc_info.value.__cause__ is last
+    # 호출부가 exc_info로 traceback을 남기므로 원인 체인을 끊는다
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__ is True
     assert len(_gets(client)) == 3
     assert "SECRET-MARKER" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entry", ENTRIES)
+async def test_connection_error_at_deadline_hides_message(
+    entry, clock, tmp_path
+):
+    deadline, _ = BUDGETS[entry]
+
+    async def get(op, config=None):
+        clock.t = start + deadline + 1  # 응답 없이 마감을 넘긴다
+        raise httpx.RemoteProtocolError(MARKER)
+
+    client = _client(_pending(), None)
+    client.aio.operations.get = AsyncMock(side_effect=get)
+    start = clock.t
+
+    with pytest.raises(TimeoutError) as exc_info:
+        await _run(entry, client, tmp_path)
+
+    rendered = "".join(traceback.format_exception(exc_info.value))
+    assert "SECRET-MARKER" not in rendered
+    assert exc_info.value.__cause__ is None

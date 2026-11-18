@@ -27,7 +27,7 @@ async def poll_operation(client, operation, *, deadline_s, interval_s, label):
 
     마감이 지나면 TimeoutError, done.error면 RuntimeError. 소진되었거나
     재시도 대상이 아닌 GET 오류는 원인 그대로 올리되, timeout이 아닌 연결
-    오류는 메시지 없는 RuntimeError로 감싼다.
+    오류는 원문과 원인 체인 없이 RuntimeError(마감이면 TimeoutError)로 올린다.
     """
     deadline = _now() + deadline_s
     retry_waits = list(_RETRY_WAITS)
@@ -57,15 +57,16 @@ async def poll_operation(client, operation, *, deadline_s, interval_s, label):
         except TimeoutError as e:  # wait_for가 남은 시간에서 끊었다
             raise expired() from e
         except Exception as e:
+            # h11은 응답 헤더 줄을 메시지에 넣고 호출부는 str(e)를 응답·DB에,
+            # traceback을 로그에 남기므로 연결 오류는 원인 체인을 끊는다
+            conn = _is_connection_error(e)
             if remaining() <= 0:
-                raise expired() from e
+                raise expired() from (None if conn else e)
             if not _is_retryable(e) or not retry_waits:
-                if _is_connection_error(e):
-                    # h11은 응답 헤더 줄을 메시지에 넣고 호출부는 str(e)를
-                    # 응답·DB에 남기므로 원문 없이 올린다 (원인은 __cause__)
+                if conn:
                     raise RuntimeError(
                         f"{label}: 작업 상태 조회 연결 오류 ({type(e).__name__})"
-                    ) from e
+                    ) from None
                 raise
             wait = retry_waits.pop(0)
             logger.warning(
