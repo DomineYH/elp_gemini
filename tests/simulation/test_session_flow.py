@@ -998,9 +998,10 @@ def test_short_quoted_span_with_tail_rises(ready, fake_gemini):
     assert stored == {80}
 
 
-def test_unquoted_teacher_with_tail_rises(ready, fake_gemini):
+def test_unquoted_teacher_echo_with_tail_is_held(ready, fake_gemini):
+    # 따옴표가 없어도 교사 말을 거의 그대로 되풀이하면 오르지 않는다 (#366)
     unquoted = QUOTED_ASK.replace("'", "")
-    assert _say_after_60(ready, fake_gemini, TAILED, content=unquoted) == {80}
+    assert _say_after_60(ready, fake_gemini, TAILED, content=unquoted) == {60}
 
 
 def test_quoted_phrase_with_own_words_rises(ready, fake_gemini):
@@ -1016,9 +1017,10 @@ def test_quote_styles_are_all_matched(ready, fake_gemini, open_, close):
     assert _say_after_60(ready, fake_gemini, TAILED, content=content) == {60}
 
 
-def test_mismatched_quote_styles_are_not_a_span(ready, fake_gemini):
+def test_mismatched_quote_styles_echo_is_held_as_unquoted(ready, fake_gemini):
+    # 짝이 안 맞는 따옴표는 구간이 아니지만 따옴표 밖 따라 하기로 걸린다 (#366)
     content = QUOTED_ASK.replace("지'라고", '지"라고')
-    assert _say_after_60(ready, fake_gemini, TAILED, content=content) == {80}
+    assert _say_after_60(ready, fake_gemini, TAILED, content=content) == {60}
 
 
 def test_word_internal_apostrophe_does_not_open_a_span(ready, fake_gemini):
@@ -1097,6 +1099,93 @@ def test_learning_goal_restatement_rises(ready, fake_gemini):
         "예측하고, 우리 교실에 생길 변화를 생각해 보는 거야."
     )
     assert _say_after_60(ready, fake_gemini, utterance, content=content) == {80}
+
+
+# --- 따옴표 없는 교사 설명을 말을 조금 빼고 어미만 바꿔 따라 해도 오르지 않는다 (#366) ---
+
+# 실세션 #20 seq 19 교사 말과 seq 20·21·22 학생 말
+FOOT_ASK = (
+    "소율이와 예은이도 목표를 잘 잡았어요! 우리가 사람들의 발 크기 자료를 직접 "
+    "하나하나 다 재려면 시간이 오래 걸리니까, 이미 조사된 공공데이터를 가져와서 "
+    "활용하는 거예요. 자, 그럼 오늘 첫 번째 활동으로 들어가기 전에, 왜 공공데이터를 "
+    "쓰는지와 우리가 만들 프로그램이 무엇인지 각자 정리해서 이야기해 볼까요?"
+)
+MINJUN = (
+    "우리가 직접 다 재려면 시간이 너무 오래 걸리니까, 이미 조사되어 있는 "
+    "공공데이터를 가져와서 효율적으로 프로그램을 만들 수 있어요."
+)
+GEONWOO = (
+    "우리가 직접 다 재려면 시간이 너무 오래 걸리니까, 이미 조사된 공공데이터를 "
+    "가져와서 편하게 쓰려고요!"
+)
+SOYUL = "우리가 직접 다 재려면 시간이 오래 걸려서 이미 조사된 공공데이터를 가져와서 쓰는 것 같아요."
+
+
+@pytest.mark.parametrize(
+    "utterance", [MINJUN, GEONWOO, SOYUL], ids=["seq20", "seq21", "seq22"]
+)
+def test_unquoted_explanation_echo_is_held(ready, fake_gemini, utterance):
+    assert _say_after_60(ready, fake_gemini, utterance, content=FOOT_ASK) == {
+        60
+    }
+
+
+def test_unquoted_explanation_echo_drop_is_kept(ready, fake_gemini):
+    stored = _say_after_60(
+        ready, fake_gemini, SOYUL, understanding=40, content=FOOT_ASK
+    )
+    assert stored == {40}
+
+
+def test_unquoted_explanation_echo_with_new_artifact_rises(ready, fake_gemini):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(understanding=60),
+        _react(utterance=SOYUL, understanding=80, artifact=XLSX),
+        content=FOOT_ASK,
+    )
+    assert _stored(turn) == {80}
+
+
+def test_short_unquoted_paraphrase_rises(ready, fake_gemini):
+    # 실세션 #20 seq 23
+    stored = _say_after_60(
+        ready, fake_gemini, "직접 다 재기 어려우니까요…?", content=FOOT_ASK
+    )
+    assert stored == {80}
+
+
+def test_own_answer_reusing_unquoted_words_rises(ready, fake_gemini):
+    # 실세션 #18 seq 89·91: 교사 말을 받아 자기 판단을 말한 반응
+    content = (
+        "여러분, 자료실의 꺾은선그래프를 보세요. 유소년 비율 선이 계속 아래로 "
+        "내려가 있어요. 그래프의 이 선 하나만 보면, 우리나라 전체 인구 수도 같이 "
+        "줄어들고 있다는 것을 알 수 있을까요? 확실하지 않으면 솔직하게 말해도 "
+        "됩니다. 각자 네 생각을 한 문장으로 말해 보세요."
+    )
+    utterance = (
+        "유소년 비율 선이 내려간다고 해서 전체 인구 수도 같이 줄어들고 있다고 "
+        "바로 알기는 어려울 것 같습니다."
+    )
+    assert _say_after_60(ready, fake_gemini, utterance, content=content) == {80}
+
+
+def test_regenerated_unquoted_explanation_echo_is_held(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    fake_gemini.results["student"] = _react(understanding=60)
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/say"), json={"content": FOOT_ASK})
+
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(utterance=SOYUL, understanding=80)
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [fixed] = r.json()["utterances"]
+    assert fixed["structured"]["understanding"] == 60
 
 
 def test_regenerated_quoted_echo_with_tail_is_held(ready, fake_gemini):

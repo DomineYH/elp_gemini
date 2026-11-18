@@ -383,6 +383,11 @@ ECHO_MIN_CORE = 10
 # (#332 꼬리, #337 공통 부분, 실세션 8–13: 대상 3자·비대상 8자)
 ECHO_MAX_TAIL = 5
 SAME_ARTIFACT_MAX_CORE = 10
+# 따옴표 밖 교사 말 따라 하기 (#366): 3자 이상 공통 조각의 합이 core의 60% 이상
+# ponytail: 실세션 #20 3건(비율 0.64–0.76)과 가장 가까운 정상 반응(0.52)에 맞춘 값. 절 순서를
+# 바꾸거나 낱말을 대부분 바꾼 따라 하기는 못 잡는다. 사례가 더 쌓이면 다시 본다
+UNQUOTED_ECHO_MIN_PIECE = 3
+UNQUOTED_ECHO_RATIO = 0.6
 # 군말을 뗀 core가 이것뿐이면 맞장구다 ("네, 알겠어요, 선생님." → "알겠어요선생님")
 _ACK = re.compile(r"(?:알겠(?:어요?|습니다)?)?(?:선생님|쌤)?")
 # '모르겠어요'뿐인 반응의 core. 낱말 규칙은 매번 샜으므로 재생에서 본 형태의 닫힌 목록만 쓴다 (#353, #357)
@@ -476,6 +481,26 @@ def _quoted_echo(core: str, teacher: str) -> bool:
     return False
 
 
+def _unquoted_echo(core: str, teacher: str) -> bool:
+    """따옴표 밖 교사 말을 몇 마디 빼거나 더하고 어미만 바꿔 따라 한 발화인지 (#366).
+
+    따옴표 구간은 _quoted_echo가 따로 본다. 학습 목표를 다시 말하라는 과제처럼
+    따옴표 안 문구를 다시 쓰는 반응을 여기서 잡지 않으려고 구간을 지운다.
+    """
+    for quoted in _QUOTED:
+        teacher = quoted.sub(" ", teacher)
+    blocks = SequenceMatcher(
+        None, core, _plain(teacher), autojunk=False
+    ).get_matching_blocks()
+    sizes = [b.size for b in blocks]
+    covered = sum(s for s in sizes if s >= UNQUOTED_ECHO_MIN_PIECE)
+    return (
+        len(core) >= ECHO_MIN_CORE
+        and max(sizes) >= ECHO_MIN_CORE
+        and covered / len(core) >= UNQUOTED_ECHO_RATIO
+    )
+
+
 def student_utterance(
     session_id: int,
     phase_idx: int,
@@ -516,6 +541,10 @@ def student_utterance(
             (len(core) >= ECHO_MIN_CORE and core in _plain(teacher))
             or _quoted_echo(core, teacher)
             or (
+                _unquoted_echo(core, teacher)
+                and (not artifact or artifact == previous_artifact.strip())
+            )
+            or (
                 artifact
                 and artifact == previous_artifact.strip()
                 and len(core) <= SAME_ARTIFACT_MAX_CORE
@@ -526,9 +555,9 @@ def student_utterance(
                 and (not artifact or artifact == previous_artifact.strip())
             )
         ):
-            # 교사 말 따라 하기(따옴표 답 + 짧은 꼬리 포함)·같은 산출물 짧게 다시 말하기·
-            # 새 산출물 없이 자기 직전 말(또는 그 일부) 되풀이는
-            # 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#319, #332, #336)
+            # 교사 말 따라 하기(따옴표 답 + 짧은 꼬리, 새 산출물 없는 따옴표 밖 설명 되풀이 포함)·
+            # 같은 산출물 짧게 다시 말하기·새 산출물 없이 자기 직전 말(또는 그 일부) 되풀이는
+            # 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#319, #332, #336, #366)
             structured["understanding"] = min(
                 structured["understanding"], previous
             )
