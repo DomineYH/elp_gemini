@@ -69,6 +69,7 @@ def mock_operation_complete():
     """완료된 Operation Mock (단위 테스트용)"""
     op = MagicMock()
     op.done = True
+    op.error = None
     op.name = "operations/test-op-complete"
     op.response.parent = "stores/vector-123"
     op.response.document_name = "docs/test-doc"

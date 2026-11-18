@@ -24,6 +24,7 @@ from app.services.alias_map_codec import (
     decode_alias_map_payload,
     encode_alias_map_payload,
 )
+from app.services.operation_polling import poll_operation
 
 logger = logging.getLogger(__name__)
 
@@ -256,19 +257,13 @@ class CriteriaAliasMapService:
                     ],
                 },
             )
-            elapsed = 0
-            while not getattr(op, "done", False) and elapsed < 60:
-                await asyncio.sleep(2)
-                elapsed += 2
-                try:
-                    op = await asyncio.to_thread(
-                        self._client.operations.get, op
-                    )
-                except Exception:
-                    break
-            if not getattr(op, "done", False):
-                raise TimeoutError("alias-map upload timeout")
-
+            op = await poll_operation(
+                self._client,
+                op,
+                deadline_s=60,
+                interval_s=2,
+                label="alias-map 업로드",
+            )
             new_doc_name = op.response.document_name
         finally:
             try:

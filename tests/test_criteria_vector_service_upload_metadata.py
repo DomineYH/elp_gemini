@@ -18,6 +18,7 @@ async def test_upload_criteria_preserves_raw_list_metadata_in_sdk_call():
 
     op = MagicMock()
     op.done = True
+    op.error = None
     op.response.document_name = "docs/abc"
     op.response.parent = "stores/rubric"
     client.file_search_stores.upload_to_file_search_store.return_value = op

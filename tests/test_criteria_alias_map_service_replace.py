@@ -41,7 +41,7 @@ def _enforcing_upload(document_name):
                         },
                         MagicMock(),
                     )
-        op = MagicMock(done=True)
+        op = MagicMock(done=True, error=None)
         op.response.document_name = document_name
         return op
 

@@ -60,6 +60,7 @@ async def test_replace_single_document_uses_safe_tempfile_metadata():
 
     operation = MagicMock()
     operation.done = True
+    operation.error = None
     operation.response.document_name = (
         "fileSearchStores/store/documents/manifest"
     )
