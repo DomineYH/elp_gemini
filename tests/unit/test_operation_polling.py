@@ -310,3 +310,52 @@ async def test_caller_cancel_propagates(clock, tmp_path):
     with pytest.raises(asyncio.CancelledError):
         await task
     client.file_search_stores.documents.delete.assert_not_called()
+
+
+MARKER = "x-goog-api-key: SECRET-MARKER"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entry", ENTRIES)
+async def test_retry_warning_has_no_error_message(
+    entry, clock, tmp_path, caplog
+):
+    # h11은 잘못된 응답 헤더 줄 전체를 메시지에 넣는다
+    client = _client(_pending(), [httpx.RemoteProtocolError(MARKER), _done()])
+
+    with caplog.at_level("WARNING", logger=operation_polling.logger.name):
+        await _run(entry, client, tmp_path)
+
+    warnings = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == operation_polling.logger.name
+    ]
+    assert len(warnings) == 1
+    assert "RemoteProtocolError" in warnings[0]
+    assert "SECRET-MARKER" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entry", ENTRIES)
+async def test_exhausted_connection_error_hides_message(
+    entry, clock, tmp_path, caplog
+):
+    last = httpx.RemoteProtocolError(MARKER)
+    client = _client(
+        _pending(),
+        [
+            httpx.RemoteProtocolError(MARKER),
+            httpx.RemoteProtocolError(MARKER),
+            last,
+        ],
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await _run(entry, client, tmp_path)
+
+    assert "SECRET-MARKER" not in str(exc_info.value)
+    assert "RemoteProtocolError" in str(exc_info.value)
+    assert exc_info.value.__cause__ is last
+    assert len(_gets(client)) == 3
+    assert "SECRET-MARKER" not in caplog.text

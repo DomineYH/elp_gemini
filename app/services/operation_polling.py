@@ -9,7 +9,7 @@ import asyncio
 import logging
 
 from app.config import settings
-from app.utils.gemini_retry import _is_retryable
+from app.utils.gemini_retry import _is_connection_error, _is_retryable
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +25,9 @@ def _now() -> float:
 async def poll_operation(client, operation, *, deadline_s, interval_s, label):
     """operation이 끝날 때까지 조회하고, 성공한 operation을 돌려준다.
 
-    마감이 지나면 TimeoutError, done.error면 RuntimeError, 소진되었거나
-    재시도 대상이 아닌 GET 오류는 원인 그대로 올린다.
+    마감이 지나면 TimeoutError, done.error면 RuntimeError. 소진되었거나
+    재시도 대상이 아닌 GET 오류는 원인 그대로 올리되, timeout이 아닌 연결
+    오류는 메시지 없는 RuntimeError로 감싼다.
     """
     deadline = _now() + deadline_s
     retry_waits = list(_RETRY_WAITS)
@@ -59,13 +60,19 @@ async def poll_operation(client, operation, *, deadline_s, interval_s, label):
             if remaining() <= 0:
                 raise expired() from e
             if not _is_retryable(e) or not retry_waits:
+                if _is_connection_error(e):
+                    # h11은 응답 헤더 줄을 메시지에 넣고 호출부는 str(e)를
+                    # 응답·DB에 남기므로 원문 없이 올린다 (원인은 __cause__)
+                    raise RuntimeError(
+                        f"{label}: 작업 상태 조회 연결 오류 ({type(e).__name__})"
+                    ) from e
                 raise
             wait = retry_waits.pop(0)
             logger.warning(
-                "%s: 작업 조회 일시 오류, %.0f초 뒤 다시 조회: %s",
+                "%s: 작업 조회 일시 오류(%s), %.0f초 뒤 다시 조회",
                 label,
+                type(e).__name__,
                 wait,
-                e,
             )
             continue
         wait = interval_s

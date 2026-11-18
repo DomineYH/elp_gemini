@@ -262,3 +262,64 @@ async def test_upload_creates_active_entry():
     insert_kwargs = repo_cls.return_value.insert.await_args.kwargs
     assert insert_kwargs["status"] == "active"
     assert insert_kwargs["activated_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_upload_poll_connection_error_hides_message():
+    """폴링 연결 오류 원문이 500 응답과 sync_error 저장값에 들어가지 않는다 (#373)."""
+    import httpx
+
+    from app.repositories.app_state_repository import KEY_SYNC_ERROR
+    from app.services import operation_polling
+
+    marker = "x-goog-api-key: SECRET-MARKER"
+    client = MagicMock()
+    client.aio.operations.get = AsyncMock(
+        side_effect=[httpx.RemoteProtocolError(marker) for _ in range(3)]
+    )
+
+    async def upload_criteria_via_poll(*args, **kwargs):
+        await operation_polling.poll_operation(
+            client,
+            SimpleNamespace(done=False),
+            deadline_s=300,
+            interval_s=5,
+            label="파일 업로드 rubric.pdf",
+        )
+
+    file = SimpleNamespace(
+        filename="rubric.pdf",
+        read=AsyncMock(return_value=b"%PDF-1.4 rubric"),
+    )
+    with (
+        patch.object(operation_polling, "_sleep", AsyncMock()),
+        patch("app.routers.admin.criteria.FileValidator") as validator_cls,
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as state_cls,
+    ):
+        validator_cls.return_value.validate_file = AsyncMock(
+            return_value={"valid": True}
+        )
+        vector_cls.return_value.upload_criteria = AsyncMock(
+            side_effect=upload_criteria_via_poll
+        )
+        state = state_cls.return_value
+        state.set = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await upload_criteria(
+                file=file,
+                current_admin=SimpleNamespace(username="admin"),
+                db=AsyncMock(),
+                _sync_ready=None,
+            )
+
+    assert exc_info.value.status_code == 500
+    assert "SECRET-MARKER" not in exc_info.value.detail
+    state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
+    stored = [
+        c.args[1]
+        for c in state.set.await_args_list
+        if c.args[0] == KEY_SYNC_ERROR
+    ]
+    assert stored and all("SECRET-MARKER" not in v for v in stored)
