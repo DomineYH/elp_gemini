@@ -370,3 +370,112 @@ async def test_evaluation_parse_or_save_failure_does_not_call_model_again():
     service.analysis_storage.save_analysis.side_effect = OSError("disk")
     assert (await _evaluate(service)).status_code == 500
     assert models.calls == {"search": 1, "eval": 1}
+
+
+@pytest.mark.asyncio
+async def test_qna_exhausted_first_request_keeps_session_another_tab_used(
+    tmp_path, monkeypatch
+):
+    """A가 백오프로 멈춘 사이 B가 같은 세션에 답을 남기면, A가 소진돼도 남는다."""
+    import asyncio
+    import threading
+
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+
+    file_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/qna.db")
+    file_session = async_sessionmaker(
+        file_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with file_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with file_session() as db:
+        owner = User(
+            username="tab_user",
+            nickname="Tab User",
+            hashed_password="hashed",
+            is_admin=False,
+        )
+        db.add(owner)
+        await db.commit()
+
+    async def file_db():
+        async with file_session() as database:
+            yield database
+
+    test_app = FastAPI()
+    test_app.include_router(qna.router)
+    test_app.dependency_overrides[get_db] = file_db
+    test_app.dependency_overrides[get_current_user] = lambda: owner
+
+    # A의 첫 백오프(스레드 안의 time.sleep)에서만 멈춘다
+    paused, resume = threading.Event(), threading.Event()
+
+    def first_backoff_blocks(seconds):
+        if not paused.is_set():
+            paused.set()
+            assert resume.wait(10)
+
+    monkeypatch.setattr(time, "sleep", first_backoff_blocks)
+
+    async def rows(model):
+        async with file_session() as db:
+            return (await db.execute(select(model))).scalars().all()
+
+    models = FakeModels(_qna_stage, {"final": [_503()]})
+    try:
+        with (
+            patch(
+                "app.services.qna_service.genai.Client",
+                return_value=SimpleNamespace(models=models),
+            ),
+            patch("app.services.qna_service.FileSearchService") as fs_cls,
+            patch("app.services.qna_service.PromptLoaderService") as pl_cls,
+            patch(
+                "app.services.criteria_context_service."
+                "build_criteria_context_or_notice",
+                AsyncMock(return_value=(None, None)),
+            ),
+            patch.object(
+                CriteriaVectorService,
+                "active_stable_id_filter",
+                AsyncMock(return_value='stable_id="A"'),
+            ),
+        ):
+            fs_cls.return_value.get_dual_store_ids = Mock(
+                return_value=["fileSearchStores/u", "fileSearchStores/r"]
+            )
+            pl_cls.return_value.get_prompt = Mock(return_value="system")
+            async with AsyncClient(
+                transport=ASGITransport(app=test_app),
+                base_url="http://testserver",
+            ) as client:
+
+                def post():
+                    return client.post(
+                        f"/api/qna/{DOC}",
+                        json={"question": "이 수업을 평가해줘"},
+                    )
+
+                request_a = asyncio.create_task(post())
+                assert await asyncio.to_thread(paused.wait, 10)
+
+                response_b = await post()
+                assert response_b.status_code == 200, response_b.text
+                assert len(await rows(ChatMessage)) == 2
+
+                models.errors["final"] = [_503(), _503()]
+                resume.set()
+                response_a = await request_a
+
+        assert response_a.status_code == 500, response_a.text
+        assert models.calls["final"] == 4  # A 3회 + B 1회
+        sessions = await rows(ChatSession)
+        assert [s.id for s in sessions] == [response_b.json()["session_id"]]
+        assert len(await rows(ChatMessage)) == 2
+    finally:
+        resume.set()
+        await file_engine.dispose()
