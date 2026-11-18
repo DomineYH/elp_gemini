@@ -430,13 +430,13 @@ def _teacher_seq(client, sid):
     return seq
 
 
-def _suggest(fake_gemini, teacher_seq):
+def _suggest(fake_gemini, teacher_seq, phase_idx=0):
     base = fake_gemini.results["feedback"]
     fake_gemini.results["feedback"] = base.model_copy(
         update={
             "utterance_suggestions": [
                 UtteranceSuggestion(
-                    phase_idx=0,
+                    phase_idx=phase_idx,
                     actual="요약문",
                     suggested="무엇을 알아볼까요?",
                     intent="흥미 유발",
@@ -469,9 +469,31 @@ def test_actual_keeps_model_text_without_matching_seq(
 
     r = ready.post(_api(sid, "/feedback"))
     assert r.status_code == 200
-    assert (
-        r.json()["feedback"]["utterance_suggestions"][0]["actual"] == "요약문"
-    )
+    got = r.json()["feedback"]["utterance_suggestions"][0]
+    assert got["actual"] == "요약문"
+    assert got["phase_idx"] == 0
+
+
+def test_phase_idx_follows_matched_teacher_line(ready, fake_gemini, sim_db):
+    """모델이 1-기준 번호를 줘도 교사 발화의 장면으로 맞춘다 (#365)."""
+    sid = _finished(ready)
+    _suggest(fake_gemini, _teacher_seq(ready, sid), phase_idx=5)
+
+    r = ready.post(_api(sid, "/feedback"))
+    assert r.status_code == 200
+    assert r.json()["feedback"]["utterance_suggestions"][0]["phase_idx"] == 0
+    md = _saved_report(sim_db, sid)
+    assert "### 도입" in md
+    assert "### 장면 6" not in md
+
+
+def test_phase_idx_out_of_range_is_clamped_without_seq(ready, fake_gemini):
+    sid = _finished(ready)
+    _suggest(fake_gemini, None, phase_idx=99)
+
+    r = ready.post(_api(sid, "/feedback"))
+    assert r.status_code == 200
+    assert r.json()["feedback"]["utterance_suggestions"][0]["phase_idx"] == 1
 
 
 def test_feedback_input_numbers_teacher_lines(ready, fake_gemini, monkeypatch):
