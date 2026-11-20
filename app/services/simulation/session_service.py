@@ -586,6 +586,7 @@ def student_utterance(
             )
         if (
             _PLEDGE.fullmatch(core)
+            and not re.search(r"[?？]", structured["utterance"])
             and (not artifact or artifact == previous_artifact.strip())
             and not structured["misconception"]
             # #330·#341이 비운 실제 오개념도 본다. 막힘 요약만 비운 경우는 다짐이다
@@ -596,7 +597,7 @@ def student_utterance(
                 )
             )
         ):
-            # 다짐뿐인 후속 반응은 이해도를 올리지 않고 장면 동의로만 친다 (#358, #361)
+            # 물음표 없는 다짐뿐인 후속 반응은 이해도를 올리지 않고 장면 동의로만 친다 (#358, #361, #384)
             structured["understanding"] = min(
                 structured["understanding"], previous
             )

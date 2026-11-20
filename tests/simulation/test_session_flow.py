@@ -2172,6 +2172,13 @@ def test_first_reaction_pledge_is_not_consent(ready, fake_gemini):
         "끝까지 잘 모르겠어요.",
         "다음 활동도 잘 모르겠어요.",
         "다음 시간에도 열심히 참여해서 멋진 사용 설명서를 만들어 보겠습니다!",
+        # 물음표가 섞인 말은 다짐이 아니다 (#384)
+        "약속이요? 저도 열심히 해 볼게요.",
+        "끝까지 해 볼게요?",
+        "다음 시간에도 열심히 할게요?",
+        "열심히 해 볼게요?",
+        "잘 모르겠어요? 그냥 열심히 해 볼게요.",
+        "네, 열심히 해 볼게요？",
     ],
 )
 def test_action_commitment_is_not_pledge(ready, fake_gemini, utterance):
