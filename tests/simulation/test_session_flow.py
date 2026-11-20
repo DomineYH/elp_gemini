@@ -2076,6 +2076,21 @@ def _ids(personas):
         "몰라요. 그냥 잘 해 볼게요.",
         "어떻게 하는지 잘 모르겠어요. 그냥 노력해 볼게요.",
         "그냥 열심히 해 볼게요.",
+        # 시간·범위 앞말, 약속이요, 끝까지, 조건절, 참여하겠습니다 (#384)
+        "네, 다음 활동도 열심히 해 볼게요.",
+        "다음 시간에는 열심히 해 볼게요.",
+        "저... 다음 시간에도 열심히 해 볼게요.",
+        "네... 마지막까지 열심히 해 볼게요.",
+        "네, 남은 시간 동안 열심히 해 볼게요.",
+        "오늘도 열심히 할게요.",
+        "네, 약속이요! 저도 열심히 해볼게요.",
+        "네, 저도 차근차근 열심히 해 볼게요.",
+        "네, 저도 끝까지 해 볼게요.",
+        "끝까지 열심히 할게요.",
+        "네, 오늘 수업도 열심히 참여하겠습니다!",
+        "네, 다음 활동도 이어서 열심히 참여하겠습니다.",
+        "네, 같이 해주시면 열심히 해볼게요.",
+        "선생님이 도와주시면 열심히 할게요.",
     ],
 )
 def test_follow_up_pledge_is_held_and_agrees(ready, fake_gemini, utterance):
@@ -2144,6 +2159,26 @@ def test_first_reaction_pledge_is_not_consent(ready, fake_gemini):
         "네, 선생님! 배추 생산량 데이터와 관련된 프로그램을 어떻게 만들지 기대돼요. 열심히 참여하겠습니다.",
         "잘 몰라요.",
         "그냥 잘 모르겠어요.",
+        # 넓힌 짜임에도 걸리면 안 되는 형태 (#384)
+        "네, 선생님이 같이 해 주시면 저도 해 볼게요.",
+        "네... 선생님이 같이 해주셨으니까 한번 해볼게요!",
+        "네, 저도 차근차근 해 볼게요.",
+        "끝까지 읽어 볼게요.",
+        "다음 활동도 자로 재어 볼게요.",
+        "다음 시간에는 표를 정리해 볼게요.",
+        "마지막까지 열을 지울게요.",
+        "다시 설명해 주시면 열심히 해 볼게요.",
+        "네, 그럼 같이 해 주시는 거죠? 열심히 해 볼게요.",
+        "끝까지 잘 모르겠어요.",
+        "다음 활동도 잘 모르겠어요.",
+        "다음 시간에도 열심히 참여해서 멋진 사용 설명서를 만들어 보겠습니다!",
+        # 물음표가 섞인 말은 다짐이 아니다 (#384)
+        "약속이요? 저도 열심히 해 볼게요.",
+        "끝까지 해 볼게요?",
+        "다음 시간에도 열심히 할게요?",
+        "열심히 해 볼게요?",
+        "잘 모르겠어요? 그냥 열심히 해 볼게요.",
+        "네, 열심히 해 볼게요？",
     ],
 )
 def test_action_commitment_is_not_pledge(ready, fake_gemini, utterance):
@@ -2156,6 +2191,20 @@ def test_action_commitment_is_not_pledge(ready, fake_gemini, utterance):
 @pytest.mark.parametrize("artifacts", [("", "메모.txt"), ("a.xlsx", "b.xlsx")])
 def test_pledge_with_new_artifact_is_not_consent(ready, fake_gemini, artifacts):
     _, turn = _pledge_turn(ready, fake_gemini, artifacts=artifacts)
+    assert _flags(turn) == {None}
+    assert turn["agreement"]["count"] == 0
+    assert turn["agreement"]["pledged_persona_ids"] == []
+    assert _stored(turn) == {45}
+
+
+def test_widened_pledge_with_new_artifact_is_not_consent(ready, fake_gemini):
+    # 넓힌 앞말이 붙어도 새 산출물이 있으면 #358 조건에서 빠진다 (#384)
+    _, turn = _pledge_turn(
+        ready,
+        fake_gemini,
+        "네, 남은 시간 동안 열심히 해 볼게요.",
+        artifacts=("", "메모.txt"),
+    )
     assert _flags(turn) == {None}
     assert turn["agreement"]["count"] == 0
     assert turn["agreement"]["pledged_persona_ids"] == []
