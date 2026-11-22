@@ -21,6 +21,7 @@ _STUBS = """
 let busy = false;
 const API = "/api";
 const status = {textContent: ""};
+function showStatus(text) { status.textContent = text; }
 const retries = [];
 function hideRetry() {}
 function showRetry(retry, seconds) { retries.push(seconds); }

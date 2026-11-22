@@ -26,6 +26,10 @@ els.dmTurnNote = {
 const mk = () => ({ textContent: "", disabled: false, className: "", focus() {} });
 const $ = id => els[id] ??= mk();
 const tInput = $("tInput"), dmInput = $("dmInput");
+// 오류 문구 줄과 재시도 상자 옮기기 (#411)
+const status = $("simStatus");
+let statusText = "";
+function placeRetry() {}
 const dmSubmit = mk();
 const dmModal = { querySelector: () => dmSubmit, classList: { add() {}, remove() {} }, contains: () => false };
 var document = { activeElement: null, body: null };
@@ -167,8 +171,12 @@ def test_dm_feed_min_height_yields_on_short_viewport():
     m = re.search(r'<div id="dmFeed"[^>]*>', _dm_modal())
     assert m, "#dmFeed가 없음"
     # 고정 12rem이면 낮은 화면(667x375)에서 안내 줄이 더해질 때 입력줄이 잘린다
+    # 재시도 상자와 두 줄 오류까지 들어가도 입력줄이 보이게 남는 높이만 요구한다 (#411)
     assert "min-h-[12rem]" not in m.group(0)
-    assert 'style="min-height:min(12rem,25vh)"' in m.group(0)
+    assert (
+        'style="min-height:min(12rem,max(3rem,calc(85vh - 16.5rem)))"'
+        in m.group(0)
+    )
     assert "flex-1" in m.group(0).split('class="')[1].split('"')[0].split()
 
 

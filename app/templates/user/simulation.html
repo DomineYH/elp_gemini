@@ -76,7 +76,7 @@
                 </button>
             </div>
         </div>
-        <div id="dmFeed" class="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50" style="min-height:min(12rem,25vh)"></div>
+        <div id="dmFeed" class="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50" style="min-height:min(12rem,max(3rem,calc(85vh - 16.5rem)))"></div>
         <p id="dmTurnNote" class="note text-center break-keep border-t px-3 pt-2 mb-1" role="status"></p>
         <form id="dmForm" class="px-3 pb-3 flex items-end gap-2 bg-white">
             <label for="dmInput" class="sr-only">이 학생에게 말하기</label>
@@ -125,6 +125,18 @@
     let state = null;
     let busy = false;
     let dmPersona = null;
+    // 오류 문구. 어느 줄에 보일지는 syncControls()가 정한다 (#411)
+    let statusText = "";
+    function showStatus(text) {
+        statusText = text;
+        syncControls();
+    }
+    // 재시도 상자는 1:1 창이 열려 있으면 창 안 입력줄 위로 옮긴다. 창 뒤에 가려지지 않게 한다 (#411)
+    function placeRetry() {
+        const box = $("retryBox");
+        (dmPersona ? $("dmForm") : $("tForm")).before(box);
+        box.classList.toggle("px-3", !!dmPersona);
+    }
 
     function el(tag, className, text) {
         const node = document.createElement(tag);
@@ -243,6 +255,7 @@
         if (state.session.status !== "running") return;
         dmPersona = p;
         dmModal.classList.remove("hidden");
+        placeRetry();
         render(new Set());
         setTimeout(() => dmInput.focus(), 50);
     }
@@ -250,6 +263,7 @@
     function closeDM() {
         dmPersona = null;
         dmModal.classList.add("hidden");
+        placeRetry();
         syncControls();
         // 숨긴 창 안의 포커스는 다음 렌더링 때에야 body로 가므로 먼저 내려놓고 전체 입력창으로 돌려준다 (#314).
         if (dmModal.contains(document.activeElement)) document.activeElement.blur();
@@ -337,8 +351,10 @@
             left <= 0 ? "상한에 도달했습니다. 수업을 종료하고 피드백을 받으세요." :
             left <= 5 ? "남은 발화 " + left + "회" : "";
         // 1:1 창이 열려 있으면 창 안의 줄에만 쓴다. 두 줄이 같은 글을 함께 읽히지 않게 한다 (#408)
+        // 오류 문구도 같다. 창 안에서는 오류가 남은 횟수 안내보다 먼저다 (#411)
+        status.textContent = dmPersona ? "" : statusText;
         $("turnNote").textContent = dmPersona ? "" : note;
-        $("dmTurnNote").textContent = dmPersona ? note : "";
+        $("dmTurnNote").textContent = dmPersona ? statusText || note : "";
         // 안내가 생기면 대화 영역이 줄어 마지막 말풍선이 가려지므로 다시 바닥에 붙인다 (#408)
         if (dmPersona) $("dmFeed").scrollTop = $("dmFeed").scrollHeight;
         $("skipBtn").disabled = !canAct;
@@ -483,13 +499,13 @@
 
     async function run(pending, action) {
         busy = true;
-        status.textContent = "";
+        showStatus("");
         hideRetry();
         render(pending);
         try {
             await action();
         } catch (err) {
-            status.textContent = err.message;
+            showStatus(err.message);
             if (err.retryAfter !== undefined) {
                 showRetry(() => run(pending, action), err.retryAfter);
             }
@@ -542,7 +558,7 @@
             const text = input.value.trim();
             if (busy) return;
             if (!text) {
-                status.textContent = "내용을 입력해 주세요.";
+                showStatus("내용을 입력해 주세요.");
                 input.focus();
                 return;
             }
@@ -582,7 +598,7 @@
         try {
             state = await api("GET", API);
         } catch (err) {
-            status.textContent = err.message;
+            showStatus(err.message);
             return;
         }
         render(new Set());
