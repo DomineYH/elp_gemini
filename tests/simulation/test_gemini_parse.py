@@ -589,6 +589,83 @@ def test_rejected_output_logs_one_warning_without_raw_text(monkeypatch, caplog):
     assert "maybe" not in message and raw not in message
 
 
+def _call_with(monkeypatch, caplog, response):
+    calls = []
+
+    def generate_content(**kw):
+        calls.append(kw)
+        return response
+
+    client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=generate_content)
+    )
+    monkeypatch.setattr(gemini, "_client", lambda: client)
+    with caplog.at_level(logging.WARNING, logger=gemini.__name__):
+        result = gemini.call_structured(
+            "student",
+            system="sys",
+            user="usr",
+            schema=StudentReaction,
+            persona_key="42",
+        )
+    warnings = [
+        r.getMessage() for r in caplog.records if r.levelno == logging.WARNING
+    ]
+    return result, warnings, calls
+
+
+def test_prompt_block_logs_block_reason(monkeypatch, caplog):
+    # 프롬프트 차단은 후보 없이 prompt_feedback에만 사유가 실린다 (#409)
+    response = SimpleNamespace(
+        text=None,
+        parsed=None,
+        candidates=None,
+        prompt_feedback=SimpleNamespace(
+            block_reason=gemini.types.BlockedReason.PROHIBITED_CONTENT
+        ),
+    )
+
+    result, [message], calls = _call_with(monkeypatch, caplog, response)
+
+    assert result.parsed is None and result.text == ""
+    assert len(calls) == 1
+    assert "len=0" in message
+    assert "block_reason=PROHIBITED_CONTENT" in message
+    assert "finish_reason=None" in message
+    assert "candidates=0" in message
+
+
+def test_stopped_candidate_logs_finish_reason_without_message(
+    monkeypatch, caplog
+):
+    candidate = SimpleNamespace(
+        finish_reason=gemini.types.FinishReason.MAX_TOKENS,
+        finish_message="SECRET",
+        content=None,
+    )
+    response = SimpleNamespace(
+        text=None, parsed=None, candidates=[candidate], prompt_feedback=None
+    )
+
+    result, [message], calls = _call_with(monkeypatch, caplog, response)
+
+    assert result.parsed is None and result.text == ""
+    assert len(calls) == 1
+    assert "finish_reason=MAX_TOKENS" in message
+    assert "block_reason=None" in message
+    assert "candidates=1" in message
+    assert "SECRET" not in message
+
+
+def test_valid_output_logs_no_warning(monkeypatch, caplog):
+    response = SimpleNamespace(text=GOOD, parsed=None, candidates=None)
+
+    result, warnings, calls = _call_with(monkeypatch, caplog, response)
+
+    assert result.parsed == parse_structured(StudentReaction, GOOD)
+    assert warnings == [] and len(calls) == 1
+
+
 def test_client_is_created_with_timeout():
     # __wrapped__로 lru_cache를 거치지 않아 캐시를 오염시키지 않는다
     with patch.object(gemini.genai, "Client") as client:

@@ -18,6 +18,7 @@ _STUBS = """
 const busy = false;
 function regenerate() {}
 const state = {utterances: []};
+const regenFails = new Map([[7, 2]]);
 function shownArtifact() { return ""; }
 function el(tag, className, text) {
     return {
@@ -75,3 +76,10 @@ def test_bubble_failed_shows_note_and_regen_button():
             "다시 생성",
         ),
     ]
+
+
+def test_bubble_failed_again_shows_regen_count():
+    # 다시 생성이 또 실패한 횟수는 이 화면의 regenFails에서 센다 (#409)
+    out = _bubble({"id": 7, "content": "", "failed": True}, regen=True)
+    assert out[0] == ("p", "note", "다시 생성했지만 읽지 못했습니다(2회).")
+    assert out[1][0] == "button" and out[1][2] == "다시 생성"

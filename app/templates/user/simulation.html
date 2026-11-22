@@ -176,10 +176,14 @@
         return prev && own(prev) === own(u) ? "" : own(u);
     }
 
+    // 실패 행 id → 이 화면에서 다시 생성이 또 실패한 횟수 (#409)
+    const regenFails = new Map();
+
     function bubble(persona, u, regen) {
         const box = el("div", "bubble " + persona.color_key + " in");
         if (u.failed) {
-            box.append(el("p", "note", "반응을 읽지 못했습니다."));
+            const fails = regenFails.get(u.id);
+            box.append(el("p", "note", fails ? "다시 생성했지만 읽지 못했습니다(" + fails + "회)." : "반응을 읽지 못했습니다."));
             if (regen) {
                 const btn = el("button", "mt-1 text-xs px-2 py-1 rounded border bg-white text-gray-700 hover:bg-gray-50", "다시 생성");
                 btn.type = "button";
@@ -505,7 +509,9 @@
 
     function regenerate(persona) {
         return run(new Set([persona.id]), async () => {
-            merge(await api("POST", API + "/regenerate", { persona_id: persona.id }));
+            const turn = await api("POST", API + "/regenerate", { persona_id: persona.id });
+            merge(turn);
+            turn.utterances.filter(u => u.failed).forEach(u => regenFails.set(u.id, (regenFails.get(u.id) || 0) + 1));
         });
     }
 
