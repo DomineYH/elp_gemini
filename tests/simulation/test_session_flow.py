@@ -1383,13 +1383,38 @@ def test_silent_after_ack_with_new_artifact_rises(ready, fake_gemini):
 
 
 @pytest.mark.parametrize(
-    "before, utterance", [("1.2요", "12요"), ("3.5퍼센트요", "35퍼센트요")]
+    "before, utterance",
+    [("1.2요", "12요"), ("3.5퍼센트요", "35퍼센트요"), ("-5도요.", "+5도요.")],
 )
 def test_corrected_number_rises(ready, fake_gemini, before, utterance):
-    # _core는 소수점을 떼어 core가 같지만 수치를 고친 답이다
+    # _core는 소수점·부호를 떼어 core가 같지만 수치를 고친 답이다
     assert _repeat_after_20(ready, fake_gemini, utterance, before=before) == {
         35
     }
+
+
+@pytest.mark.parametrize(
+    "before, utterance, expected",
+    [
+        ("-5도요.", "+5도요.", 35),
+        ("3+2요.", "3×2요.", 35),
+        ("3 + 2요.", "3 × 2요.", 35),
+        ("5도요.", "-5도요.", 35),
+        ("-5도요.", "-5도요.", 20),
+        ("3+2요.", "3+2요.", 20),
+        ("3 + 2요.", "3+2요.", 20),
+        # 밑줄만 남은 발화는 '...'처럼 맞장구가 아니다
+        ("네.", "___", 35),
+    ],
+)
+def test_corrected_sign_with_new_artifact_rises(
+    ready, fake_gemini, before, utterance, expected
+):
+    # 부호·연산 기호만 고친 답은 새 산출물이 붙어도 되풀이가 아니다 (#393)
+    stored = _repeat_after_20(
+        ready, fake_gemini, utterance, before=before, artifacts=("", XLSX)
+    )
+    assert stored == {expected}
 
 
 @pytest.mark.parametrize(

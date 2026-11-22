@@ -436,7 +436,10 @@ _PLEDGE = re.compile(
     r"|노력(?:할게|해볼게|하겠습니다)|최선을다(?:할게|하겠습니다))"
 )
 # _core는 소수점을 떼므로 "1.2요"→"12요" 같은 수치 고침은 숫자로 가린다
-_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+# 숫자와 숫자에 맞닿은(공백만 사이에 둔) 부호·연산 기호. 부호·연산만 고친 답도 다른 수치다 (#393)
+_NUMBER = re.compile(
+    r"\d+(?:\.\d+)?|(?<=\d)\s*[-+−×÷*/=<>]|[-+−×÷*/=<>](?=\s*\d)"
+)
 # 숫자 사이 천 단위 쉼표는 같은 값이다 ("1,000" = "1000")
 _THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
 _FILLER = re.compile(
@@ -462,7 +465,7 @@ def _plain(text: str) -> str:
 
 
 def _numbers(utterance: str) -> list[str]:
-    return _NUMBER.findall(_THOUSANDS.sub("", utterance))
+    return [t.strip() for t in _NUMBER.findall(_THOUSANDS.sub("", utterance))]
 
 
 def _core(utterance: str) -> str:
@@ -574,7 +577,10 @@ def student_utterance(
             )
         if (
             # 말로 한 맞장구와 자기 직전 말 그대로는 새 산출물이 붙어도 올리지 않는다 (#393)
-            (_ACK.fullmatch(core) and re.search(r"\w", structured["utterance"]))
+            (
+                _ACK.fullmatch(core)
+                and re.search(r"[^\W_]", structured["utterance"])
+            )
             or (
                 core
                 and core == _core(previous_utterance)
