@@ -104,6 +104,15 @@ async def user_dashboard(
     # 새로고침해도 최근 업로드의 뷰어·QnA·분석 진입점을 유지 (#173)
     upload = await lessonplan_source.get_latest_upload(db, current_user.id)
     document = _document_from_upload(upload) if upload else None
+    # 시뮬레이션은 색인 없이 디스크 PDF로 동작한다 (#386)
+    can_simulate = (
+        upload is not None
+        and (
+            lessonplan_source.UPLOADS_DIR
+            / str(upload.user_id)
+            / upload.filename
+        ).is_file()
+    )
 
     return templates.TemplateResponse(
         "user/dashboard.html",
@@ -117,6 +126,7 @@ async def user_dashboard(
                 else None
             ),
             "criteria_documents": criteria_documents,
+            "can_simulate": can_simulate,
         },
     )
 

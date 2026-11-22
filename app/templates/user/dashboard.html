@@ -300,7 +300,7 @@
     <div class="text-center text-gray-600 py-4">
         <p>문서를 업로드하면 분석 및 QnA 기능을 사용할 수 있습니다.</p>
         {% if expired_upload_name %}
-        <p class="text-sm text-amber-700 mt-2">최근 지도안({{ expired_upload_name }})은 로그아웃 등으로 검색 색인이 삭제되어 다시 업로드해야 QnA를 쓸 수 있습니다.</p>
+        <p class="text-sm text-amber-700 mt-2">최근 지도안({{ expired_upload_name }})은 로그아웃 등으로 검색 색인이 삭제되어 다시 업로드해야 QnA를 쓸 수 있습니다.{% if can_simulate %} 수업 시뮬레이션은 이 지도안으로 바로 시작할 수 있습니다.{% endif %}</p>
         {% endif %}
         <p class="text-sm text-gray-500 mt-2">이전에 진행한 세션과 분석 보고서는 아래에서 다시 확인할 수 있습니다.</p>
     </div>
@@ -333,8 +333,9 @@
 </div>
 
 <!-- Floating Action Buttons -->
-{% if document %}
+{% if document or can_simulate %}
 <div class="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 flex flex-row gap-2">
+    {% if document %}
     <!-- Chatbot FAB -->
     <button onclick="toggleChatbot()" aria-label="QnA 챗봇"
         class="bg-blue-600 text-white px-5 py-3 rounded-lg shadow-lg hover:bg-blue-700 transition-colors flex items-center gap-2">
@@ -354,6 +355,7 @@
         </svg>
         <span class="hidden sm:inline font-semibold whitespace-nowrap">분석 시작</span>
     </button>
+    {% endif %}
 
     <!-- Simulation FAB -->
     <a href="/simulation/setup" aria-label="수업 시뮬레이션" title="가상 학생과 수업 실행해 보기"
