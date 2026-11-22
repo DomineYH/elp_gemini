@@ -2,6 +2,7 @@
 시뮬레이션이 쓰는 '현재 지도안' = 사용자의 최신 업로드 행과 그 PDF 텍스트
 """
 
+import re
 from pathlib import Path
 
 from pypdf import PdfReader
@@ -11,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.lessonplan_uploads import LessonPlanUpload
 
 UPLOADS_DIR = Path("app/static/uploads")
+# PDF 글머리 기호 글꼴 등의 사설 영역 글자는 깨진 기호로 보인다 (#391)
+PRIVATE_USE = re.compile("[\ue000-\uf8ff]")
 
 
 async def get_latest_upload(
@@ -45,4 +48,6 @@ def extract_text(upload: LessonPlanUpload) -> str:
     if not path.is_file():
         return ""
     reader = PdfReader(str(path))
-    return "\n".join(page.extract_text() or "" for page in reader.pages)
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    # pypdf가 일부 PDF의 낱말 사이 공백을 NUL로 돌려준다 (#391)
+    return PRIVATE_USE.sub("", text.replace("\x00", " "))

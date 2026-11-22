@@ -57,6 +57,44 @@ def test_drop_notice_uses_no_fallback_josa():
     assert "(를)" not in m.group(0) and "(을)" not in m.group(0)
 
 
+def test_mode_cards_share_class_and_highlight_by_checked_radio():
+    src = TEMPLATE.read_text(encoding="utf-8")
+    labels = re.findall(
+        r'<label class="([^"]*)">\s*<input type="radio" name="mode"', src
+    )
+    assert len(labels) == 2
+    for cls in labels:
+        assert "mode-card" in cls.split() and "bg-blue-50" not in cls
+
+
+def test_mode_card_checked_rule_in_sim_style():
+    style = Path("app/templates/user/_sim_style.html").read_text(
+        encoding="utf-8"
+    )
+    m = re.search(r"\.mode-card:has\(input:checked\)\{([^}]*)\}", style)
+    assert m, ".mode-card:has(input:checked) 규칙을 찾지 못함"
+    decls = m.group(1).split(";")
+    assert "border-color:#bfdbfe" in decls and "background:#eff6ff" in decls
+
+
+def test_filter_grid_is_single_column():
+    src = TEMPLATE.read_text(encoding="utf-8")
+    m = re.search(r'<div class="([^"]*)">\s*<select id="fGrade"', src)
+    assert m and "grid-cols-1" in m.group(1).split()
+    assert "grid-cols-2" not in m.group(1)
+
+
+def test_change_handler_clears_status_before_max_check():
+    src = TEMPLATE.read_text(encoding="utf-8")
+    m = re.search(
+        r'rows\.addEventListener\("change", e => \{.*?\n    \}\);', src, re.S
+    )
+    assert m, "change 핸들러를 찾지 못함"
+    body = m.group(0)
+    clear = body.find('status.textContent = "";')
+    assert 0 <= clear < body.find("chosen.size >= MAX")
+
+
 # 새 페르소나 저장 후 다시 불러와도 교사가 고른 선택을 유지한다 (#324)
 
 
@@ -215,6 +253,128 @@ def test_load_after_save_at_max_drops_last_kept_and_notifies():
         "checked": ["a", "c", "e", "n"],
         "status": "최대 4명 — F 빼고 N 추가",
     }
+
+
+_SAVED_AT_MAX = (
+    _MANUAL_ACE
+    + 'toggle("f", true); cands = [...cands, "n"]; saved("n"); await tick();\n'
+)
+
+
+def test_toggle_after_save_notice_clears_status():
+    out = _run_page(_SAVED_AT_MAX + 'toggle("a", false);')
+    assert out == {"checked": ["c", "e", "n"], "status": ""}
+
+
+def test_slider_after_save_notice_clears_status():
+    out = _run_page(_SAVED_AT_MAX + "els.count.listeners.input();")
+    assert out["status"] == ""
+
+
+def test_max_notice_shows_then_clears_on_next_toggle():
+    out = _run_page(_MANUAL_ACE + 'toggle("f", true); toggle("d", true);')
+    assert out["status"] == "최대 4명(관리자 설정)"
+    out = _run_page(
+        _MANUAL_ACE
+        + 'toggle("f", true); toggle("d", true); toggle("a", false);'
+    )
+    assert out == {"checked": ["c", "e", "f"], "status": ""}
+
+
+# 필터를 바꾼 조회가 실패하면 체크박스·슬라이더를 건드려도 실패 안내가 남는다
+_LOAD_FAILED = (
+    "globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({}) });\n"
+    'els.fGrade.value = "5"; els.fGrade.listeners.change(); await tick();\n'
+)
+_LOAD_FAILED_NOTICE = "후보를 불러오지 못했습니다. 다시 추출을 눌러 주세요."
+
+
+def test_toggle_after_load_failure_keeps_failure_notice():
+    out = _run_page(_LOAD_FAILED + 'toggle("a", false);')
+    assert out == {"checked": ["b", "c"], "status": _LOAD_FAILED_NOTICE}
+
+
+def test_slider_after_load_failure_keeps_failure_notice():
+    out = _run_page(_LOAD_FAILED + "els.count.listeners.input();")
+    assert out["status"] == _LOAD_FAILED_NOTICE
+
+
+def test_reroll_success_after_load_failure_clears_notice():
+    out = _run_page(
+        _LOAD_FAILED
+        + "globalThis.fetch = async () => ({ ok: true, json: async () => ({ seed: 2, candidates: cands.map(cand) }) });\n"
+        + "els.reroll.listeners.click(); await tick();"
+    )
+    assert out == {"checked": ["a", "b", "c"], "status": ""}
+
+
+# 실패 안내를 대체한 선택 안내("최대 ...")는 체크박스·슬라이더로 지워진다
+_FAILED_THEN_MAX_NOTICE = (
+    _MANUAL_ACE + 'toggle("f", true);\n' + _LOAD_FAILED + 'toggle("d", true);\n'
+)
+
+
+def test_toggle_after_max_notice_over_load_failure_clears_status():
+    out = _run_page(_FAILED_THEN_MAX_NOTICE)
+    assert out["status"] == "최대 4명(관리자 설정)"
+    out = _run_page(_FAILED_THEN_MAX_NOTICE + 'toggle("a", false);')
+    assert out == {"checked": ["c", "e", "f"], "status": ""}
+
+
+def test_slider_after_max_notice_over_load_failure_clears_status():
+    out = _run_page(_FAILED_THEN_MAX_NOTICE + "els.count.listeners.input();")
+    assert out["status"] == ""
+
+
+# 응답을 보류하는 fetch: res(i, ok)로 i번째 요청을 성공(ok) 또는 503으로 끝낸다
+_HELD_FETCH = (
+    "const pend = [];\n"
+    "globalThis.fetch = () => new Promise(r => pend.push(r));\n"
+    "const res = async (i, ok) => { pend[i](ok"
+    " ? { ok: true, json: async () => ({ seed: 1, candidates: cands.map(cand) }) }"
+    " : { ok: false, status: 503, json: async () => ({}) }); await tick(); };\n"
+)
+# 필터 조회(503)와 저장 뒤 조회(성공)가 겹쳐 교체 안내가 뜬 상태
+_OVERLAP_SAVE_NOTICE = (
+    _MANUAL_ACE
+    + 'toggle("f", true);\n'
+    + _HELD_FETCH
+    + 'els.fGrade.value = "5"; els.fGrade.listeners.change();\n'
+    + 'cands = [...cands, "n"]; saved("n");\n'
+    + "await res(0, false); await res(1, true);\n"
+)
+
+
+def test_toggle_after_overlapping_failure_and_save_notice_clears_status():
+    out = _run_page(_OVERLAP_SAVE_NOTICE)
+    assert out["status"] == "최대 4명 — F 빼고 N 추가"
+    out = _run_page(_OVERLAP_SAVE_NOTICE + 'toggle("a", false);')
+    assert out == {"checked": ["c", "e", "n"], "status": ""}
+
+
+def test_slider_after_overlapping_failure_and_save_notice_clears_status():
+    out = _run_page(_OVERLAP_SAVE_NOTICE + "els.count.listeners.input();")
+    assert out["status"] == ""
+
+
+# 조회가 진행 중이면 체크박스·슬라이더를 건드려도 "불러오는 중..."이 남는다
+_LOADING = (
+    _HELD_FETCH + 'els.fGrade.value = "5"; els.fGrade.listeners.change();\n'
+)
+
+
+def test_toggle_while_loading_keeps_loading_notice():
+    out = _run_page(_LOADING + 'toggle("a", false);')
+    assert out == {"checked": ["b", "c"], "status": "불러오는 중..."}
+
+
+def test_slider_while_loading_keeps_loading_notice_until_response():
+    out = _run_page(_LOADING + "els.count.listeners.input();")
+    assert out["status"] == "불러오는 중..."
+    out = _run_page(
+        _LOADING + "els.count.listeners.input(); await res(0, true);"
+    )
+    assert out["status"] == ""
 
 
 def test_load_after_save_without_previous_falls_back_to_first_n():
