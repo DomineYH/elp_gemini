@@ -32,6 +32,7 @@ DISCLAIMER = (
 )
 # 스토리 42: 섹션마다 붙이는 고정 안내
 SECTION_NOTE = "이 섹션의 내용은 시뮬레이션에서 나온 가설이며 예측이 아닙니다."
+NO_SUPPORTS = "이 피드백에는 개별 지원 항목이 없습니다."
 TRANSITIONS = {
     "agree_advance": "전원 동의 후 전이",
     "skip": "교사 개입 전 전이(Skip)",
@@ -111,6 +112,7 @@ async def _quote_actual(
 
     번호가 없거나 맞는 교사 발화가 없으면 모델 문자열을 그대로 둔다.
     phase_idx도 찾은 교사 발화의 장면으로 맞추고, 못 찾으면 장면 범위로 자른다 (#365).
+    개별 지원은 1:1 교사 발화를 가리키는 항목만 남기고 나머지는 버린다 (#395).
     """
     names = {
         p.id: p.display_name
@@ -131,6 +133,18 @@ async def _quote_actual(
         to = names.get(u.target_persona_id)
         s["actual"] = f"({to}에게) {u.content}" if to else u.content
 
+    # 개별 지원: 1:1 교사 발화를 가리키는 항목만 남기고 학생·장면·인용을 그 발화에서 채운다 (#395)
+    kept = []
+    for s in fb["individual_supports"]:
+        u = teacher.get(s.get("teacher_seq"))
+        if u is None or u.target_persona_id not in names:
+            continue
+        s["phase_idx"] = u.phase_idx
+        s["persona"] = names[u.target_persona_id]
+        s["actual"] = u.content
+        kept.append(s)
+    fb["individual_supports"] = kept
+
 
 def _guideline_label(version: int | None) -> str:
     return f"커스텀 v{version}" if version else "기본값"
@@ -147,6 +161,10 @@ def render_markdown(
 
     def clean(text) -> str:
         return strip_emojis(str(text)).strip()
+
+    def line(text) -> str:
+        # 한 줄 항목에 넣는 값: 줄바꿈이 절·목록 구조를 깨지 않게 접는다 (#395)
+        return " ".join(clean(text).split())
 
     def phase_label(idx: int) -> str:
         return names[idx] if 0 <= idx < len(names) else f"장면 {idx + 1}"
@@ -169,32 +187,45 @@ def render_markdown(
     ]
     for i, r in enumerate(fb["risk_scenarios"], 1):
         out += [
-            f"### R{i}. {clean(r['title'])}",
+            f"### R{i}. {line(r['title'])}",
             "",
             clean(r["scene"]),
             "",
-            f"- 근거 유형: {clean(r['evidence_type'])}",
+            f"- 근거 유형: {line(r['evidence_type'])}",
             "",
         ]
 
     out += ["## ① 교사 발화 추천", "", SECTION_NOTE, ""]
     for s in fb["utterance_suggestions"]:
         out += [
-            f"### {clean(phase_label(s['phase_idx']))}",
+            f"### {line(phase_label(s['phase_idx']))}",
             "",
-            f"- 실제 발화: {clean(s['actual'])}",
-            f"- 추천 발화: {clean(s['suggested'])}",
-            f"- 의도: {clean(s['intent'])}",
+            f"- 실제 발화: {line(s['actual'])}",
+            f"- 추천 발화: {line(s['suggested'])}",
+            f"- 의도: {line(s['intent'])}",
             "",
         ]
 
     out += ["## ② 진행 방향", "", SECTION_NOTE, ""]
-    out += [f"- {clean(d)}" for d in fb["progress_directions"]]
+    out += [f"- {line(d)}" for d in fb["progress_directions"]]
     out += ["", "## ③ 변경 방향", "", SECTION_NOTE, ""]
     out += [
-        f"- **{clean(c['kind'])}** {clean(c['content'])}"
+        f"- **{line(c['kind'])}** {line(c['content'])}"
         for c in fb["change_directions"]
     ]
+    out += ["", "## ④ 개별 지원", "", SECTION_NOTE, ""]
+    supports = fb.get("individual_supports") or []
+    for s in supports:
+        out += [
+            f"### {line(phase_label(s['phase_idx']))} · {line(s['persona'])}",
+            "",
+            f"- 1:1 발화: {line(s.get('actual', ''))}",
+            f"- 학생 반응 변화: {line(s['what_worked'])}",
+            f"- 지도안 반영: {line(s['plan_suggestion'])}",
+            "",
+        ]
+    if not supports:
+        out.append(NO_SUPPORTS)
     return "\n".join(out) + "\n"
 
 

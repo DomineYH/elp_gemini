@@ -423,6 +423,19 @@ def test_sim_phase_split_minutes_reads_attached_times_and_sums():
     assert re.findall(r"\d+'", line) == ["30'"]
 
 
+def test_sim_feedback_lists_individual_supports_for_one_on_one_lines():
+    """1:1 발화에서 통한 개별 지원을 따로 적는 항목이 있다 (#395)."""
+    prompt = PromptLoaderService().get_prompt("sim_feedback")
+
+    [line] = [
+        ln
+        for ln in prompt.splitlines()
+        if ln.startswith("- individual_supports:")
+    ]
+    assert "`교사(이름에게)`" in line
+    assert "1:1 발화가 없었으면 빈 배열입니다." in line
+
+
 def test_sim_student_off_task_uses_previous_understanding():
     """곁가지 반응은 on_task=false로 [직전 이해도]를 그대로 쓴다 (#306)."""
     prompt = PromptLoaderService().get_prompt("sim_student")

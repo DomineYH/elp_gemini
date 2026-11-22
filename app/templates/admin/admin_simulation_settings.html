@@ -128,7 +128,7 @@ function render(data) {
     $('extra').value = cur ? cur.extra_instructions : '';
 
     $('fixedAspects').replaceChildren(...data.aspects.fixed.map(
-        (label, i) => checkbox('fixed', i, `${'①②③'[i]} ${label}`, true, true)));
+        (label, i) => checkbox('fixed', i, `${'①②③④'[i]} ${label}`, true, true)));
     const aspects = cur ? cur.required_aspects : [];
     $('optionalAspects').replaceChildren(...data.aspects.optional.map(
         (a) => checkbox('aspect', a.key, a.label, aspects.includes(a.key), false)));
@@ -173,6 +173,7 @@ function renderPreview(data) {
         ['① 교사 발화 추천', fb.utterance_suggestions.map((s) => `${s.actual} → ${s.suggested} (${s.intent})`)],
         ['② 진행 방향', fb.progress_directions],
         ['③ 변경 방향', fb.change_directions.map((c) => `[${c.kind}] ${c.content}`)],
+        ['④ 개별 지원', (fb.individual_supports || []).map((s) => `${s.persona}: ${s.what_worked} → ${s.plan_suggestion}`)],
     ];
     $('previewMeta').textContent = `${data.model_name} · ${(data.latency_ms / 1000).toFixed(1)}s`;
     $('previewBody').replaceChildren(...sections.map(([title, items]) => {

@@ -21,7 +21,7 @@ from app.services.prompt_loader_service import PromptLoaderService
 from app.services.simulation.errors import SimulationError
 from app.utils.timestamps import utc_iso
 
-FIXED_ASPECTS = ["교사 발화 추천", "진행 방향", "변경 방향"]
+FIXED_ASPECTS = ["교사 발화 추천", "진행 방향", "변경 방향", "개별 지원"]
 OPTIONAL_ASPECTS = {
     "achievement_standards": "성취기준 연계",
     "udl": "UDL",
