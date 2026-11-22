@@ -17,6 +17,8 @@ pytestmark = pytest.mark.skipif(
 _STUBS = """
 const busy = false;
 function regenerate() {}
+const state = {utterances: []};
+function shownArtifact() { return ""; }
 function el(tag, className, text) {
     return {
         tag, className: className || "", textContent: text ?? "", children: [],
