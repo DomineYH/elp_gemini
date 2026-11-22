@@ -59,6 +59,14 @@
         return String(Math.floor(secs / 60)).padStart(2, "0") + ":" + String(secs % 60).padStart(2, "0");
     }
 
+    // 같은 장면에서 이 학생이 직전에 낸 산출물과 다를 때만 그 산출물, 아니면 "" (#389)
+    function shownArtifact(utts, u) {
+        const own = x => ((x.structured && x.structured.artifact) || "").trim();
+        const prev = utts.filter(x => x.speaker_type === "student" && x.persona_id === u.persona_id &&
+            x.phase_idx === u.phase_idx && x.seq < u.seq && own(x)).pop();
+        return prev && own(prev) === own(u) ? "" : own(u);
+    }
+
     function render() {
         const filter = $("trFilter").value;
         const personas = new Map(state.personas.map(p => [p.id, p]));
@@ -90,6 +98,8 @@
                 " ",
                 el("span", u.failed ? "note" : "", u.failed ? "(반응 생성 실패)" : text)
             );
+            const artifact = shownArtifact(state.utterances, u);
+            if (artifact) li.append(el("p", "note break-words", "산출물: " + artifact));
             list.append(li);
         }
         if (!rows.length) list.append(el("li", "note", "아직 기록이 없습니다."));

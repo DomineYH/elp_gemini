@@ -168,6 +168,14 @@
         return u.target_persona_id ? "(" + personaName(u.target_persona_id) + "에게) " + u.content : u.content;
     }
 
+    // 같은 장면에서 이 학생이 직전에 낸 산출물과 다를 때만 그 산출물, 아니면 "" (#389)
+    function shownArtifact(utts, u) {
+        const own = x => ((x.structured && x.structured.artifact) || "").trim();
+        const prev = utts.filter(x => x.speaker_type === "student" && x.persona_id === u.persona_id &&
+            x.phase_idx === u.phase_idx && x.seq < u.seq && own(x)).pop();
+        return prev && own(prev) === own(u) ? "" : own(u);
+    }
+
     function bubble(persona, u, regen) {
         const box = el("div", "bubble " + persona.color_key + " in");
         if (u.failed) {
@@ -187,6 +195,14 @@
         // 행동만 있으면 content는 "(행동)"이라 같은 문장이 두 번 보인다 (#392)
         if (!(u.structured && u.structured.action && !u.structured.utterance)) {
             box.append(el("p", "", u.content));
+        }
+        const artifact = shownArtifact(state.utterances, u);
+        if (artifact) {
+            const details = el("details", "note mt-1");
+            // 좌석 클릭(1:1 창 열기)으로 번지지 않게 한다
+            details.addEventListener("click", e => e.stopPropagation());
+            details.append(el("summary", "cursor-pointer", "산출물"), el("p", "break-words", artifact));
+            box.append(details);
         }
         return box;
     }
