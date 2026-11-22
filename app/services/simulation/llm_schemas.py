@@ -79,6 +79,10 @@ def stuck_only(utterance: str, artifact: str) -> bool:
 
 # 모델이 대화록 태그 '[선우의 산출물: …]'를 따라 값 앞에 붙인 접두어 (#350)
 _ARTIFACT_LABEL = re.compile(r"^\s*(?:\S+의\s*)?산출물\s*:\s*")
+# 히라가나·결합 탁점·반복 부호, 가타카나(가운뎃점 U+30FB 제외), 확장, 반각 (#387)
+_K = r"[\u3041-\u3096\u3099-\u309f\u30a1-\u30fa\u30fc-\u30ff\u31f0-\u31ff\uff66-\uff9f]+"
+# 맨 앞이나 공백 뒤의 가나만 뒤 가로 공백까지 지운다: 줄바꿈·값 사이 공백은 남긴다
+_KANA = re.compile(rf"(?:(?<=\s)|^){_K}[ \t]*|{_K}")
 
 
 class StudentReaction(BaseModel):
@@ -100,6 +104,12 @@ class StudentReaction(BaseModel):
         # 범위 밖 값으로 반응 전체를 버리지 않는다
         return max(0, min(100, v))
 
+    @field_validator("action", "utterance", "artifact")
+    @classmethod
+    def _strip_kana(cls, v: str) -> str:
+        # 가나는 대화록을 타고 다른 학생에게 옮으므로 저장 전에 지운다 (#387)
+        return _KANA.sub("", v)
+
     @field_validator("artifact")
     @classmethod
     def _strip_label(cls, v: str) -> str:
@@ -114,6 +124,8 @@ class StudentReaction(BaseModel):
         # 질문·'모르겠어요'만 한 반응엔 드러난 생각이 없는데, 모델이 교사 질문이나
         # 예전 오개념을 옮겨 적는다 (#330)
         self._raw_misconception = self.misconception
+        # 오개념의 가나는 상한·다짐 판정에 쓴 원문을 남긴 뒤 지운다 (#387)
+        self.misconception = _KANA.sub("", self.misconception)
         if STUCK_SUMMARY.search(self.misconception.strip()) or stuck_only(
             self.utterance, self.artifact
         ):
