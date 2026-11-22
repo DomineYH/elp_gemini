@@ -350,6 +350,14 @@ def test_sim_student_misconception_excludes_not_knowing_and_copying():
         assert phrase in item, phrase
 
 
+def test_sim_student_does_not_speak_for_other_students():
+    """다른 학생 대신 답하거나 하지 않은 말을 했다고 전하지 않는다 (#388)."""
+    prompt = PromptLoaderService().get_prompt("sim_student")
+
+    for phrase in ("대신 답하지 않", "하지 않은 말", "칭찬하거나 정리하지 않"):
+        assert phrase in prompt, phrase
+
+
 def test_sim_student_unknown_concept_can_be_learned_only_with_teacher():
     """모르는 개념은 교사가 직접 다룰 때만 조금씩 이해한다 (#296)."""
     prompt = PromptLoaderService().get_prompt("sim_student")
