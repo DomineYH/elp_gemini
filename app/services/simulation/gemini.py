@@ -76,7 +76,7 @@ def _reason(response) -> str:
 
 
 def _warn_rejected(kind, persona_key, schema, text: str, reason: str) -> None:
-    """spec_dev 8: 필드 경로·메시지·길이만 남긴다(원문·프롬프트 제외)."""
+    """spec_dev 8: 필드 경로·메시지·길이와 차단·종료 사유·후보 수만 남긴다(원문·프롬프트 제외)."""
     try:
         schema.model_validate_json(text)
         return
