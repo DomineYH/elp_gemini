@@ -27,7 +27,7 @@ const PAGE = __PAGE__, SEED = __SEED__;
 const flush = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setImmediate(r)); };
 
 function makeEnv(queue) {  // 스크립트가 실행되자마자 init()이 GET을 보내므로 응답을 먼저 넣는다
-    const env = { calls: [], queue, intervals: new Map(), nextTimer: 1 };
+    const env = { calls: [], queue, intervals: new Map(), nextTimer: 1, moves: 0 };
     const els = {};
     const mk = (id, tag) => {
         const cls = new Set();
@@ -45,7 +45,8 @@ function makeEnv(queue) {  // 스크립트가 실행되자마자 init()이 GET�
             append(...n) { e.children.push(...n.map(wrap)); },
             prepend(...n) { e.children.unshift(...n.map(wrap)); },
             replaceChildren(...n) { text = ""; e.children = n.map(wrap); },
-            before(node) { node.beforeId = e.id; },
+            before(node) { node.beforeId = e.id; env.moves++; },
+            get nextElementSibling() { return e.beforeId ? els[e.beforeId] : null; },
             addEventListener(t, f) { (e.listeners[t] ??= []).push(f); },
             dispatch(t, ev = {}) {
                 (e.listeners[t] || []).forEach(f => f({ preventDefault() {}, stopPropagation() {}, target: e, ...ev }));
@@ -139,6 +140,7 @@ function snap(env) {
             (box.classList.contains("px-3") ? " px-3" : ""),
         dmInput: $("dmInput").value,
         atBottom: feed.scrollTop === feed.scrollHeight,
+        bodies: env.calls.filter(c => c.method === "POST").map(c => c.body ?? null),
         POST: env.calls.filter(c => c.method === "POST").map(c => c.url.split("/").pop() +
             (c.body && c.body.content ? ":" + c.body.content + "→" + c.body.target_persona_id : "")),
     };
@@ -230,6 +232,53 @@ const CLOSE = {
     env = makeEnv([err(404, "SESSION_NOT_FOUND", "시뮬레이션 세션을 찾을 수 없습니다.")]);
     await flush();
     out.init404 = snap(env);
+
+    // 채원(A)에게 한 1:1 말이 429 → 창을 닫고 지호(B) 창을 엶 → 다시 A 창 (#411 2차)
+    env = await boot(state(37)); openSeat(env);
+    await dmSubmit(env, TEXT, err(429, "RESOURCE_EXHAUSTED", __Q429__, RA));
+    CLOSE.button(env); env.seconds(1); openSeat(env, 1);
+    out.away_say = snap(env);
+    CLOSE.button(env); openSeat(env, 0);
+    out.away_back = snap(env);
+    env.seconds(29);
+    env.queue.push(turn(TEXT, 1, 38));
+    env.$("retryBtn").onclick(); await flush();
+    out.away_retry = snap(env);
+
+    // A 창에서 보낸 말을 기다리는 동안 B 창으로 옮겼고 그 요청이 429
+    env = await boot(); openSeat(env);
+    const pendingSay = deferred();
+    await dmSubmit(env, TEXT, pendingSay);
+    CLOSE.button(env); openSeat(env, 1);
+    pendingSay.settle(err(429, "RESOURCE_EXHAUSTED", __Q429__, RA)); await flush();
+    out.away_wait = snap(env);
+    // 그 B 창에서 빈 입력: 안내는 B 창 안에, 상자는 본 화면에 그대로
+    await dmSubmit(env, "   ");
+    out.away_blank = snap(env);
+
+    // 좌석의 A '다시 생성'이 429 → B 창을 엶 → 다시 A 창
+    const st = state();
+    st.utterances[1] = { ...st.utterances[1], content: "", structured: null, failed: true };
+    env = await boot(st);
+    const findBtn = n => n.tag === "button" ? n : (n.children || []).map(findBtn).find(Boolean);
+    env.queue.push(err(503, "MODEL_OVERLOADED", __Q503__, RA));
+    findBtn(env.$("seats").children[0]).dispatch("click"); await flush();
+    openSeat(env, 1);
+    out.away_regen = snap(env);
+    CLOSE.button(env); openSeat(env, 0);
+    out.away_regen_back = snap(env);
+
+    // 모두를 기다린 요청(장면 넘기기)이 503 → 어느 창이든 창 안
+    env = await boot();
+    env.queue.push(err(503, "MODEL_OVERLOADED", __Q503__, RA));
+    env.$("skipBtn").dispatch("click"); await flush();
+    openSeat(env, 1);
+    out.skip503_open = snap(env);
+
+    // 상자는 자리가 바뀔 때만 옮긴다: 창 안에 보이는 동안 다시 그려도 끼워 넣지 않는다
+    const moves = env.moves;
+    await dmSubmit(env, "   "); await dmSubmit(env, "   ");
+    out.moves = { ...snap(env), again: env.moves - moves };
 
     console.log(JSON.stringify(out));
 })().catch(e => { console.error(e); process.exit(1); });
@@ -374,14 +423,74 @@ def test_init_get_failure_writes_main_status(out):
 @_node
 def test_one_filled_line_and_feed_at_bottom_in_every_state(out):
     for name, s in out.items():
-        if s["dmTurnNote"]:
-            assert not (s["simStatus"] or s["turnNote"]), name
         if s["open"]:
-            assert "@tForm" not in s["box"], name
+            assert not s["turnNote"], name
             # 안내 줄이나 상자가 생겨 대화 영역이 줄어도 마지막 말풍선이 보인다
             assert s["atBottom"], name
+            if name in AWAY:
+                # 다른 학생 몫의 재시도 오류는 창 안 줄에 들지 않는다
+                assert s["dmTurnNote"] not in (Q429, Q503), name
+                assert "@dmForm" not in s["box"], name
+            else:
+                assert not s["simStatus"] and "@tForm" not in s["box"], name
         else:
             assert not s["dmTurnNote"] and "@dmForm" not in s["box"], name
+
+
+AWAY = {"away_say", "away_wait", "away_blank", "away_regen"}
+
+
+@_node
+def test_other_students_retry_stays_on_main_page(out):
+    s = out["away_say"]
+    assert (s["simStatus"], s["dmTurnNote"]) == (Q429, "남은 발화 3회")
+    assert s["box"] == "다시 시도 (29초) off @tForm"
+    s = out["away_wait"]
+    assert (s["simStatus"], s["dmTurnNote"]) == (Q429, "")
+    assert s["box"] == "다시 시도 (30초) off @tForm"
+
+
+@_node
+def test_back_in_targets_window_retry_resends_original(out):
+    s = out["away_back"]
+    assert (s["simStatus"], s["dmTurnNote"]) == ("", Q429)
+    # 초 세기는 A → B → A를 거쳐도 이어진다
+    assert s["box"] == "다시 시도 (29초) off @dmForm px-3"
+    s = out["away_retry"]
+    body = {"content": "채원아, 다시 말해 볼래?", "target_persona_id": 1}
+    assert s["bodies"] == [body, body]
+    assert s["box"] == "hidden" and s["dmTurnNote"] == "남은 발화 2회"
+
+
+@_node
+def test_blank_input_in_other_window_still_shows_inside(out):
+    s = out["away_blank"]
+    assert (s["dmTurnNote"], s["simStatus"]) == (EMPTY, "")
+    assert s["box"] == "다시 시도 (30초) off @tForm" and s["dmInput"] == "   "
+
+
+@_node
+def test_regenerate_retry_for_one_student_stays_on_main_page(out):
+    s = out["away_regen"]
+    assert (s["simStatus"], s["dmTurnNote"]) == (Q503, "")
+    assert s["box"] == "다시 시도 (30초) off @tForm"
+    assert s["POST"] == ["regenerate"]
+    s = out["away_regen_back"]
+    assert (s["simStatus"], s["dmTurnNote"]) == ("", Q503)
+    assert s["box"] == "다시 시도 (30초) off @dmForm px-3"
+
+
+@_node
+def test_retry_box_is_not_reinserted_on_redraw(out):
+    assert out["moves"]["again"] == 0
+
+
+@_node
+def test_retry_for_everyone_comes_into_any_window(out):
+    s = out["skip503_open"]
+    assert (s["simStatus"], s["dmTurnNote"]) == ("", Q503)
+    assert s["box"] == "다시 시도 (30초) off @dmForm px-3"
+    assert s["POST"] == ["advance"]
 
 
 def test_template_keeps_single_retry_box_before_tform():
@@ -395,6 +504,11 @@ def test_template_keeps_single_retry_box_before_tform():
         ' justify-end" role="alert">' in html
     )
     assert '<p id="simStatus" class="note mt-3" role="status"></p>' in html
+    # 좁은 화면에서 문장이 낱말 중간에서 끊기지 않게 한다 (#411)
+    assert (
+        '<span class="note break-keep">학생 반응을 받지 못했습니다.</span>'
+        in html
+    )
     assert (
         '<button type="button" id="retryBtn" class="text-sm font-semibold px-4 py-2'
         " rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-gray-400"

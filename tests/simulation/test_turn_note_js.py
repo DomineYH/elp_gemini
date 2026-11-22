@@ -28,8 +28,9 @@ const $ = id => els[id] ??= mk();
 const tInput = $("tInput"), dmInput = $("dmInput");
 // 오류 문구 줄과 재시도 상자 옮기기 (#411)
 const status = $("simStatus");
-let statusText = "";
+let statusText = "", retryText = "";
 function placeRetry() {}
+function retryElsewhere() { return false; }
 const dmSubmit = mk();
 const dmModal = { querySelector: () => dmSubmit, classList: { add() {}, remove() {} }, contains: () => false };
 var document = { activeElement: null, body: null };

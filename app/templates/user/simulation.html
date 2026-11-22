@@ -91,7 +91,7 @@
 <div class="fixed left-0 right-0 z-40" style="bottom:0;padding:0 max(16px,env(safe-area-inset-left,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-right,0px))">
     <div id="retryBox" class="hidden container mx-auto max-w-3xl mb-2 flex justify-end" role="alert">
         <div class="flex items-center gap-2 bg-white border rounded-xl shadow-lg px-3 py-2">
-            <span class="note">학생 반응을 받지 못했습니다.</span>
+            <span class="note break-keep">학생 반응을 받지 못했습니다.</span>
             <button type="button" id="retryBtn" class="text-sm font-semibold px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white shrink-0">다시 시도</button>
         </div>
     </div>
@@ -131,11 +131,21 @@
         statusText = text;
         syncControls();
     }
+    // 재시도 상자가 기다리는 학생들과 그 오류 문구. 새 요청이 시작되면 지운다 (#411)
+    let retryFor = null;
+    let retryText = "";
+    // 다른 한 학생에게 보낸 말의 재시도는 그 학생 창이 아니면 본 화면에 둔다. 이 학생에게 다시 보내는 것으로 보이지 않게 한다 (#411)
+    function retryElsewhere() {
+        return !!dmPersona && !!retryFor && retryFor.size === 1 && !retryFor.has(dmPersona.id);
+    }
     // 재시도 상자는 1:1 창이 열려 있으면 창 안 입력줄 위로 옮긴다. 창 뒤에 가려지지 않게 한다 (#411)
     function placeRetry() {
         const box = $("retryBox");
-        (dmPersona ? $("dmForm") : $("tForm")).before(box);
-        box.classList.toggle("px-3", !!dmPersona);
+        const inside = !!dmPersona && !retryElsewhere();
+        const form = inside ? $("dmForm") : $("tForm");
+        // 그릴 때마다 불리므로 자리가 바뀔 때만 옮긴다. 보이는 알림을 다시 끼워 넣지 않게 한다 (#411)
+        if (box.nextElementSibling !== form) form.before(box);
+        box.classList.toggle("px-3", inside);
     }
 
     function el(tag, className, text) {
@@ -255,7 +265,6 @@
         if (state.session.status !== "running") return;
         dmPersona = p;
         dmModal.classList.remove("hidden");
-        placeRetry();
         render(new Set());
         setTimeout(() => dmInput.focus(), 50);
     }
@@ -263,7 +272,6 @@
     function closeDM() {
         dmPersona = null;
         dmModal.classList.add("hidden");
-        placeRetry();
         syncControls();
         // 숨긴 창 안의 포커스는 다음 렌더링 때에야 body로 가므로 먼저 내려놓고 전체 입력창으로 돌려준다 (#314).
         if (dmModal.contains(document.activeElement)) document.activeElement.blur();
@@ -351,10 +359,12 @@
             left <= 0 ? "상한에 도달했습니다. 수업을 종료하고 피드백을 받으세요." :
             left <= 5 ? "남은 발화 " + left + "회" : "";
         // 1:1 창이 열려 있으면 창 안의 줄에만 쓴다. 두 줄이 같은 글을 함께 읽히지 않게 한다 (#408)
-        // 오류 문구도 같다. 창 안에서는 오류가 남은 횟수 안내보다 먼저다 (#411)
-        status.textContent = dmPersona ? "" : statusText;
+        // 오류 문구도 같다. 창 안에서는 오류가 남은 횟수 안내보다 먼저다. 다른 학생 몫의 재시도 오류는 상자와 함께 본 화면에 (#411)
+        const away = retryElsewhere() && statusText === retryText;
+        status.textContent = dmPersona && !away ? "" : statusText;
         $("turnNote").textContent = dmPersona ? "" : note;
-        $("dmTurnNote").textContent = dmPersona ? statusText || note : "";
+        $("dmTurnNote").textContent = dmPersona ? (away ? "" : statusText) || note : "";
+        placeRetry();
         // 안내가 생기면 대화 영역이 줄어 마지막 말풍선이 가려지므로 다시 바닥에 붙인다 (#408)
         if (dmPersona) $("dmFeed").scrollTop = $("dmFeed").scrollHeight;
         $("skipBtn").disabled = !canAct;
@@ -499,6 +509,7 @@
 
     async function run(pending, action) {
         busy = true;
+        retryFor = null;
         showStatus("");
         hideRetry();
         render(pending);
@@ -507,6 +518,8 @@
         } catch (err) {
             showStatus(err.message);
             if (err.retryAfter !== undefined) {
+                retryFor = pending;
+                retryText = err.message;
                 showRetry(() => run(pending, action), err.retryAfter);
             }
         } finally {
