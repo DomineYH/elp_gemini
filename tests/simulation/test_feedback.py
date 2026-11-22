@@ -11,6 +11,7 @@ from app.models.simulation_session import SimulationSession
 from app.models.simulation_utterance import SimulationUtterance
 from app.services.simulation import feedback, gemini
 from app.services.simulation.llm_schemas import (
+    IndividualSupport,
     StudentReaction,
     UtteranceSuggestion,
 )
@@ -94,6 +95,7 @@ def test_finished_session_feedback_is_generated_once_then_cached(
         "utterance_suggestions",
         "progress_directions",
         "change_directions",
+        "individual_supports",
     }
     assert fake_gemini.count("feedback") == 1
 
@@ -333,8 +335,11 @@ def test_transcript_and_feedback_pages_render(ready):
     assert "인쇄 / PDF 저장" in r.text
     assert "보고서 Markdown 저장" not in r.text
     assert feedback.DISCLAIMER in r.text
-    # 위험 시나리오 아래 1번, ①②③ 탭 본문 위 1번
+    # 위험 시나리오 아래 1번, ①–④ 탭 본문 위 1번
     assert r.text.count(feedback.SECTION_NOTE) == 2
+    assert "④ 개별 지원" in r.text
+    # 키가 없는 옛 feedback_json에서도 스크립트가 멈추지 않는다 (#395)
+    assert "fb.individual_supports || []" in r.text
 
 
 SURVEY_URL = "https://docs.google.com/forms/d/e/1FAIpQLSfXwRv2PdV4izYZGdJADiRUWdopZPbW0gXlESBATjqx9ZnBmg/viewform?usp=publish-editor"
@@ -494,6 +499,96 @@ def test_phase_idx_out_of_range_is_clamped_without_seq(ready, fake_gemini):
     r = ready.post(_api(sid, "/feedback"))
     assert r.status_code == 200
     assert r.json()["feedback"]["utterance_suggestions"][0]["phase_idx"] == 1
+
+
+def _finished_with_one_on_one(client):
+    """_finished와 같되 장면 0에서 첫 학생에게 1:1 발화를 한 번 더 한다."""
+    sid = _create(client)
+    assert (
+        client.post(_api(sid, "/say"), json={"content": "질문"}).status_code
+        == 200
+    )
+    target = client.get(_api(sid)).json()["personas"][0]
+    r = client.post(
+        _api(sid, "/say"),
+        json={"content": "너는?", "target_persona_id": target["id"]},
+    )
+    assert r.status_code == 200
+    r = client.post(_api(sid, "/advance"), json={"mode": "skip"})
+    assert r.status_code == 200
+    assert client.post(_api(sid, "/phases/1/enter")).status_code == 200
+    assert client.post(_api(sid, "/finish")).status_code == 200
+    return sid, target
+
+
+def _support_seq(client, sid, content):
+    state = client.get(_api(sid)).json()
+    [seq] = [
+        u["seq"]
+        for u in state["utterances"]
+        if u["speaker_type"] == "teacher" and u["content"] == content
+    ]
+    return seq
+
+
+def _support(fake_gemini, teacher_seq, phase_idx=5, persona="다른이름"):
+    base = fake_gemini.results["feedback"]
+    fake_gemini.results["feedback"] = base.model_copy(
+        update={
+            "individual_supports": [
+                IndividualSupport(
+                    persona=persona,
+                    phase_idx=phase_idx,
+                    teacher_seq=teacher_seq,
+                    what_worked="말이 길어졌다",
+                    plan_suggestion="활동1에 개별 확인 발문을 둔다",
+                )
+            ]
+        }
+    )
+
+
+def test_individual_support_is_filled_from_one_on_one_line(
+    ready, fake_gemini, sim_db
+):
+    """학생·장면·인용은 teacher_seq가 가리키는 1:1 발화에서 채운다 (#395)."""
+    sid, target = _finished_with_one_on_one(ready)
+    _support(fake_gemini, _support_seq(ready, sid, "너는?"))
+
+    r = ready.post(_api(sid, "/feedback"))
+    assert r.status_code == 200
+    [got] = r.json()["feedback"]["individual_supports"]
+    assert got["phase_idx"] == 0
+    assert got["persona"] == target["display_name"]
+    assert got["actual"] == "너는?"
+    md = _saved_report(sim_db, sid)
+    assert f"### 도입 · {target['display_name']}" in md
+    assert "- 1:1 발화: 너는?" in md
+    assert "다른이름" not in md
+
+
+@pytest.mark.parametrize("seq", [None, 9999, "whole_class"])
+def test_individual_support_without_one_on_one_line_is_dropped(
+    ready, fake_gemini, seq
+):
+    sid, _ = _finished_with_one_on_one(ready)
+    if seq == "whole_class":
+        seq = _support_seq(ready, sid, "질문")
+    _support(fake_gemini, seq)
+
+    r = ready.post(_api(sid, "/feedback"))
+    assert r.status_code == 200
+    assert r.json()["feedback"]["individual_supports"] == []
+
+
+def test_session_without_one_on_one_has_no_supports(ready, fake_gemini, sim_db):
+    sid = _finished(ready)
+    _support(fake_gemini, _teacher_seq(ready, sid))
+
+    r = ready.post(_api(sid, "/feedback"))
+    assert r.status_code == 200
+    assert r.json()["feedback"]["individual_supports"] == []
+    assert feedback.NO_SUPPORTS in _saved_report(sim_db, sid)
 
 
 def test_feedback_input_numbers_teacher_lines(ready, fake_gemini, monkeypatch):

@@ -169,6 +169,8 @@ def test_page_has_feedback_section_and_download_link(client, as_user, admin):
     assert "Markdown 다운로드" in r.text
     assert "/download" in r.text
     assert "피드백 없음" in r.text
+    # 키가 없는 옛 feedback_json에서도 상세 패널이 열린다 (#395)
+    assert "fb.individual_supports || []" in r.text
 
 
 def _rename_upload(sim_db, sid, original, filename=None):

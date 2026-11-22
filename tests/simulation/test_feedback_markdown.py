@@ -86,10 +86,37 @@ def test_emoji_in_model_text_is_stripped_and_guard_passes():
     assert _emoji_guard()._scan_full(md.splitlines()) == []
 
 
+def test_individual_support_section_lists_each_item():
+    envelope = _envelope()
+    envelope["feedback"]["individual_supports"] = [
+        {
+            "persona": "건우",
+            "phase_idx": 1,
+            "teacher_seq": 17,
+            "actual": "건우야, 이 그림을 다시 볼래?",
+            "what_worked": "짧게 답하던 건우가 이유를 말했다 \U0001f44d",
+            "plan_suggestion": "활동1에 그림 다시 보기 발문을 넣는다.",
+        }
+    ]
+    md = feedback.render_markdown(
+        envelope, SESSION, phase_names=["도입", "활동1"]
+    )
+    assert "### 활동1 · 건우" in md
+    assert "- 1:1 발화: 건우야, 이 그림을 다시 볼래?" in md
+    assert "- 학생 반응 변화: 짧게 답하던 건우가 이유를 말했다" in md
+    assert "- 지도안 반영: 활동1에 그림 다시 보기 발문을 넣는다." in md
+    assert "\U0001f44d" not in md
+    assert feedback.NO_SUPPORTS not in md
+    assert _emoji_guard()._scan_full(md.splitlines()) == []
+
+
 def test_every_section_starts_with_hypothesis_note():
     lines = feedback.render_markdown(_envelope(), SESSION).splitlines()
     sections = [i for i, line in enumerate(lines) if line.startswith("## ")]
-    assert len(sections) == 4
+    # _envelope()에는 individual_supports가 없다: 옛 feedback_json 사례 (#395)
+    assert len(sections) == 5
+    assert lines[sections[-1]] == "## ④ 개별 지원"
+    assert feedback.NO_SUPPORTS in lines
     for i in sections:
         following = next(line for line in lines[i + 1 :] if line.strip())
         assert following == feedback.SECTION_NOTE

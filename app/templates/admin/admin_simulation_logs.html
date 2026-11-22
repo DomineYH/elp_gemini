@@ -185,6 +185,11 @@ function renderFeedback(envelope, phaseNames) {
     const changes = el('ul', 'list-disc ml-5');
     for (const c of fb.change_directions) changes.appendChild(el('li', null, `[${c.kind}] ${c.content}`));
     section('③ 변경 방향').appendChild(changes);
+    const supports = el('ul', 'list-disc ml-5');
+    for (const s of fb.individual_supports || []) {
+        supports.appendChild(el('li', null, `[${phaseNames[s.phase_idx] ?? `장면 ${s.phase_idx + 1}`}] ${s.persona} — 1:1: ${s.actual} / 변화: ${s.what_worked} / 지도안: ${s.plan_suggestion}`));
+    }
+    section('④ 개별 지원').appendChild(supports);
 }
 
 document.getElementById('prevBtn').addEventListener('click', () => loadSessions(currentPage - 1));

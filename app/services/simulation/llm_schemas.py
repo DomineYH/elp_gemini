@@ -141,8 +141,18 @@ class ChangeDirection(BaseModel):
     content: str
 
 
+class IndividualSupport(BaseModel):
+    persona: str
+    phase_idx: int
+    # 근거가 된 1:1 교사 발화의 대화록 # 번호. 서버가 학생·장면·인용을 맞춘다.
+    teacher_seq: int | None = None
+    what_worked: str
+    plan_suggestion: str
+
+
 class FeedbackResult(BaseModel):
     risk_scenarios: list[RiskScenario]
     utterance_suggestions: list[UtteranceSuggestion]
     progress_directions: list[str]
     change_directions: list[ChangeDirection]
+    individual_supports: list[IndividualSupport]

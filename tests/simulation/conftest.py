@@ -228,6 +228,7 @@ def _default_results():
             change_directions=[
                 ChangeDirection(kind="발문", content="열린 발문")
             ],
+            individual_supports=[],
         ),
     }
 

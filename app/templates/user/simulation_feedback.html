@@ -31,6 +31,7 @@
             <button type="button" role="tab" class="fbtab px-4 py-3 font-medium border-b-2 whitespace-nowrap" data-fb="f1">① 교사 발화 추천</button>
             <button type="button" role="tab" class="fbtab px-4 py-3 font-medium border-b-2 whitespace-nowrap" data-fb="f2">② 진행 방향</button>
             <button type="button" role="tab" class="fbtab px-4 py-3 font-medium border-b-2 whitespace-nowrap" data-fb="f3">③ 변경 방향</button>
+            <button type="button" role="tab" class="fbtab px-4 py-3 font-medium border-b-2 whitespace-nowrap" data-fb="f4">④ 개별 지원</button>
         </div>
         <div class="p-5 text-sm">
             <p class="note mb-3">{{ section_note }}</p>
@@ -40,6 +41,8 @@
             <ul id="f2" class="fbpanel list-disc ml-5 space-y-1" role="tabpanel"></ul>
             <h3 class="print-only font-semibold mt-5 mb-2">③ 변경 방향</h3>
             <ol id="f3" class="fbpanel list-decimal ml-5 space-y-1" role="tabpanel"></ol>
+            <h3 class="print-only font-semibold mt-5 mb-2">④ 개별 지원</h3>
+            <div id="f4" class="fbpanel space-y-3" role="tabpanel"></div>
         </div>
         <div class="border-t p-4 flex flex-wrap justify-between gap-2 text-sm no-print">
             <button type="button" id="printBtn" class="px-4 py-2 rounded-lg border">인쇄 / PDF 저장</button>
@@ -169,6 +172,22 @@
             li.append(el("b", "", c.kind), " " + c.content);
             return li;
         }));
+
+        const f4 = $("f4");
+        f4.replaceChildren();
+        const supports = fb.individual_supports || [];
+        for (const s of supports) {
+            const phase = (phases[s.phase_idx] || {}).name || "장면 " + (s.phase_idx + 1);
+            const actual = el("div", "rounded-lg bg-gray-50 p-3");
+            actual.append(el("p", "eyebrow", phase + " · " + s.persona + " · 1:1 발화"), el("p", "mt-1", s.actual));
+            const worked = el("div", "rounded-lg p-3");
+            worked.style.background = "var(--teacher-soft)";
+            worked.append(el("p", "eyebrow", "학생 반응 변화"), el("p", "mt-1", s.what_worked), el("p", "note mt-2", "지도안 반영: " + s.plan_suggestion));
+            const row = el("div", "grid md:grid-cols-2 gap-3");
+            row.append(actual, worked);
+            f4.append(row);
+        }
+        if (!supports.length) f4.append(el("p", "note", "이 피드백에는 개별 지원 항목이 없습니다."));
 
         $("fbStatusBox").classList.add("hidden");
         $("fbBody").classList.remove("hidden");
