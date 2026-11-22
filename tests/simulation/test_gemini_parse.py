@@ -11,7 +11,11 @@ import pytest
 from app.config import settings
 from app.services.simulation import gemini
 from app.services.simulation.gemini import parse_structured
-from app.services.simulation.llm_schemas import StudentReaction
+from app.services.simulation.llm_schemas import (
+    FeedbackResult,
+    FeedbackResultWithSupports,
+    StudentReaction,
+)
 
 GOOD = (
     '{"action": "손을 든다", "utterance": "저요!", "artifact": "",'
@@ -536,6 +540,14 @@ def test_kana_validator_keeps_response_schema(field):
         "title": field.capitalize(),
         "type": "string",
     }
+
+
+def test_feedback_with_supports_schema_requires_one_support():
+    props = FeedbackResultWithSupports.model_json_schema()["properties"]
+    assert props["individual_supports"]["minItems"] == 1
+    assert list(FeedbackResultWithSupports.model_fields) == list(
+        FeedbackResult.model_fields
+    )
 
 
 @pytest.mark.parametrize(

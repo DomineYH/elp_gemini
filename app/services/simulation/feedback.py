@@ -4,6 +4,7 @@
 생성은 세션당 한 번. feedback_json이 있으면 Gemini를 부르지 않는다.
 """
 
+import dataclasses
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,7 +21,10 @@ from app.services.simulation import (
     session_service,
 )
 from app.services.simulation.errors import SimulationError
-from app.services.simulation.llm_schemas import FeedbackResult
+from app.services.simulation.llm_schemas import (
+    FeedbackResult,
+    FeedbackResultWithSupports,
+)
 from app.utils.text_sanitizer import strip_emojis
 
 REPORTS_DIR = "app/static/reports"
@@ -232,16 +236,29 @@ def render_markdown(
 async def call_model(db: AsyncSession, session: SimulationSession, system: str):
     """피드백 1회 호출(저장 없음). 파싱 실패 → FEEDBACK_PARSE_FAILED."""
     user = await build_inputs(db, session)
+    # 1:1 교사 발화가 있으면 ④를 비우지 못하는 스키마를 쓴다. 기준은 _quote_actual과 같다 (#406)
+    names = {p.id for p in await session_service._personas(db, session.id)}
+    one_on_one = any(
+        u.speaker_type == "teacher" and u.target_persona_id in names
+        for u in await session_service._utterances(db, session.id)
+    )
     [result] = await gemini.call_many(
         [
             {
                 "kind": "feedback",
                 "system": system,
                 "user": user,
-                "schema": FeedbackResult,
+                "schema": (
+                    FeedbackResultWithSupports if one_on_one else FeedbackResult
+                ),
             }
         ]
     )
+    if result.parsed is None:
+        # minItems를 지키지 않는 모델이면 예전처럼 빈 ④로 받는다(502로 만들지 않는다)
+        result = dataclasses.replace(
+            result, parsed=gemini.parse_structured(FeedbackResult, result.text)
+        )
     if result.parsed is None:
         raise SimulationError("FEEDBACK_PARSE_FAILED")
     return result

@@ -1,5 +1,6 @@
 """대화록·시뮬레이션 피드백 생성·캐시·다운로드 (#156)."""
 
+import dataclasses
 import json
 import sqlite3
 from pathlib import Path
@@ -11,6 +12,8 @@ from app.models.simulation_session import SimulationSession
 from app.models.simulation_utterance import SimulationUtterance
 from app.services.simulation import feedback, gemini
 from app.services.simulation.llm_schemas import (
+    FeedbackResult,
+    FeedbackResultWithSupports,
     IndividualSupport,
     StudentReaction,
     UtteranceSuggestion,
@@ -584,6 +587,51 @@ def test_individual_support_without_one_on_one_line_is_dropped(
 def test_session_without_one_on_one_has_no_supports(ready, fake_gemini, sim_db):
     sid = _finished(ready)
     _support(fake_gemini, _teacher_seq(ready, sid))
+
+    r = ready.post(_api(sid, "/feedback"))
+    assert r.status_code == 200
+    assert r.json()["feedback"]["individual_supports"] == []
+    assert feedback.NO_SUPPORTS in _saved_report(sim_db, sid)
+
+
+def test_one_on_one_session_requires_supports_in_schema(ready, fake_gemini):
+    """1:1 교사 발화가 있으면 ④를 비우지 못하는 스키마로 부른다 (#406)."""
+    sid, _ = _finished_with_one_on_one(ready)
+
+    assert ready.post(_api(sid, "/feedback")).status_code == 200
+    assert fake_gemini.schemas[-1] is FeedbackResultWithSupports
+
+
+def test_whole_class_only_session_keeps_plain_schema(ready, fake_gemini):
+    """학생 이름을 부른 전체 발화는 1:1로 세지 않는다 (#406)."""
+    sid = _create(ready)
+    name = ready.get(_api(sid)).json()["personas"][0]["display_name"]
+    r = ready.post(_api(sid, "/say"), json={"content": f"{name}, 네 차례예요"})
+    assert r.status_code == 200
+    assert (
+        ready.post(_api(sid, "/advance"), json={"mode": "skip"}).status_code
+        == 200
+    )
+    assert ready.post(_api(sid, "/phases/1/enter")).status_code == 200
+    assert ready.post(_api(sid, "/finish")).status_code == 200
+
+    assert ready.post(_api(sid, "/feedback")).status_code == 200
+    assert fake_gemini.schemas[-1] is FeedbackResult
+
+
+def test_empty_supports_from_model_falls_back_to_plain_parse(
+    ready, fake_gemini, monkeypatch, sim_db
+):
+    """모델이 minItems를 어겨 빈 ④를 내면 502가 아니라 빈 ④로 받는다 (#406)."""
+    sid, _ = _finished_with_one_on_one(ready)
+
+    def strict(kind, **kw):
+        result = fake_gemini(kind, **kw)
+        if kind == "feedback":
+            result = dataclasses.replace(result, parsed=None)
+        return result
+
+    monkeypatch.setattr(gemini, "call_structured", strict)
 
     r = ready.post(_api(sid, "/feedback"))
     assert r.status_code == 200
