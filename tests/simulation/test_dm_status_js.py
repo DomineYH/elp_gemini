@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 TEMPLATE = Path("app/templates/user/simulation.html")
+CSS = Path("app/static/css/tailwind.css")
 LIMIT = "상한에 도달했습니다. 수업을 종료하고 피드백을 받으세요."
 Q429 = "AI 사용량이 잠시 한도에 도달했습니다. 잠시 후 다시 시도해 주세요."
 Q503 = "AI 모델이 혼잡합니다. 잠시 후 다시 시도해 주세요."
@@ -27,7 +28,7 @@ const PAGE = __PAGE__, SEED = __SEED__;
 const flush = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setImmediate(r)); };
 
 function makeEnv(queue) {  // 스크립트가 실행되자마자 init()이 GET을 보내므로 응답을 먼저 넣는다
-    const env = { calls: [], queue, intervals: new Map(), nextTimer: 1, moves: 0 };
+    const env = { calls: [], queue, intervals: new Map(), nextTimer: 1, moves: 0, log: [] };
     const els = {};
     const mk = (id, tag) => {
         const cls = new Set();
@@ -40,12 +41,18 @@ function makeEnv(queue) {  // 스크립트가 실행되자마자 init()이 GET�
                 toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)),
             },
             get textContent() { return text + e.children.map(c => c.textContent).join(""); },
-            set textContent(v) { text = String(v); e.children = []; },
+            set textContent(v) {
+                text = String(v); e.children = [];
+                if (id === "dmTurnNote") env.log.push("note:" + text);
+            },
             setAttribute() {},
             append(...n) { e.children.push(...n.map(wrap)); },
             prepend(...n) { e.children.unshift(...n.map(wrap)); },
             replaceChildren(...n) { text = ""; e.children = n.map(wrap); },
-            before(node) { node.beforeId = e.id; env.moves++; },
+            before(node) {
+                node.beforeId = e.id; env.moves++;
+                env.log.push("move:" + e.id + (node.classList.contains("hidden") ? ":hidden" : ":shown"));
+            },
             get nextElementSibling() { return e.beforeId ? els[e.beforeId] : null; },
             addEventListener(t, f) { (e.listeners[t] ??= []).push(f); },
             dispatch(t, ev = {}) {
@@ -68,6 +75,8 @@ function makeEnv(queue) {  // 스크립트가 실행되자마자 init()이 GET�
     }
     els.dmSubmit = mk("dmSubmit");  // 1:1 제출 버튼은 id가 없다
     els.retryBox.beforeId = "tForm";
+    // 1:1 창의 패널: 낮은 화면에서 내용이 넘치면 패널이 스크롤된다 (#411)
+    els.dmModal.firstElementChild = { scrollTop: 0, scrollHeight: 300 };
     // 안내 줄에 글이 들거나 상자가 창 안에 보이면 대화 영역이 줄어 바닥이 내려간 것과 같다
     Object.defineProperty(els.dmFeed, "scrollHeight", { get: () => 1000 + 40 * els.dmFeed.children.length +
         (els.dmTurnNote.textContent ? 19 : 0) +
@@ -140,6 +149,7 @@ function snap(env) {
             (box.classList.contains("px-3") ? " px-3" : ""),
         dmInput: $("dmInput").value,
         atBottom: feed.scrollTop === feed.scrollHeight,
+        panelAtBottom: $("dmModal").firstElementChild.scrollTop === $("dmModal").firstElementChild.scrollHeight,
         bodies: env.calls.filter(c => c.method === "POST").map(c => c.body ?? null),
         POST: env.calls.filter(c => c.method === "POST").map(c => c.url.split("/").pop() +
             (c.body && c.body.content ? ":" + c.body.content + "→" + c.body.target_persona_id : "")),
@@ -279,6 +289,18 @@ const CLOSE = {
     const moves = env.moves;
     await dmSubmit(env, "   "); await dmSubmit(env, "   ");
     out.moves = { ...snap(env), again: env.moves - moves };
+
+    // 중간 쓰기 순서: A 몫 429가 B 창에서 끝날 때, 그리고 B 창에서 새 요청이 시작될 때 (#411 3차)
+    env = await boot(); openSeat(env);
+    const slow = deferred();
+    await dmSubmit(env, TEXT, slow);
+    CLOSE.button(env); openSeat(env, 1);
+    env.log.length = 0;
+    slow.settle(err(429, "RESOURCE_EXHAUSTED", __Q429__, RA)); await flush();
+    out.order_fail = { ...snap(env), log: [...env.log] };
+    env.log.length = 0;
+    await dmSubmit(env, "지호야, 너는 어때?", turn("지호야, 너는 어때?", 2, 11));
+    out.order_next = { ...snap(env), log: [...env.log] };
 
     console.log(JSON.stringify(out));
 })().catch(e => { console.error(e); process.exit(1); });
@@ -437,7 +459,7 @@ def test_one_filled_line_and_feed_at_bottom_in_every_state(out):
             assert not s["dmTurnNote"] and "@dmForm" not in s["box"], name
 
 
-AWAY = {"away_say", "away_wait", "away_blank", "away_regen"}
+AWAY = {"away_say", "away_wait", "away_blank", "away_regen", "order_fail"}
 
 
 @_node
@@ -491,6 +513,51 @@ def test_retry_for_everyone_comes_into_any_window(out):
     assert (s["simStatus"], s["dmTurnNote"]) == ("", Q503)
     assert s["box"] == "다시 시도 (30초) off @dmForm px-3"
     assert s["POST"] == ["advance"]
+
+
+@_node
+def test_other_students_error_never_written_into_window(out):
+    log = out["order_fail"]["log"]
+    assert "note:" + Q429 not in log, log
+    assert "move:dmForm:shown" not in log, log
+    assert out["order_fail"]["box"] == "다시 시도 (30초) off @tForm"
+
+
+@_node
+def test_box_hidden_before_it_moves_into_window(out):
+    log = out["order_next"]["log"]
+    # 숨기기 전에 창 안으로 옮기면 보이는 알림이 창 안에 잠깐 나타난다
+    assert "move:dmForm:shown" not in log, log
+    assert "move:dmForm:hidden" in log, log
+    assert out["order_next"]["box"] == "hidden"
+
+
+@_node
+def test_open_window_panel_scrolled_to_form(out):
+    # 패널이 화면보다 높으면 입력줄이 보이는 바닥으로 내린다
+    for name, s in out.items():
+        if s["open"]:
+            assert s["panelAtBottom"], name
+
+
+def test_panel_scrolls_instead_of_clipping():
+    html = TEMPLATE.read_text(encoding="utf-8")
+    m = re.search(
+        r'<div id="dmModal".*?\n\s*<div class="([^"]*)" role="dialog"',
+        html,
+        re.S,
+    )
+    assert m, "1:1 창 패널을 찾지 못함"
+    classes = m.group(1).split()
+    assert "overflow-y-auto" in classes and "overflow-hidden" not in classes
+    assert {"max-h-[85vh]", "rounded-2xl", "flex", "flex-col"} <= set(classes)
+    assert ".overflow-y-auto{overflow-y:auto}" in CSS.read_text(
+        encoding="utf-8"
+    )
+    assert (
+        "if (dmPersona) dmModal.firstElementChild.scrollTop ="
+        " dmModal.firstElementChild.scrollHeight;" in html
+    )
 
 
 def test_template_keeps_single_retry_box_before_tform():

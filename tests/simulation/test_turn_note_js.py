@@ -32,7 +32,8 @@ let statusText = "", retryText = "";
 function placeRetry() {}
 function retryElsewhere() { return false; }
 const dmSubmit = mk();
-const dmModal = { querySelector: () => dmSubmit, classList: { add() {}, remove() {} }, contains: () => false };
+const dmModal = { querySelector: () => dmSubmit, classList: { add() {}, remove() {} }, contains: () => false,
+    firstElementChild: { scrollTop: 0, scrollHeight: 0 } };
 var document = { activeElement: null, body: null };
 function refocus() {}
 function syncNextLabels() {}
