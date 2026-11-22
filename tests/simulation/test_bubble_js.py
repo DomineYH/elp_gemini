@@ -112,7 +112,7 @@ const UTTS = [T(1, null), S(2, 1, true), S(3, 2, false), T(4, 1), S(5, 1, true),
 """
 
 
-def _render_dm(stubs: str, report: str) -> object:
+def _render_dm(stubs: str, report: str, utts: str = "UTTS") -> object:
     src = TEMPLATE.read_text(encoding="utf-8")
     parts = [
         re.search(pat, src, re.S).group(0)
@@ -125,7 +125,7 @@ def _render_dm(stubs: str, report: str) -> object:
         _DM_STUBS
         + stubs
         + "\n".join(parts)
-        + "\nrenderDM(UTTS, new Set());\nconsole.log(JSON.stringify("
+        + f"\nrenderDM({utts}, new Set());\nconsole.log(JSON.stringify("
         + report
         + "));"
     )
@@ -164,3 +164,14 @@ def test_dm_failed_again_card_shows_count_and_button():
             ["button", "다시 생성"],
         ],
     ]
+
+
+def test_dm_no_regen_on_old_failed_row_after_valid_reaction():
+    # 실패 행 뒤에 정상 반응이 오면 옛 실패 카드에는 버튼이 없다(서버는 409) (#414)
+    calls = _render_dm(
+        "const calls = [];\n"
+        "function bubble(p, u, regen) { calls.push([u.id, !!regen]); return node('div'); }\n",
+        "calls",
+        "[T(1, 1), S(2, 1, true), T(3, 1), S(4, 1, false)]",
+    )
+    assert dict(calls)[2] is False
