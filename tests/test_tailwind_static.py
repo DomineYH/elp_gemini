@@ -74,6 +74,10 @@ def test_narrow_layout_classes_in_templates_and_css():
     tinput = _classes(sim[sim.index('id="tInput"') :])[0]
     assert {"w-full", "sm:w-auto", "sm:flex-1", "min-w-0"} <= tinput
     assert "flex-1" not in tinput
+    # 640px 미만은 두 줄 입력줄 + 재시도 카드가 마지막 기록을 가리지 않게 여백을 더 둔다
+    assert {"pb-40", "sm:pb-28"} <= _classes(
+        sim[sim.index("{% block content %}") :]
+    )[0]
 
     css = CSS_PATH.read_text(encoding="utf-8")
     for selector in (
@@ -83,7 +87,20 @@ def test_narrow_layout_classes_in_templates_and_css():
         ".gap-y-1",
         ".sm\\:w-auto",
         ".sm\\:flex-1",
+        ".pb-40",
+        ".sm\\:pb-28",
     ):
         assert (
             selector in css
         ), f"scripts/build_tailwind.sh 재실행 필요: {selector}"
+    sm_rules = "".join(
+        re.findall(
+            r"@media \(min-width:640px\)\{((?:[^{}]*\{[^{}]*\})*)\}", css
+        )
+    )
+    for rule in (
+        ".sm\\:w-auto{width:auto}",
+        ".sm\\:flex-1{flex:1 1 0%}",
+        ".sm\\:pb-28{padding-bottom:7rem}",
+    ):
+        assert rule in sm_rules, f"640px 미디어 쿼리 밖이거나 없음: {rule}"
