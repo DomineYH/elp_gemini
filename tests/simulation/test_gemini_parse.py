@@ -425,6 +425,84 @@ def test_artifact_validator_keeps_response_schema():
 
 
 @pytest.mark.parametrize(
+    "fields, expected",
+    [
+        (
+            {
+                "utterance": "엑셀로 データを… 아니, 엑셀로 필요한 데이터만 남기는 게 신기했어요."
+            },
+            {
+                "utterance": "엑셀로 … 아니, 엑셀로 필요한 데이터만 남기는 게 신기했어요."
+            },
+        ),
+        (
+            {
+                "utterance": "엑셀로 データを 정리하고 엔트리로 프로그램을 만든 게"
+                " 가장 기억에 남습니다."
+            },
+            {
+                "utterance": "엑셀로 정리하고 엔트리로 프로그램을 만든 게"
+                " 가장 기억에 남습니다."
+            },
+        ),
+        (
+            {"artifact": "선우_인구조사.xlsx (첫 행: 연도, 인구)"},
+            {"artifact": "선우_인구조사.xlsx (첫 행: 연도, 인구)"},
+        ),
+        (
+            {"utterance": "발 길이는 250mm이고 PC로 Padlet에 적었어요."},
+            {"utterance": "발 길이는 250mm이고 PC로 Padlet에 적었어요."},
+        ),
+        (
+            {"utterance": "민주(民主)라는 말이요."},
+            {"utterance": "민주(民主)라는 말이요."},
+        ),
+        ({"artifact": "발 길이・발 너비"}, {"artifact": "발 길이・발 너비"}),
+        (
+            {"utterance": "はい", "action": "손을 든다"},
+            {"utterance": "", "action": "손을 든다"},
+        ),
+        ({"action": "ノート에 적는다"}, {"action": "에 적는다"}),
+        (
+            {
+                "action": "ノート에 적는다",
+                "utterance": "データを 봤어요.",
+                "artifact": "ｶﾅ 3/4",
+                "misconception": "ヴォ 분모를 더함",
+            },
+            {
+                "action": "에 적는다",
+                "utterance": "봤어요.",
+                "artifact": "3/4",
+                "misconception": "분모를 더함",
+            },
+        ),
+    ],
+)
+def test_kana_is_stripped_from_reaction_text(fields, expected):
+    """가나는 대화록을 타고 옮으므로 지우되, 파싱은 실패시키지 않는다 (#387)."""
+    data = json.loads(GOOD) | fields
+    parsed = parse_structured(
+        StudentReaction, json.dumps(data, ensure_ascii=False)
+    )
+    assert parsed is not None
+    assert {k: getattr(parsed, k) for k in expected} == expected
+    if expected.get("utterance") == "":
+        # session_service가 저장하는 content: utterance가 비면 (action)
+        assert (parsed.utterance or f"({parsed.action})") == "(손을 든다)"
+
+
+@pytest.mark.parametrize(
+    "field", ["action", "utterance", "artifact", "misconception"]
+)
+def test_kana_validator_keeps_response_schema(field):
+    assert StudentReaction.model_json_schema()["properties"][field] == {
+        "title": field.capitalize(),
+        "type": "string",
+    }
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "not json",

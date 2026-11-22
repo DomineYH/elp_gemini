@@ -79,6 +79,7 @@ def stuck_only(utterance: str, artifact: str) -> bool:
 
 # 모델이 대화록 태그 '[선우의 산출물: …]'를 따라 값 앞에 붙인 접두어 (#350)
 _ARTIFACT_LABEL = re.compile(r"^\s*(?:\S+의\s*)?산출물\s*:\s*")
+_KANA = re.compile(r"[ぁ-ゖァ-ヺー-ヿㇰ-ㇿｦ-ﾟ]+\s*")
 
 
 class StudentReaction(BaseModel):
@@ -99,6 +100,12 @@ class StudentReaction(BaseModel):
     def _clamp(cls, v: int) -> int:
         # 범위 밖 값으로 반응 전체를 버리지 않는다
         return max(0, min(100, v))
+
+    @field_validator("action", "utterance", "artifact", "misconception")
+    @classmethod
+    def _strip_kana(cls, v: str) -> str:
+        # 가나는 대화록을 타고 다른 학생에게 옮으므로 저장 전에 지운다 (#387)
+        return _KANA.sub("", v)
 
     @field_validator("artifact")
     @classmethod
