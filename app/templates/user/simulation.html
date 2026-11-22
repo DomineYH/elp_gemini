@@ -5,7 +5,7 @@
 {% block head %}{% include "user/_sim_style.html" %}{% endblock %}
 
 {% block content %}
-<div class="pb-28">
+<div class="pb-40 sm:pb-28">
     <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
         <div class="min-w-0">
             <p class="eyebrow">2 / 4 · 수업 시뮬레이션</p>
@@ -94,11 +94,11 @@
             <button type="button" id="retryBtn" class="text-sm font-semibold px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white shrink-0">다시 시도</button>
         </div>
     </div>
-    <form id="tForm" class="container mx-auto max-w-3xl bg-white border rounded-2xl shadow-lg p-2 flex items-end gap-2">
+    <form id="tForm" class="container mx-auto max-w-3xl bg-white border rounded-2xl shadow-lg p-2 flex flex-wrap justify-end items-end gap-2">
         <span class="hidden sm:inline text-xs px-2 py-2 rounded-lg bg-gray-100 text-gray-600 shrink-0 whitespace-nowrap" title="학생 개인에게는 좌석을 클릭해 말하기">전체에게</span>
         <label for="tInput" class="sr-only">교사 발화</label>
         <textarea id="tInput" rows="1" maxlength="2000" placeholder="전체 학생에게 말하기" disabled
-            class="flex-1 min-w-0 resize-none px-3 py-2 text-sm focus:outline-none bg-white"></textarea>
+            class="w-full sm:w-auto sm:flex-1 min-w-0 resize-none px-3 py-2 text-sm focus:outline-none bg-white"></textarea>
         <button type="button" id="hintBtn" disabled
             class="text-xs px-3 py-2 rounded-lg border text-gray-600 hover:bg-gray-50 shrink-0" title="지도안 발문 불러오기">지도안 발문</button>
         <button type="submit" id="tSend" disabled

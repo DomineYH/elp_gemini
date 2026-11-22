@@ -18,9 +18,9 @@
 </head>
 <body class="bg-gray-50 min-h-screen">
     <!-- 네비게이션 -->
-    <nav class="bg-white shadow-sm">
+    <nav class="bg-white shadow-sm break-keep">
         <div
-            class="container mx-auto px-4 py-4 flex
+            class="container mx-auto px-4 py-4 flex flex-wrap gap-x-4 gap-y-2
             justify-between items-center"
         >
             <div class="flex items-center space-x-4">
@@ -32,7 +32,7 @@
                 </a>
             </div>
 
-            <div class="flex items-center space-x-4">
+            <div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 ml-auto whitespace-nowrap">
                 {% block nav_links %}
                 {% if request.session.get("user_id") %}
                 <!-- 로그인 후 -->
