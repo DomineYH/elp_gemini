@@ -249,12 +249,14 @@ class FakeGemini:
         self.timeout = set()
         self.transport = set()
         self.calls = []
+        self.schemas = []
 
     def count(self, kind=None):
         return sum(1 for k, _ in self.calls if kind is None or k == kind)
 
     def __call__(self, kind, *, system, user, schema, persona_key=None):
         self.calls.append((kind, persona_key))
+        self.schemas.append(schema)
         keys = {kind, persona_key}
         if keys & self.quota:
             raise GeminiQuotaExhausted("fake quota")

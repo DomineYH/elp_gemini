@@ -6,7 +6,13 @@
 import re
 from typing import Literal
 
-from pydantic import BaseModel, PrivateAttr, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    PrivateAttr,
+    field_validator,
+    model_validator,
+)
 
 
 class PhaseDraftItem(BaseModel):
@@ -168,3 +174,8 @@ class FeedbackResult(BaseModel):
     progress_directions: list[str]
     change_directions: list[ChangeDirection]
     individual_supports: list[IndividualSupport]
+
+
+class FeedbackResultWithSupports(FeedbackResult):
+    # 1:1 교사 발화가 있는 세션용: 모델이 ④를 빈 배열로 내지 못하게 한다 (#406)
+    individual_supports: list[IndividualSupport] = Field(min_length=1)
