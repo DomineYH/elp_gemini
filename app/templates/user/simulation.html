@@ -326,13 +326,16 @@
         const feed = $("dmFeed");
         feed.replaceChildren(el("p", "note text-center",
             currentPhase().name + " 장면 · " + p.display_name + josaWa(p.display_name) + "의 1:1 대화. 여기서 한 말과 반응은 교실 화면과 대화록에도 기록됩니다."));
-        seatUtterances(utts, p).forEach(u => {
+        const mine = seatUtterances(utts, p);
+        // 좌석과 같은 조건: 이 장면에서 이 학생의 마지막 반응이 실패 행일 때만 "다시 생성" (#414)
+        const last = mine.filter(u => u.speaker_type === "student").pop();
+        mine.forEach(u => {
             const row = el("div", "flex " + (u.speaker_type === "teacher" ? "justify-end" : "justify-start"));
             if (u.speaker_type === "teacher") {
                 const text = u.target_persona_id == null ? "(전체에게) " + u.content : u.content;
                 row.append(el("div", "bubble teacher in max-w-[85%]", text));
             } else {
-                const box = bubble(p, u);
+                const box = bubble(p, u, u === last);
                 box.classList.add("max-w-[85%]");
                 box.prepend(el("span", "name " + p.color_key + " text-xs font-semibold block mb-0.5", p.display_name));
                 row.append(box);
