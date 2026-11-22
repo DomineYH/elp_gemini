@@ -1622,6 +1622,181 @@ def test_vocative_ack_never_reaches_agree(ready, fake_gemini):
     assert turn["agreement"]["all_agreed"] is False
 
 
+# --- 빈 확인('이제 알겠지?') 뒤 반응은 내용·산출물과 무관하게 묶는다 (#410) ---
+
+CHECK = "이제 알겠지?"
+CHECK_SAID = "키랑 발 길이, 그리고 신발 치수만 남기고 지우면 되는 거네요."
+CHECK_RE = "네, 키랑 발 길이, 그리고 신발 치수만 남겨서 정리할게요."
+CHECK_ORDER = "네, 입력하고 처리하고 출력하는 순서대로 블록을 조립해 볼게요."
+CHECK_EXPLAIN = (
+    "발 길이와 그에 맞는 신발 사이즈를 짝지어서 함께 모아야 추천해 줄 수 있거든. "
+    "이제 알겠지?"
+)
+
+
+@pytest.mark.parametrize(
+    "content, expected",
+    [
+        ("이제 알겠지?", True),
+        ("채원아, 이제 알겠지?", True),
+        ("알겠니?", True),
+        ("이해됐어?", True),
+        ("여기까지 이해했지?", True),
+        ("잘했어! 이제 이해가 되니?", True),
+        ("이제 알겠지", True),
+        ("응, 좋아. 알겠죠?", True),
+        ("빈칸은 지워. 알겠지?", True),
+        ("그래, 바로 그거야! 이제 완전히 알겠지?", True),
+        ("응, 정확해! 이제 완전히 알겠지?", True),
+        ("응, 바로 그 순서야! 이제 알겠지?", True),
+        ("그럼 퍼센트포인트가 무슨 뜻인지 알겠어?", False),
+        ("서윤아, 그럼 퍼센트포인트가 무슨 뜻인지 알아?", False),
+        (CHECK_EXPLAIN, False),
+        ("이제 알겠지? 그럼 네 말로 설명해 볼래?", False),
+        ("왜 그런지 알겠지?", False),
+        ("됐지?", False),
+        ("준비 됐니?", False),
+        ("", False),
+    ],
+)
+def test_empty_check(content, expected):
+    assert session_service._empty_check(content) is expected
+
+
+def _after_check(
+    client,
+    fake_gemini,
+    content,
+    utterance=CHECK_RE,
+    understanding=35,
+    previous=20,
+    artifacts=("", ""),
+):
+    return _enter_then_say(
+        client,
+        fake_gemini,
+        _react(
+            utterance=CHECK_SAID, understanding=previous, artifact=artifacts[0]
+        ),
+        _react(
+            utterance=utterance,
+            understanding=understanding,
+            artifact=artifacts[1],
+        ),
+        content=content,
+    )
+
+
+@pytest.mark.parametrize(
+    "content, utterance, kw, expected",
+    [
+        (CHECK, CHECK_RE, {}, 20),
+        ("그래, 바로 그거야! 이제 완전히 알겠지?", CHECK_RE, {}, 20),
+        ("응, 바로 그 순서야! 이제 알겠지?", CHECK_ORDER, {}, 20),
+        ("채원아, 이제 알겠지?", CHECK_RE, {}, 20),
+        ("이해됐어?", CHECK_RE, {}, 20),
+        (
+            CHECK,
+            CHECK_RE,
+            {"artifacts": ("a 열을 삭제함", "a 불필요한 열을 삭제함")},
+            20,
+        ),
+        (CHECK, CHECK_RE, {"artifacts": ("", XLSX)}, 20),
+        (CHECK, "네, 무슨 말씀이신지 이해했어요.", {}, 20),
+        (CHECK, CHECK_RE, {"understanding": 10}, 10),
+        # 설명 뒤에 붙은 확인과 실제 물음은 묶지 않는다
+        (
+            CHECK_EXPLAIN,
+            "아, 발 길이랑 신발 사이즈를 짝지어야 하는 거군요.",
+            {},
+            35,
+        ),
+        (
+            "그럼 엑셀에서 어떤 열만 남기고 무엇을 지우는지 네 말로 설명해 볼래?",
+            CHECK_RE,
+            {},
+            35,
+        ),
+        ("이제 알겠지? 그럼 네 말로 설명해 볼래?", CHECK_RE, {}, 35),
+        ("왜 그런지 알겠지?", CHECK_RE, {}, 35),
+        ("준비 됐니?", CHECK_RE, {}, 35),
+        (REPEAT_ASK, CHECK_RE, {}, 35),
+    ],
+)
+def test_reaction_after_empty_check(
+    ready, fake_gemini, content, utterance, kw, expected
+):
+    _, turn = _after_check(ready, fake_gemini, content, utterance, **kw)
+    assert _stored(turn) == {expected}
+
+
+def test_pledge_after_empty_check_is_held_and_pledged(ready, fake_gemini):
+    _, turn = _after_check(ready, fake_gemini, CHECK, "네, 열심히 해 볼게요.")
+    assert _stored(turn) == {20}
+    assert _flags(turn) == {True}
+
+
+def test_first_reaction_after_empty_check_is_not_held(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    fake_gemini.parse_fail.add("student")
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(
+        utterance=CHECK_RE, understanding=35
+    )
+    turn = ready.post(_api(sid, "/say"), json={"content": CHECK}).json()
+    assert _stored(turn) == {35}
+
+
+def test_one_on_one_reaction_after_empty_check_is_held(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    target = state["personas"][0]
+    fake_gemini.results["student"] = _react(
+        utterance=CHECK_SAID, understanding=20
+    )
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.results["student"] = _react(
+        utterance=CHECK_RE, understanding=35
+    )
+    r = ready.post(
+        _api(sid, "/say"),
+        json={"content": CHECK, "target_persona_id": target["id"]},
+    )
+    assert _stored(r.json()) == {20}
+
+
+def test_regenerated_after_empty_check_is_held(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    fake_gemini.results["student"] = _react(
+        utterance=CHECK_SAID, understanding=20
+    )
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/say"), json={"content": CHECK})
+
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(
+        utterance=CHECK_RE, understanding=35
+    )
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [fixed] = r.json()["utterances"]
+    assert fixed["structured"]["understanding"] == 20
+
+
+def test_reaction_after_empty_check_never_reaches_agree(ready, fake_gemini):
+    _, turn = _after_check(
+        ready, fake_gemini, CHECK, understanding=90, previous=70
+    )
+    assert _stored(turn) == {70}
+    assert turn["agreement"]["all_agreed"] is False
+    assert turn["agreement"]["agreed_persona_ids"] == []
+
+
 # --- '모르겠어요'뿐인 반응은 닫힌 목록으로 이해도를 올리지 않는다 (#353) ---
 
 STUCK = "잘 모르겠어요."
