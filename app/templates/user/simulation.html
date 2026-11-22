@@ -184,7 +184,10 @@
         if (u.structured && u.structured.action) {
             box.append(el("p", "note mb-0.5", u.structured.action));
         }
-        box.append(el("p", "", u.content));
+        // 행동만 있으면 content는 "(행동)"이라 같은 문장이 두 번 보인다 (#392)
+        if (!(u.structured && u.structured.action && !u.structured.utterance)) {
+            box.append(el("p", "", u.content));
+        }
         return box;
     }
 

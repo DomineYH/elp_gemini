@@ -116,6 +116,12 @@ def test_five_phases_enter_say_agree_to_finished(ready, fake_gemini):
         (4, {"type": "end", "reason": "last_phase"}),
     ]
     assert [s for _, s in systems].count({"type": "agree_advance"}) == 5
+    # 마지막 장면 동의는 '다음 장면'이 아니라 '수업 마침' (#392)
+    assert [
+        u["content"]
+        for u in state["utterances"]
+        if u["structured"] == {"type": "agree_advance"}
+    ] == [f"장면{i}: 전원 동의로 다음 장면" for i in range(4)] + ["장면4: 전원 동의로 수업 마침"]
 
 
 def test_agree_with_one_not_ready_is_409_skip_passes(ready, fake_gemini):
