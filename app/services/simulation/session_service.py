@@ -442,6 +442,8 @@ _NUMBER = re.compile(
 )
 # 숫자 사이 천 단위 쉼표는 같은 값이다 ("1,000" = "1000")
 _THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
+# 같은 부호·연산의 다른 표기는 같은 기호다 ("−5" = "-5", "3×2" = "3*2")
+_SAME_SYMBOL = str.maketrans("−×÷", "-*/")
 _FILLER = re.compile(
     r"^(?:[\s,.…!?~]*(?:어+|저기|저|음+|네|아+|응)(?=[\s,.…!?~]|$))+"
 )
@@ -465,7 +467,10 @@ def _plain(text: str) -> str:
 
 
 def _numbers(utterance: str) -> list[str]:
-    return [t.strip() for t in _NUMBER.findall(_THOUSANDS.sub("", utterance))]
+    return [
+        t.strip().translate(_SAME_SYMBOL)
+        for t in _NUMBER.findall(_THOUSANDS.sub("", utterance))
+    ]
 
 
 def _core(utterance: str) -> str:

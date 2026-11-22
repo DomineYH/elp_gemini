@@ -1419,12 +1419,18 @@ def test_corrected_sign_with_new_artifact_rises(
 
 @pytest.mark.parametrize(
     "before, utterance",
-    [("1,000명이요", "1000명이요"), ("1234명이요", "1,234명이요")],
+    [
+        ("1,000명이요", "1000명이요"),
+        ("1234명이요", "1,234명이요"),
+        ("-5도요.", "−5도요."),
+        ("3*2요.", "3×2요."),
+        ("6/2요.", "6÷2요."),
+    ],
 )
 def test_thousands_separator_repeat_is_held(
     ready, fake_gemini, before, utterance
 ):
-    # 천 단위 쉼표만 다른 같은 수는 되풀이다
+    # 천 단위 쉼표나 부호·연산 표기만 다른 같은 수는 되풀이다 (#393)
     assert _repeat_after_20(ready, fake_gemini, utterance, before=before) == {
         20
     }
