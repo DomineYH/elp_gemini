@@ -477,6 +477,15 @@ def test_artifact_validator_keeps_response_schema():
                 "misconception": "분모를 더함",
             },
         ),
+        # 줄바꿈과 값 사이 공백은 남긴다
+        ({"artifact": "10です\n20"}, {"artifact": "10\n20"}),
+        ({"artifact": "10です 20"}, {"artifact": "10 20"}),
+        ({"utterance": "あ ァ ㇰ ｶﾞ 끝"}, {"utterance": "끝"}),
+        # 결합 탁점(U+3099)과 히라가나 반복 부호(U+309D)
+        (
+            {"utterance": "テ\u3099ータ를 くゝ 봤어요."},
+            {"utterance": "를 봤어요."},
+        ),
     ],
 )
 def test_kana_is_stripped_from_reaction_text(fields, expected):
@@ -490,6 +499,33 @@ def test_kana_is_stripped_from_reaction_text(fields, expected):
     if expected.get("utterance") == "":
         # session_service가 저장하는 content: utterance가 비면 (action)
         assert (parsed.utterance or f"({parsed.action})") == "(손을 든다)"
+    assert not any(
+        "\u3041" <= c <= "\u309f" for k in expected for c in getattr(parsed, k)
+    )
+
+
+@pytest.mark.parametrize(
+    "misconception, understanding, stored",
+    [
+        ("ぶんぼをたす", 79, ""),
+        ("ヴォ 분모를 더함", 79, "분모를 더함"),
+        ("", 90, ""),
+    ],
+)
+def test_kana_misconception_still_caps_understanding(
+    misconception, understanding, stored
+):
+    """상한과 다짐 판정은 가나를 지우기 전 오개념을 본다 (#387)."""
+    data = json.loads(GOOD) | {
+        "misconception": misconception,
+        "understanding": 90,
+    }
+    parsed = parse_structured(
+        StudentReaction, json.dumps(data, ensure_ascii=False)
+    )
+    assert parsed.understanding == understanding
+    assert parsed.misconception == stored
+    assert parsed._raw_misconception == misconception
 
 
 @pytest.mark.parametrize(
