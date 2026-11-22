@@ -16,6 +16,13 @@ _node = pytest.mark.skipif(shutil.which("node") is None, reason="node 필요")
 
 _STUBS = """
 const els = {};
+// 안내 줄에 글이 들어가면 대화 영역이 줄어 바닥이 내려간 것과 같다 (#408)
+const dmFeed = els.dmFeed = { scrollTop: 0, scrollHeight: 2000 };
+let noteText = "";
+els.dmTurnNote = {
+    get textContent() { return noteText; },
+    set textContent(v) { if (v && !noteText) dmFeed.scrollHeight += 19; noteText = v; },
+};
 const mk = () => ({ textContent: "", disabled: false, className: "", focus() {} });
 const $ = id => els[id] ??= mk();
 const tInput = $("tInput"), dmInput = $("dmInput");
@@ -32,6 +39,7 @@ function snap() {
     return {
         turnNote: $("turnNote").textContent, dmTurnNote: $("dmTurnNote").textContent,
         dmInput: dmInput.disabled, dmSubmit: dmSubmit.disabled,
+        feedTop: dmFeed.scrollTop, feedHeight: dmFeed.scrollHeight,
     };
 }
 """
@@ -99,6 +107,24 @@ def test_limit_with_window_open_disables_dm_input_and_submit():
     assert out["dmInput"] is True and out["dmSubmit"] is True
 
 
+@_node
+@pytest.mark.parametrize("left", [6, 5, 1, 0])
+def test_open_window_feed_stays_at_bottom_after_note(left):
+    out = _run("running", left, False, True)
+    assert out["feedTop"] == out["feedHeight"]
+
+
+@_node
+@pytest.mark.parametrize(
+    ("dm", "then"),
+    [(False, ""), (True, "dmFeed.scrollTop = 0; closeDM();")],
+    ids=["closed", "closeDM"],
+)
+def test_closed_window_leaves_feed_scroll_alone(dm, then):
+    out = _run("running", 0, False, dm, then)
+    assert out["feedTop"] == 0
+
+
 def _dm_modal() -> str:
     src = TEMPLATE.read_text(encoding="utf-8")
     start = src.index('<div id="dmModal"')
@@ -144,3 +170,9 @@ def test_dm_feed_min_height_yields_on_short_viewport():
     assert "min-h-[12rem]" not in m.group(0)
     assert 'style="min-height:min(12rem,25vh)"' in m.group(0)
     assert "flex-1" in m.group(0).split('class="')[1].split('"')[0].split()
+
+
+def test_dm_turn_note_wraps_between_words():
+    m = re.search(r'<p id="dmTurnNote" class="([^"]*)"', _dm_modal())
+    assert m and "break-keep" in m.group(1).split()
+    assert ".break-keep{word-break:keep-all}" in CSS.read_text(encoding="utf-8")

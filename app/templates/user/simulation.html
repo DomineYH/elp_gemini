@@ -77,7 +77,7 @@
             </div>
         </div>
         <div id="dmFeed" class="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50" style="min-height:min(12rem,25vh)"></div>
-        <p id="dmTurnNote" class="note text-center border-t px-3 pt-2 mb-1" role="status"></p>
+        <p id="dmTurnNote" class="note text-center break-keep border-t px-3 pt-2 mb-1" role="status"></p>
         <form id="dmForm" class="px-3 pb-3 flex items-end gap-2 bg-white">
             <label for="dmInput" class="sr-only">이 학생에게 말하기</label>
             <textarea id="dmInput" rows="1" maxlength="2000" placeholder="이 학생에게만 말하기"
@@ -335,6 +335,8 @@
         // 1:1 창이 열려 있으면 창 안의 줄에만 쓴다. 두 줄이 같은 글을 함께 읽히지 않게 한다 (#408)
         $("turnNote").textContent = dmPersona ? "" : note;
         $("dmTurnNote").textContent = dmPersona ? note : "";
+        // 안내가 생기면 대화 영역이 줄어 마지막 말풍선이 가려지므로 다시 바닥에 붙인다 (#408)
+        if (dmPersona) $("dmFeed").scrollTop = $("dmFeed").scrollHeight;
         $("skipBtn").disabled = !canAct;
         $("endBtn").disabled = !canAct;
         const all = canAct && entered && state.agreement.all_agreed;
