@@ -520,6 +520,24 @@ def _unquoted_echo(core: str, teacher: str) -> bool:
     )
 
 
+# 빈 확인: 짧은 앞말(칭찬·호명) + '알겠지?/이해됐어?'뿐인 교사 말. 닫힌 목록 (#410)
+_EMPTY_CHECK = re.compile(
+    r"(?:이제|인제|여기까지)?(?:는)?(?:좀|다|잘|완전히|확실히)?"
+    r"(?:알겠(?:지|니|죠|어|나요)"
+    r"|이해가?(?:했|됐|되었)(?:지|니|죠|어|나요)"
+    r"|이해가?(?:되|돼)(?:지|니|죠|나요)?)요?"
+)
+
+
+def _empty_check(teacher: str) -> bool:
+    parts = [p for p in map(_plain, re.split(r"[,.!?…~]+", teacher)) if p]
+    return (
+        bool(parts)
+        and bool(_EMPTY_CHECK.fullmatch(parts[-1]))
+        and len("".join(parts[:-1])) < ECHO_MIN_CORE
+    )
+
+
 def student_utterance(
     session_id: int,
     phase_idx: int,
@@ -596,9 +614,10 @@ def student_utterance(
                 (not artifact or artifact == previous_artifact.strip())
                 and (not core or core in _STUCK_ONLY_CORES)
             )
+            or _empty_check(teacher)
         ):
-            # 말로 한 맞장구·자기 직전 말 그대로인 반응은 산출물과 무관하게, 침묵·'모르겠어요'뿐인
-            # 반응은 새 산출물이 없을 때 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#352, #353, #393).
+            # 말로 한 맞장구·자기 직전 말 그대로·빈 확인 뒤 반응은 산출물과 무관하게, 침묵·'모르겠어요'뿐인
+            # 반응은 새 산출물이 없을 때 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#352, #353, #393, #410).
             structured["understanding"] = min(
                 structured["understanding"], previous
             )
