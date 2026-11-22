@@ -393,8 +393,11 @@ SAME_ARTIFACT_MAX_CORE = 10
 # 바꾸거나 낱말을 대부분 바꾼 따라 하기는 못 잡는다. 사례가 더 쌓이면 다시 본다
 UNQUOTED_ECHO_MIN_PIECE = 3
 UNQUOTED_ECHO_RATIO = 0.6
-# 군말을 뗀 core가 이것뿐이면 맞장구다 ("네, 알겠어요, 선생님." → "알겠어요선생님")
-_ACK = re.compile(r"(?:알겠(?:어요?|습니다)?)?(?:선생님|쌤)?")
+# 군말을 뗀 core가 이것뿐이면 맞장구다 ("네, 알겠어요, 선생님." → "알겠어요선생님",
+# "네, 맞아요." → "맞아", "네맞아요" → "네맞아"처럼 맞아·맞습니다 형태도 닫힌 목록으로 받는다, #393)
+_ACK = re.compile(
+    r"(?:네)?(?:알겠(?:어요?|습니다)?|맞아요?|맞습니다)?(?:선생님|쌤)?"
+)
 # '모르겠어요'뿐인 반응의 core. 낱말 규칙은 매번 샜으므로 재생에서 본 형태의 닫힌 목록만 쓴다 (#353, #357)
 _STUCK_ONLY_CORES = frozenset(
     {
@@ -569,18 +572,22 @@ def student_utterance(
             structured["understanding"] = min(
                 structured["understanding"], previous
             )
-        if (not artifact or artifact == previous_artifact.strip()) and (
-            not core
-            or _ACK.fullmatch(core)
-            or core in _STUCK_ONLY_CORES
+        if (
+            # 말로 한 맞장구와 자기 직전 말 그대로는 새 산출물이 붙어도 올리지 않는다 (#393)
+            (_ACK.fullmatch(core) and re.search(r"\w", structured["utterance"]))
             or (
-                core == _core(previous_utterance)
+                core
+                and core == _core(previous_utterance)
                 and _numbers(structured["utterance"])
                 == _numbers(previous_utterance)
             )
+            or (
+                (not artifact or artifact == previous_artifact.strip())
+                and (not core or core in _STUCK_ONLY_CORES)
+            )
         ):
-            # 새 산출물 없이 맞장구뿐(침묵 포함)·'모르겠어요'뿐·자기 직전 말 그대로인 반응은
-            # 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#352, #353).
+            # 말로 한 맞장구·자기 직전 말 그대로인 반응은 산출물과 무관하게, 침묵·'모르겠어요'뿐인
+            # 반응은 새 산출물이 없을 때 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#352, #353, #393).
             structured["understanding"] = min(
                 structured["understanding"], previous
             )

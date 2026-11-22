@@ -742,7 +742,9 @@ def test_rise_cap_applies_with_artifact(ready, fake_gemini):
         ready,
         fake_gemini,
         _react(understanding=30),
-        _react(understanding=85, artifact="행정구역 코드 삭제"),
+        _react(
+            utterance=STATEMENT, understanding=85, artifact="행정구역 코드 삭제"
+        ),
     )
     assert _stored(turn) == {50}
 
@@ -1262,7 +1264,7 @@ def test_own_repeat_length_boundary(ready, fake_gemini, utterance, expected):
 
 @pytest.mark.parametrize(
     "artifacts, expected",
-    [(("", XLSX), 35), (("a.xlsx", "b.xlsx"), 35), ((XLSX, XLSX), 20)],
+    [(("", XLSX), 20), (("a.xlsx", "b.xlsx"), 20), ((XLSX, XLSX), 20)],
 )
 def test_own_repeat_artifact(ready, fake_gemini, artifacts, expected):
     stored = _repeat_after_20(ready, fake_gemini, SAID, artifacts=artifacts)
@@ -1339,6 +1341,10 @@ STUCK12 = "얼마 차이나는지 잘 모르겠어요."  # core 12자: #319 같�
         "네, 알겠어요, 선생님.",
         "네 선생님",
         "알겠어요 쌤",
+        "네, 맞아요...",
+        "네맞아요",
+        "맞습니다, 선생님.",
+        "네, 맞아요, 선생님.",
     ],
 )
 def test_ack_only_reaction_is_held(ready, fake_gemini, utterance):
@@ -1356,6 +1362,24 @@ def test_identical_short_repeat_is_held(ready, fake_gemini):
     assert _repeat_after_20(ready, fake_gemini, "네, 12요.", before="12요") == {
         20
     }
+
+
+def test_own_repeat_with_new_artifact_is_held(ready, fake_gemini):
+    # 자기 직전 말 그대로는 지어낸 새 산출물이 붙어도 올리지 않는다 (#393, s21 seq54)
+    assert _repeat_after_20(
+        ready,
+        fake_gemini,
+        "네... 못 써요.",
+        before="못... 써요.",
+        artifacts=("", XLSX),
+    ) == {20}
+
+
+def test_silent_after_ack_with_new_artifact_rises(ready, fake_gemini):
+    # 말 없이 새 산출물만 낸 반응은 직전 말이 '네.'여도 되풀이가 아니다 (#393)
+    assert _repeat_after_20(
+        ready, fake_gemini, "", before="네.", artifacts=("", XLSX)
+    ) == {35}
 
 
 @pytest.mark.parametrize(
@@ -1401,6 +1425,9 @@ def test_thousands_separator_repeat_is_held(
         "잘은 모르겠고 3cm 같아요.",
         "헷갈려서 3cm로 썼어요.",
         "정확히는 몰라도 3cm 같아요.",
+        "맞아요, 250이요",
+        "네, 맞는 것 같아요.",
+        "아니요, 틀려요.",
     ],
 )
 def test_reaction_with_content_rises(ready, fake_gemini, utterance):
@@ -1415,10 +1442,20 @@ def test_reaction_with_content_rises(ready, fake_gemini, utterance):
         (STUCK12, ("", XLSX), 35),
         (STUCK12, ("a.xlsx", "b.xlsx"), 35),
         ("네...", (XLSX, XLSX), 20),
-        ("네...", ("", XLSX), 35),
-        ("12요", ("", XLSX), 35),
+        ("네...", ("", XLSX), 20),
+        ("12요", ("", XLSX), 20),
         ("잘 모르겠어요.", ("", XLSX), 35),
         ("잘 모르겠어요.", ("a.xlsx", "b.xlsx"), 35),
+        # 말로 한 맞장구·자기 되풀이는 새 산출물이 붙어도 묶는다 (#393)
+        ("네, 알겠습니다.", ("", XLSX), 20),
+        ("네, 알겠습니다.", ("a.xlsx", "b.xlsx"), 20),
+        ("네, 맞아요...", ("", XLSX), 20),
+        ("12요", ("a.xlsx", "b.xlsx"), 20),
+        ("음...", ("", XLSX), 20),
+        ("1.2요", ("", XLSX), 35),
+        ("", ("", XLSX), 35),
+        ("...", ("", XLSX), 35),
+        ("네, 저장했어요.", ("", XLSX), 35),
     ],
 )
 def test_no_new_showing_artifact(
@@ -1436,11 +1473,26 @@ def test_no_new_showing_drop_is_kept(ready, fake_gemini):
     }
 
 
+def test_ack_with_new_artifact_drop_is_kept(ready, fake_gemini):
+    assert _repeat_after_20(
+        ready, fake_gemini, "네...", understanding=10, artifacts=("", XLSX)
+    ) == {10}
+
+
 def test_first_reaction_ack_is_not_held(ready, fake_gemini):
     fake_gemini.results["student"] = _react(utterance="네...", understanding=60)
     state = _create(ready)
     turn = ready.post(_api(state["session"]["id"], "/phases/0/enter")).json()
     assert set(turn["agreement"]["understanding"].values()) == {60}
+
+
+def test_first_reaction_ack_with_artifact_is_not_held(ready, fake_gemini):
+    fake_gemini.results["student"] = _react(
+        utterance="네...", understanding=35, artifact=XLSX
+    )
+    state = _create(ready)
+    turn = ready.post(_api(state["session"]["id"], "/phases/0/enter")).json()
+    assert set(turn["agreement"]["understanding"].values()) == {35}
 
 
 def test_ack_without_previous_valid_reaction_rises(ready, fake_gemini):
@@ -1481,12 +1533,42 @@ def test_regenerated_ack_is_held(ready, fake_gemini):
     assert fixed["structured"]["understanding"] == 20
 
 
+def test_regenerated_ack_with_new_artifact_is_held(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    fake_gemini.results["student"] = _react(utterance=SAID, understanding=20)
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/say"), json={"content": REPEAT_ASK})
+
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(
+        utterance="네...", understanding=35, artifact=XLSX
+    )
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [fixed] = r.json()["utterances"]
+    assert fixed["structured"]["understanding"] == 20
+
+
 def test_ack_only_never_reaches_agree(ready, fake_gemini):
     _, turn = _enter_then_say(
         ready,
         fake_gemini,
         _react(utterance=SAID, understanding=70),
         _react(utterance="네, 알겠습니다.", understanding=90),
+    )
+    assert _stored(turn) == {70}
+    assert turn["agreement"]["all_agreed"] is False
+
+
+def test_ack_with_new_artifact_never_reaches_agree(ready, fake_gemini):
+    _, turn = _enter_then_say(
+        ready,
+        fake_gemini,
+        _react(utterance=SAID, understanding=70),
+        _react(utterance="네, 맞아요...", understanding=90, artifact=XLSX),
     )
     assert _stored(turn) == {70}
     assert turn["agreement"]["all_agreed"] is False
