@@ -43,3 +43,47 @@ def test_built_css_contains_template_color_classes():
     missing = sorted(t for t in tokens if f".{t}" not in css)
     assert tokens
     assert not missing, f"scripts/build_tailwind.sh 재실행 필요: {missing}"
+
+
+def _classes(source: str) -> list[set[str]]:
+    return [set(c.split()) for c in re.findall(r'class="([^"]*)"', source)]
+
+
+def test_narrow_layout_classes_in_templates_and_css():
+    """#390: 좁은 폭에서 헤더는 항목 단위로 줄바꿈, 입력줄은 입력칸 한 줄 + 버튼 아랫줄."""
+    base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
+    sim = (TEMPLATES / "user" / "simulation.html").read_text(encoding="utf-8")
+
+    nav, container = _classes(base[base.index("<nav") :])[:2]
+    links = _classes(base[: base.index("{% block nav_links %}")])[-1]
+    assert "break-keep" in nav
+    assert {"flex", "flex-wrap", "gap-x-4", "gap-y-2"} <= container
+    assert {
+        "flex",
+        "flex-wrap",
+        "items-center",
+        "justify-end",
+        "gap-x-4",
+        "gap-y-1",
+        "ml-auto",
+        "whitespace-nowrap",
+    } <= links
+    assert {"flex-wrap", "justify-end"} <= _classes(
+        sim[sim.index('id="tForm"') :]
+    )[0]
+    tinput = _classes(sim[sim.index('id="tInput"') :])[0]
+    assert {"w-full", "sm:w-auto", "sm:flex-1", "min-w-0"} <= tinput
+    assert "flex-1" not in tinput
+
+    css = CSS_PATH.read_text(encoding="utf-8")
+    for selector in (
+        ".break-keep",
+        ".gap-x-4",
+        ".gap-y-2",
+        ".gap-y-1",
+        ".sm\\:w-auto",
+        ".sm\\:flex-1",
+    ):
+        assert (
+            selector in css
+        ), f"scripts/build_tailwind.sh 재실행 필요: {selector}"
