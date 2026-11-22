@@ -135,3 +135,12 @@ def test_built_css_has_disabled_rules():
     css = CSS.read_text(encoding="utf-8")
     assert ".disabled\\:bg-gray-400:disabled" in css
     assert ".disabled\\:cursor-not-allowed:disabled" in css
+
+
+def test_dm_feed_min_height_yields_on_short_viewport():
+    m = re.search(r'<div id="dmFeed"[^>]*>', _dm_modal())
+    assert m, "#dmFeed가 없음"
+    # 고정 12rem이면 낮은 화면(667x375)에서 안내 줄이 더해질 때 입력줄이 잘린다
+    assert "min-h-[12rem]" not in m.group(0)
+    assert 'style="min-height:min(12rem,25vh)"' in m.group(0)
+    assert "flex-1" in m.group(0).split('class="')[1].split('"')[0].split()
