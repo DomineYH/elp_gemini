@@ -138,6 +138,7 @@ async def test_no_upload_shows_upload_guidance(env):
     assert ANALYSIS_FAB not in html
     assert 'const docId = ""' in html
     assert "검색 색인이 삭제" not in html
+    assert 'href="/simulation/setup"' not in html
 
 
 @pytest.mark.asyncio
@@ -156,7 +157,10 @@ async def test_legacy_row_without_fs_id_shows_guidance(env):
     html = (await c.get("/dashboard")).text
     assert UPLOAD_HINT in html
     assert QNA_FAB not in html
+    assert ANALYSIS_FAB not in html
     assert "최근 지도안(old.pdf)" in html
+    assert 'href="/simulation/setup"' in html
+    assert "수업 시뮬레이션은 이 지도안으로 바로 시작할 수 있습니다." in html
 
 
 @pytest.mark.asyncio
@@ -169,6 +173,7 @@ async def test_missing_pdf_file_shows_guidance(env):
     html = (await c.get("/dashboard")).text
     assert UPLOAD_HINT in html
     assert QNA_FAB not in html
+    assert 'href="/simulation/setup"' not in html
 
 
 def _session_cookie(data: dict) -> str:
@@ -203,6 +208,7 @@ async def test_logout_deletes_store_and_forgets_fs_ids(env):
     html = (await c.get("/dashboard")).text
     assert QNA_FAB not in html
     assert "최근 지도안(plan.pdf)" in html
+    assert 'href="/simulation/setup"' in html
 
 
 @pytest.mark.asyncio
