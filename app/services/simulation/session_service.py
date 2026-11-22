@@ -898,7 +898,11 @@ async def advance(db: AsyncSession, session: SimulationSession, mode) -> dict:
             _system(
                 session,
                 seq,
-                f"{phase.name}: 전원 동의로 다음 장면",
+                (
+                    f"{phase.name}: 전원 동의로 수업 마침"
+                    if session.current_phase_idx + 1 >= len(phases)
+                    else f"{phase.name}: 전원 동의로 다음 장면"
+                ),
                 {"type": "agree_advance"},
             )
         ]
