@@ -538,6 +538,42 @@ def _empty_check(teacher: str) -> bool:
     )
 
 
+# 보고뿐인 발화에서 교사 말 밖의 낱말로 받아 주는 닫힌 목록 (#413)
+_REPORT_WORD = re.compile(
+    r"네|예|저도|저는|저|제가|선생님|쌤|다|모두|전부|잘|방금|이제|벌써|이미|지금|일단"
+    r"|다음|활동(?:으로|도|을)?|준비(?:가|도|는)?|넘어가도|넘어가면|될|것|같아요|좋아요|돼요|됩니다"
+    r"|(?:준비)?(?:다)?(?:했|됐|되었|끝났|끝냈|마쳤|완료했|저장했|제출했|등록했|눌렀|올렸|적었|썼|남겼)"
+    r"(?:어요?|습니다)"
+)
+_PAST_ENDING = re.compile(r"(?:어요|어|습니다)$")
+
+
+def _done_word(word: str) -> bool:
+    """받침 ㅆ + '어요/어/습니다'로 끝나는 낱말. '있-'·'겠-'은 과거가 아니다."""
+    m = _PAST_ENDING.search(word)
+    if not m or m.start() == 0:
+        return False
+    c = word[m.start() - 1]
+    return (
+        "가" <= c <= "힣" and (ord(c) - 0xAC00) % 28 == 20 and c not in "있겠"
+    )
+
+
+def _report_only(utterance: str, teacher: str) -> bool:
+    """교사 말에 나온 낱말과 닫힌 목록만으로 '했다/됐다'고 한 발화인지 (#413)."""
+    if re.search(r"[?？]", utterance):
+        return False
+    for quoted in _QUOTED:  # #366처럼 따옴표 구간은 뺀다
+        teacher = quoted.sub(" ", teacher)
+    plain = _plain(teacher)
+    words = re.findall(r"[^\W_]+", utterance)
+    return (
+        any(_done_word(w) for w in words)
+        and not any(w in ("안", "아직") or w.startswith("못") for w in words)
+        and all(_REPORT_WORD.fullmatch(w) or w[:2] in plain for w in words)
+    )
+
+
 def student_utterance(
     session_id: int,
     phase_idx: int,
@@ -591,10 +627,15 @@ def student_utterance(
                 and core in _core(previous_utterance)
                 and (not artifact or artifact == previous_artifact.strip())
             )
+            or (
+                _report_only(structured["utterance"], teacher)
+                and (not artifact or artifact == previous_artifact.strip())
+            )
         ):
             # 교사 말 따라 하기(따옴표 답 + 짧은 꼬리, 새 산출물 없는 따옴표 밖 설명 되풀이 포함)·
-            # 같은 산출물 짧게 다시 말하기·새 산출물 없이 자기 직전 말(또는 그 일부) 되풀이는
-            # 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#319, #332, #336, #366)
+            # 같은 산출물 짧게 다시 말하기·새 산출물 없이 자기 직전 말(또는 그 일부) 되풀이·
+            # 새 산출물 없이 교사 말 낱말로 했다·됐다고만 한 보고는
+            # 새로 보인 이해가 없는데 모델이 이해도를 올린다 (#319, #332, #336, #366, #413)
             structured["understanding"] = min(
                 structured["understanding"], previous
             )

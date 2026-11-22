@@ -885,7 +885,7 @@ def test_own_words_with_same_artifact_rise(ready, fake_gemini):
     [
         (XLSX, XLSX, 60),
         ("a.xlsx", "b.xlsx", 80),
-        ("", "", 80),
+        ("", "", 60),  # 산출물 없이 저장만 보고한 말도 묶는다 (#413)
         (XLSX, "산출물: " + XLSX, 60),  # 접두어는 떼고 비교 (#350)
     ],
 )
@@ -1793,6 +1793,187 @@ def test_reaction_after_empty_check_never_reaches_agree(ready, fake_gemini):
         ready, fake_gemini, CHECK, understanding=90, previous=70
     )
     assert _stored(turn) == {70}
+    assert turn["agreement"]["all_agreed"] is False
+    assert turn["agreement"]["agreed_persona_ids"] == []
+
+
+# --- 내용 없이 작업·준비만 보고한 후속 반응은 새 산출물이 없으면 묶는다 (#413) ---
+
+T101 = (
+    "잘했어! 이제 엔트리에 발 길이와 발 너비를 원인 값으로, 신발 치수를 결과 값으로 넣고 "
+    "모델 학습하기 버튼을 누르면 인공지능 모델이 완성되는 거야. "
+    "이제 다음 활동으로 넘어갈 준비 됐니?"
+)
+T68 = (
+    "여러분, 엑셀에서 필요한 열을 남기고 빈칸을 정리하는 전처리가 끝났어요. "
+    "시은이도 전처리를 하면서 중요했던 점을 하나 말해 보고, "
+    "다음 인공지능 모델 만들기로 넘어갈 준비가 되었나요?"
+)
+T43 = (
+    "연우가 준우 옆에 앉아서 열 지우는 방법을 한 번만 보여 주세요. "
+    "준우는 연우가 하는 걸 보고 '65세 이상' 열이 남아 있는지 직접 확인해 보세요."
+)
+T38 = "5분 남았어요. 다 한 사람은 파일을 '인구구성비_모둠이름'으로 저장하고 기다려 주세요."
+T55 = (
+    "여러분, 오늘 한국인 인체치수조사 데이터로 발 길이와 발 너비를 정리하고 "
+    "엔트리 사이즈 추천 프로그램을 만든 소감을 패들렛에 잘 적어 보았나요? "
+    "현우도 오늘 어떤 데이터가 필요했는지 한 가지 말해 보고 함께 수업을 마칠까요?"
+)
+GOAL = (
+    "오늘은 '우리나라 인구 구성비가 앞으로 어떻게 바뀔지 데이터로 예측하고, "
+    "우리 교실에 생길 변화를 생각해 보기'를 공부할 거예요. "
+    "오늘 공부할 내용을 짝에게 한 문장으로 말해 볼까요?"
+)
+GOAL_SAID = (
+    "오늘은 우리나라의 인구 구성비가 앞으로 어떻게 바뀔지 데이터로 예측하고, "
+    "우리 교실에 생길 변화를 생각해 보기로 했어."
+)
+BUTTON = "네, 모델 학습하기 버튼 눌렀어요."
+READY_SAID = "네, 다음 활동으로 넘어갈 준비가 되었어요."
+PADLET = "네, 소감을 패들렛에 잘 정리해서 올렸습니다."
+# s21 seq 59: '소감'을 '느낀 점'으로 바꿔 말한 긴 보고는 알려진 한계다
+PADLET_LONG = (
+    "네, 패들렛에 오늘 활동하면서 느낀 점과 필요한 데이터 내용을 "
+    "모두 작성하여 등록했습니다."
+)
+MODEL_A = "원인 값: 발 길이, 발 너비 / 결과 값: 신발 치수"
+
+
+@pytest.mark.parametrize(
+    "utterance, teacher, expected",
+    [
+        (BUTTON, T101, True),
+        (READY_SAID, T68, True),
+        ("네, 다음으로 넘어갈 준비 됐어요.", T101, True),
+        ("네, 준비됐어요.", T101, True),
+        (SAVED, T43, True),
+        (PADLET, T55, True),
+        ("네, 저장했어요.", T38, True),
+        ("네, 키랑 발 길이, 신발 치수만 남겨서 정리했어요.", T68, False),
+        ("네, 버튼 눌렀는데 정확도가 낮게 나왔어요.", T101, False),
+        ("네, 버튼 눌렀어요. 이렇게 하면 되는 거죠?", T101, False),
+        ("아직 버튼 못 눌렀어요.", T101, False),
+        ("네, 버튼 누를게요.", T101, False),
+        (GOAL_SAID, GOAL, False),
+        ("자료 3번에서 답을 찾았어요.", T101, False),
+        ("네, 열심히 해 볼게요.", T101, False),
+        (PADLET_LONG, T55, False),
+        ("네, 모델 학습하기 버튼 눌러서 완료했어요.", T101, False),
+        ("", T101, False),
+    ],
+)
+def test_report_only(utterance, teacher, expected):
+    assert session_service._report_only(utterance, teacher) is expected
+
+
+def _report(
+    client,
+    fake_gemini,
+    content,
+    utterance=BUTTON,
+    understanding=70,
+    previous=50,
+    artifacts=("", ""),
+):
+    return _enter_then_say(
+        client,
+        fake_gemini,
+        _react(understanding=previous, artifact=artifacts[0]),
+        _react(
+            utterance=utterance,
+            understanding=understanding,
+            artifact=artifacts[1],
+        ),
+        content=content,
+    )
+
+
+@pytest.mark.parametrize(
+    "content, utterance, kw, expected",
+    [
+        (T101, BUTTON, {}, 50),
+        (T101, BUTTON, {"artifacts": (MODEL_A, MODEL_A)}, 50),
+        (T68, READY_SAID, {"artifacts": (MODEL_A, MODEL_A)}, 50),
+        (T101, "네, 다음으로 넘어갈 준비 됐어요.", {}, 50),
+        (T101, "네, 준비됐어요.", {}, 50),
+        (T43, SAVED, {}, 50),
+        (T55, PADLET, {"artifacts": (MODEL_A, MODEL_A)}, 50),
+        (T101, BUTTON, {"understanding": 40}, 40),
+        # 새 산출물이 붙은 보고는 실제 작업 보고로 둔다 (#393)
+        (T101, BUTTON, {"artifacts": ("", MODEL_A)}, 70),
+        (
+            T101,
+            BUTTON,
+            {"artifacts": (MODEL_A, MODEL_A + " (모델 학습 완료)")},
+            70,
+        ),
+        (T38, "네, 저장했어요.", {"artifacts": ("", XLSX)}, 70),
+        (T68, "네, 키랑 발 길이, 신발 치수만 남겨서 정리했어요.", {}, 70),
+        (T101, "네, 버튼 눌렀는데 정확도가 낮게 나왔어요.", {}, 70),
+        (T101, "네, 버튼 눌렀어요. 이렇게 하면 되는 거죠?", {}, 70),
+        (T101, "아직 버튼 못 눌렀어요.", {}, 70),
+        (T101, "네, 버튼 누를게요.", {}, 70),
+        (GOAL, GOAL_SAID, {}, 70),
+        (T101, "자료 3번에서 답을 찾았어요.", {}, 70),
+        (
+            T55,
+            PADLET_LONG,
+            {
+                "previous": 79,
+                "understanding": 95,
+                "artifacts": (MODEL_A, MODEL_A),
+            },
+            95,
+        ),
+        (T101, "네, 모델 학습하기 버튼 눌러서 완료했어요.", {}, 70),
+    ],
+)
+def test_report_only_reaction(
+    ready, fake_gemini, content, utterance, kw, expected
+):
+    _, turn = _report(ready, fake_gemini, content, utterance, **kw)
+    assert _stored(turn) == {expected}
+
+
+def test_pledge_is_not_a_report(ready, fake_gemini):
+    _, turn = _report(ready, fake_gemini, T101, "네, 열심히 해 볼게요.")
+    assert _stored(turn) == {50}
+    assert _flags(turn) == {True}
+
+
+def test_first_report_reaction_is_not_held(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    fake_gemini.parse_fail.add("student")
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(utterance=BUTTON, understanding=70)
+    turn = ready.post(_api(sid, "/say"), json={"content": T101}).json()
+    assert _stored(turn) == {70}
+
+
+def test_regenerated_report_is_held(ready, fake_gemini):
+    state = _create(ready)
+    sid = state["session"]["id"]
+    persona = state["personas"][0]
+    fake_gemini.results["student"] = _react(understanding=50)
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.parse_fail.add(str(persona["source_record_id"]))
+    ready.post(_api(sid, "/say"), json={"content": T101})
+
+    fake_gemini.parse_fail.clear()
+    fake_gemini.results["student"] = _react(utterance=BUTTON, understanding=70)
+    r = ready.post(_api(sid, "/regenerate"), json={"persona_id": persona["id"]})
+    assert r.status_code == 200
+    [fixed] = r.json()["utterances"]
+    assert fixed["structured"]["understanding"] == 50
+
+
+def test_report_only_never_reaches_agree(ready, fake_gemini):
+    # 보고는 다짐과 달리 장면 동의로 치지 않는다 (#413 결정 2)
+    _, turn = _report(ready, fake_gemini, T101, understanding=90, previous=70)
+    assert _stored(turn) == {70}
+    assert _flags(turn) == {None}
     assert turn["agreement"]["all_agreed"] is False
     assert turn["agreement"]["agreed_persona_ids"] == []
 
