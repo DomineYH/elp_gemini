@@ -59,7 +59,23 @@ def parse_structured(schema: type[BaseModel], text: str | None):
         return None
 
 
-def _warn_rejected(kind, persona_key, schema, text: str) -> None:
+def _reason(response) -> str:
+    """빈·잘린 응답의 사유. enum 이름과 후보 수만 남긴다(원문·프롬프트·finish_message 제외) (#409)."""
+    candidates = getattr(response, "candidates", None) or []
+    block = getattr(
+        getattr(response, "prompt_feedback", None), "block_reason", None
+    )
+    finish = (
+        getattr(candidates[0], "finish_reason", None) if candidates else None
+    )
+    return "block_reason=%s, finish_reason=%s, candidates=%d" % (
+        getattr(block, "name", block),
+        getattr(finish, "name", finish),
+        len(candidates),
+    )
+
+
+def _warn_rejected(kind, persona_key, schema, text: str, reason: str) -> None:
     """spec_dev 8: 필드 경로·메시지·길이만 남긴다(원문·프롬프트 제외)."""
     try:
         schema.model_validate_json(text)
@@ -70,10 +86,11 @@ def _warn_rejected(kind, persona_key, schema, text: str) -> None:
             for err in e.errors(include_input=False, include_url=False)
         )
     logger.warning(
-        "simulation %s output rejected (persona_key=%s, len=%d): %s",
+        "simulation %s output rejected (persona_key=%s, len=%d, %s): %s",
         kind,
         persona_key,
         len(text),
+        reason,
         errors,
     )
 
@@ -117,7 +134,7 @@ def call_structured(
     if not isinstance(parsed, schema):
         parsed = parse_structured(schema, text)
         if parsed is None:
-            _warn_rejected(kind, persona_key, schema, text)
+            _warn_rejected(kind, persona_key, schema, text, _reason(response))
     return LLMResult(
         parsed=parsed,
         text=text,
