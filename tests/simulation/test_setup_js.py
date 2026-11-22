@@ -308,6 +308,75 @@ def test_reroll_success_after_load_failure_clears_notice():
     assert out == {"checked": ["a", "b", "c"], "status": ""}
 
 
+# 실패 안내를 대체한 선택 안내("최대 ...")는 체크박스·슬라이더로 지워진다
+_FAILED_THEN_MAX_NOTICE = (
+    _MANUAL_ACE + 'toggle("f", true);\n' + _LOAD_FAILED + 'toggle("d", true);\n'
+)
+
+
+def test_toggle_after_max_notice_over_load_failure_clears_status():
+    out = _run_page(_FAILED_THEN_MAX_NOTICE)
+    assert out["status"] == "최대 4명(관리자 설정)"
+    out = _run_page(_FAILED_THEN_MAX_NOTICE + 'toggle("a", false);')
+    assert out == {"checked": ["c", "e", "f"], "status": ""}
+
+
+def test_slider_after_max_notice_over_load_failure_clears_status():
+    out = _run_page(_FAILED_THEN_MAX_NOTICE + "els.count.listeners.input();")
+    assert out["status"] == ""
+
+
+# 응답을 보류하는 fetch: res(i, ok)로 i번째 요청을 성공(ok) 또는 503으로 끝낸다
+_HELD_FETCH = (
+    "const pend = [];\n"
+    "globalThis.fetch = () => new Promise(r => pend.push(r));\n"
+    "const res = async (i, ok) => { pend[i](ok"
+    " ? { ok: true, json: async () => ({ seed: 1, candidates: cands.map(cand) }) }"
+    " : { ok: false, status: 503, json: async () => ({}) }); await tick(); };\n"
+)
+# 필터 조회(503)와 저장 뒤 조회(성공)가 겹쳐 교체 안내가 뜬 상태
+_OVERLAP_SAVE_NOTICE = (
+    _MANUAL_ACE
+    + 'toggle("f", true);\n'
+    + _HELD_FETCH
+    + 'els.fGrade.value = "5"; els.fGrade.listeners.change();\n'
+    + 'cands = [...cands, "n"]; saved("n");\n'
+    + "await res(0, false); await res(1, true);\n"
+)
+
+
+def test_toggle_after_overlapping_failure_and_save_notice_clears_status():
+    out = _run_page(_OVERLAP_SAVE_NOTICE)
+    assert out["status"] == "최대 4명 — F 빼고 N 추가"
+    out = _run_page(_OVERLAP_SAVE_NOTICE + 'toggle("a", false);')
+    assert out == {"checked": ["c", "e", "n"], "status": ""}
+
+
+def test_slider_after_overlapping_failure_and_save_notice_clears_status():
+    out = _run_page(_OVERLAP_SAVE_NOTICE + "els.count.listeners.input();")
+    assert out["status"] == ""
+
+
+# 조회가 진행 중이면 체크박스·슬라이더를 건드려도 "불러오는 중..."이 남는다
+_LOADING = (
+    _HELD_FETCH + 'els.fGrade.value = "5"; els.fGrade.listeners.change();\n'
+)
+
+
+def test_toggle_while_loading_keeps_loading_notice():
+    out = _run_page(_LOADING + 'toggle("a", false);')
+    assert out == {"checked": ["b", "c"], "status": "불러오는 중..."}
+
+
+def test_slider_while_loading_keeps_loading_notice_until_response():
+    out = _run_page(_LOADING + "els.count.listeners.input();")
+    assert out["status"] == "불러오는 중..."
+    out = _run_page(
+        _LOADING + "els.count.listeners.input(); await res(0, true);"
+    )
+    assert out["status"] == ""
+
+
 def test_load_after_save_without_previous_falls_back_to_first_n():
     out = _run_page(
         _MANUAL_ACE
