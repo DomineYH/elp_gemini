@@ -110,6 +110,53 @@ def test_individual_support_section_lists_each_item():
     assert _emoji_guard()._scan_full(md.splitlines()) == []
 
 
+MULTILINE = "한 줄씩 읽어 볼까요?\n\n## 힌트\n첫 단어를 살펴보세요."
+FOLDED = "한 줄씩 읽어 볼까요? ## 힌트 첫 단어를 살펴보세요."
+SECTION_TITLES = [
+    "## 위험 시나리오",
+    "## ① 교사 발화 추천",
+    "## ② 진행 방향",
+    "## ③ 변경 방향",
+    "## ④ 개별 지원",
+]
+
+
+def _section_lines(lines):
+    return [line for line in lines if line.startswith("## ")]
+
+
+def test_multiline_individual_support_stays_inside_its_section():
+    envelope = _envelope()
+    envelope["feedback"]["individual_supports"] = [
+        {
+            "persona": "건우",
+            "phase_idx": 1,
+            "teacher_seq": 17,
+            "actual": MULTILINE,
+            "what_worked": "짧게 답하던 건우가\n이유를 말했다",
+            "plan_suggestion": "활동1에\n\n그림 다시 보기 발문을 넣는다.",
+        }
+    ]
+    lines = feedback.render_markdown(
+        envelope, SESSION, phase_names=["도입", "활동1"]
+    ).splitlines()
+    assert _section_lines(lines) == SECTION_TITLES
+    assert f"- 1:1 발화: {FOLDED}" in lines
+    assert "- 학생 반응 변화: 짧게 답하던 건우가 이유를 말했다" in lines
+    assert "- 지도안 반영: 활동1에 그림 다시 보기 발문을 넣는다." in lines
+    start = lines.index("## ④ 개별 지원")
+    for prefix in ("- 학생 반응 변화:", "- 지도안 반영:"):
+        assert any(line.startswith(prefix) for line in lines[start + 1 :])
+
+
+def test_multiline_actual_utterance_stays_one_line():
+    envelope = _envelope()
+    envelope["feedback"]["utterance_suggestions"][0]["actual"] = MULTILINE
+    lines = feedback.render_markdown(envelope, SESSION).splitlines()
+    assert _section_lines(lines) == SECTION_TITLES
+    assert f"- 실제 발화: {FOLDED}" in lines
+
+
 def test_every_section_starts_with_hypothesis_note():
     lines = feedback.render_markdown(_envelope(), SESSION).splitlines()
     sections = [i for i, line in enumerate(lines) if line.startswith("## ")]

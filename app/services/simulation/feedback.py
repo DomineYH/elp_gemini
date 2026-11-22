@@ -162,6 +162,10 @@ def render_markdown(
     def clean(text) -> str:
         return strip_emojis(str(text)).strip()
 
+    def line(text) -> str:
+        # 한 줄 항목에 넣는 값: 줄바꿈이 절·목록 구조를 깨지 않게 접는다 (#395)
+        return " ".join(clean(text).split())
+
     def phase_label(idx: int) -> str:
         return names[idx] if 0 <= idx < len(names) else f"장면 {idx + 1}"
 
@@ -183,41 +187,41 @@ def render_markdown(
     ]
     for i, r in enumerate(fb["risk_scenarios"], 1):
         out += [
-            f"### R{i}. {clean(r['title'])}",
+            f"### R{i}. {line(r['title'])}",
             "",
             clean(r["scene"]),
             "",
-            f"- 근거 유형: {clean(r['evidence_type'])}",
+            f"- 근거 유형: {line(r['evidence_type'])}",
             "",
         ]
 
     out += ["## ① 교사 발화 추천", "", SECTION_NOTE, ""]
     for s in fb["utterance_suggestions"]:
         out += [
-            f"### {clean(phase_label(s['phase_idx']))}",
+            f"### {line(phase_label(s['phase_idx']))}",
             "",
-            f"- 실제 발화: {clean(s['actual'])}",
-            f"- 추천 발화: {clean(s['suggested'])}",
-            f"- 의도: {clean(s['intent'])}",
+            f"- 실제 발화: {line(s['actual'])}",
+            f"- 추천 발화: {line(s['suggested'])}",
+            f"- 의도: {line(s['intent'])}",
             "",
         ]
 
     out += ["## ② 진행 방향", "", SECTION_NOTE, ""]
-    out += [f"- {clean(d)}" for d in fb["progress_directions"]]
+    out += [f"- {line(d)}" for d in fb["progress_directions"]]
     out += ["", "## ③ 변경 방향", "", SECTION_NOTE, ""]
     out += [
-        f"- **{clean(c['kind'])}** {clean(c['content'])}"
+        f"- **{line(c['kind'])}** {line(c['content'])}"
         for c in fb["change_directions"]
     ]
     out += ["", "## ④ 개별 지원", "", SECTION_NOTE, ""]
     supports = fb.get("individual_supports") or []
     for s in supports:
         out += [
-            f"### {clean(phase_label(s['phase_idx']))} · {clean(s['persona'])}",
+            f"### {line(phase_label(s['phase_idx']))} · {line(s['persona'])}",
             "",
-            f"- 1:1 발화: {clean(s.get('actual', ''))}",
-            f"- 학생 반응 변화: {clean(s['what_worked'])}",
-            f"- 지도안 반영: {clean(s['plan_suggestion'])}",
+            f"- 1:1 발화: {line(s.get('actual', ''))}",
+            f"- 학생 반응 변화: {line(s['what_worked'])}",
+            f"- 지도안 반영: {line(s['plan_suggestion'])}",
             "",
         ]
     if not supports:
