@@ -1978,6 +1978,94 @@ def test_report_only_never_reaches_agree(ready, fake_gemini):
     assert turn["agreement"]["agreed_persona_ids"] == []
 
 
+# 교사 말에 없는 수·부호·관계를 말한 답은 보고가 아니다 (#413 PR 검토)
+# 학생 말은 "네, <값>로 나왔어요."처럼 낱말 비교는 통과하게 짜서 수 비교가 가르게 했다
+def _result_ask(value):
+    return f"앞서 {value}로 나왔는데, 원자료로 평균을 다시 계산해 보세요."
+
+
+def _result_said(value):
+    return f"네, {value}로 나왔어요."
+
+
+@pytest.mark.parametrize(
+    "teacher, student, expected",
+    [
+        # 같은 값: 같은 표기, 같은 것의 다른 표기
+        ("-5도", "-5도", True),
+        ("5도", "5도", True),
+        ("1,000명", "1000명", True),
+        ("1000명", "1,000명", True),
+        ("−5도", "-5도", True),
+        ("-5도", "- 5도", True),
+        # 부호가 다름
+        ("-5도", "+5도", False),
+        ("-5도", "5도", False),
+        ("5도", "-5도", False),
+        ("+5도", "-5도", False),
+        # 앞 두 글자만 같은 다른 수. 3.50과 3.5는 자릿수를 다르게 적은 값이라 가리지 않고 다른 수로 본다
+        ("500도", "50도", False),
+        ("120도", "12도", False),
+        ("3.50도", "3.5도", False),
+        ("3.5도", "3도", False),
+        ("3도", "3.5도", False),
+        # 단위가 붙은 수
+        ("20%", "20%", True),
+        ("20%", "2%", False),
+        ("5개", "5개", True),
+        ("5개", "5도", False),
+        ("3번", "3번", True),
+        # 교사가 말하지 않은 관계·연산
+        ("3, 2", "3+2", False),
+        ("5, 3", "5>3", False),
+        ("6, 6", "6=6", False),
+        ("3+2", "3+2", True),
+        # 여러 수: 하나라도 새 수면 보고가 아니다
+        ("5도와 100도", "5도와 100도", True),
+        ("5도와 100도", "5도와 10도", False),
+    ],
+)
+def test_report_only_numbers(teacher, student, expected):
+    assert (
+        session_service._report_only(
+            _result_said(student), _result_ask(teacher)
+        )
+        is expected
+    )
+
+
+@pytest.mark.parametrize(
+    "teacher, student, expected",
+    [
+        # 따옴표 안에만 있는 수는 교사 말의 수로 치지 않는다
+        ("'3'이 아니라 13번 칸을 눌러 보세요.", "네, 3번 칸 눌렀어요.", False),
+        ("'3'이 아니라 13번 칸을 눌러 보세요.", "네, 13번 칸 눌렀어요.", True),
+        # 더 긴 낱말 속의 수
+        ("모둠13 파일을 저장해 보세요.", "네, 모둠1 파일 저장했어요.", False),
+        ("모둠13 파일을 저장해 보세요.", "네, 모둠13 파일 저장했어요.", True),
+    ],
+)
+def test_report_only_numbers_in_context(teacher, student, expected):
+    assert session_service._report_only(student, teacher) is expected
+
+
+REVIEW_ASK = _result_ask("-5도")
+
+
+@pytest.mark.parametrize(
+    "utterance, stored, all_agreed",
+    [("네, +5도로 나왔어요.", 90, True), ("네, -5도로 나왔어요.", 70, False)],
+)
+def test_report_with_new_signed_value_is_not_held(
+    ready, fake_gemini, utterance, stored, all_agreed
+):
+    _, turn = _report(
+        ready, fake_gemini, REVIEW_ASK, utterance, understanding=90, previous=70
+    )
+    assert _stored(turn) == {stored}
+    assert turn["agreement"]["all_agreed"] is all_agreed
+
+
 # --- '모르겠어요'뿐인 반응은 닫힌 목록으로 이해도를 올리지 않는다 (#353) ---
 
 STUCK = "잘 모르겠어요."

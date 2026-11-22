@@ -559,6 +559,19 @@ def _done_word(word: str) -> bool:
     )
 
 
+def _signed_numbers(text: str) -> set[str]:
+    """_numbers의 부호·연산 기호를 바로 뒤의 수에 붙인 값들 ("-5" ≠ "+5" ≠ "5", "3+2" → 3, +2)."""
+    tokens = _numbers(text)
+    found = set()
+    for i, token in enumerate(tokens):
+        if token[0].isdigit():
+            sign = tokens[i - 1] if i and not tokens[i - 1][0].isdigit() else ""
+            found.add(sign + token)
+        elif i + 1 == len(tokens) or not tokens[i + 1][0].isdigit():
+            found.add(token)
+    return found
+
+
 def _report_only(utterance: str, teacher: str) -> bool:
     """교사 말에 나온 낱말과 닫힌 목록만으로 '했다/됐다'고 한 발화인지 (#413)."""
     if re.search(r"[?？]", utterance):
@@ -571,6 +584,8 @@ def _report_only(utterance: str, teacher: str) -> bool:
         any(_done_word(w) for w in words)
         and not any(w in ("안", "아직") or w.startswith("못") for w in words)
         and all(_REPORT_WORD.fullmatch(w) or w[:2] in plain for w in words)
+        # 앞 두 글자 비교는 부호와 자릿수를 못 가리므로 수는 따로 맞춘다 (#413)
+        and _signed_numbers(utterance) <= _signed_numbers(teacher)
     )
 
 
