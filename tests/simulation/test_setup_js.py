@@ -71,7 +71,10 @@ def test_mode_card_checked_rule_in_sim_style():
     style = Path("app/templates/user/_sim_style.html").read_text(
         encoding="utf-8"
     )
-    assert ".mode-card:has(input:checked)" in style
+    m = re.search(r"\.mode-card:has\(input:checked\)\{([^}]*)\}", style)
+    assert m, ".mode-card:has(input:checked) 규칙을 찾지 못함"
+    decls = m.group(1).split(";")
+    assert "border-color:#bfdbfe" in decls and "background:#eff6ff" in decls
 
 
 def test_filter_grid_is_single_column():
@@ -276,6 +279,33 @@ def test_max_notice_shows_then_clears_on_next_toggle():
         + 'toggle("f", true); toggle("d", true); toggle("a", false);'
     )
     assert out == {"checked": ["c", "e", "f"], "status": ""}
+
+
+# 필터를 바꾼 조회가 실패하면 체크박스·슬라이더를 건드려도 실패 안내가 남는다
+_LOAD_FAILED = (
+    "globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({}) });\n"
+    'els.fGrade.value = "5"; els.fGrade.listeners.change(); await tick();\n'
+)
+_LOAD_FAILED_NOTICE = "후보를 불러오지 못했습니다. 다시 추출을 눌러 주세요."
+
+
+def test_toggle_after_load_failure_keeps_failure_notice():
+    out = _run_page(_LOAD_FAILED + 'toggle("a", false);')
+    assert out == {"checked": ["b", "c"], "status": _LOAD_FAILED_NOTICE}
+
+
+def test_slider_after_load_failure_keeps_failure_notice():
+    out = _run_page(_LOAD_FAILED + "els.count.listeners.input();")
+    assert out["status"] == _LOAD_FAILED_NOTICE
+
+
+def test_reroll_success_after_load_failure_clears_notice():
+    out = _run_page(
+        _LOAD_FAILED
+        + "globalThis.fetch = async () => ({ ok: true, json: async () => ({ seed: 2, candidates: cands.map(cand) }) });\n"
+        + "els.reroll.listeners.click(); await tick();"
+    )
+    assert out == {"checked": ["a", "b", "c"], "status": ""}
 
 
 def test_load_after_save_without_previous_falls_back_to_first_n():

@@ -206,7 +206,7 @@
     rows.addEventListener("change", e => {
         const ref = e.target.dataset.ref;
         if (!ref) return;
-        status.textContent = "";
+        if (!loadFailed) status.textContent = "";
         if (e.target.checked) {
             if (chosen.size >= MAX) {
                 e.target.checked = false;
@@ -217,7 +217,7 @@
         } else if (chosen.size > MIN) chosen.delete(ref);
         render();
     });
-    count.addEventListener("input", () => { status.textContent = ""; chooseFirst(Number(count.value)); });
+    count.addEventListener("input", () => { if (!loadFailed) status.textContent = ""; chooseFirst(Number(count.value)); });
 
     // ref를 선택에 넣는다. 이미 있으면 그대로, 최대 인원이면 마지막을 빼고 넣는다
     function pickInto(chosenArr, ref, max) {
@@ -232,7 +232,10 @@
         return prevArr.filter(ref => candidateRefs.includes(ref));
     }
 
+    // 조회 실패 안내는 조회 흐름만 바꾼다 (체크박스·슬라이더는 지우지 않는다)
+    let loadFailed = false;
     async function load(newSeed, pickRef) {
+        loadFailed = false;
         const params = new URLSearchParams({
             grade: document.getElementById("fGrade").value,
             level: document.getElementById("fLevel").value,
@@ -262,6 +265,7 @@
                 render();
             }
         } catch (err) {
+            loadFailed = true;
             status.textContent = "후보를 불러오지 못했습니다. 다시 추출을 눌러 주세요.";
         }
     }
