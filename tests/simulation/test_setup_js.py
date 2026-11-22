@@ -57,6 +57,41 @@ def test_drop_notice_uses_no_fallback_josa():
     assert "(를)" not in m.group(0) and "(을)" not in m.group(0)
 
 
+def test_mode_cards_share_class_and_highlight_by_checked_radio():
+    src = TEMPLATE.read_text(encoding="utf-8")
+    labels = re.findall(
+        r'<label class="([^"]*)">\s*<input type="radio" name="mode"', src
+    )
+    assert len(labels) == 2
+    for cls in labels:
+        assert "mode-card" in cls.split() and "bg-blue-50" not in cls
+
+
+def test_mode_card_checked_rule_in_sim_style():
+    style = Path("app/templates/user/_sim_style.html").read_text(
+        encoding="utf-8"
+    )
+    assert ".mode-card:has(input:checked)" in style
+
+
+def test_filter_grid_is_single_column():
+    src = TEMPLATE.read_text(encoding="utf-8")
+    m = re.search(r'<div class="([^"]*)">\s*<select id="fGrade"', src)
+    assert m and "grid-cols-1" in m.group(1).split()
+    assert "grid-cols-2" not in m.group(1)
+
+
+def test_change_handler_clears_status_before_max_check():
+    src = TEMPLATE.read_text(encoding="utf-8")
+    m = re.search(
+        r'rows\.addEventListener\("change", e => \{.*?\n    \}\);', src, re.S
+    )
+    assert m, "change 핸들러를 찾지 못함"
+    body = m.group(0)
+    clear = body.find('status.textContent = "";')
+    assert 0 <= clear < body.find("chosen.size >= MAX")
+
+
 # 새 페르소나 저장 후 다시 불러와도 교사가 고른 선택을 유지한다 (#324)
 
 
@@ -215,6 +250,32 @@ def test_load_after_save_at_max_drops_last_kept_and_notifies():
         "checked": ["a", "c", "e", "n"],
         "status": "최대 4명 — F 빼고 N 추가",
     }
+
+
+_SAVED_AT_MAX = (
+    _MANUAL_ACE
+    + 'toggle("f", true); cands = [...cands, "n"]; saved("n"); await tick();\n'
+)
+
+
+def test_toggle_after_save_notice_clears_status():
+    out = _run_page(_SAVED_AT_MAX + 'toggle("a", false);')
+    assert out == {"checked": ["c", "e", "n"], "status": ""}
+
+
+def test_slider_after_save_notice_clears_status():
+    out = _run_page(_SAVED_AT_MAX + "els.count.listeners.input();")
+    assert out["status"] == ""
+
+
+def test_max_notice_shows_then_clears_on_next_toggle():
+    out = _run_page(_MANUAL_ACE + 'toggle("f", true); toggle("d", true);')
+    assert out["status"] == "최대 4명(관리자 설정)"
+    out = _run_page(
+        _MANUAL_ACE
+        + 'toggle("f", true); toggle("d", true); toggle("a", false);'
+    )
+    assert out == {"checked": ["c", "e", "f"], "status": ""}
 
 
 def test_load_after_save_without_previous_falls_back_to_first_n():

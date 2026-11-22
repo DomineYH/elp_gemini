@@ -40,11 +40,11 @@
         <div class="card p-5 space-y-5">
             <div>
                 <p class="eyebrow mb-2">선택 방식</p>
-                <label class="flex items-start gap-2 p-2 rounded-lg border border-blue-200 bg-blue-50 cursor-pointer text-sm">
+                <label class="mode-card flex items-start gap-2 p-2 rounded-lg border border-gray-200 cursor-pointer text-sm">
                     <input type="radio" name="mode" id="modeRandom" value="random" checked class="mt-1">
                     <span><b>무작위</b><br><span class="note">학년·학업 수준 분포를 맞춰 자동 추출</span></span>
                 </label>
-                <label class="flex items-start gap-2 p-2 mt-2 rounded-lg border border-gray-200 cursor-pointer text-sm">
+                <label class="mode-card flex items-start gap-2 p-2 mt-2 rounded-lg border border-gray-200 cursor-pointer text-sm">
                     <input type="radio" name="mode" id="modeCustom" value="custom" class="mt-1">
                     <span><b>직접 만들기</b><br><span class="note">HACHIMI-1M 형식으로 내 학생 작성</span></span>
                 </label>
@@ -61,7 +61,7 @@
             </div>
             <div>
                 <p class="eyebrow mb-2">필터</p>
-                <div class="grid grid-cols-2 gap-2 text-sm">
+                <div class="grid grid-cols-1 gap-2 text-sm">
                     <select id="fGrade" aria-label="학년" class="border rounded-lg px-2 py-1.5 bg-white">
                         <option value="all">5·6학년 전체</option>
                         <option value="5">5학년</option>
@@ -206,6 +206,7 @@
     rows.addEventListener("change", e => {
         const ref = e.target.dataset.ref;
         if (!ref) return;
+        status.textContent = "";
         if (e.target.checked) {
             if (chosen.size >= MAX) {
                 e.target.checked = false;
@@ -216,7 +217,7 @@
         } else if (chosen.size > MIN) chosen.delete(ref);
         render();
     });
-    count.addEventListener("input", () => chooseFirst(Number(count.value)));
+    count.addEventListener("input", () => { status.textContent = ""; chooseFirst(Number(count.value)); });
 
     // ref를 선택에 넣는다. 이미 있으면 그대로, 최대 인원이면 마지막을 빼고 넣는다
     function pickInto(chosenArr, ref, max) {
