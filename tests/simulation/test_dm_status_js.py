@@ -27,8 +27,9 @@ _JS = r"""
 const PAGE = __PAGE__, SEED = __SEED__;
 const flush = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setImmediate(r)); };
 
-function makeEnv(queue) {  // 스크립트가 실행되자마자 init()이 GET을 보내므로 응답을 먼저 넣는다
-    const env = { calls: [], queue, intervals: new Map(), nextTimer: 1, moves: 0, log: [] };
+// gets: GET 응답 대기열. 주지 않으면 queue를 함께 쓴다(409 뒤 다시 받기를 POST와 따로 답하려고, #416)
+function makeEnv(queue, gets = queue) {  // 스크립트가 실행되자마자 init()이 GET을 보내므로 응답을 먼저 넣는다
+    const env = { calls: [], queue, gets, intervals: new Map(), nextTimer: 1, moves: 0, log: [], location: {} };
     const els = {};
     const mk = (id, tag) => {
         const cls = new Set();
@@ -92,7 +93,7 @@ function makeEnv(queue) {  // 스크립트가 실행되자마자 init()이 GET�
     env.document = document;
     env.fetch = (url, init) => {
         env.calls.push({ method: init.method, url, body: init.body ? JSON.parse(init.body) : undefined });
-        const next = env.queue.shift();
+        const next = (init.method === "GET" ? env.gets : env.queue).shift();
         if (!next) throw new Error("대역에 준비되지 않은 요청: " + init.method + " " + url);
         return next();
     };
@@ -101,7 +102,7 @@ function makeEnv(queue) {  // 스크립트가 실행되자마자 init()이 GET�
     env.seconds = n => { for (let i = 0; i < n; i++) [...env.intervals.values()].forEach(f => f()); };
     new Function("document", "fetch", "matchMedia", "setInterval", "clearInterval", "setTimeout", "confirm", "window", PAGE)(
         document, env.fetch, () => ({ matches: false }), env.setInterval, env.clearInterval,
-        fn => fn(), () => true, { location: {} });
+        fn => fn(), () => true, { location: env.location });
     return env;
 }
 
@@ -301,6 +302,142 @@ const CLOSE = {
     env.log.length = 0;
     await dmSubmit(env, "지호야, 너는 어때?", turn("지호야, 너는 어때?", 2, 11));
     out.order_next = { ...snap(env), log: [...env.log] };
+
+    // ===== 409 뒤 상태를 한 번 다시 받아 그린다 (#416) =====
+    const T = (id, phase, content) => ({ id, seq: id, phase_idx: phase, speaker_type: "teacher",
+        target_persona_id: null, content, structured: { source: "user" } });
+    const S = (id, phase, persona, content) => ({ id, seq: id, phase_idx: phase, speaker_type: "student",
+        persona_id: persona, content, structured: { utterance: content }, failed: false });
+    const FIN = () => {
+        const s = state(12);
+        s.session.status = "finished";
+        s.utterances.push(T(10, 0, "다른 탭 발화"), S(11, 0, 1, "네"), S(12, 0, 2, "네"));
+        return s;
+    };
+    const ENTER1 = [T(21, 1, "발문2"), S(22, 1, 1, "장면2 네"), S(23, 1, 2, "장면2 네")];
+    const SCENE2 = (entered = true) => {
+        const s = state();
+        s.session.current_phase_idx = 1;
+        if (entered) s.utterances.push(...ENTER1);
+        return s;
+    };
+    const ALL = { ...AGREE, agreed_persona_ids: [1, 2], understanding: { 1: 85, 2: 90 }, count: 2, all_agreed: true };
+    const netfail = () => Promise.reject(new TypeError("Failed to fetch"));
+    const CONFLICT = "동시에 요청이 처리되었습니다. 다시 시도해 주세요.";
+    const NOT_ENTERED = "아직 현재 장면에 들어가지 않았습니다.";
+    const IDS = ["tInput", "tSend", "hintBtn", "skipBtn", "nextBtn", "endBtn", "dmInput", "dmSubmit"];
+    const view = env => ({
+        ...snap(env),
+        GET: env.calls.filter(c => c.method === "GET").length,
+        urls: env.calls.map(c => c.method + " " + c.url),
+        eyebrow: env.$("phaseEyebrow").textContent,
+        tForm: !env.$("tForm").classList.contains("hidden"),
+        finishedNote: !env.$("finishedNote").classList.contains("hidden"),
+        off: Object.fromEntries(IDS.map(id => [id, env.$(id).disabled])),
+        seats: env.$("seats").children.map(c => c.textContent),
+        href: env.location.href ?? null,
+    });
+    // 꺼진 버튼·숨은 입력줄은 누를 수 없다(브라우저와 같게)
+    const press = async (env, id) => { if (!env.$(id).disabled) env.$(id).dispatch("click"); await flush(); };
+    const canType = (env, form) => !env.$(form === "dmForm" ? "dmInput" : "tInput").disabled &&
+        !env.$(form).classList.contains("hidden");
+    // 첫 로딩은 st, 요청 하나가 answer, 그 뒤 GET은 fresh
+    async function stale(st, open, act, answer, fresh) {
+        const e = makeEnv([], [resp(200, st)]);
+        await flush();
+        if (open) openSeat(e);
+        e.queue.push(answer);
+        if (fresh) e.gets.push(fresh);
+        await act(e); await flush();
+        return e;
+    }
+    const sayT = e => submit(e, "tForm", "보낸 글");
+    const sayDM = e => dmSubmit(e, "보낸 글");
+    const FIN409 = () => err(409, "SESSION_FINISHED", __FINISHED__);
+
+    env = await stale(state(), false, sayT, FIN409(), resp(200, FIN()));
+    out.s416_fin = view(env);
+    if (canType(env, "tForm")) await submit(env, "tForm", "또 보낸 글");
+    out.s416_fin_again = view(env);
+
+    env = await stale(state(), true, sayDM, FIN409(), resp(200, FIN()));
+    out.s416_fin_dm = view(env);
+    CLOSE.button(env); openSeat(env);
+    out.s416_fin_dm_reopen = view(env);
+
+    env = await stale(state(37), false, sayT, err(409, "TURN_LIMIT", __LIMIT__), resp(200, state(40)));
+    out.s416_limit = view(env);
+
+    const other = state(11);
+    other.utterances.push(T(10, 0, "다른 탭 발화"), S(11, 0, 1, "네 선생님"), S(12, 0, 2, "네 선생님"));
+    env = await stale(state(), false, sayT, err(409, "CONFLICT_RETRY", CONFLICT), resp(200, other));
+    out.s416_conflict = view(env);
+    // 409 문구는 다음 요청이 시작될 때 지워진다
+    const later = deferred();
+    await submit(env, "tForm", "다시 보낸 글", later);
+    out.s416_conflict_next = view(env);
+    later.settle(turn("다시 보낸 글", null, 12)); await flush();
+
+    env = await stale(state(), false, sayT, err(409, "PHASE_NOT_ENTERED", NOT_ENTERED), resp(200, SCENE2(false)));
+    out.s416_not_entered = view(env);
+    env.queue.push(resp(200, { utterances: ENTER1, agreement: AGREE, teacher_turns_used: 10, failed_persona_ids: [] }));
+    if (!env.$("retryBox").classList.contains("hidden")) { env.$("retryBtn").onclick(); await flush(); }
+    out.s416_not_entered_retry = view(env);
+
+    env = await stale(state(), true, sayDM, err(409, "PHASE_NOT_ENTERED", NOT_ENTERED), resp(200, SCENE2(false)));
+    out.s416_not_entered_dm = view(env);
+
+    env = makeEnv([err(409, "PHASE_NOT_CURRENT", "현재 장면이 아닙니다.")], [resp(200, state(10, false)), resp(200, SCENE2())]);
+    await flush();
+    out.s416_enter409 = view(env);
+
+    const agreed = state();
+    agreed.agreement = ALL;
+    env = await stale(agreed, false, e => press(e, "nextBtn"),
+        err(409, "NOT_ALL_AGREED", "아직 모든 학생이 다음 장면에 동의하지 않았습니다."), resp(200, SCENE2()));
+    out.s416_next409 = view(env);
+    env = await stale(state(), false, e => press(e, "skipBtn"), FIN409(), resp(200, FIN()));
+    out.s416_skip409 = view(env);
+    env = await stale(state(), false, e => press(e, "endBtn"), FIN409(), resp(200, FIN()));
+    out.s416_end409 = view(env);
+
+    const broken = state();
+    broken.utterances[1] = { ...broken.utterances[1], content: "", structured: null, failed: true };
+    const fixed = state();
+    fixed.utterances[1] = { ...fixed.utterances[1], content: "다른 탭에서 고친 반응", structured: { utterance: "다른 탭에서 고친 반응" } };
+    const findBtn416 = n => n.tag === "button" ? n : (n.children || []).map(findBtn416).find(Boolean);
+    env = await stale(broken, false, async e => { findBtn416(e.$("seats").children[0]).dispatch("click"); await flush(); },
+        err(409, "NOTHING_TO_REGENERATE", "다시 생성할 학생 반응이 없습니다."), resp(200, fixed));
+    out.s416_regen409 = view(env);
+
+    // 다시 받기가 실패하면 낡은 상태로 둔다
+    for (const [name, answer] of [["net", netfail],
+        ["500", resp(500, { detail: "x" })],
+        ["404", err(404, "SESSION_NOT_FOUND", "시뮬레이션 세션을 찾을 수 없습니다.")]]) {
+        env = makeEnv([], [resp(200, state())]);
+        await flush();
+        out["s416_refail_" + name + "_before"] = view(env);
+        env.queue.push(FIN409()); env.gets.push(answer);
+        await sayT(env);
+        out["s416_refail_" + name] = view(env);
+    }
+
+    // 409가 아니면 다시 받지 않는다(GET 응답을 준비하지 않았으므로 GET이 가면 GET 수에 보인다)
+    for (const [name, answer] of [["429", err(429, "RESOURCE_EXHAUSTED", __Q429__, RA)],
+        ["503", err(503, "MODEL_OVERLOADED", __Q503__, RA)], ["net", netfail],
+        ["500", resp(500, { detail: "x" })], ["200", turn("보낸 글", null, 11)]]) {
+        env = makeEnv([], [resp(200, state())]);
+        await flush();
+        await submit(env, "tForm", "보낸 글", answer);
+        out["s416_noget_" + name] = view(env);
+    }
+
+    // 이 탭에서 수업 종료 200은 그대로 대화록으로 간다
+    env = makeEnv([], [resp(200, state())]);
+    await flush();
+    env.queue.push(resp(200, { status: "finished" }));
+    await press(env, "endBtn");
+    out.s416_end200 = view(env);
 
     console.log(JSON.stringify(out));
 })().catch(e => { console.error(e); process.exit(1); });
@@ -582,3 +719,139 @@ def test_template_keeps_single_retry_box_before_tform():
         ' disabled:cursor-not-allowed text-white shrink-0">다시 시도</button>'
         in html
     )
+
+
+# ===== 409 뒤 다시 받기 (#416) =====
+CONFLICT = "동시에 요청이 처리되었습니다. 다시 시도해 주세요."
+NOT_ENTERED = "아직 현재 장면에 들어가지 않았습니다."
+ALL_OFF = {
+    k: True
+    for k in [
+        "tInput",
+        "tSend",
+        "hintBtn",
+        "skipBtn",
+        "nextBtn",
+        "endBtn",
+        "dmInput",
+        "dmSubmit",
+    ]
+}
+
+
+def _finished_screen(s, text=FINISHED):
+    assert s["GET"] == 2, s["urls"]  # 첫 로딩 + 다시 받기 1회
+    assert (s["tForm"], s["finishedNote"]) == (False, True)
+    assert s["off"] == ALL_OFF
+    assert s["simStatus"] == text
+    assert s["href"] is None
+
+
+@_node
+@pytest.mark.parametrize("key", ["s416_fin", "s416_skip409", "s416_end409"])
+def test_409_finished_refetches_once_and_shows_finished_screen(out, key):
+    _finished_screen(out[key])
+
+
+@_node
+def test_409_finished_then_cannot_say_again(out):
+    s = out["s416_fin_again"]
+    assert s["POST"] == ["say:보낸 글→null"] and s["GET"] == 2
+
+
+@_node
+def test_409_finished_in_window_keeps_window_open(out):
+    s = out["s416_fin_dm"]
+    assert s["open"] and s["GET"] == 2
+    assert (s["dmTurnNote"], s["simStatus"]) == (FINISHED, "")
+    assert s["off"]["dmInput"] and s["off"]["dmSubmit"]
+    s = out["s416_fin_dm_reopen"]
+    assert not s["open"] and s["finishedNote"]
+
+
+@_node
+def test_409_turn_limit_refetch_disables_saying(out):
+    s = out["s416_limit"]
+    assert s["GET"] == 2
+    off = s["off"]
+    assert off["tInput"] and off["tSend"] and off["hintBtn"]
+    assert not off["skipBtn"] and not off["endBtn"]
+    assert "남은 발화 3회" not in (s["turnNote"], s["simStatus"])
+    assert s["simStatus"] == LIMIT
+
+
+@_node
+def test_409_conflict_shows_other_tabs_turn_and_keeps_message(out):
+    s = out["s416_conflict"]
+    assert s["GET"] == 2 and s["simStatus"] == CONFLICT
+    assert "다른 탭 발화" in s["seats"][0] and "네 선생님" in s["seats"][0]
+    # 다음 요청이 시작되면 문구가 지워진다
+    assert out["s416_conflict_next"]["simStatus"] == ""
+
+
+@_node
+def test_409_phase_not_entered_shows_new_scene_with_retry_box(out):
+    s = out["s416_not_entered"]
+    assert s["GET"] == 2 and "전개" in s["eyebrow"]
+    assert s["off"]["tInput"]
+    assert s["box"] == "다시 시도 on @tForm"
+    assert s["POST"] == ["say:보낸 글→null"]  # 저절로 진입하지 않는다
+    s = out["s416_not_entered_retry"]
+    assert s["urls"][-1] == "POST /api/simulation/sessions/1/phases/1/enter"
+    assert s["POST"] == ["say:보낸 글→null", "enter"] and s["GET"] == 2
+    assert "장면2 네" in s["seats"][0] and not s["off"]["tInput"]
+    assert s["box"] == "hidden"
+
+
+@_node
+def test_409_phase_not_entered_retry_box_for_class_goes_into_window(out):
+    # 반 전체의 재시도이므로 #411 규칙대로 열린 창 안에 둔다
+    s = out["s416_not_entered_dm"]
+    assert s["open"] and s["GET"] == 2
+    assert s["box"] == "다시 시도 on @dmForm px-3"
+    assert (s["dmTurnNote"], s["simStatus"]) == (NOT_ENTERED, "")
+
+
+@_node
+def test_enter_409_refetch_unblocks_screen(out):
+    s = out["s416_enter409"]
+    assert s["GET"] == 2 and "전개" in s["eyebrow"]
+    assert "장면2 네" in s["seats"][0] and not s["off"]["tInput"]
+    assert s["box"] == "hidden"
+
+
+@_node
+def test_next_409_shows_new_scene_and_disables_next(out):
+    s = out["s416_next409"]
+    assert s["GET"] == 2 and "전개" in s["eyebrow"]
+    assert s["off"]["nextBtn"]
+
+
+@_node
+def test_regenerate_409_shows_fixed_row(out):
+    s = out["s416_regen409"]
+    assert s["GET"] == 2 and s["POST"] == ["regenerate"]
+    assert "다른 탭에서 고친 반응" in s["seats"][0]
+    assert "다시 생성" not in s["seats"][0] and "읽지 못했" not in s["seats"][0]
+
+
+@_node
+@pytest.mark.parametrize("name", ["net", "500", "404"])
+def test_refetch_failure_keeps_stale_screen_and_409_message(out, name):
+    before, s = out[f"s416_refail_{name}_before"], out[f"s416_refail_{name}"]
+    for k in ("eyebrow", "seats", "off", "tForm", "finishedNote", "box"):
+        assert s[k] == before[k], k
+    assert s["simStatus"] == FINISHED
+    assert [u.split(" ")[0] for u in s["urls"]] == ["GET", "POST", "GET"]
+
+
+@_node
+@pytest.mark.parametrize("name", ["429", "503", "net", "500", "200"])
+def test_non_409_does_not_refetch(out, name):
+    assert out[f"s416_noget_{name}"]["GET"] == 1
+
+
+@_node
+def test_end_200_still_goes_to_transcript(out):
+    s = out["s416_end200"]
+    assert s["href"] == "/simulation/sessions/1/transcript" and s["GET"] == 1

@@ -165,6 +165,7 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
             const err = new Error((data.detail && data.detail.message) || "요청을 처리하지 못했습니다.");
+            err.status = res.status;
             if (res.status === 429 || res.status === 503) {
                 err.retryAfter = Number(res.headers.get("Retry-After")) || 0;
             }
@@ -530,6 +531,15 @@
             }
             showStatus(err.message);
             if (retry) showRetry(() => run(pending, action), err.retryAfter);
+            // 409는 이 탭이 아는 상태가 낡았다는 뜻이다(다른 탭에서 종료·상한·장면 전이).
+            // 한 번만 다시 받아 그린다. 다시 받기가 실패하면 낡은 상태로 둔다 (#416)
+            if (err.status === 409) {
+                state = await api("GET", API).catch(() => state);
+                // 넘어간 장면에 아직 반응이 없으면 진입은 교사가 누를 때 한다(자동 요청 없음) (#416)
+                if (state.session.status === "running" && phaseUtterances().length === 0) {
+                    showRetry(enterCurrentPhase, 0);
+                }
+            }
         } finally {
             busy = false;
             render(new Set());
