@@ -568,7 +568,7 @@
         return run(pending, async () => {
             let turn;
             try {
-                turn = await api("POST", API + "/say", { content, target_persona_id: targetId });
+                turn = await api("POST", API + "/say", { content, target_persona_id: targetId, phase_idx: state.session.current_phase_idx });
             } catch (err) {
                 // 실패하면 보낸 글을 입력칸에 되돌린다. 재시도 상자가 같은 글을 다시 보내는 429·503,
                 // 그 사이 다른 글이 든 입력칸, 창이 닫혔거나 다른 학생으로 바뀐 1:1 입력칸은 건드리지 않는다 (#415)
@@ -597,13 +597,16 @@
     }
 
     async function advance(mode) {
-        let result = null;
+        let result = null, fresh = null;
         await run(new Set(), async () => {
-            result = await api("POST", API + "/advance", { mode });
+            result = await api("POST", API + "/advance", { mode, phase_idx: state.session.current_phase_idx });
+            // 넘어간 뒤 상태를 다시 받을 때까지 버튼을 꺼 둔다. 그 틈의 두 번째 클릭이 낡은 화면에서 나가지 않게 한다 (#420)
+            if (result.status !== "finished") state = fresh = await api("GET", API);
         });
         if (!result) return;
         if (result.status === "finished") return toTranscript();
-        await init();
+        // 다시 받기가 실패하면 옛 장면에 진입하지 않는다(init()이 하던 대로) (#420)
+        if (fresh && phaseUtterances().length === 0) await enterCurrentPhase();
     }
 
     function bindInput(form, input, target) {

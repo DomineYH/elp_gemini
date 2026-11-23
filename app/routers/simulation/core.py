@@ -200,7 +200,9 @@ async def advance(
         session = await session_service.get_owned_session(
             db, sid, current_user.id
         )
-        return await session_service.advance(db, session, body.mode)
+        return await session_service.advance(
+            db, session, body.mode, body.phase_idx
+        )
     except SimulationError as e:
         raise e.to_http() from e
 
