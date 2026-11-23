@@ -56,7 +56,7 @@
 
 <!-- 1:1 대화 창 -->
 <div id="dmModal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" style="padding:max(16px,env(safe-area-inset-left,0px))">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="dmTitle">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="dmTitle">
         <div class="flex items-center justify-between gap-3 px-4 py-3 border-b">
             <div class="flex items-center gap-2 min-w-0">
                 <span id="dmDot" class="w-3 h-3 rounded-full shrink-0"></span>
@@ -76,7 +76,7 @@
                 </button>
             </div>
         </div>
-        <div id="dmFeed" class="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50" style="min-height:min(12rem,25vh)"></div>
+        <div id="dmFeed" class="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50" style="min-height:min(12rem,max(3rem,calc(85vh - 16.5rem)))"></div>
         <p id="dmTurnNote" class="note text-center break-keep border-t px-3 pt-2 mb-1" role="status"></p>
         <form id="dmForm" class="px-3 pb-3 flex items-end gap-2 bg-white">
             <label for="dmInput" class="sr-only">이 학생에게 말하기</label>
@@ -91,7 +91,7 @@
 <div class="fixed left-0 right-0 z-40" style="bottom:0;padding:0 max(16px,env(safe-area-inset-left,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-right,0px))">
     <div id="retryBox" class="hidden container mx-auto max-w-3xl mb-2 flex justify-end" role="alert">
         <div class="flex items-center gap-2 bg-white border rounded-xl shadow-lg px-3 py-2">
-            <span class="note">학생 반응을 받지 못했습니다.</span>
+            <span class="note break-keep">학생 반응을 받지 못했습니다.</span>
             <button type="button" id="retryBtn" class="text-sm font-semibold px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white shrink-0">다시 시도</button>
         </div>
     </div>
@@ -125,6 +125,28 @@
     let state = null;
     let busy = false;
     let dmPersona = null;
+    // 오류 문구. 어느 줄에 보일지는 syncControls()가 정한다 (#411)
+    let statusText = "";
+    function showStatus(text) {
+        statusText = text;
+        syncControls();
+    }
+    // 재시도 상자가 기다리는 학생들과 그 오류 문구. 새 요청이 시작되면 지운다 (#411)
+    let retryFor = null;
+    let retryText = "";
+    // 다른 한 학생에게 보낸 말의 재시도는 그 학생 창이 아니면 본 화면에 둔다. 이 학생에게 다시 보내는 것으로 보이지 않게 한다 (#411)
+    function retryElsewhere() {
+        return !!dmPersona && !!retryFor && retryFor.size === 1 && !retryFor.has(dmPersona.id);
+    }
+    // 재시도 상자는 1:1 창이 열려 있으면 창 안 입력줄 위로 옮긴다. 창 뒤에 가려지지 않게 한다 (#411)
+    function placeRetry() {
+        const box = $("retryBox");
+        const inside = !!dmPersona && !retryElsewhere();
+        const form = inside ? $("dmForm") : $("tForm");
+        // 그릴 때마다 불리므로 자리가 바뀔 때만 옮긴다. 보이는 알림을 다시 끼워 넣지 않게 한다 (#411)
+        if (box.nextElementSibling !== form) form.before(box);
+        box.classList.toggle("px-3", inside);
+    }
 
     function el(tag, className, text) {
         const node = document.createElement(tag);
@@ -340,10 +362,16 @@
             left <= 0 ? "상한에 도달했습니다. 수업을 종료하고 피드백을 받으세요." :
             left <= 5 ? "남은 발화 " + left + "회" : "";
         // 1:1 창이 열려 있으면 창 안의 줄에만 쓴다. 두 줄이 같은 글을 함께 읽히지 않게 한다 (#408)
+        // 오류 문구도 같다. 창 안에서는 오류가 남은 횟수 안내보다 먼저다. 다른 학생 몫의 재시도 오류는 상자와 함께 본 화면에 (#411)
+        const away = retryElsewhere() && statusText === retryText;
+        status.textContent = dmPersona && !away ? "" : statusText;
         $("turnNote").textContent = dmPersona ? "" : note;
-        $("dmTurnNote").textContent = dmPersona ? note : "";
+        $("dmTurnNote").textContent = dmPersona ? (away ? "" : statusText) || note : "";
+        placeRetry();
         // 안내가 생기면 대화 영역이 줄어 마지막 말풍선이 가려지므로 다시 바닥에 붙인다 (#408)
         if (dmPersona) $("dmFeed").scrollTop = $("dmFeed").scrollHeight;
+        // 화면이 낮아 패널이 스크롤되면 입력줄이 보이게 패널도 바닥으로 내린다 (#411)
+        if (dmPersona) dmModal.firstElementChild.scrollTop = dmModal.firstElementChild.scrollHeight;
         $("skipBtn").disabled = !canAct;
         $("endBtn").disabled = !canAct;
         const all = canAct && entered && state.agreement.all_agreed;
@@ -486,16 +514,22 @@
 
     async function run(pending, action) {
         busy = true;
-        status.textContent = "";
+        // 상자를 먼저 숨긴다. 대상을 먼저 지우면 보이는 상자가 다른 학생 창 안으로 옮겨진다 (#411)
         hideRetry();
+        retryFor = null;
+        showStatus("");
         render(pending);
         try {
             await action();
         } catch (err) {
-            status.textContent = err.message;
-            if (err.retryAfter !== undefined) {
-                showRetry(() => run(pending, action), err.retryAfter);
+            const retry = err.retryAfter !== undefined;
+            // 재시도 대상을 먼저 정한다. 다른 학생 몫의 오류가 열린 창의 줄에 잠깐이라도 쓰이지 않게 한다 (#411)
+            if (retry) {
+                retryFor = pending;
+                retryText = err.message;
             }
+            showStatus(err.message);
+            if (retry) showRetry(() => run(pending, action), err.retryAfter);
         } finally {
             busy = false;
             render(new Set());
@@ -545,7 +579,7 @@
             const text = input.value.trim();
             if (busy) return;
             if (!text) {
-                status.textContent = "내용을 입력해 주세요.";
+                showStatus("내용을 입력해 주세요.");
                 input.focus();
                 return;
             }
@@ -585,7 +619,7 @@
         try {
             state = await api("GET", API);
         } catch (err) {
-            status.textContent = err.message;
+            showStatus(err.message);
             return;
         }
         render(new Set());
