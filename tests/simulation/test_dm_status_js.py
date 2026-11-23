@@ -621,6 +621,16 @@ const CLOSE = {
     CLOSE.button(env); openSeat(env, 1);
     out.s415_marker_edit_undo = v415(env);
 
+    // 200 뒤 본문이 끊김: 서버에는 이미 저장된 발화이므로 되돌리지 않는다(다시 보내면 같은 글이 두 번) (#415 4차)
+    for (const form of ["tForm", "dmForm"]) {
+        env = await boot415();
+        if (form === "dmForm") openSeat(env);
+        await submit(env, form, "보낸 글", badbody);
+        out[`s415_badbody_${form}`] = v415(env);
+        env.$(form).dispatch("submit"); await flush();
+        out[`s415_badbody_${form}_send`] = v415(env);
+    }
+
     console.log(JSON.stringify(out));
 })().catch(e => { console.error(e); process.exit(1); });
 """
@@ -1218,3 +1228,13 @@ def test_text_typed_after_restore_is_never_cleared_on_switch(out, key):
     # 표시는 손대지 않은 되돌린 글에만 붙는다. 같은 문장이라도 교사가 친 글은 남는다
     s = out[key]
     assert s["open"] and s["dmInput"] == SENT
+
+
+@_node
+@pytest.mark.parametrize("form", ["tForm", "dmForm"])
+def test_200_with_unreadable_body_restores_nothing(out, form):
+    s = out[f"s415_badbody_{form}"]
+    assert (s["tInput"], s["dmInput"]) == ("", "")
+    # 빈 칸이므로 다시 제출해도 같은 글이 두 번 가지 않는다
+    assert out[f"s415_badbody_{form}_send"]["POST"] == s["POST"]
+    assert len(s["POST"]) == 1
