@@ -18,9 +18,17 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
+from app.config import settings
 from app.db import Base, get_db
 from app.main import app
 from app.models.users import User
+
+
+@pytest.fixture(autouse=True)
+def _criteria_reconcile_off(monkeypatch):
+    # 시작 reconcile 작업이 닫히는 루프에서 시작 DB 쓰기 잠금을 남기므로 끈다; 켜야 하는 테스트는 직접 True 로 둔다 (#424)
+    monkeypatch.setattr(settings, "CRITERIA_CLOUD_RECONCILE_ENABLED", False)
+
 
 # ===== 단위 테스트 공통 픽스처 =====
 
