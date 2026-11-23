@@ -601,6 +601,26 @@ const CLOSE = {
     CLOSE.button(env); openSeat(env, 1);
     out.s415_switch_edited = v415(env);
 
+    // 교사가 입력칸에 친다: 브라우저처럼 input 이벤트가 간다 (#415 3차)
+    const typeInto = (e, id, text) => { e.$(id).value = text; e.$(id).dispatch("input"); };
+    // (a) 되돌린 글을 다시 보내 200 → 같은 문장을 새로 침 → 지호 창
+    env = await boot415(); openSeat(env);
+    env.gets.push(resp(200, state()));
+    await dmSubmit(env, "보낸 글", err(409, "CONFLICT_RETRY", CONFLICT));
+    env.queue.push(turn("보낸 글", 1, 11));
+    env.$("dmForm").dispatch("submit"); await flush();
+    typeInto(env, "dmInput", "보낸 글");
+    CLOSE.button(env); openSeat(env, 1);
+    out.s415_marker_resent_retyped = v415(env);
+    // (b) 되돌린 글을 고쳤다가 같은 글로 되돌림 → 지호 창
+    env = await boot415(); openSeat(env);
+    env.gets.push(resp(200, state()));
+    await dmSubmit(env, "보낸 글", err(409, "CONFLICT_RETRY", CONFLICT));
+    typeInto(env, "dmInput", "보낸 글 고침");
+    typeInto(env, "dmInput", "보낸 글");
+    CLOSE.button(env); openSeat(env, 1);
+    out.s415_marker_edit_undo = v415(env);
+
     console.log(JSON.stringify(out));
 })().catch(e => { console.error(e); process.exit(1); });
 """
@@ -1188,3 +1208,13 @@ def test_restored_dm_text_stays_when_same_window_reopens(out):
 def test_typed_dm_draft_still_follows_window_switch(out, key, text):
     s = out[key]
     assert s["open"] and s["dmInput"] == text
+
+
+@_node
+@pytest.mark.parametrize(
+    "key", ["s415_marker_resent_retyped", "s415_marker_edit_undo"]
+)
+def test_text_typed_after_restore_is_never_cleared_on_switch(out, key):
+    # 표시는 손대지 않은 되돌린 글에만 붙는다. 같은 문장이라도 교사가 친 글은 남는다
+    s = out[key]
+    assert s["open"] and s["dmInput"] == SENT
