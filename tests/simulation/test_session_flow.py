@@ -1997,7 +1997,11 @@ def _result_said(value):
         ("1,000명", "1000명", True),
         ("1000명", "1,000명", True),
         ("−5도", "-5도", True),
-        ("-5도", "- 5도", True),
+        (
+            "-5도",
+            "- 5도",
+            False,
+        ),  # 띄어 쓴 부호는 다른 표현이다 (r3에서 안전한 쪽으로 옮김)
         # 부호가 다름
         ("-5도", "+5도", False),
         ("-5도", "5도", False),
@@ -2047,6 +2051,126 @@ def test_report_only_numbers(teacher, student, expected):
 )
 def test_report_only_numbers_in_context(teacher, student, expected):
     assert session_service._report_only(student, teacher) is expected
+
+
+# 표현은 글자·공백·앞뒤 문장부호가 아닌 덩어리다. 기호 목록 없이 통째로 비교한다 (#413 PR 재검토)
+@pytest.mark.parametrize(
+    "teacher, student, expected",
+    [
+        # 부등호·관계: 방향이나 표기가 다르면 다른 표현
+        ("5≤3", "5≥3", False),
+        ("5≤3", "5≤3", True),
+        ("x<=5", "x>=5", False),
+        ("x<=5", "x<=5", True),
+        ("x<=5", "x≤5", False),
+        ("5<3", "5>3", False),
+        ("5=5", "5≠5", False),
+        ("5≠3", "5!=3", False),
+        ("5!=3", "5!=3", True),
+        # 곱셈·나눗셈 기호는 #393과 같은 _SAME_SYMBOL로 맞춘다 (× = *, ÷ = /)
+        ("3×2", "3*2", True),
+        ("6÷2", "6/2", True),
+        ("3×2", "3÷2", False),
+        ("3*2", "3/2", False),
+        ("2^3", "2^3", True),
+        ("2^3", "3^2", False),
+        # 퍼센트·퍼밀은 수에 붙은 기호다
+        ("20%", "20‰", False),
+        ("20‰", "20‰", True),
+        ("20", "20%", False),
+        # 범위
+        ("3~5", "3~5", True),
+        ("3~5", "3-5", False),
+        ("3-5", "3–5", False),
+        # 분수·비·화살표
+        ("1/2", "1/3", False),
+        ("1/2", "1/2", True),
+        ("1:2", "2:1", False),
+        ("1:2", "1:2", True),
+        ("3→5", "5→3", False),
+        ("3→5", "3→5", True),
+        # 괄호는 표현 앞뒤에서만 문장부호로 뗀다: (5) = 5, 안쪽 괄호는 그대로
+        ("5", "(5)", True),
+        ("(3+2)×4", "3+2×4", False),
+        # 도·화폐 기호
+        ("5°", "5°", True),
+        ("5°", "5", False),
+        ("₩500", "₩500", True),
+        ("₩500", "500", False),
+        # 전각 숫자·기호는 맞추지 않는다 (확실히 같은 것만 맞춘다)
+        ("5", "５", False),
+        ("５", "５", True),
+        ("+5", "＋5", False),
+        # 수 없는 기호도 표현이다
+        ("△", "○", False),
+        ("○", "○", True),
+        # 문장부호만 붙은 수는 그대로다
+        ("5도", "5도...", True),
+        ("5, 7", "5, 7", True),
+    ],
+)
+def test_report_only_expressions(teacher, student, expected):
+    assert (
+        session_service._report_only(
+            _result_said(student), _result_ask(teacher)
+        )
+        is expected
+    )
+
+
+@pytest.mark.parametrize(
+    "teacher, student, expected",
+    [
+        # 따옴표 안에서만 준 표현은 교사 말의 표현으로 치지 않는다
+        ("'5≥3'이 아니라 5≤3으로 적어 보세요.", "네, 5≥3으로 적었어요.", False),
+        ("'5≥3'이 아니라 5≤3으로 적어 보세요.", "네, 5≤3으로 적었어요.", True),
+        # 문장부호뿐인 발화는 r1 동작 그대로
+        (T38, "네, 저장했어요!", True),
+        (T38, "네, 저장했어요~", True),
+        (T38, "네... 저장했어요.", True),
+        (T38, "네, 저장했어요…", True),
+        # 가운뎃점은 낱말 사이의 문장부호다
+        (
+            "유소년·고령 열을 정리해 보세요.",
+            "네, 유소년·고령 열 정리했어요.",
+            True,
+        ),
+        (
+            "유소년, 고령 열을 정리해 보세요.",
+            "네, 유소년·고령 열 정리했어요.",
+            True,
+        ),
+        # 밑줄은 파일 이름의 일부라 기호로 본다
+        ("모둠_1 파일을 저장해 보세요.", "네, 모둠_1 파일 저장했어요.", True),
+        ("모둠_1 파일을 저장해 보세요.", "네, 모둠_2 파일 저장했어요.", False),
+        ("모둠1 파일을 저장해 보세요.", "네, 모둠_1 파일 저장했어요.", False),
+    ],
+)
+def test_report_only_expressions_in_context(teacher, student, expected):
+    assert session_service._report_only(student, teacher) is expected
+
+
+RELATION_ASK = "앞서 5≤3으로 적었는데, 두 값을 다시 비교해 보세요."
+RANGE_ASK = "앞서 x<=5로 적었는데, 해의 범위를 다시 확인해 보세요."
+
+
+@pytest.mark.parametrize(
+    "content, utterance, stored, all_agreed",
+    [
+        (RELATION_ASK, "네, 5≥3으로 적었어요.", 90, True),
+        (RELATION_ASK, "네, 5≤3으로 적었어요.", 70, False),
+        (RANGE_ASK, "네, x>=5로 적었어요.", 90, True),
+        (RANGE_ASK, "네, x<=5로 적었어요.", 70, False),
+    ],
+)
+def test_report_with_new_relation_is_not_held(
+    ready, fake_gemini, content, utterance, stored, all_agreed
+):
+    _, turn = _report(
+        ready, fake_gemini, content, utterance, understanding=90, previous=70
+    )
+    assert _stored(turn) == {stored}
+    assert turn["agreement"]["all_agreed"] is all_agreed
 
 
 REVIEW_ASK = _result_ask("-5도")

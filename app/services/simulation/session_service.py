@@ -559,17 +559,17 @@ def _done_word(word: str) -> bool:
     )
 
 
-def _signed_numbers(text: str) -> set[str]:
-    """_numbers의 부호·연산 기호를 바로 뒤의 수에 붙인 값들 ("-5" ≠ "+5" ≠ "5", "3+2" → 3, +2)."""
-    tokens = _numbers(text)
-    found = set()
-    for i, token in enumerate(tokens):
-        if token[0].isdigit():
-            sign = tokens[i - 1] if i and not tokens[i - 1][0].isdigit() else ""
-            found.add(sign + token)
-        elif i + 1 == len(tokens) or not tokens[i + 1][0].isdigit():
-            found.add(token)
-    return found
+# 표현 앞뒤에서만 떼는 문장부호. 사이에 있으면 표현의 일부다 ("5." → 5, "3.5"·"3~5"는 그대로) (#413)
+_SENTENCE_MARKS = ",.!?…~·:;'\"‘’“”()[]"
+
+
+def _expressions(text: str) -> set[str]:
+    """글자·공백으로 나눈 덩어리에서 앞뒤 문장부호를 뗀 것. 수와 그 옆 기호는 종류와 상관없이 한 표현이다."""
+    text = _THOUSANDS.sub("", text).translate(_SAME_SYMBOL)
+    pieces = (
+        p.strip(_SENTENCE_MARKS) for p in re.split(r"[^\W\d_]+|\s+", text)
+    )
+    return {p for p in pieces if p}
 
 
 def _report_only(utterance: str, teacher: str) -> bool:
@@ -584,8 +584,8 @@ def _report_only(utterance: str, teacher: str) -> bool:
         any(_done_word(w) for w in words)
         and not any(w in ("안", "아직") or w.startswith("못") for w in words)
         and all(_REPORT_WORD.fullmatch(w) or w[:2] in plain for w in words)
-        # 앞 두 글자 비교는 부호와 자릿수를 못 가리므로 수는 따로 맞춘다 (#413)
-        and _signed_numbers(utterance) <= _signed_numbers(teacher)
+        # 앞 두 글자 비교는 부호·자릿수·기호를 못 가리므로 수식·기호 표현은 통째로 맞춘다 (#413)
+        and _expressions(utterance) <= _expressions(teacher)
     )
 
 
