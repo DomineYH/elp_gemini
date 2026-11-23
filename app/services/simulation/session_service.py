@@ -559,17 +559,15 @@ def _done_word(word: str) -> bool:
     )
 
 
-# 표현 앞뒤에서만 떼는 문장부호. 사이에 있으면 표현의 일부다 ("5." → 5, "3.5"·"3~5"는 그대로) (#413)
+# 덩어리 앞뒤에서 떼는 문장부호. 떼고도 남는 것이 있으면 수나 기호가 든 말이다 (#413)
 _SENTENCE_MARKS = ",.!?…~·:;'\"‘’“”()[]"
 
 
-def _expressions(text: str) -> set[str]:
-    """글자·공백으로 나눈 덩어리에서 앞뒤 문장부호를 뗀 것. 수와 그 옆 기호는 종류와 상관없이 한 표현이다."""
-    text = _THOUSANDS.sub("", text).translate(_SAME_SYMBOL)
-    pieces = (
+def _has_number_or_symbol(text: str) -> bool:
+    """글자·공백으로 나눈 덩어리 가운데 앞뒤 문장부호를 떼고도 남는 것이 있는지 (#413)."""
+    return any(
         p.strip(_SENTENCE_MARKS) for p in re.split(r"[^\W\d_]+|\s+", text)
     )
-    return {p for p in pieces if p}
 
 
 def _report_only(utterance: str, teacher: str) -> bool:
@@ -584,8 +582,8 @@ def _report_only(utterance: str, teacher: str) -> bool:
         any(_done_word(w) for w in words)
         and not any(w in ("안", "아직") or w.startswith("못") for w in words)
         and all(_REPORT_WORD.fullmatch(w) or w[:2] in plain for w in words)
-        # 앞 두 글자 비교는 부호·자릿수·기호를 못 가리므로 수식·기호 표현은 통째로 맞춘다 (#413)
-        and _expressions(utterance) <= _expressions(teacher)
+        # 앞 두 글자 비교는 수·식을 못 가리므로 수나 기호가 든 말은 보고로 보지 않는다 (#413)
+        and not _has_number_or_symbol(utterance)
     )
 
 

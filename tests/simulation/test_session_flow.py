@@ -1978,8 +1978,8 @@ def test_report_only_never_reaches_agree(ready, fake_gemini):
     assert turn["agreement"]["agreed_persona_ids"] == []
 
 
-# 교사 말에 없는 수·부호·관계를 말한 답은 보고가 아니다 (#413 PR 검토)
-# 학생 말은 "네, <값>로 나왔어요."처럼 낱말 비교는 통과하게 짜서 수 비교가 가르게 했다
+# 수나 기호가 든 답은 교사 말과 같은 값·식을 되받았어도 보고로 보지 않는다 (#413, 사용자 결정 2026-11-23).
+# 아래 표는 r2·r3에서 교사 말과 표현을 비교하던 줄을 그대로 두고 새 기대값을 적은 것이다
 def _result_ask(value):
     return f"앞서 {value}로 나왔는데, 원자료로 평균을 다시 계산해 보세요."
 
@@ -1991,41 +1991,31 @@ def _result_said(value):
 @pytest.mark.parametrize(
     "teacher, student, expected",
     [
-        # 같은 값: 같은 표기, 같은 것의 다른 표기
-        ("-5도", "-5도", True),
-        ("5도", "5도", True),
-        ("1,000명", "1000명", True),
-        ("1000명", "1,000명", True),
-        ("−5도", "-5도", True),
-        (
-            "-5도",
-            "- 5도",
-            False,
-        ),  # 띄어 쓴 부호는 다른 표현이다 (r3에서 안전한 쪽으로 옮김)
-        # 부호가 다름
+        ("-5도", "-5도", False),  # 이전 판(r2·r3)에서는 True
+        ("5도", "5도", False),  # 이전 판(r2·r3)에서는 True
+        ("1,000명", "1000명", False),  # 이전 판(r2·r3)에서는 True
+        ("1000명", "1,000명", False),  # 이전 판(r2·r3)에서는 True
+        ("−5도", "-5도", False),  # 이전 판(r2·r3)에서는 True
+        ("-5도", "- 5도", False),
         ("-5도", "+5도", False),
         ("-5도", "5도", False),
         ("5도", "-5도", False),
         ("+5도", "-5도", False),
-        # 앞 두 글자만 같은 다른 수. 3.50과 3.5는 자릿수를 다르게 적은 값이라 가리지 않고 다른 수로 본다
         ("500도", "50도", False),
         ("120도", "12도", False),
         ("3.50도", "3.5도", False),
         ("3.5도", "3도", False),
         ("3도", "3.5도", False),
-        # 단위가 붙은 수
-        ("20%", "20%", True),
+        ("20%", "20%", False),  # 이전 판(r2·r3)에서는 True
         ("20%", "2%", False),
-        ("5개", "5개", True),
+        ("5개", "5개", False),  # 이전 판(r2·r3)에서는 True
         ("5개", "5도", False),
-        ("3번", "3번", True),
-        # 교사가 말하지 않은 관계·연산
+        ("3번", "3번", False),  # 이전 판(r2·r3)에서는 True
         ("3, 2", "3+2", False),
         ("5, 3", "5>3", False),
         ("6, 6", "6=6", False),
-        ("3+2", "3+2", True),
-        # 여러 수: 하나라도 새 수면 보고가 아니다
-        ("5도와 100도", "5도와 100도", True),
+        ("3+2", "3+2", False),  # 이전 판(r2·r3)에서는 True
+        ("5도와 100도", "5도와 100도", False),  # 이전 판(r2·r3)에서는 True
         ("5도와 100도", "5도와 10도", False),
     ],
 )
@@ -2041,72 +2031,67 @@ def test_report_only_numbers(teacher, student, expected):
 @pytest.mark.parametrize(
     "teacher, student, expected",
     [
-        # 따옴표 안에만 있는 수는 교사 말의 수로 치지 않는다
         ("'3'이 아니라 13번 칸을 눌러 보세요.", "네, 3번 칸 눌렀어요.", False),
-        ("'3'이 아니라 13번 칸을 눌러 보세요.", "네, 13번 칸 눌렀어요.", True),
-        # 더 긴 낱말 속의 수
+        (
+            "'3'이 아니라 13번 칸을 눌러 보세요.",
+            "네, 13번 칸 눌렀어요.",
+            False,
+        ),  # 이전 판(r2·r3)에서는 True
         ("모둠13 파일을 저장해 보세요.", "네, 모둠1 파일 저장했어요.", False),
-        ("모둠13 파일을 저장해 보세요.", "네, 모둠13 파일 저장했어요.", True),
+        (
+            "모둠13 파일을 저장해 보세요.",
+            "네, 모둠13 파일 저장했어요.",
+            False,
+        ),  # 이전 판(r2·r3)에서는 True
     ],
 )
 def test_report_only_numbers_in_context(teacher, student, expected):
     assert session_service._report_only(student, teacher) is expected
 
 
-# 표현은 글자·공백·앞뒤 문장부호가 아닌 덩어리다. 기호 목록 없이 통째로 비교한다 (#413 PR 재검토)
 @pytest.mark.parametrize(
     "teacher, student, expected",
     [
-        # 부등호·관계: 방향이나 표기가 다르면 다른 표현
         ("5≤3", "5≥3", False),
-        ("5≤3", "5≤3", True),
+        ("5≤3", "5≤3", False),  # 이전 판(r2·r3)에서는 True
         ("x<=5", "x>=5", False),
-        ("x<=5", "x<=5", True),
+        ("x<=5", "x<=5", False),  # 이전 판(r2·r3)에서는 True
         ("x<=5", "x≤5", False),
         ("5<3", "5>3", False),
         ("5=5", "5≠5", False),
         ("5≠3", "5!=3", False),
-        ("5!=3", "5!=3", True),
-        # 곱셈·나눗셈 기호는 #393과 같은 _SAME_SYMBOL로 맞춘다 (× = *, ÷ = /)
-        ("3×2", "3*2", True),
-        ("6÷2", "6/2", True),
+        ("5!=3", "5!=3", False),  # 이전 판(r2·r3)에서는 True
+        ("3×2", "3*2", False),  # 이전 판(r2·r3)에서는 True
+        ("6÷2", "6/2", False),  # 이전 판(r2·r3)에서는 True
         ("3×2", "3÷2", False),
         ("3*2", "3/2", False),
-        ("2^3", "2^3", True),
+        ("2^3", "2^3", False),  # 이전 판(r2·r3)에서는 True
         ("2^3", "3^2", False),
-        # 퍼센트·퍼밀은 수에 붙은 기호다
         ("20%", "20‰", False),
-        ("20‰", "20‰", True),
+        ("20‰", "20‰", False),  # 이전 판(r2·r3)에서는 True
         ("20", "20%", False),
-        # 범위
-        ("3~5", "3~5", True),
+        ("3~5", "3~5", False),  # 이전 판(r2·r3)에서는 True
         ("3~5", "3-5", False),
         ("3-5", "3–5", False),
-        # 분수·비·화살표
         ("1/2", "1/3", False),
-        ("1/2", "1/2", True),
+        ("1/2", "1/2", False),  # 이전 판(r2·r3)에서는 True
         ("1:2", "2:1", False),
-        ("1:2", "1:2", True),
+        ("1:2", "1:2", False),  # 이전 판(r2·r3)에서는 True
         ("3→5", "5→3", False),
-        ("3→5", "3→5", True),
-        # 괄호는 표현 앞뒤에서만 문장부호로 뗀다: (5) = 5, 안쪽 괄호는 그대로
-        ("5", "(5)", True),
+        ("3→5", "3→5", False),  # 이전 판(r2·r3)에서는 True
+        ("5", "(5)", False),  # 이전 판(r2·r3)에서는 True
         ("(3+2)×4", "3+2×4", False),
-        # 도·화폐 기호
-        ("5°", "5°", True),
+        ("5°", "5°", False),  # 이전 판(r2·r3)에서는 True
         ("5°", "5", False),
-        ("₩500", "₩500", True),
+        ("₩500", "₩500", False),  # 이전 판(r2·r3)에서는 True
         ("₩500", "500", False),
-        # 전각 숫자·기호는 맞추지 않는다 (확실히 같은 것만 맞춘다)
         ("5", "５", False),
-        ("５", "５", True),
+        ("５", "５", False),  # 이전 판(r2·r3)에서는 True
         ("+5", "＋5", False),
-        # 수 없는 기호도 표현이다
         ("△", "○", False),
-        ("○", "○", True),
-        # 문장부호만 붙은 수는 그대로다
-        ("5도", "5도...", True),
-        ("5, 7", "5, 7", True),
+        ("○", "○", False),  # 이전 판(r2·r3)에서는 True
+        ("5도", "5도...", False),  # 이전 판(r2·r3)에서는 True
+        ("5, 7", "5, 7", False),  # 이전 판(r2·r3)에서는 True
     ],
 )
 def test_report_only_expressions(teacher, student, expected):
@@ -2118,18 +2103,20 @@ def test_report_only_expressions(teacher, student, expected):
     )
 
 
+# 문장부호뿐인 발화(끝의 ! ~ … 말줄임, 낱말 사이 가운뎃점)는 r1 동작 그대로 보고다
 @pytest.mark.parametrize(
     "teacher, student, expected",
     [
-        # 따옴표 안에서만 준 표현은 교사 말의 표현으로 치지 않는다
         ("'5≥3'이 아니라 5≤3으로 적어 보세요.", "네, 5≥3으로 적었어요.", False),
-        ("'5≥3'이 아니라 5≤3으로 적어 보세요.", "네, 5≤3으로 적었어요.", True),
-        # 문장부호뿐인 발화는 r1 동작 그대로
+        (
+            "'5≥3'이 아니라 5≤3으로 적어 보세요.",
+            "네, 5≤3으로 적었어요.",
+            False,
+        ),  # 이전 판(r2·r3)에서는 True
         (T38, "네, 저장했어요!", True),
         (T38, "네, 저장했어요~", True),
         (T38, "네... 저장했어요.", True),
         (T38, "네, 저장했어요…", True),
-        # 가운뎃점은 낱말 사이의 문장부호다
         (
             "유소년·고령 열을 정리해 보세요.",
             "네, 유소년·고령 열 정리했어요.",
@@ -2140,8 +2127,11 @@ def test_report_only_expressions(teacher, student, expected):
             "네, 유소년·고령 열 정리했어요.",
             True,
         ),
-        # 밑줄은 파일 이름의 일부라 기호로 본다
-        ("모둠_1 파일을 저장해 보세요.", "네, 모둠_1 파일 저장했어요.", True),
+        (
+            "모둠_1 파일을 저장해 보세요.",
+            "네, 모둠_1 파일 저장했어요.",
+            False,
+        ),  # 이전 판(r2·r3)에서는 True
         ("모둠_1 파일을 저장해 보세요.", "네, 모둠_2 파일 저장했어요.", False),
         ("모둠1 파일을 저장해 보세요.", "네, 모둠_1 파일 저장했어요.", False),
     ],
@@ -2152,42 +2142,35 @@ def test_report_only_expressions_in_context(teacher, student, expected):
 
 RELATION_ASK = "앞서 5≤3으로 적었는데, 두 값을 다시 비교해 보세요."
 RANGE_ASK = "앞서 x<=5로 적었는데, 해의 범위를 다시 확인해 보세요."
+REVIEW_ASK = _result_ask("-5도")
+SPACED_ASK = "앞서 적은 식은 5 ≤ 3. 두 값을 다시 비교해 보세요."
+LETTERS_ASK = "앞서 x<y로 적었는데, 두 값을 다시 비교해 보세요."
+FACTORIAL_ASK = "앞서 순열의 개수를 5로 적었는데, 전체 경우의 수를 계산하는 식으로 다시 써 보세요."
 
 
 @pytest.mark.parametrize(
-    "content, utterance, stored, all_agreed",
+    "content, utterance",
     [
-        (RELATION_ASK, "네, 5≥3으로 적었어요.", 90, True),
-        (RELATION_ASK, "네, 5≤3으로 적었어요.", 70, False),
-        (RANGE_ASK, "네, x>=5로 적었어요.", 90, True),
-        (RANGE_ASK, "네, x<=5로 적었어요.", 70, False),
+        (REVIEW_ASK, "네, +5도로 나왔어요."),
+        (REVIEW_ASK, "네, -5도로 나왔어요."),  # 되받음, r2·r3에서는 70
+        (RELATION_ASK, "네, 5≥3으로 적었어요."),
+        (RELATION_ASK, "네, 5≤3으로 적었어요."),  # 되받음, r3에서는 70
+        (RANGE_ASK, "네, x>=5로 적었어요."),
+        (RANGE_ASK, "네, x<=5로 적었어요."),  # 되받음, r3에서는 70
+        # PR 재검토 r3: 피연산자 순서를 바꾼 식, 숫자 뒤 팩토리얼
+        (SPACED_ASK, "네, 다시 적었어요. 3 ≤ 5."),
+        (LETTERS_ASK, "네, y<x 적었어요."),
+        (FACTORIAL_ASK, "네, 5!로 적었어요."),
     ],
 )
-def test_report_with_new_relation_is_not_held(
-    ready, fake_gemini, content, utterance, stored, all_agreed
+def test_report_with_number_or_symbol_is_not_held(
+    ready, fake_gemini, content, utterance
 ):
     _, turn = _report(
         ready, fake_gemini, content, utterance, understanding=90, previous=70
     )
-    assert _stored(turn) == {stored}
-    assert turn["agreement"]["all_agreed"] is all_agreed
-
-
-REVIEW_ASK = _result_ask("-5도")
-
-
-@pytest.mark.parametrize(
-    "utterance, stored, all_agreed",
-    [("네, +5도로 나왔어요.", 90, True), ("네, -5도로 나왔어요.", 70, False)],
-)
-def test_report_with_new_signed_value_is_not_held(
-    ready, fake_gemini, utterance, stored, all_agreed
-):
-    _, turn = _report(
-        ready, fake_gemini, REVIEW_ASK, utterance, understanding=90, previous=70
-    )
-    assert _stored(turn) == {stored}
-    assert turn["agreement"]["all_agreed"] is all_agreed
+    assert _stored(turn) == {90}
+    assert turn["agreement"]["all_agreed"] is True
 
 
 # --- '모르겠어요'뿐인 반응은 닫힌 목록으로 이해도를 올리지 않는다 (#353) ---
