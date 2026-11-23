@@ -2913,6 +2913,8 @@ def test_first_reaction_pledge_is_not_consent(ready, fake_gemini):
         "다음에도 잘 모르겠어요.",
         "다음에도 열심히 할게요?",
         "네, 다음 차시 활동도 열심히 참여하겠습니다.",
+        "다음에도 자로 재고 열심히 할게요.",
+        "다음에도 저도 더 열심히 설명서를 만들게요.",
     ],
 )
 def test_action_commitment_is_not_pledge(ready, fake_gemini, utterance):
