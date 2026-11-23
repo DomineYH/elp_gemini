@@ -2803,6 +2803,12 @@ def _ids(personas):
         "네, 다음 활동도 이어서 열심히 참여하겠습니다.",
         "네, 같이 해주시면 열심히 해볼게요.",
         "선생님이 도와주시면 열심히 할게요.",
+        # 범위 명사 '차시', 앞말 '다음에도' (#425)
+        "네, 다음 차시에도 열심히 해 볼게요.",
+        "다음 차시에는 열심히 할게요.",
+        "네, 다음 차시도 열심히 참여하겠습니다.",
+        "이번 차시도 끝까지 열심히 할게요.",
+        "네, 다음에도 열심히 해 볼게요.",
     ],
 )
 def test_follow_up_pledge_is_held_and_agrees(ready, fake_gemini, utterance):
@@ -2891,6 +2897,30 @@ def test_first_reaction_pledge_is_not_consent(ready, fake_gemini):
         "열심히 해 볼게요?",
         "잘 모르겠어요? 그냥 열심히 해 볼게요.",
         "네, 열심히 해 볼게요？",
+        # '차시'·'다음에도'를 더해도 걸리면 안 되는 형태 (#425)
+        "다음 차시에 자로 재어 볼게요.",
+        "다음 차시 준비물 챙겨 올게요.",
+        "다음 차시에는 표를 정리해 볼게요.",
+        "다음 차시에도 열심히 참여해서 멋진 사용 설명서를 만들어 보겠습니다!",
+        "다음 차시 예고를 확인할 준비가 되었습니다.",
+        "다음 차시도 잘 모르겠어요.",
+        "네, 다음 차시에도 해 볼게요.",
+        "다음 차시에도 열심히 할게요?",
+        "다음에도 자로 재어 볼게요.",
+        "다음에도 해 볼게요.",
+        "그 다음에 열을 지울게요.",
+        "다음에는 표를 정리해 볼게요.",
+        "다음에도 잘 모르겠어요.",
+        "다음에도 열심히 할게요?",
+        "네, 다음 차시 활동도 열심히 참여하겠습니다.",
+        "다음에도 자로 재고 열심히 할게요.",
+        "다음에도 저도 더 열심히 설명서를 만들게요.",
+        # 따옴표가 든 말은 예문을 옮긴 것일 수 있어 다짐이 아니다 (#425)
+        '네, "다음에도 열심히 해 볼게요."',
+        "네, “다음 차시에도 열심히 해 볼게요.”",
+        "네, '열심히 해 볼게요.'",
+        "‘열심히 해 볼게요’요.",
+        "「열심히 해 볼게요.」",
     ],
 )
 def test_action_commitment_is_not_pledge(ready, fake_gemini, utterance):
@@ -2915,6 +2945,20 @@ def test_widened_pledge_with_new_artifact_is_not_consent(ready, fake_gemini):
         ready,
         fake_gemini,
         "네, 남은 시간 동안 열심히 해 볼게요.",
+        artifacts=("", "메모.txt"),
+    )
+    assert _flags(turn) == {None}
+    assert turn["agreement"]["count"] == 0
+    assert turn["agreement"]["pledged_persona_ids"] == []
+    assert _stored(turn) == {45}
+
+
+def test_chasi_pledge_with_new_artifact_is_not_consent(ready, fake_gemini):
+    # '차시' 앞말이 붙어도 새 산출물이 있으면 #358 조건에서 빠진다 (#425)
+    _, turn = _pledge_turn(
+        ready,
+        fake_gemini,
+        "네, 다음 차시에도 열심히 해 볼게요.",
         artifacts=("", "메모.txt"),
     )
     assert _flags(turn) == {None}
@@ -3060,6 +3104,31 @@ def test_one_holdout_blocks_agree_advance(ready, fake_gemini):
         utterance=STUCK if key == holdout else PLEDGE, understanding=45
     )
     turn = ready.post(_api(sid, "/say"), json={"content": ENCOURAGE}).json()
+    assert turn["agreement"]["count"] == 3
+    assert sorted(turn["agreement"]["pledged_persona_ids"]) == _ids(
+        state["personas"][1:]
+    )
+    r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
+    assert r.status_code == 409
+    assert _code(r) == "NOT_ALL_AGREED"
+
+
+def test_quoted_example_pledge_blocks_agree_advance(ready, fake_gemini):
+    # 교사가 준 예문을 따옴표째 옮긴 답은 다짐이 아니다 (#425)
+    state = _create(ready)
+    sid = state["session"]["id"]
+    holdout = str(state["personas"][0]["source_record_id"])
+    fake_gemini.results["student"] = _react(utterance=SAID, understanding=40)
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.results["student"] = lambda key: _react(
+        utterance=(
+            '네, "다음에도 열심히 해 볼게요."' if key == holdout else PLEDGE
+        ),
+        understanding=45,
+    )
+    content = "\"다음에도 열심히 해 볼 거야.\" 이 문장을 '-ㄹ게요'를 써서 높임말로 바꿔 볼래요?"
+    turn = ready.post(_api(sid, "/say"), json={"content": content}).json()
+    assert _flags(turn) == {True, None}
     assert turn["agreement"]["count"] == 3
     assert sorted(turn["agreement"]["pledged_persona_ids"]) == _ids(
         state["personas"][1:]
