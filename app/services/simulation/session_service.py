@@ -559,14 +559,14 @@ def _done_word(word: str) -> bool:
     )
 
 
-# 덩어리 앞뒤에서 떼는 문장부호. 떼고도 남는 것이 있으면 수나 기호가 든 말이다 (#413)
-_SENTENCE_MARKS = ",.!?…~·:;'\"‘’“”()[]"
+# 보고에 올 수 있는 문장부호. 글자·공백·이 다섯 밖의 문자가 하나라도 있으면 수나 기호가 든 말이다 (#413)
+_REPORT_MARKS = frozenset(",.!…~")
 
 
 def _has_number_or_symbol(text: str) -> bool:
-    """글자·공백으로 나눈 덩어리 가운데 앞뒤 문장부호를 떼고도 남는 것이 있는지 (#413)."""
+    """글자(isalpha)·공백·문장부호 다섯 가지가 아닌 문자가 있는지 (#413)."""
     return any(
-        p.strip(_SENTENCE_MARKS) for p in re.split(r"[^\W\d_]+|\s+", text)
+        not (c.isalpha() or c.isspace() or c in _REPORT_MARKS) for c in text
     )
 
 

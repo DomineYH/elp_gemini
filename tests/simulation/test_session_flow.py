@@ -2120,13 +2120,13 @@ def test_report_only_expressions(teacher, student, expected):
         (
             "유소년·고령 열을 정리해 보세요.",
             "네, 유소년·고령 열 정리했어요.",
-            True,
-        ),
+            False,
+        ),  # r3·r4에서는 True: 가운뎃점도 문장부호 다섯 가지 밖이다
         (
             "유소년, 고령 열을 정리해 보세요.",
             "네, 유소년·고령 열 정리했어요.",
-            True,
-        ),
+            False,
+        ),  # r3·r4에서는 True: 가운뎃점도 문장부호 다섯 가지 밖이다
         (
             "모둠_1 파일을 저장해 보세요.",
             "네, 모둠_1 파일 저장했어요.",
@@ -2140,12 +2140,40 @@ def test_report_only_expressions_in_context(teacher, student, expected):
     assert session_service._report_only(student, teacher) is expected
 
 
+# 보고는 글자(isalpha)·공백·문장부호 다섯 가지(, . ! … ~)로만 된 말이다. 그 밖의 문자 하나면 보고가 아니다 (#413)
+@pytest.mark.parametrize("char", list("²½Ⅲ①５_(['\":;·-/%"))
+def test_report_only_rejects_any_other_character(char):
+    assert (
+        session_service._has_number_or_symbol(f"네, 저장{char}했어요.") is True
+    )
+    assert session_service._report_only(f"네, 저장{char}했어요.", T38) is False
+
+
+@pytest.mark.parametrize(
+    "utterance",
+    [
+        "네, 저장했어요.",
+        "네... 저장했어요!",
+        "네, 저장했어요…",
+        "네~ 저장했어요",
+    ],
+)
+def test_report_only_allows_five_sentence_marks(utterance):
+    assert session_service._has_number_or_symbol(utterance) is False
+    assert session_service._report_only(utterance, T38) is True
+
+
 RELATION_ASK = "앞서 5≤3으로 적었는데, 두 값을 다시 비교해 보세요."
 RANGE_ASK = "앞서 x<=5로 적었는데, 해의 범위를 다시 확인해 보세요."
 REVIEW_ASK = _result_ask("-5도")
 SPACED_ASK = "앞서 적은 식은 5 ≤ 3. 두 값을 다시 비교해 보세요."
 LETTERS_ASK = "앞서 x<y로 적었는데, 두 값을 다시 비교해 보세요."
 FACTORIAL_ASK = "앞서 순열의 개수를 5로 적었는데, 전체 경우의 수를 계산하는 식으로 다시 써 보세요."
+UNIT_ASK = "앞서 단위를 cm로 적었는데, 넓이의 단위를 다시 확인해 보세요."
+INTERVAL_ASK = "앞서 범위를 [a,b)로 적었는데, 어느 끝값이 포함되는지 확인해서 다시 나타내 보세요."
+DERIVATIVE_ASK = (
+    "앞서 답을 f(x)로 적었는데, 도함수를 나타내는 기호로 다시 적어 보세요."
+)
 
 
 @pytest.mark.parametrize(
@@ -2161,6 +2189,10 @@ FACTORIAL_ASK = "앞서 순열의 개수를 5로 적었는데, 전체 경우의 
         (SPACED_ASK, "네, 다시 적었어요. 3 ≤ 5."),
         (LETTERS_ASK, "네, y<x 적었어요."),
         (FACTORIAL_ASK, "네, 5!로 적었어요."),
+        # PR 재검토 r4: 십진 숫자가 아닌 수, 문장부호와 같은 문자로 쓴 수학 기호
+        (UNIT_ASK, "네, cm²로 적었어요."),
+        (INTERVAL_ASK, "네, (a,b]로 적었어요."),
+        (DERIVATIVE_ASK, "네, f'(x)로 적었어요."),
     ],
 )
 def test_report_with_number_or_symbol_is_not_held(
