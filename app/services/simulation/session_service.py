@@ -680,6 +680,8 @@ def student_utterance(
         if (
             _PLEDGE.fullmatch(core)
             and not re.search(r"[?？]", structured["utterance"])
+            # 따옴표가 든 말은 교사가 준 예문을 옮긴 것일 수 있어 다짐으로 치지 않는다 (#425)
+            and not re.search(r"[\"'“”‘’「」『』]", structured["utterance"])
             and (not artifact or artifact == previous_artifact.strip())
             and not structured["misconception"]
             # #330·#341이 비운 실제 오개념도 본다. 막힘 요약만 비운 경우는 다짐이다

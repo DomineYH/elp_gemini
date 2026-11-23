@@ -2915,6 +2915,12 @@ def test_first_reaction_pledge_is_not_consent(ready, fake_gemini):
         "네, 다음 차시 활동도 열심히 참여하겠습니다.",
         "다음에도 자로 재고 열심히 할게요.",
         "다음에도 저도 더 열심히 설명서를 만들게요.",
+        # 따옴표가 든 말은 예문을 옮긴 것일 수 있어 다짐이 아니다 (#425)
+        '네, "다음에도 열심히 해 볼게요."',
+        "네, “다음 차시에도 열심히 해 볼게요.”",
+        "네, '열심히 해 볼게요.'",
+        "‘열심히 해 볼게요’요.",
+        "「열심히 해 볼게요.」",
     ],
 )
 def test_action_commitment_is_not_pledge(ready, fake_gemini, utterance):
@@ -3098,6 +3104,31 @@ def test_one_holdout_blocks_agree_advance(ready, fake_gemini):
         utterance=STUCK if key == holdout else PLEDGE, understanding=45
     )
     turn = ready.post(_api(sid, "/say"), json={"content": ENCOURAGE}).json()
+    assert turn["agreement"]["count"] == 3
+    assert sorted(turn["agreement"]["pledged_persona_ids"]) == _ids(
+        state["personas"][1:]
+    )
+    r = ready.post(_api(sid, "/advance"), json={"mode": "agree"})
+    assert r.status_code == 409
+    assert _code(r) == "NOT_ALL_AGREED"
+
+
+def test_quoted_example_pledge_blocks_agree_advance(ready, fake_gemini):
+    # 교사가 준 예문을 따옴표째 옮긴 답은 다짐이 아니다 (#425)
+    state = _create(ready)
+    sid = state["session"]["id"]
+    holdout = str(state["personas"][0]["source_record_id"])
+    fake_gemini.results["student"] = _react(utterance=SAID, understanding=40)
+    ready.post(_api(sid, "/phases/0/enter"))
+    fake_gemini.results["student"] = lambda key: _react(
+        utterance=(
+            '네, "다음에도 열심히 해 볼게요."' if key == holdout else PLEDGE
+        ),
+        understanding=45,
+    )
+    content = "\"다음에도 열심히 해 볼 거야.\" 이 문장을 '-ㄹ게요'를 써서 높임말로 바꿔 볼래요?"
+    turn = ready.post(_api(sid, "/say"), json={"content": content}).json()
+    assert _flags(turn) == {True, None}
     assert turn["agreement"]["count"] == 3
     assert sorted(turn["agreement"]["pledged_persona_ids"]) == _ids(
         state["personas"][1:]
