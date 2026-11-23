@@ -178,6 +178,8 @@ class SayRequest(BaseModel):
 
     content: str = Field(min_length=1, max_length=TEACHER_PROMPT_MAX)
     target_persona_id: int | None = None
+    # 이 탭이 보고 있는 장면. 서버의 현재 장면과 다르면 409, 없으면 확인하지 않는다 (#420)
+    phase_idx: int | None = None
 
 
 class RegenerateRequest(BaseModel):
@@ -186,6 +188,7 @@ class RegenerateRequest(BaseModel):
 
 class AdvanceRequest(BaseModel):
     mode: Literal["agree", "skip"]
+    phase_idx: int | None = None  # SayRequest와 같다 (#420)
 
 
 class AdvanceResult(BaseModel):

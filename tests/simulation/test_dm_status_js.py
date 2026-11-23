@@ -95,7 +95,7 @@ function makeEnv(queue, gets = queue) {  // 스크립트가 실행되자마자 i
         env.calls.push({ method: init.method, url, body: init.body ? JSON.parse(init.body) : undefined });
         const next = (init.method === "GET" ? env.gets : env.queue).shift();
         if (!next) throw new Error("대역에 준비되지 않은 요청: " + init.method + " " + url);
-        return next();
+        return next(env.calls[env.calls.length - 1]);  // 요청을 보고 답하는 대역용 (#420)
     };
     env.setInterval = (fn, ms) => { const id = env.nextTimer++; env.intervals.set(id, fn); return id; };
     env.clearInterval = id => env.intervals.delete(id);
@@ -631,6 +631,147 @@ const CLOSE = {
         out[`s415_badbody_${form}_send`] = v415(env);
     }
 
+    // ===== 이 탭이 보는 장면 번호를 싣고, 낡으면 409 뒤 새 장면을 그린다 (#420) =====
+    const PNC = () => err(409, "PHASE_NOT_CURRENT", "현재 장면이 아닙니다.");
+    const MOVED = (to = 1) => resp(200, { status: "running", current_phase_idx: to, next_phase: null });
+    const ENTERED1 = () => resp(200, { utterances: ENTER1, agreement: AGREE, teacher_turns_used: 10, failed_persona_ids: [] });
+    const TURN1 = resp(200, { utterances: [T(30, 1, "보낸 글"), S(31, 1, 1, "장면2 알겠어요"), S(32, 1, 2, "장면2 알겠어요")],
+        agreement: AGREE, teacher_turns_used: 11, failed_persona_ids: [] });
+    const AGREED2 = () => { const s = SCENE2(); s.agreement = ALL; return s; };
+    const FINISHED_ADV = resp(200, { status: "finished", current_phase_idx: 1, next_phase: null });
+    // 서버는 장면 1: 본문의 장면 번호가 0이면 409, 없으면 지금 서버처럼 ok로 답한다
+    const at1 = ok => c => (c.body.phase_idx === 0 ? PNC() : ok)(c);
+
+    // 낡지 않은 탭: 전체·1:1 발화와 Skip → 진입 → 발화, "다음 장면으로"
+    env = await boot415();
+    await submit(env, "tForm", "보낸 글", turn("보낸 글", null, 11));
+    openSeat(env);
+    await dmSubmit(env, "보낸 글", turn("보낸 글", 1, 12));
+    out.p420_say = view(env);
+    CLOSE.button(env);
+    env.queue.push(MOVED(), ENTERED1()); env.gets.push(resp(200, SCENE2(false)));
+    await press(env, "skipBtn");
+    out.p420_skip = view(env);
+    await submit(env, "tForm", "보낸 글", TURN1);
+    out.p420_skip_say = view(env);
+    const agreed0 = state(); agreed0.agreement = ALL;
+    env = await stale(agreed0, false, e => press(e, "nextBtn"), MOVED(), resp(200, SCENE2()));
+    out.p420_next = view(env);
+    // 마지막 장면의 Skip: 다시 받지 않고 대화록으로
+    env = await stale(SCENE2(), false, e => press(e, "skipBtn"), resp(200, { status: "finished", current_phase_idx: 1, next_phase: null }));
+    out.p420_last = view(env);
+
+    // 낡은 탭의 발화 409 → 새 장면, 글은 입력칸에 → 다시 보내면 새 장면 번호로
+    env = await stale(state(), false, sayT, at1(TURN1), resp(200, SCENE2()));
+    out.p420_stale_say = v415(env);
+    env.queue.push(TURN1);
+    env.$("tForm").dispatch("submit"); await flush();
+    out.p420_stale_say_resend = v415(env);
+    env = await stale(state(), true, sayDM, at1(TURN1), resp(200, SCENE2()));
+    out.p420_stale_dm = v415(env);
+
+    // 낡은 탭의 Skip·"다음 장면으로" 409 → 새 장면, 이동·진입 없음
+    env = await stale(state(), false, e => press(e, "skipBtn"), at1(FINISHED_ADV), resp(200, SCENE2()));
+    out.p420_stale_skip = view(env);
+    env = await stale(agreed0, false, e => press(e, "nextBtn"), at1(FINISHED_ADV), resp(200, AGREED2()));
+    out.p420_stale_next = view(env);
+    env = await stale(state(), false, e => press(e, "skipBtn"), at1(FINISHED_ADV), resp(200, SCENE2(false)));
+    out.p420_stale_skip_unentered = view(env);
+
+    // 429 → (그 사이 다른 탭이 넘김) → '다시 시도': 처음 장면 번호로 보내고 409면 글을 되돌린다
+    for (const form of ["tForm", "dmForm"]) {
+        env = await boot415();
+        if (form === "dmForm") openSeat(env);
+        await submit(env, form, "보낸 글", err(429, "RESOURCE_EXHAUSTED", __Q429__, RA));
+        env.seconds(30);
+        env.queue.push(at1(TURN1)); env.gets.push(resp(200, SCENE2()));
+        env.$("retryBtn").onclick(); await flush();
+        out[`p420_retry_${form}`] = v415(env);
+    }
+
+    // A+: Skip 200 뒤 상태 GET을 기다리는 동안 버튼이 꺼져 있고, 다시 눌러도 요청이 나가지 않는다
+    // 전원 동의에서 시작해 "다음 장면으로"가 켜져 있다가 꺼지는 것까지 본다
+    env = await boot415(agreed0);
+    out.p420_gap_before = view(env);
+    const slowGet = deferred();
+    env.queue.push(MOVED()); env.gets.push(slowGet);
+    await press(env, "skipBtn");
+    out.p420_gap = view(env);
+    await press(env, "skipBtn");
+    out.p420_gap_again = view(env);
+    env.queue.push(ENTERED1());
+    slowGet.settle(resp(200, SCENE2(false))); await flush();
+    out.p420_gap_done = view(env);
+
+    // A+: Skip 200 뒤 상태 GET이 전송 오류 → 옛 장면과 문구. 다시 Skip하면 409 뒤 새 장면
+    env = await boot415();
+    env.queue.push(MOVED()); env.gets.push(netfail);
+    await press(env, "skipBtn");
+    out.p420_getfail = view(env);
+    env.queue.push(at1(FINISHED_ADV)); env.gets.push(resp(200, SCENE2(false)));
+    await press(env, "skipBtn");
+    out.p420_getfail_again = view(env);
+    // 진입하지 않은 장면에서 Skip 200 뒤 GET 실패: 옛 장면에 진입 요청을 보내지 않는다(지금과 같다)
+    env = makeEnv([err(503, "MODEL_OVERLOADED", __Q503__, RA)], [resp(200, state(10, false))]);
+    await flush();
+    env.queue.push(MOVED()); env.gets.push(netfail);
+    await press(env, "skipBtn");
+    out.p420_getfail_unentered = view(env);
+
+    // 넘기기가 429/503 → '다시 시도' 성공 → 반응 없는 새 장면: 진입 상자를 두고, 누르면 진입한다 (#420 2차)
+    for (const [name, answer] of [["429", err(429, "RESOURCE_EXHAUSTED", __Q429__, RA)],
+        ["503", err(503, "MODEL_OVERLOADED", __Q503__, RA)]]) {
+        env = await boot415();
+        env.queue.push(answer);
+        await press(env, "skipBtn");
+        env.seconds(30);
+        env.queue.push(MOVED()); env.gets.push(resp(200, SCENE2(false)));
+        env.$("retryBtn").onclick(); await flush();
+        out[`p420_advretry_${name}`] = view(env);
+        env.queue.push(ENTERED1());
+        if (!env.$("retryBox").classList.contains("hidden") && !env.$("retryBtn").disabled) {
+            env.$("retryBtn").onclick(); await flush();
+        }
+        out[`p420_advretry_${name}_enter`] = view(env);
+    }
+
+    // 넘기기 200 → 상태 GET 429/503/전송 오류: 문구만, 끝난 POST를 다시 보내는 상자 없음 (#420 2차)
+    for (const [name, answer] of [["429", err(429, "RESOURCE_EXHAUSTED", __Q429__, RA)],
+        ["503", err(503, "MODEL_OVERLOADED", __Q503__, RA)], ["net", netfail]]) {
+        env = await boot415();
+        env.queue.push(MOVED()); env.gets.push(answer);
+        await press(env, "skipBtn");
+        out[`p420_getfail2_${name}`] = view(env);
+        env.queue.push(at1(FINISHED_ADV)); env.gets.push(resp(200, SCENE2()));
+        await press(env, "skipBtn");
+        out[`p420_getfail2_${name}_again`] = view(env);
+    }
+
+    // 보통 경로: 진입을 기다리는 동안에도 진입 상자는 보이지 않는다 (#420 2차)
+    env = await boot415();
+    const slowEnter = deferred();
+    env.queue.push(MOVED(), slowEnter); env.gets.push(resp(200, SCENE2(false)));
+    await press(env, "skipBtn");
+    out.p420_normal_entering = view(env);
+    slowEnter.settle(ENTERED1()); await flush();
+    out.p420_normal_done = view(env);
+    // Skip 200 뒤 상태 GET이 200인데 본문을 못 읽음: 옛 장면 그대로, 버튼은 풀리고 예외가 없다 (#420)
+    // 이 시나리오 동안만 rejection을 세어 단언한다. 그 밖(늦게 온 것 포함)은 node의 기본처럼 실행을 실패시킨다 (#420)
+    const rejections = [];
+    let countRejections = true;
+    process.on("unhandledRejection", e => {
+        if (!countRejections) { console.error(e); process.exit(1); }
+        rejections.push(String(e));
+    });
+    env = await boot415();
+    env.queue.push(MOVED()); env.gets.push(badbody);
+    await press(env, "skipBtn");
+    out.p420_badget = { ...view(env), rejections: rejections.length };
+    env.queue.push(at1(FINISHED_ADV)); env.gets.push(resp(200, SCENE2()));
+    await press(env, "skipBtn");
+    out.p420_badget_again = { ...view(env), rejections: rejections.length };
+    countRejections = false;
+
     console.log(JSON.stringify(out));
 })().catch(e => { console.error(e); process.exit(1); });
 """
@@ -808,7 +949,11 @@ def test_back_in_targets_window_retry_resends_original(out):
     # 초 세기는 A → B → A를 거쳐도 이어진다
     assert s["box"] == "다시 시도 (29초) off @dmForm px-3"
     s = out["away_retry"]
-    body = {"content": "채원아, 다시 말해 볼래?", "target_persona_id": 1}
+    body = {
+        "content": "채원아, 다시 말해 볼래?",
+        "target_persona_id": 1,
+        "phase_idx": 0,
+    }
     assert s["bodies"] == [body, body]
     assert s["box"] == "hidden" and s["dmTurnNote"] == "남은 발화 2회"
 
@@ -1238,3 +1383,177 @@ def test_200_with_unreadable_body_restores_nothing(out, form):
     # 빈 칸이므로 다시 제출해도 같은 글이 두 번 가지 않는다
     assert out[f"s415_badbody_{form}_send"]["POST"] == s["POST"]
     assert len(s["POST"]) == 1
+
+
+# ===== 이 탭이 보는 장면 번호를 싣고, 낡으면 409 뒤 새 장면 (#420) =====
+STALE_MSG = "현재 장면이 아닙니다."
+OFF_IN_GAP = ["skipBtn", "nextBtn", "endBtn", "tInput", "dmInput"]
+
+
+@_node
+def test_requests_carry_shown_phase_idx(out):
+    s = out["p420_say"]
+    assert s["bodies"] == [
+        {"content": SENT, "target_persona_id": None, "phase_idx": 0},
+        {"content": SENT, "target_persona_id": 1, "phase_idx": 0},
+    ]
+    s = out["p420_skip"]
+    assert s["bodies"][2] == {"mode": "skip", "phase_idx": 0}
+    # 넘긴 뒤 GET은 한 번, 그 뒤 새 장면 진입 (A+)
+    assert s["GET"] == 2 and [
+        u.split("/sessions/1")[-1] for u in s["urls"][-3:]
+    ] == [
+        "/advance",
+        "",
+        "/phases/1/enter",
+    ]
+    assert "전개" in s["eyebrow"]
+    assert out["p420_skip_say"]["bodies"][-1]["phase_idx"] == 1
+    s = out["p420_next"]
+    assert s["bodies"] == [{"mode": "agree", "phase_idx": 0}]
+    assert s["GET"] == 2 and s["POST"] == ["advance"] and "전개" in s["eyebrow"]
+
+
+@_node
+def test_last_scene_skip_goes_to_transcript_without_refetch(out):
+    s = out["p420_last"]
+    assert s["bodies"] == [{"mode": "skip", "phase_idx": 1}]
+    assert s["GET"] == 1 and s["href"] == "/simulation/sessions/1/transcript"
+
+
+@_node
+def test_stale_say_409_shows_new_scene_and_resend_uses_new_phase(out):
+    s = out["p420_stale_say"]
+    assert s["GET"] == 2 and "전개" in s["eyebrow"]
+    assert any("장면2 네" in t for t in s["seats"])
+    assert s["simStatus"] == STALE_MSG
+    assert s["tInput"] == SENT and not s["off"]["tInput"]
+    s = out["p420_stale_say_resend"]
+    assert s["bodies"][1] == {
+        "content": SENT,
+        "target_persona_id": None,
+        "phase_idx": 1,
+    }
+    assert len(s["POST"]) == 2 and s["simStatus"] == "" and s["tInput"] == ""
+    assert any("장면2 알겠어요" in t for t in s["seats"])
+
+
+@_node
+def test_stale_dm_say_409_keeps_window_open_with_text_back(out):
+    s = out["p420_stale_dm"]
+    assert s["open"] and "전개" in s["eyebrow"]
+    assert (s["dmTurnNote"], s["simStatus"]) == (STALE_MSG, "")
+    assert (s["dmInput"], s["tInput"]) == (SENT, "")
+
+
+@_node
+@pytest.mark.parametrize("key", ["p420_stale_skip", "p420_stale_next"])
+def test_stale_advance_409_shows_new_scene_without_moving(out, key):
+    s = out[key]
+    assert s["GET"] == 2 and "전개" in s["eyebrow"]
+    assert s["POST"] == ["advance"] and s["href"] is None
+    assert s["simStatus"] == STALE_MSG
+    if key == "p420_stale_next":
+        assert not s["off"]["nextBtn"]
+
+
+@_node
+def test_stale_skip_409_unentered_scene_shows_retry_box(out):
+    s = out["p420_stale_skip_unentered"]
+    assert "전개" in s["eyebrow"] and s["off"]["tInput"]
+    assert s["box"] != "hidden" and s["POST"] == ["advance"]
+
+
+@_node
+@pytest.mark.parametrize("form", ["tForm", "dmForm"])
+def test_retry_box_sends_original_phase_then_409_restores(out, form):
+    s = out[f"p420_retry_{form}"]
+    assert len(s["bodies"]) == 2 and s["bodies"][0] == s["bodies"][1]
+    assert s["bodies"][1]["phase_idx"] == 0
+    assert (s[FIELD[form]], s[OTHER[form]]) == (SENT, "")
+    assert s["GET"] == 2 and "전개" in s["eyebrow"]
+
+
+@_node
+def test_controls_off_until_state_refetched_after_advance(out):
+    s = out["p420_gap"]
+    assert all(s["off"][k] for k in OFF_IN_GAP), s["off"]
+    assert s["POST"] == ["advance"]
+    assert out["p420_gap_again"]["POST"] == ["advance"]
+    s = out["p420_gap_done"]
+    assert s["POST"] == ["advance", "enter"] and s["GET"] == 2
+    assert "전개" in s["eyebrow"] and not s["off"]["tInput"]
+    assert s["box"] == "hidden" and s["simStatus"] == ""
+
+
+@_node
+def test_refetch_failure_after_advance_keeps_old_scene(out):
+    s = out["p420_getfail"]
+    assert "도입" in s["eyebrow"] and s["simStatus"] == "Failed to fetch"
+    assert s["POST"] == ["advance"] and s["GET"] == 2
+    s = out["p420_getfail_again"]
+    assert s["POST"] == ["advance", "advance"] and s["GET"] == 3
+    assert "전개" in s["eyebrow"] and s["box"] != "hidden"
+    s = out["p420_getfail_unentered"]
+    assert s["POST"] == ["enter", "advance"] and s["GET"] == 2
+
+
+@_node
+def test_unreadable_state_after_advance_keeps_old_scene_unlocked(out):
+    s = out["p420_badget"]
+    assert s["rejections"] == 0
+    assert "도입" in s["eyebrow"] and s["POST"] == ["advance"] and s["GET"] == 2
+    assert not any(s["off"][k] for k in OFF_IN_GAP if k != "nextBtn"), s["off"]
+    s = out["p420_badget_again"]
+    assert s["rejections"] == 0
+    assert s["POST"] == ["advance", "advance"] and s["GET"] == 3
+    assert "전개" in s["eyebrow"] and s["simStatus"] == STALE_MSG
+
+
+@_node
+def test_gap_starts_with_next_enabled(out):
+    assert not out["p420_gap_before"]["off"]["nextBtn"]
+
+
+@_node
+@pytest.mark.parametrize("name", ["429", "503"])
+def test_advance_retry_success_leaves_entry_box_for_unentered_scene(out, name):
+    s = out[f"p420_advretry_{name}"]
+    assert "전개" in s["eyebrow"] and s["POST"] == ["advance", "advance"]
+    assert s["box"] == "다시 시도 on @tForm" and s["off"]["tInput"]
+    s = out[f"p420_advretry_{name}_enter"]
+    assert s["POST"] == ["advance", "advance", "enter"]
+    assert s["urls"][-1].endswith("/phases/1/enter")
+    assert any("장면2 네" in t for t in s["seats"])
+    assert not s["off"]["tInput"] and s["box"] == "hidden"
+
+
+@_node
+@pytest.mark.parametrize("name", ["429", "503", "net"])
+def test_state_get_failure_after_advance_shows_text_without_retry_box(
+    out, name
+):
+    text = {"429": Q429, "503": Q503, "net": "Failed to fetch"}[name]
+    s = out[f"p420_getfail2_{name}"]
+    assert s["simStatus"] == text and s["box"] == "hidden"
+    assert "도입" in s["eyebrow"] and s["POST"] == ["advance"] and s["GET"] == 2
+    s = out[f"p420_getfail2_{name}_again"]
+    assert s["POST"] == ["advance", "advance"] and s["GET"] == 3
+    assert "전개" in s["eyebrow"] and s["simStatus"] == STALE_MSG
+
+
+@_node
+def test_normal_skip_never_shows_entry_box(out):
+    s = out["p420_normal_entering"]
+    assert (
+        s["box"] == "hidden"
+        and s["POST"] == ["advance", "enter"]
+        and s["GET"] == 2
+    )
+    s = out["p420_normal_done"]
+    assert s["box"] == "hidden" and s["simStatus"] == ""
+    assert [u.split("/sessions/1")[-1] for u in s["urls"][1:]] == [
+        "/advance",
+        "",
+        "/phases/1/enter",
+    ]

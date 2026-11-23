@@ -589,3 +589,182 @@ def test_enter_timeout_is_not_retried(ready, flaky_client):
     assert r.status_code == 503
     assert _code(r) == "MODEL_TIMEOUT"
     assert models.calls == len(state["personas"])
+
+
+# ===== 이 탭이 보고 있는 장면 번호(phase_idx)가 낡으면 409 (#420) =====
+STALE = "PHASE_NOT_CURRENT"
+
+
+def _rows(client, sid, phase=None):
+    """(phase_idx, speaker_type, structured의 type·source, content)"""
+    return [
+        (
+            u["phase_idx"],
+            u["speaker_type"],
+            (u["structured"] or {}).get("type")
+            or (u["structured"] or {}).get("source"),
+            u["content"],
+        )
+        for u in client.get(_api(sid)).json()["utterances"]
+        if phase is None or u["phase_idx"] == phase
+    ]
+
+
+def _stale_tab(client, n_phases=3):
+    """장면 0에 들어간 세션과, 그때 낡은 탭이 받은 상태."""
+    state, _ = _create(client, n_phases)
+    sid = state["session"]["id"]
+    assert client.post(_api(sid, "/phases/0/enter")).status_code == 200
+    return sid, client.get(_api(sid)).json()
+
+
+def _other_tab_advances_and_enters(client, sid, to):
+    """다른 탭: Skip으로 장면을 넘기고 새 장면 진입까지 끝낸다."""
+    r = client.post(_api(sid, "/advance"), json={"mode": "skip"})
+    assert r.status_code == 200 and r.json()["current_phase_idx"] == to
+    assert client.post(_api(sid, f"/phases/{to}/enter")).status_code == 200
+
+
+@pytest.mark.parametrize("one_on_one", [False, True])
+def test_say_with_stale_phase_idx_is_409_and_nothing_happens(
+    ready, fake_gemini, one_on_one
+):
+    sid, stale = _stale_tab(ready)
+    _other_tab_advances_and_enters(ready, sid, 1)
+    before, calls = _rows(ready, sid), fake_gemini.count()
+    target = stale["personas"][0]["id"] if one_on_one else None
+    r = ready.post(
+        _api(sid, "/say"),
+        json={
+            "content": "장면0을 보고 한 말",
+            "target_persona_id": target,
+            "phase_idx": 0,
+        },
+    )
+    assert r.status_code == 409 and _code(r) == STALE
+    assert r.json()["detail"]["message"] == "현재 장면이 아닙니다."
+    assert _rows(ready, sid) == before
+    assert fake_gemini.count() == calls
+    assert ready.get(_api(sid)).json()["session"]["teacher_turns_used"] == 0
+
+
+def test_say_with_current_missing_or_null_phase_idx_is_200(ready):
+    sid, _ = _stale_tab(ready)
+    _other_tab_advances_and_enters(ready, sid, 1)
+    for extra in ({"phase_idx": 1}, {}, {"phase_idx": None}):
+        r = ready.post(_api(sid, "/say"), json={"content": "질문", **extra})
+        assert r.status_code == 200, extra
+        assert {u["phase_idx"] for u in r.json()["utterances"]} == {1}
+
+
+@pytest.mark.parametrize("mode", ["skip", "agree"])
+def test_advance_with_stale_phase_idx_is_409_and_nothing_happens(ready, mode):
+    sid, _ = _stale_tab(ready, 2)
+    _other_tab_advances_and_enters(ready, sid, 1)
+    before = _rows(ready, sid)
+    r = ready.post(_api(sid, "/advance"), json={"mode": mode, "phase_idx": 0})
+    assert (
+        r.status_code == 409 and _code(r) == STALE
+    )  # agree도 NOT_ALL_AGREED보다 먼저
+    state = ready.get(_api(sid)).json()
+    assert state["session"]["status"] == "running"
+    assert state["session"]["current_phase_idx"] == 1
+    assert _rows(ready, sid) == before
+
+
+def test_advance_with_current_or_missing_phase_idx_is_200(ready):
+    sid, _ = _stale_tab(ready, 3)
+    r = ready.post(_api(sid, "/advance"), json={"mode": "skip", "phase_idx": 0})
+    assert r.status_code == 200 and r.json()["current_phase_idx"] == 1
+    r = ready.post(_api(sid, "/advance"), json={"mode": "skip"})
+    assert r.status_code == 200 and r.json()["current_phase_idx"] == 2
+
+
+def test_single_tab_second_skip_with_same_phase_idx_is_409(ready):
+    sid, _ = _stale_tab(ready, 2)
+    body = {"mode": "skip", "phase_idx": 0}
+    assert ready.post(_api(sid, "/advance"), json=body).status_code == 200
+    r = ready.post(_api(sid, "/advance"), json=body)
+    assert r.status_code == 409 and _code(r) == STALE
+    state = ready.get(_api(sid)).json()
+    assert state["session"]["status"] == "running"
+    assert state["session"]["current_phase_idx"] == 1
+    assert _rows(ready, sid, phase=1) == []
+    # 새 장면에 아직 들어가지 않았어도 낡은 번호가 먼저다(PHASE_NOT_ENTERED 아님)
+    r = ready.post(_api(sid, "/say"), json={"content": "안녕", "phase_idx": 0})
+    assert r.status_code == 409 and _code(r) == STALE
+
+
+def test_finished_session_wins_over_stale_phase_idx(ready):
+    sid, _ = _stale_tab(ready, 2)
+    _other_tab_advances_and_enters(ready, sid, 1)
+    assert ready.post(_api(sid, "/finish")).status_code == 200
+    for path, body in (
+        ("/say", {"content": "안녕", "phase_idx": 0}),
+        ("/advance", {"mode": "skip", "phase_idx": 0}),
+    ):
+        r = ready.post(_api(sid, path), json=body)
+        assert r.status_code == 409 and _code(r) == "SESSION_FINISHED"
+
+
+def test_stale_phase_idx_wins_over_persona_and_turn_limit(ready, monkeypatch):
+    sid, _ = _stale_tab(ready, 3)
+    _other_tab_advances_and_enters(ready, sid, 1)
+    r = ready.post(
+        _api(sid, "/say"),
+        json={"content": "안녕", "target_persona_id": 99999, "phase_idx": 0},
+    )
+    assert r.status_code == 409 and _code(r) == STALE
+    monkeypatch.setattr(settings, "SIM_MAX_TEACHER_TURNS", 0)
+    r = ready.post(_api(sid, "/say"), json={"content": "안녕", "phase_idx": 0})
+    assert r.status_code == 409 and _code(r) == STALE
+
+
+def test_bad_phase_idx_values(ready):
+    sid, _ = _stale_tab(ready, 2)
+    r = ready.post(
+        _api(sid, "/say"), json={"content": "안녕", "phase_idx": "abc"}
+    )
+    assert r.status_code == 422
+    for bad in (-1, 99):
+        r = ready.post(
+            _api(sid, "/advance"), json={"mode": "skip", "phase_idx": bad}
+        )
+        assert r.status_code == 409 and _code(r) == STALE
+
+
+def test_say_passing_phase_check_still_conflicts_if_scene_moves_during_call(
+    ready, fake_gemini, monkeypatch, tmp_path
+):
+    sid, _ = _stale_tab(ready, 2)
+    before = _rows(ready, sid)
+    _during_call(
+        monkeypatch,
+        fake_gemini,
+        tmp_path / "sim.db",
+        "UPDATE simulation_sessions SET current_phase_idx=1",
+    )
+    r = ready.post(_api(sid, "/say"), json={"content": "질문", "phase_idx": 0})
+    assert r.status_code == 409 and _code(r) == "CONFLICT_RETRY"
+    assert _rows(ready, sid) == before
+
+
+def test_advance_passing_phase_check_still_conflicts_if_scene_moves_before_lock(
+    ready, monkeypatch, tmp_path
+):
+    sid, _ = _stale_tab(ready, 3)
+    before = _rows(ready, sid)
+    original = session_service._lock_running
+
+    async def wrapped(db, session, idx, **kw):
+        conn = sqlite3.connect(tmp_path / "sim.db")
+        with conn:
+            conn.execute("UPDATE simulation_sessions SET current_phase_idx=1")
+        conn.close()
+        return await original(db, session, idx, **kw)
+
+    monkeypatch.setattr(session_service, "_lock_running", wrapped)
+    r = ready.post(_api(sid, "/advance"), json={"mode": "skip", "phase_idx": 0})
+    assert r.status_code == 409 and _code(r) == "CONFLICT_RETRY"
+    assert ready.get(_api(sid)).json()["session"]["current_phase_idx"] == 1
+    assert _rows(ready, sid) == before

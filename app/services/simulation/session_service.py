@@ -897,6 +897,9 @@ async def say(
     if session.status == "finished":
         raise SimulationError("SESSION_FINISHED")
     sid, idx = session.id, session.current_phase_idx
+    if body.phase_idx not in (None, idx):
+        # 다른 탭(또는 응답을 못 받은 앞선 요청)이 장면을 넘겼다. 보지 않은 장면에 쓰지 않는다 (#420)
+        raise SimulationError("PHASE_NOT_CURRENT")
     stored = await _utterances(db, sid, idx)
     if not stored:
         raise SimulationError("PHASE_NOT_ENTERED")
@@ -978,10 +981,15 @@ def _finish_now(session) -> None:
     session.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-async def advance(db: AsyncSession, session: SimulationSession, mode) -> dict:
+async def advance(
+    db: AsyncSession, session: SimulationSession, mode, phase_idx=None
+) -> dict:
     """agree(전원 동의일 때만) / skip(항상). 마지막 장면이면 종료."""
     if session.status == "finished":
         raise SimulationError("SESSION_FINISHED")
+    if phase_idx not in (None, session.current_phase_idx):
+        # 보지 않은 장면을 넘기지 않는다. 이 뒤의 잠금이 같은 장면인지 다시 본다 (#420)
+        raise SimulationError("PHASE_NOT_CURRENT")
     await _lock_running(db, session, session.current_phase_idx)
     if mode == "agree" and not (await _agreement(db, session.id))["all_agreed"]:
         raise SimulationError("NOT_ALL_AGREED")
