@@ -555,6 +555,52 @@ const CLOSE = {
     await submit(env, "tForm", "   ");
     out.s415_blank = v415(env);
 
+    // 채원(A)에게 되돌아온 글은 지호(B) 창에 나타나지 않는다. 다시 받기 중에 바꿔도, 끝난 뒤에 바꿔도 (#415 2차)
+    for (const via of ["409", "retry409"]) {
+        for (const when of ["pending", "done"]) {
+            env = await boot415(); openSeat(env);
+            const get = deferred();
+            if (via === "409") {
+                env.gets.push(get);
+                await dmSubmit(env, "보낸 글", err(409, "CONFLICT_RETRY", CONFLICT));
+            } else {
+                await dmSubmit(env, "보낸 글", err(429, "RESOURCE_EXHAUSTED", __Q429__, RA));
+                env.seconds(30);
+                env.queue.push(err(409, "CONFLICT_RETRY", CONFLICT));
+                env.gets.push(get);
+                env.$("retryBtn").onclick(); await flush();
+            }
+            const restored = env.$("dmInput").value;
+            if (when === "done") { get.settle(resp(200, state())); await flush(); }
+            CLOSE.button(env); openSeat(env, 1);
+            if (when === "pending") { get.settle(resp(200, state())); await flush(); }
+            const key = `s415_switch_${via}_${when}`;
+            out[key] = { ...v415(env), restored };
+            env.$("dmForm").dispatch("submit"); await flush();
+            out[key + "_send"] = v415(env);
+        }
+    }
+    // 같은 학생 창을 다시 열면 글이 남고 그 학생에게 보낼 수 있다
+    env = await boot415(); openSeat(env);
+    env.gets.push(resp(200, state()));
+    await dmSubmit(env, "보낸 글", err(409, "CONFLICT_RETRY", CONFLICT));
+    CLOSE.button(env); openSeat(env, 0);
+    out.s415_switch_same = v415(env);
+    env.queue.push(turn("보낸 글", 1, 11));
+    env.$("dmForm").dispatch("submit"); await flush();
+    out.s415_switch_same_send = v415(env);
+    // 교사가 친 글(보내지 않은 초안, 되돌아온 뒤 고친 글)은 지금처럼 창을 따라간다(범위 밖, 바꾸지 않음)
+    env = await boot415(); openSeat(env);
+    env.$("dmInput").value = "보내지 않은 초안";
+    CLOSE.button(env); openSeat(env, 1);
+    out.s415_switch_draft = v415(env);
+    env = await boot415(); openSeat(env);
+    env.gets.push(resp(200, state()));
+    await dmSubmit(env, "보낸 글", err(409, "CONFLICT_RETRY", CONFLICT));
+    env.$("dmInput").value = "보낸 글 고침";
+    CLOSE.button(env); openSeat(env, 1);
+    out.s415_switch_edited = v415(env);
+
     console.log(JSON.stringify(out));
 })().catch(e => { console.error(e); process.exit(1); });
 """
@@ -1109,3 +1155,36 @@ def test_class_text_restored_while_window_open(out):
 def test_blank_input_unchanged(out):
     s = out["s415_blank"]
     assert s["POST"] == [] and s["tInput"] == "   "
+
+
+@_node
+@pytest.mark.parametrize("via", ["409", "retry409"])
+@pytest.mark.parametrize("when", ["pending", "done"])
+def test_restored_dm_text_never_shows_in_other_students_window(out, via, when):
+    key = f"s415_switch_{via}_{when}"
+    s = out[key]
+    assert s["restored"] == SENT
+    assert s["open"] and s["dmInput"] == ""
+    # 빈 칸이므로 Enter를 눌러도 지호에게 아무것도 가지 않는다
+    sent = out[key + "_send"]["POST"]
+    assert sent == s["POST"] and all(p.endswith("→1") for p in sent)
+
+
+@_node
+def test_restored_dm_text_stays_when_same_window_reopens(out):
+    assert out["s415_switch_same"]["dmInput"] == SENT
+    s = out["s415_switch_same_send"]
+    assert s["POST"] == [f"say:{SENT}→1"] * 2 and s["dmInput"] == ""
+
+
+@_node
+@pytest.mark.parametrize(
+    ("key", "text"),
+    [
+        ("s415_switch_draft", "보내지 않은 초안"),
+        ("s415_switch_edited", "보낸 글 고침"),
+    ],
+)
+def test_typed_dm_draft_still_follows_window_switch(out, key, text):
+    s = out[key]
+    assert s["open"] and s["dmInput"] == text

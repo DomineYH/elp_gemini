@@ -125,6 +125,8 @@
     let state = null;
     let busy = false;
     let dmPersona = null;
+    // 실패해 1:1 입력칸에 되돌린 글과 그 학생. 다른 학생 창을 열 때 그대로 남아 있으면 지운다 (#415)
+    let restoredDM = null;
     // 오류 문구. 어느 줄에 보일지는 syncControls()가 정한다 (#411)
     let statusText = "";
     function showStatus(text) {
@@ -264,6 +266,10 @@
 
     function openSeat(p) {
         if (state.session.status !== "running") return;
+        if (restoredDM && restoredDM.id !== p.id) {
+            if (dmInput.value === restoredDM.content) dmInput.value = "";
+            restoredDM = null;
+        }
         dmPersona = p;
         dmModal.classList.remove("hidden");
         render(new Set());
@@ -565,7 +571,10 @@
                 // 실패하면 보낸 글을 입력칸에 되돌린다. 재시도 상자가 같은 글을 다시 보내는 429·503,
                 // 그 사이 다른 글이 든 입력칸, 창이 닫혔거나 다른 학생으로 바뀐 1:1 입력칸은 건드리지 않는다 (#415)
                 const same = targetId === null || (dmPersona && dmPersona.id === targetId);
-                if (err.retryAfter === undefined && same && !input.value) input.value = content;
+                if (err.retryAfter === undefined && same && !input.value) {
+                    input.value = content;
+                    if (targetId !== null) restoredDM = { id: targetId, content };
+                }
                 throw err;
             }
         });
