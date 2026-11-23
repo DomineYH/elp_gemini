@@ -716,8 +716,13 @@ const CLOSE = {
     await press(env, "skipBtn");
     out.p420_getfail_unentered = view(env);
     // Skip 200 뒤 상태 GET이 200인데 본문을 못 읽음: 옛 장면 그대로, 버튼은 풀리고 예외가 없다 (#420)
+    // 이 시나리오 동안만 rejection을 세어 단언한다. 그 밖(늦게 온 것 포함)은 node의 기본처럼 실행을 실패시킨다 (#420)
     const rejections = [];
-    process.on("unhandledRejection", e => rejections.push(String(e)));
+    let countRejections = true;
+    process.on("unhandledRejection", e => {
+        if (!countRejections) { console.error(e); process.exit(1); }
+        rejections.push(String(e));
+    });
     env = await boot415();
     env.queue.push(MOVED()); env.gets.push(badbody);
     await press(env, "skipBtn");
@@ -725,6 +730,7 @@ const CLOSE = {
     env.queue.push(at1(FINISHED_ADV)); env.gets.push(resp(200, SCENE2()));
     await press(env, "skipBtn");
     out.p420_badget_again = { ...view(env), rejections: rejections.length };
+    countRejections = false;
 
     console.log(JSON.stringify(out));
 })().catch(e => { console.error(e); process.exit(1); });
