@@ -715,6 +715,16 @@ const CLOSE = {
     env.queue.push(MOVED()); env.gets.push(netfail);
     await press(env, "skipBtn");
     out.p420_getfail_unentered = view(env);
+    // Skip 200 뒤 상태 GET이 200인데 본문을 못 읽음: 옛 장면 그대로, 버튼은 풀리고 예외가 없다 (#420)
+    const rejections = [];
+    process.on("unhandledRejection", e => rejections.push(String(e)));
+    env = await boot415();
+    env.queue.push(MOVED()); env.gets.push(badbody);
+    await press(env, "skipBtn");
+    out.p420_badget = { ...view(env), rejections: rejections.length };
+    env.queue.push(at1(FINISHED_ADV)); env.gets.push(resp(200, SCENE2()));
+    await press(env, "skipBtn");
+    out.p420_badget_again = { ...view(env), rejections: rejections.length };
 
     console.log(JSON.stringify(out));
 })().catch(e => { console.error(e); process.exit(1); });
@@ -1440,3 +1450,15 @@ def test_refetch_failure_after_advance_keeps_old_scene(out):
     assert "전개" in s["eyebrow"] and s["box"] != "hidden"
     s = out["p420_getfail_unentered"]
     assert s["POST"] == ["enter", "advance"] and s["GET"] == 2
+
+
+@_node
+def test_unreadable_state_after_advance_keeps_old_scene_unlocked(out):
+    s = out["p420_badget"]
+    assert s["rejections"] == 0
+    assert "도입" in s["eyebrow"] and s["POST"] == ["advance"] and s["GET"] == 2
+    assert not any(s["off"][k] for k in OFF_IN_GAP if k != "nextBtn"), s["off"]
+    s = out["p420_badget_again"]
+    assert s["rejections"] == 0
+    assert s["POST"] == ["advance", "advance"] and s["GET"] == 3
+    assert "전개" in s["eyebrow"] and s["simStatus"] == STALE_MSG

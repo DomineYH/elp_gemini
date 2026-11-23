@@ -601,7 +601,9 @@
         await run(new Set(), async () => {
             result = await api("POST", API + "/advance", { mode, phase_idx: state.session.current_phase_idx });
             // 넘어간 뒤 상태를 다시 받을 때까지 버튼을 꺼 둔다. 그 틈의 두 번째 클릭이 낡은 화면에서 나가지 않게 한다 (#420)
-            if (result.status !== "finished") state = fresh = await api("GET", API);
+            const got = result.status !== "finished" && await api("GET", API);
+            // api()는 본문을 읽지 못한 200을 {}로 돌려주므로 세션이 들었을 때만 바꾼다 (#420)
+            if (got && got.session) state = fresh = got;
         });
         if (!result) return;
         if (result.status === "finished") return toTranscript();
