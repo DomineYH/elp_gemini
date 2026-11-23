@@ -125,6 +125,9 @@
     let state = null;
     let busy = false;
     let dmPersona = null;
+    // 실패해 1:1 입력칸에 되돌린 글과 그 학생. 손대지 않은 채 다른 학생 창을 열면 지운다.
+    // 교사가 입력칸을 고치거나 1:1 글을 보내면 버린다 (#415)
+    let restoredDM = null;
     // 오류 문구. 어느 줄에 보일지는 syncControls()가 정한다 (#411)
     let statusText = "";
     function showStatus(text) {
@@ -264,6 +267,10 @@
 
     function openSeat(p) {
         if (state.session.status !== "running") return;
+        if (restoredDM && restoredDM.id !== p.id) {
+            if (dmInput.value === restoredDM.content) dmInput.value = "";
+            restoredDM = null;
+        }
         dmPersona = p;
         dmModal.classList.remove("hidden");
         render(new Set());
@@ -556,10 +563,24 @@
         });
     }
 
-    function say(content, targetId) {
+    function say(content, targetId, input) {
         const pending = new Set(state.personas.filter(p => targetId === null || p.id === targetId).map(p => p.id));
         return run(pending, async () => {
-            merge(await api("POST", API + "/say", { content, target_persona_id: targetId }));
+            let turn;
+            try {
+                turn = await api("POST", API + "/say", { content, target_persona_id: targetId });
+            } catch (err) {
+                // 실패하면 보낸 글을 입력칸에 되돌린다. 재시도 상자가 같은 글을 다시 보내는 429·503,
+                // 그 사이 다른 글이 든 입력칸, 창이 닫혔거나 다른 학생으로 바뀐 1:1 입력칸은 건드리지 않는다 (#415)
+                const same = targetId === null || (dmPersona && dmPersona.id === targetId);
+                if (err.retryAfter === undefined && same && !input.value) {
+                    input.value = content;
+                    if (targetId !== null) restoredDM = { id: targetId, content };
+                }
+                throw err;
+            }
+            // 200이면 서버에 이미 저장됐다. 본문을 읽지 못해 merge()가 실패해도 되돌리지 않는다(두 번 전송 방지) (#415)
+            merge(turn);
         });
     }
 
@@ -596,7 +617,8 @@
                 return;
             }
             input.value = "";
-            say(text, target());
+            if (input === dmInput) restoredDM = null;
+            say(text, target(), input);
         });
         input.addEventListener("keydown", e => {
             if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
@@ -608,6 +630,7 @@
 
     bindInput($("tForm"), tInput, () => null);
     bindInput($("dmForm"), dmInput, () => dmPersona && dmPersona.id);
+    dmInput.addEventListener("input", () => { restoredDM = null; });
     $("hintBtn").addEventListener("click", () => {
         tInput.value = currentPhase().teacher_prompt;
         tInput.focus();
