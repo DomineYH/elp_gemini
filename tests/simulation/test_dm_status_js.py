@@ -690,7 +690,9 @@ const CLOSE = {
     }
 
     // A+: Skip 200 뒤 상태 GET을 기다리는 동안 버튼이 꺼져 있고, 다시 눌러도 요청이 나가지 않는다
-    env = await boot415();
+    // 전원 동의에서 시작해 "다음 장면으로"가 켜져 있다가 꺼지는 것까지 본다
+    env = await boot415(agreed0);
+    out.p420_gap_before = view(env);
     const slowGet = deferred();
     env.queue.push(MOVED()); env.gets.push(slowGet);
     await press(env, "skipBtn");
@@ -715,6 +717,44 @@ const CLOSE = {
     env.queue.push(MOVED()); env.gets.push(netfail);
     await press(env, "skipBtn");
     out.p420_getfail_unentered = view(env);
+
+    // 넘기기가 429/503 → '다시 시도' 성공 → 반응 없는 새 장면: 진입 상자를 두고, 누르면 진입한다 (#420 2차)
+    for (const [name, answer] of [["429", err(429, "RESOURCE_EXHAUSTED", __Q429__, RA)],
+        ["503", err(503, "MODEL_OVERLOADED", __Q503__, RA)]]) {
+        env = await boot415();
+        env.queue.push(answer);
+        await press(env, "skipBtn");
+        env.seconds(30);
+        env.queue.push(MOVED()); env.gets.push(resp(200, SCENE2(false)));
+        env.$("retryBtn").onclick(); await flush();
+        out[`p420_advretry_${name}`] = view(env);
+        env.queue.push(ENTERED1());
+        if (!env.$("retryBox").classList.contains("hidden") && !env.$("retryBtn").disabled) {
+            env.$("retryBtn").onclick(); await flush();
+        }
+        out[`p420_advretry_${name}_enter`] = view(env);
+    }
+
+    // 넘기기 200 → 상태 GET 429/503/전송 오류: 문구만, 끝난 POST를 다시 보내는 상자 없음 (#420 2차)
+    for (const [name, answer] of [["429", err(429, "RESOURCE_EXHAUSTED", __Q429__, RA)],
+        ["503", err(503, "MODEL_OVERLOADED", __Q503__, RA)], ["net", netfail]]) {
+        env = await boot415();
+        env.queue.push(MOVED()); env.gets.push(answer);
+        await press(env, "skipBtn");
+        out[`p420_getfail2_${name}`] = view(env);
+        env.queue.push(at1(FINISHED_ADV)); env.gets.push(resp(200, SCENE2()));
+        await press(env, "skipBtn");
+        out[`p420_getfail2_${name}_again`] = view(env);
+    }
+
+    // 보통 경로: 진입을 기다리는 동안에도 진입 상자는 보이지 않는다 (#420 2차)
+    env = await boot415();
+    const slowEnter = deferred();
+    env.queue.push(MOVED(), slowEnter); env.gets.push(resp(200, SCENE2(false)));
+    await press(env, "skipBtn");
+    out.p420_normal_entering = view(env);
+    slowEnter.settle(ENTERED1()); await flush();
+    out.p420_normal_done = view(env);
     // Skip 200 뒤 상태 GET이 200인데 본문을 못 읽음: 옛 장면 그대로, 버튼은 풀리고 예외가 없다 (#420)
     // 이 시나리오 동안만 rejection을 세어 단언한다. 그 밖(늦게 온 것 포함)은 node의 기본처럼 실행을 실패시킨다 (#420)
     const rejections = [];
@@ -1468,3 +1508,52 @@ def test_unreadable_state_after_advance_keeps_old_scene_unlocked(out):
     assert s["rejections"] == 0
     assert s["POST"] == ["advance", "advance"] and s["GET"] == 3
     assert "전개" in s["eyebrow"] and s["simStatus"] == STALE_MSG
+
+
+@_node
+def test_gap_starts_with_next_enabled(out):
+    assert not out["p420_gap_before"]["off"]["nextBtn"]
+
+
+@_node
+@pytest.mark.parametrize("name", ["429", "503"])
+def test_advance_retry_success_leaves_entry_box_for_unentered_scene(out, name):
+    s = out[f"p420_advretry_{name}"]
+    assert "전개" in s["eyebrow"] and s["POST"] == ["advance", "advance"]
+    assert s["box"] == "다시 시도 on @tForm" and s["off"]["tInput"]
+    s = out[f"p420_advretry_{name}_enter"]
+    assert s["POST"] == ["advance", "advance", "enter"]
+    assert s["urls"][-1].endswith("/phases/1/enter")
+    assert any("장면2 네" in t for t in s["seats"])
+    assert not s["off"]["tInput"] and s["box"] == "hidden"
+
+
+@_node
+@pytest.mark.parametrize("name", ["429", "503", "net"])
+def test_state_get_failure_after_advance_shows_text_without_retry_box(
+    out, name
+):
+    text = {"429": Q429, "503": Q503, "net": "Failed to fetch"}[name]
+    s = out[f"p420_getfail2_{name}"]
+    assert s["simStatus"] == text and s["box"] == "hidden"
+    assert "도입" in s["eyebrow"] and s["POST"] == ["advance"] and s["GET"] == 2
+    s = out[f"p420_getfail2_{name}_again"]
+    assert s["POST"] == ["advance", "advance"] and s["GET"] == 3
+    assert "전개" in s["eyebrow"] and s["simStatus"] == STALE_MSG
+
+
+@_node
+def test_normal_skip_never_shows_entry_box(out):
+    s = out["p420_normal_entering"]
+    assert (
+        s["box"] == "hidden"
+        and s["POST"] == ["advance", "enter"]
+        and s["GET"] == 2
+    )
+    s = out["p420_normal_done"]
+    assert s["box"] == "hidden" and s["simStatus"] == ""
+    assert [u.split("/sessions/1")[-1] for u in s["urls"][1:]] == [
+        "/advance",
+        "",
+        "/phases/1/enter",
+    ]

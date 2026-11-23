@@ -600,10 +600,14 @@
         let result = null, fresh = null;
         await run(new Set(), async () => {
             result = await api("POST", API + "/advance", { mode, phase_idx: state.session.current_phase_idx });
+            if (result.status === "finished") return;
             // 넘어간 뒤 상태를 다시 받을 때까지 버튼을 꺼 둔다. 그 틈의 두 번째 클릭이 낡은 화면에서 나가지 않게 한다 (#420)
-            const got = result.status !== "finished" && await api("GET", API);
+            // 실패는 문구만 보인다. run()의 재시도 상자는 이미 끝난 넘기기를 다시 보낸다 (#420)
+            const got = await api("GET", API).catch(err => { showStatus(err.message); return null; });
             // api()는 본문을 읽지 못한 200을 {}로 돌려주므로 세션이 들었을 때만 바꾼다 (#420)
             if (got && got.session) state = fresh = got;
+            // 재시도 상자로 다시 돈 넘기기는 아래 진입까지 오지 않으므로 진입 상자를 둔다. 보통 경로는 진입의 run()이 곧바로 숨긴다 (#420)
+            if (fresh && state.session.status === "running" && phaseUtterances().length === 0) showRetry(enterCurrentPhase, 0);
         });
         if (!result) return;
         if (result.status === "finished") return toTranscript();
