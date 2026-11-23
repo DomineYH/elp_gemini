@@ -556,10 +556,18 @@
         });
     }
 
-    function say(content, targetId) {
+    function say(content, targetId, input) {
         const pending = new Set(state.personas.filter(p => targetId === null || p.id === targetId).map(p => p.id));
         return run(pending, async () => {
-            merge(await api("POST", API + "/say", { content, target_persona_id: targetId }));
+            try {
+                merge(await api("POST", API + "/say", { content, target_persona_id: targetId }));
+            } catch (err) {
+                // 실패하면 보낸 글을 입력칸에 되돌린다. 재시도 상자가 같은 글을 다시 보내는 429·503,
+                // 그 사이 다른 글이 든 입력칸, 창이 닫혔거나 다른 학생으로 바뀐 1:1 입력칸은 건드리지 않는다 (#415)
+                const same = targetId === null || (dmPersona && dmPersona.id === targetId);
+                if (err.retryAfter === undefined && same && !input.value) input.value = content;
+                throw err;
+            }
         });
     }
 
@@ -596,7 +604,7 @@
                 return;
             }
             input.value = "";
-            say(text, target());
+            say(text, target(), input);
         });
         input.addEventListener("keydown", e => {
             if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {

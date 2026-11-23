@@ -451,6 +451,110 @@ const CLOSE = {
     await press(env, "endBtn");
     out.s416_end200 = view(env);
 
+    // ===== 실패하면 보낸 글을 보낸 입력칸에 되돌린다 (#415) =====
+    const v415 = env => ({ ...view(env), tInput: env.$("tInput").value });
+    async function boot415(st = state()) {
+        const e = makeEnv([], [resp(200, st)]);
+        await flush();
+        return e;
+    }
+    const FAILS415 = {
+        SESSION_FINISHED: FIN409, TURN_LIMIT: () => err(409, "TURN_LIMIT", __LIMIT__),
+        CONFLICT_RETRY: () => err(409, "CONFLICT_RETRY", CONFLICT),
+        PHASE_NOT_ENTERED: () => err(409, "PHASE_NOT_ENTERED", NOT_ENTERED),
+        net: () => netfail, 500: () => resp(500, { detail: "x" }), 502: () => resp(502, "HTML"),
+        401: () => resp(401, { detail: "로그인이 필요합니다." }),
+        429: () => err(429, "RESOURCE_EXHAUSTED", __Q429__, RA), 503: () => err(503, "MODEL_OVERLOADED", __Q503__, RA),
+    };
+    for (const form of ["tForm", "dmForm"]) {
+        for (const [name, answer] of Object.entries(FAILS415)) {
+            env = await boot415();
+            if (form === "dmForm") openSeat(env);
+            env.gets.push(resp(200, state()));  // 409 뒤 다시 받기: 상태는 그대로
+            await submit(env, form, "보낸 글", answer());
+            out[`s415_${form}_${name}`] = v415(env);
+        }
+        const wait = deferred();
+        env = await boot415();
+        if (form === "dmForm") openSeat(env);
+        await submit(env, form, "보낸 글", wait);
+        out[`s415_${form}_wait`] = v415(env);
+        wait.settle(turn("보낸 글", form === "dmForm" ? 1 : null, 11)); await flush();
+        out[`s415_${form}_200`] = v415(env);
+    }
+
+    // 409 뒤 입력칸이 꺼짐(끝난 세션·상한, #416): 꺼진 칸에 글이 보인다
+    env = await stale(state(), false, sayT, FIN409(), resp(200, FIN()));
+    out.s415_fin_t = v415(env);
+    env = await stale(state(), true, sayDM, FIN409(), resp(200, FIN()));
+    out.s415_fin_dm = v415(env);
+    env = await stale(state(37), false, sayT, err(409, "TURN_LIMIT", __LIMIT__), resp(200, state(40)));
+    out.s415_limit_t = v415(env);
+    env = await stale(state(37), true, sayDM, err(409, "TURN_LIMIT", __LIMIT__), resp(200, state(40)));
+    out.s415_limit_dm = v415(env);
+
+    // 409 뒤 다른 탭에서 장면이 넘어가 있음: 켜진 칸의 글을 그대로 다시 보낸다
+    env = await stale(state(), false, sayT, err(409, "CONFLICT_RETRY", CONFLICT), resp(200, SCENE2()));
+    out.s415_scene = v415(env);
+    env.queue.push(turn("보낸 글", null, 11));
+    env.$("tForm").dispatch("submit"); await flush();
+    out.s415_scene_resend = v415(env);
+
+    // 409로 돌아온 글을 그대로 제출 → 200
+    env = await boot415(); openSeat(env);
+    env.gets.push(resp(200, state()));
+    await dmSubmit(env, "보낸 글", err(409, "CONFLICT_RETRY", CONFLICT));
+    env.queue.push(turn("보낸 글", 1, 11));
+    env.$("dmForm").dispatch("submit"); await flush();
+    out.s415_resend = v415(env);
+
+    // 429 → '다시 시도' → 200 / → 409
+    for (const form of ["tForm", "dmForm"]) {
+        for (const [name, answer, get] of [["200", turn("보낸 글", form === "dmForm" ? 1 : null, 11)],
+            ["409", FIN409(), resp(200, state())]]) {
+            env = await boot415();
+            if (form === "dmForm") openSeat(env);
+            await submit(env, form, "보낸 글", err(429, "RESOURCE_EXHAUSTED", __Q429__, RA));
+            env.seconds(30);
+            env.queue.push(answer);
+            if (get) env.gets.push(get);
+            env.$("retryBtn").onclick(); await flush();
+            out[`s415_${form}_retry${name}`] = v415(env);
+        }
+    }
+
+    // 전체 발화를 기다리는 동안 '지도안 발문'을 누름 → 409
+    env = await boot415();
+    const hintWait = deferred();
+    await submit(env, "tForm", "보낸 글", hintWait);
+    await press(env, "hintBtn");
+    env.gets.push(resp(200, state()));
+    hintWait.settle(err(409, "CONFLICT_RETRY", CONFLICT)); await flush();
+    out.s415_hint = v415(env);
+
+    // 1:1 발화를 기다리는 동안 창을 닫음 / 다른 학생 창 / 같은 학생 창을 다시 엶 → 실패
+    for (const [name, after] of [["closed", e => CLOSE.button(e)],
+        ["other", e => { CLOSE.button(e); openSeat(e, 1); }],
+        ["same", e => { CLOSE.button(e); openSeat(e, 0); }]]) {
+        env = await boot415(); openSeat(env);
+        const w = deferred();
+        await dmSubmit(env, "보낸 글", w);
+        after(env);
+        w.settle(netfail); await flush();
+        out["s415_away_" + name] = v415(env);
+    }
+    // 전체 발화를 기다리는 동안 1:1 창을 엶 → 실패
+    env = await boot415();
+    const classWait = deferred();
+    await submit(env, "tForm", "보낸 글", classWait);
+    openSeat(env, 1);
+    classWait.settle(netfail); await flush();
+    out.s415_class_open = v415(env);
+
+    env = await boot415();
+    await submit(env, "tForm", "   ");
+    out.s415_blank = v415(env);
+
     console.log(JSON.stringify(out));
 })().catch(e => { console.error(e); process.exit(1); });
 """
@@ -880,3 +984,128 @@ def test_enter_409_refetch_failure_shows_no_retry_box(out, name):
     assert not any("네" in t for t in s["seats"])
     # 대기 중으로 남지 않는다: 진입 전 장면이라 말하기만 꺼지고 Skip·종료는 켜진다
     assert not s["off"]["skipBtn"] and not s["off"]["endBtn"]
+
+
+# ===== 실패하면 보낸 글을 보낸 입력칸에 되돌린다 (#415) =====
+SENT = "보낸 글"
+NO_BOX_FAILS = [
+    "SESSION_FINISHED",
+    "TURN_LIMIT",
+    "CONFLICT_RETRY",
+    "PHASE_NOT_ENTERED",
+    "net",
+    "500",
+    "502",
+    "401",
+]
+FIELD = {"tForm": "tInput", "dmForm": "dmInput"}
+OTHER = {"tForm": "dmInput", "dmForm": "tInput"}
+
+
+@_node
+@pytest.mark.parametrize("form", ["tForm", "dmForm"])
+@pytest.mark.parametrize("name", NO_BOX_FAILS)
+def test_failure_without_retry_box_restores_text(out, form, name):
+    s = out[f"s415_{form}_{name}"]
+    assert (s[FIELD[form]], s[OTHER[form]]) == (SENT, "")
+    assert s["box"] == "hidden" and len(s["POST"]) == 1
+    # 요청 수와 순서는 그대로다: 409 뒤 다시 받기는 한 번뿐이다 (#416)
+    methods = [u.split(" ")[0] for u in s["urls"]]
+    expect = (
+        ["GET", "POST", "GET"] if name in NO_BOX_FAILS[:4] else ["GET", "POST"]
+    )
+    assert methods == expect
+
+
+@_node
+@pytest.mark.parametrize("form", ["tForm", "dmForm"])
+@pytest.mark.parametrize("name", ["429", "503"])
+def test_retry_box_failure_keeps_input_empty(out, form, name):
+    s = out[f"s415_{form}_{name}"]
+    assert (s["tInput"], s["dmInput"]) == ("", "")
+    assert s["box"] != "hidden" and s["GET"] == 1
+
+
+@_node
+@pytest.mark.parametrize("form", ["tForm", "dmForm"])
+def test_success_leaves_input_empty_while_waiting_and_after(out, form):
+    for key in (f"s415_{form}_wait", f"s415_{form}_200"):
+        s = out[key]
+        assert (s["tInput"], s["dmInput"]) == ("", ""), key
+
+
+@_node
+@pytest.mark.parametrize("form", ["tForm", "dmForm"])
+def test_retry_from_box_success_sends_once_more(out, form):
+    s = out[f"s415_{form}_retry200"]
+    assert len(s["POST"]) == 2 and s["bodies"][0] == s["bodies"][1]
+    assert (s["tInput"], s["dmInput"]) == ("", "") and s["box"] == "hidden"
+
+
+@_node
+@pytest.mark.parametrize("form", ["tForm", "dmForm"])
+def test_retry_from_box_409_restores_text(out, form):
+    s = out[f"s415_{form}_retry409"]
+    assert (s[FIELD[form]], s[OTHER[form]]) == (SENT, "")
+    assert len(s["POST"]) == 2 and s["GET"] == 2
+
+
+@_node
+@pytest.mark.parametrize(
+    ("key", "field"),
+    [
+        ("s415_fin_t", "tInput"),
+        ("s415_fin_dm", "dmInput"),
+        ("s415_limit_t", "tInput"),
+        ("s415_limit_dm", "dmInput"),
+    ],
+)
+def test_409_that_disables_input_still_restores_text(out, key, field):
+    s = out[key]
+    assert s[field] == SENT and s["off"][field]
+    assert s["GET"] == 2 and len(s["POST"]) == 1
+    if field == "dmInput":
+        assert s["open"] and s["tInput"] == ""
+
+
+@_node
+def test_409_with_changed_scene_restores_text_that_can_be_resent(out):
+    s = out["s415_scene"]
+    assert "전개" in s["eyebrow"]
+    assert s["tInput"] == SENT and not s["off"]["tInput"]
+    s = out["s415_scene_resend"]
+    assert s["POST"] == [f"say:{SENT}→null"] * 2
+    assert s["tInput"] == ""
+
+
+@_node
+def test_restored_text_resent_as_is(out):
+    s = out["s415_resend"]
+    assert s["POST"] == [f"say:{SENT}→1"] * 2
+    assert s["dmInput"] == ""
+
+
+@_node
+def test_hint_written_while_waiting_is_not_overwritten(out):
+    assert out["s415_hint"]["tInput"] == "발문"
+
+
+@_node
+@pytest.mark.parametrize(
+    ("name", "dm"), [("closed", ""), ("other", ""), ("same", SENT)]
+)
+def test_dm_text_restored_only_in_same_students_window(out, name, dm):
+    s = out["s415_away_" + name]
+    assert (s["dmInput"], s["tInput"]) == (dm, "")
+
+
+@_node
+def test_class_text_restored_while_window_open(out):
+    s = out["s415_class_open"]
+    assert s["open"] and (s["tInput"], s["dmInput"]) == (SENT, "")
+
+
+@_node
+def test_blank_input_unchanged(out):
+    s = out["s415_blank"]
+    assert s["POST"] == [] and s["tInput"] == "   "
