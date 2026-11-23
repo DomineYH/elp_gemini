@@ -559,12 +559,13 @@ def _done_word(word: str) -> bool:
     )
 
 
-# 보고에 올 수 있는 문장부호. 글자·공백·이 다섯 밖의 문자가 하나라도 있으면 수나 기호가 든 말이다 (#413)
-_REPORT_MARKS = frozenset(",.!…~")
+# 보고에 올 수 있는 문장부호. 글자·공백·이 넷 밖의 문자가 하나라도 있으면 수나 기호가 든 말이다.
+# 물결표는 낱말 사이에서 범위('A~C')를 뜻할 수 있어 넣지 않는다 (#413)
+_REPORT_MARKS = frozenset(",.!…")
 
 
 def _has_number_or_symbol(text: str) -> bool:
-    """글자(isalpha)·공백·문장부호 다섯 가지가 아닌 문자가 있는지 (#413)."""
+    """글자(isalpha)·공백·문장부호 네 가지가 아닌 문자가 있는지 (#413)."""
     return any(
         not (c.isalpha() or c.isspace() or c in _REPORT_MARKS) for c in text
     )

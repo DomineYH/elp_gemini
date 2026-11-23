@@ -2103,7 +2103,7 @@ def test_report_only_expressions(teacher, student, expected):
     )
 
 
-# 문장부호뿐인 발화(끝의 ! ~ … 말줄임, 낱말 사이 가운뎃점)는 r1 동작 그대로 보고다
+# 문장부호뿐인 발화(끝의 ! … 말줄임)는 r1 동작 그대로 보고다. 가운뎃점·물결표는 기호다
 @pytest.mark.parametrize(
     "teacher, student, expected",
     [
@@ -2114,19 +2114,23 @@ def test_report_only_expressions(teacher, student, expected):
             False,
         ),  # 이전 판(r2·r3)에서는 True
         (T38, "네, 저장했어요!", True),
-        (T38, "네, 저장했어요~", True),
+        (
+            T38,
+            "네, 저장했어요~",
+            False,
+        ),  # r3–r5에서는 True: 물결표는 범위를 뜻할 수 있다
         (T38, "네... 저장했어요.", True),
         (T38, "네, 저장했어요…", True),
         (
             "유소년·고령 열을 정리해 보세요.",
             "네, 유소년·고령 열 정리했어요.",
             False,
-        ),  # r3·r4에서는 True: 가운뎃점도 문장부호 다섯 가지 밖이다
+        ),  # r3·r4에서는 True: 가운뎃점도 문장부호 네 가지 밖이다
         (
             "유소년, 고령 열을 정리해 보세요.",
             "네, 유소년·고령 열 정리했어요.",
             False,
-        ),  # r3·r4에서는 True: 가운뎃점도 문장부호 다섯 가지 밖이다
+        ),  # r3·r4에서는 True: 가운뎃점도 문장부호 네 가지 밖이다
         (
             "모둠_1 파일을 저장해 보세요.",
             "네, 모둠_1 파일 저장했어요.",
@@ -2140,8 +2144,8 @@ def test_report_only_expressions_in_context(teacher, student, expected):
     assert session_service._report_only(student, teacher) is expected
 
 
-# 보고는 글자(isalpha)·공백·문장부호 다섯 가지(, . ! … ~)로만 된 말이다. 그 밖의 문자 하나면 보고가 아니다 (#413)
-@pytest.mark.parametrize("char", list("²½Ⅲ①５_(['\":;·-/%"))
+# 보고는 글자(isalpha)·공백·문장부호 네 가지(, . ! …)로만 된 말이다. 그 밖의 문자 하나면 보고가 아니다 (#413)
+@pytest.mark.parametrize("char", list("²½Ⅲ①５_(['\":;·-/%~"))
 def test_report_only_rejects_any_other_character(char):
     assert (
         session_service._has_number_or_symbol(f"네, 저장{char}했어요.") is True
@@ -2150,17 +2154,20 @@ def test_report_only_rejects_any_other_character(char):
 
 
 @pytest.mark.parametrize(
-    "utterance",
+    "utterance, expected",
     [
-        "네, 저장했어요.",
-        "네... 저장했어요!",
-        "네, 저장했어요…",
-        "네~ 저장했어요",
+        ("네, 저장했어요.", True),
+        ("네... 저장했어요!", True),
+        ("네, 저장했어요…", True),
+        (
+            "네~ 저장했어요",
+            False,
+        ),  # r5에서는 True: 물결표는 범위를 뜻할 수 있다
     ],
 )
-def test_report_only_allows_five_sentence_marks(utterance):
-    assert session_service._has_number_or_symbol(utterance) is False
-    assert session_service._report_only(utterance, T38) is True
+def test_report_only_sentence_marks(utterance, expected):
+    assert session_service._has_number_or_symbol(utterance) is not expected
+    assert session_service._report_only(utterance, T38) is expected
 
 
 RELATION_ASK = "앞서 5≤3으로 적었는데, 두 값을 다시 비교해 보세요."
@@ -2174,6 +2181,7 @@ INTERVAL_ASK = "앞서 범위를 [a,b)로 적었는데, 어느 끝값이 포함�
 DERIVATIVE_ASK = (
     "앞서 답을 f(x)로 적었는데, 도함수를 나타내는 기호로 다시 적어 보세요."
 )
+COLUMN_ASK = "앞서 A, C 열만 골랐는데, 빠진 열도 포함한 범위를 써 보세요."
 
 
 @pytest.mark.parametrize(
@@ -2193,6 +2201,8 @@ DERIVATIVE_ASK = (
         (UNIT_ASK, "네, cm²로 적었어요."),
         (INTERVAL_ASK, "네, (a,b]로 적었어요."),
         (DERIVATIVE_ASK, "네, f'(x)로 적었어요."),
+        # PR 재검토 r5: 낱말 사이 물결표는 범위다
+        (COLUMN_ASK, "네, A~C 범위를 적었어요."),
     ],
 )
 def test_report_with_number_or_symbol_is_not_held(
