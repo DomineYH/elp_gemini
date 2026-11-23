@@ -323,6 +323,9 @@ const CLOSE = {
     };
     const ALL = { ...AGREE, agreed_persona_ids: [1, 2], understanding: { 1: 85, 2: 90 }, count: 2, all_agreed: true };
     const netfail = () => Promise.reject(new TypeError("Failed to fetch"));
+    // 200 헤더 뒤 본문이 끊김: api()는 본문 읽기 실패를 {}로 바꾼다
+    const badbody = () => Promise.resolve({ ok: true, status: 200, headers: { get: () => null },
+        json: () => Promise.reject(new SyntaxError("Unexpected end of JSON input")) });
     const CONFLICT = "동시에 요청이 처리되었습니다. 다시 시도해 주세요.";
     const NOT_ENTERED = "아직 현재 장면에 들어가지 않았습니다.";
     const IDS = ["tInput", "tSend", "hintBtn", "skipBtn", "nextBtn", "endBtn", "dmInput", "dmSubmit"];
@@ -413,7 +416,7 @@ const CLOSE = {
     // 다시 받기가 실패하면 낡은 상태로 둔다
     for (const [name, answer] of [["net", netfail],
         ["500", resp(500, { detail: "x" })],
-        ["404", err(404, "SESSION_NOT_FOUND", "시뮬레이션 세션을 찾을 수 없습니다.")]]) {
+        ["404", err(404, "SESSION_NOT_FOUND", "시뮬레이션 세션을 찾을 수 없습니다.")], ["badbody", badbody]]) {
         env = makeEnv([], [resp(200, state())]);
         await flush();
         out["s416_refail_" + name + "_before"] = view(env);
@@ -425,7 +428,7 @@ const CLOSE = {
     // 첫 로딩의 자동 진입이 409이고 다시 받기도 실패: 재시도 상자도 띄우지 않는다
     for (const [name, answer] of [["net", netfail],
         ["500", resp(500, { detail: "x" })],
-        ["404", err(404, "SESSION_NOT_FOUND", "시뮬레이션 세션을 찾을 수 없습니다.")]]) {
+        ["404", err(404, "SESSION_NOT_FOUND", "시뮬레이션 세션을 찾을 수 없습니다.")], ["badbody", badbody]]) {
         env = makeEnv([err(409, "PHASE_NOT_CURRENT", "현재 장면이 아닙니다.")], [resp(200, state(10, false)), answer]);
         await flush();
         out["s416_enter_refail_" + name] = view(env);
@@ -845,7 +848,7 @@ def test_regenerate_409_shows_fixed_row(out):
 
 
 @_node
-@pytest.mark.parametrize("name", ["net", "500", "404"])
+@pytest.mark.parametrize("name", ["net", "500", "404", "badbody"])
 def test_refetch_failure_keeps_stale_screen_and_409_message(out, name):
     before, s = out[f"s416_refail_{name}_before"], out[f"s416_refail_{name}"]
     for k in ("eyebrow", "seats", "off", "tForm", "finishedNote", "box"):
@@ -867,7 +870,7 @@ def test_end_200_still_goes_to_transcript(out):
 
 
 @_node
-@pytest.mark.parametrize("name", ["net", "500", "404"])
+@pytest.mark.parametrize("name", ["net", "500", "404", "badbody"])
 def test_enter_409_refetch_failure_shows_no_retry_box(out, name):
     s = out[f"s416_enter_refail_{name}"]
     assert s["box"] == "hidden"
@@ -875,3 +878,5 @@ def test_enter_409_refetch_failure_shows_no_retry_box(out, name):
     assert [u.split(" ")[0] for u in s["urls"]] == ["GET", "POST", "GET"]
     assert "도입" in s["eyebrow"] and s["off"]["tInput"]
     assert not any("네" in t for t in s["seats"])
+    # 대기 중으로 남지 않는다: 진입 전 장면이라 말하기만 꺼지고 Skip·종료는 켜진다
+    assert not s["off"]["skipBtn"] and not s["off"]["endBtn"]
