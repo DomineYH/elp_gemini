@@ -422,6 +422,15 @@ const CLOSE = {
         out["s416_refail_" + name] = view(env);
     }
 
+    // 첫 로딩의 자동 진입이 409이고 다시 받기도 실패: 재시도 상자도 띄우지 않는다
+    for (const [name, answer] of [["net", netfail],
+        ["500", resp(500, { detail: "x" })],
+        ["404", err(404, "SESSION_NOT_FOUND", "시뮬레이션 세션을 찾을 수 없습니다.")]]) {
+        env = makeEnv([err(409, "PHASE_NOT_CURRENT", "현재 장면이 아닙니다.")], [resp(200, state(10, false)), answer]);
+        await flush();
+        out["s416_enter_refail_" + name] = view(env);
+    }
+
     // 409가 아니면 다시 받지 않는다(GET 응답을 준비하지 않았으므로 GET이 가면 GET 수에 보인다)
     for (const [name, answer] of [["429", err(429, "RESOURCE_EXHAUSTED", __Q429__, RA)],
         ["503", err(503, "MODEL_OVERLOADED", __Q503__, RA)], ["net", netfail],
@@ -855,3 +864,14 @@ def test_non_409_does_not_refetch(out, name):
 def test_end_200_still_goes_to_transcript(out):
     s = out["s416_end200"]
     assert s["href"] == "/simulation/sessions/1/transcript" and s["GET"] == 1
+
+
+@_node
+@pytest.mark.parametrize("name", ["net", "500", "404"])
+def test_enter_409_refetch_failure_shows_no_retry_box(out, name):
+    s = out[f"s416_enter_refail_{name}"]
+    assert s["box"] == "hidden"
+    assert s["simStatus"] == "현재 장면이 아닙니다."
+    assert [u.split(" ")[0] for u in s["urls"]] == ["GET", "POST", "GET"]
+    assert "도입" in s["eyebrow"] and s["off"]["tInput"]
+    assert not any("네" in t for t in s["seats"])

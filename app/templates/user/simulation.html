@@ -532,9 +532,10 @@
             showStatus(err.message);
             if (retry) showRetry(() => run(pending, action), err.retryAfter);
             // 409는 이 탭이 아는 상태가 낡았다는 뜻이다(다른 탭에서 종료·상한·장면 전이).
-            // 한 번만 다시 받아 그린다. 다시 받기가 실패하면 낡은 상태로 둔다 (#416)
-            if (err.status === 409) {
-                state = await api("GET", API).catch(() => state);
+            // 한 번만 다시 받아 그린다. 다시 받기가 실패하면 낡은 상태로 두고 재시도 상자도 띄우지 않는다 (#416)
+            const fresh = err.status === 409 && await api("GET", API).catch(() => null);
+            if (fresh) {
+                state = fresh;
                 // 넘어간 장면에 아직 반응이 없으면 진입은 교사가 누를 때 한다(자동 요청 없음) (#416)
                 if (state.session.status === "running" && phaseUtterances().length === 0) {
                     showRetry(enterCurrentPhase, 0);
