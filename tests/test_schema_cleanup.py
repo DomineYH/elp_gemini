@@ -334,6 +334,7 @@ async def test_startup_keeps_session_version_after_email_rebuild(monkeypatch):
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
     monkeypatch.setattr(main_mod, "engine", eng)
     monkeypatch.setattr(main_mod.settings, "DEBUG", False)
+    monkeypatch.setattr(main_mod.settings, "ADMIN_INITIAL_PASSWORD", None)
     monkeypatch.setattr(
         main_mod.settings, "CRITERIA_CLOUD_RECONCILE_ENABLED", False
     )

@@ -3,7 +3,10 @@
 단위 테스트와 통합 테스트에서 공통으로 사용
 """
 
+import atexit
 import os
+import shutil
+import sys
 import tempfile
 from io import BytesIO
 from unittest.mock import MagicMock, patch
@@ -17,6 +20,13 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.pool import StaticPool
+
+# 앱 엔진은 app.config 가 import 될 때 읽은 DATABASE_URL 로 만들어지므로 그 전에 임시 파일로 돌린다.
+# 이 파일이 tests.conftest 로 한 번 더 실행될 때는 이미 정한 값을 둔다 (#429)
+if "app.config" not in sys.modules:
+    _startup_db_dir = tempfile.mkdtemp(prefix="elp-startup-")
+    atexit.register(shutil.rmtree, _startup_db_dir, ignore_errors=True)
+    os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_startup_db_dir}/app.db"
 
 from app.config import settings
 from app.db import Base, get_db
