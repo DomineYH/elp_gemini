@@ -2809,6 +2809,12 @@ def _ids(personas):
         "네, 다음 차시도 열심히 참여하겠습니다.",
         "이번 차시도 끝까지 열심히 할게요.",
         "네, 다음에도 열심히 해 볼게요.",
+        # 끝말 '참여해 보겠습니다'·'참여해 볼게요' (#432)
+        "네, 다음 차시에도 열심히 참여해 보겠습니다.",
+        "네, 다음 차시에도 열심히 참여해 볼게요.",
+        "열심히 참여해 볼게요.",
+        "네, 선생님. 끝까지 열심히 참여해 보겠습니다.",
+        "다음 시간에도 최선을 다해 참여해 보겠습니다.",
     ],
 )
 def test_follow_up_pledge_is_held_and_agrees(ready, fake_gemini, utterance):
@@ -2921,6 +2927,23 @@ def test_first_reaction_pledge_is_not_consent(ready, fake_gemini):
         "네, '열심히 해 볼게요.'",
         "‘열심히 해 볼게요’요.",
         "「열심히 해 볼게요.」",
+        # '참여해 보겠습니다'·'참여해 볼게요'를 더해도 걸리면 안 되는 형태 (#432)
+        "다음 차시 활동에 열심히 참여해 보겠습니다.",
+        "발표에 참여해 보겠습니다.",
+        "발표에 열심히 참여해 보겠습니다.",
+        "모둠 활동에 열심히 참여해 볼게요.",
+        "열심히 참여해서 표를 완성해 보겠습니다.",
+        "네, 다음 차시 활동도 열심히 참여해 보겠습니다.",
+        "키랑 발 길이가 필요했어요. 다음 차시에도 열심히 참여해 보겠습니다.",
+        "참여해 보겠습니다.",
+        "네, 다음 차시에도 참여해 보겠습니다.",
+        "네, 참여해 볼게요.",
+        "참여해 볼게요?",
+        "열심히 참여해 볼게요?",
+        '네, "열심히 참여해 보겠습니다."',
+        "열심히 참여해 보겠어요.",
+        "열심히 참여해 볼래요.",
+        "네, 다음 활동도 잘 준비해 보겠습니다.",
     ],
 )
 def test_action_commitment_is_not_pledge(ready, fake_gemini, utterance):
@@ -2959,6 +2982,20 @@ def test_chasi_pledge_with_new_artifact_is_not_consent(ready, fake_gemini):
         ready,
         fake_gemini,
         "네, 다음 차시에도 열심히 해 볼게요.",
+        artifacts=("", "메모.txt"),
+    )
+    assert _flags(turn) == {None}
+    assert turn["agreement"]["count"] == 0
+    assert turn["agreement"]["pledged_persona_ids"] == []
+    assert _stored(turn) == {45}
+
+
+def test_chamyeo_pledge_with_new_artifact_is_not_consent(ready, fake_gemini):
+    # '참여해 보겠습니다' 끝말이어도 새 산출물이 있으면 #358 조건에서 빠진다 (#432)
+    _, turn = _pledge_turn(
+        ready,
+        fake_gemini,
+        "네, 다음 차시에도 열심히 참여해 보겠습니다.",
         artifacts=("", "메모.txt"),
     )
     assert _flags(turn) == {None}
