@@ -772,6 +772,124 @@ const CLOSE = {
     out.p420_badget_again = { ...view(env), rejections: rejections.length };
     countRejections = false;
 
+    // ===== '지도안 발문'으로 넣고 손대지 않은 글은 장면이 바뀌면 지운다 (#433) =====
+    // 트리아지 하니스 t433/scenarios.js에서 옮김. 가짜 DOM은 값을 넣어도 input이 나지 않아 type()이 낸다
+    const type = (env, text) => { env.$("tInput").value = text; env.$("tInput").dispatch("input"); };
+    const v433 = env => ({ ...snap(env), scene: env.$("phaseEyebrow").textContent.includes("전개") ? "전개" : "도입",
+        tInput: env.$("tInput").value });
+    // 기다리는 동안 한 번 누르고, 누른 직후와 끝난 뒤를 함께 적는다
+    const during433 = async (env, settle) => {
+        await press(env, "hintBtn");
+        const afterClick = env.$("tInput").value;
+        await settle(); await flush();
+        return { afterClick, ...v433(env) };
+    };
+    const skipAll = async (e, btn = "skipBtn") => {
+        e.queue.push(MOVED(), ENTERED1()); e.gets.push(resp(200, SCENE2(false)));
+        await press(e, btn);
+    };
+    const h433 = {};
+    let w, g;
+
+    // 기다리는 요청 없이 누르고 보내지 않음 → Skip / "다음 장면으로" → 그대로 제출
+    env = await boot415();
+    await press(env, "hintBtn");
+    await skipAll(env);
+    h433.idle_skip = v433(env);
+    env.$("tForm").dispatch("submit"); await flush();
+    h433.idle_skip_send = v433(env);
+    await press(env, "hintBtn");
+    h433.idle_skip_click_again = v433(env);
+
+    env = await boot415(agreed0);
+    await press(env, "hintBtn");
+    await skipAll(env, "nextBtn");
+    h433.idle_next = v433(env);
+
+    // 고친 글 / 지우고 같은 글을 다시 침 / 직접 쓴 글 → Skip: 남는다
+    for (const [name, act] of [
+        ["idle_edited_skip", async e => { await press(e, "hintBtn"); type(e, "발문 그런데 왜 그럴까요?"); }],
+        ["idle_retyped_skip", async e => { await press(e, "hintBtn"); type(e, ""); type(e, "발문"); }],
+        ["idle_typed_skip", async e => type(e, "직접 쓴 글")],
+    ]) {
+        env = await boot415();
+        await act(env);
+        await skipAll(env);
+        h433[name] = v433(env);
+    }
+
+    // 보낸 글이 409(같은 장면)로 돌아온 뒤 Skip: 남는다
+    env = await boot415();
+    env.gets.push(resp(200, state()));
+    await submit(env, "tForm", "보낸 글", err(409, "CONFLICT_RETRY", CONFLICT));
+    await skipAll(env);
+    h433.restored_then_skip = v433(env);
+
+    // Skip·"다음 장면으로"의 POST / 넘긴 뒤 상태 GET을 기다리는 동안 누름
+    for (const [name, st, btn] of [["skip", state, "skipBtn"], ["next", () => agreed0, "nextBtn"]]) {
+        env = await boot415(st());
+        w = deferred(); env.queue.push(w, ENTERED1()); env.gets.push(resp(200, SCENE2(false)));
+        await press(env, btn);
+        h433[name + "_post"] = await during433(env, async () => w.settle(MOVED()));
+
+        env = await boot415(st());
+        g = deferred(); env.queue.push(MOVED(), ENTERED1()); env.gets.push(g);
+        await press(env, btn);
+        h433[name + "_get"] = await during433(env, async () => g.settle(resp(200, SCENE2(false))));
+    }
+
+    // 새 장면 진입을 기다리는 동안 누름: 새 장면의 발문
+    env = await boot415();
+    w = deferred(); env.queue.push(MOVED(), w); env.gets.push(resp(200, SCENE2(false)));
+    await press(env, "skipBtn");
+    h433.skip_enter = await during433(env, async () => w.settle(ENTERED1()));
+
+    // 낡은 탭의 Skip 409 → 상태 GET을 기다리는 동안 누름
+    env = await boot415();
+    g = deferred(); env.queue.push(PNC()); env.gets.push(g);
+    await press(env, "skipBtn");
+    h433.refetch409 = await during433(env, async () => g.settle(resp(200, SCENE2())));
+
+    // 넘긴 뒤 상태 GET 실패: 옛 장면 그대로
+    env = await boot415();
+    g = deferred(); env.queue.push(MOVED()); env.gets.push(g);
+    await press(env, "skipBtn");
+    h433.skip_get_fail = await during433(env, async () => g.settle(netfail));
+
+    // 누른 뒤 1:1 발화: 409(장면 넘어감) / 200(같은 장면)
+    env = await boot415();
+    await press(env, "hintBtn");
+    openSeat(env);
+    env.gets.push(resp(200, SCENE2()));
+    await dmSubmit(env, "보낸 글", PNC());
+    CLOSE.button(env);
+    h433.idle_dm409_moved = v433(env);
+
+    env = await boot415();
+    await press(env, "hintBtn");
+    openSeat(env);
+    await dmSubmit(env, "보낸 글", turn("보낸 글", 1, 11));
+    CLOSE.button(env);
+    h433.idle_dm200_same = v433(env);
+
+    // 전체 발화를 기다리는 동안 누름 → 409(같은 장면) / 409(장면 넘어감)
+    for (const [name, answer, get] of [["say_409_same", err(409, "CONFLICT_RETRY", CONFLICT), state()],
+        ["say_409_moved", PNC(), SCENE2()]]) {
+        env = await boot415();
+        w = deferred();
+        await submit(env, "tForm", "보낸 글", w);
+        env.gets.push(resp(200, get));
+        h433[name] = await during433(env, async () => w.settle(answer));
+    }
+
+    // 발문을 눌러 그대로 보냄 → 409(장면 넘어감): 보낸 글이 돌아온다
+    env = await boot415();
+    await press(env, "hintBtn");
+    env.queue.push(PNC()); env.gets.push(resp(200, SCENE2()));
+    env.$("tForm").dispatch("submit"); await flush();
+    h433.sent_hint_409_moved = v433(env);
+    for (const k in h433) out["h433_" + k] = h433[k];
+
     console.log(JSON.stringify(out));
 })().catch(e => { console.error(e); process.exit(1); });
 """
@@ -1557,3 +1675,100 @@ def test_normal_skip_never_shows_entry_box(out):
         "",
         "/phases/1/enter",
     ]
+
+
+# ===== '지도안 발문'으로 넣고 손대지 않은 글은 장면이 바뀌면 지운다 (#433) =====
+
+
+def _h(out, name):
+    return out["h433_" + name]
+
+
+@_node
+def test_idle_skip_clears_untouched_hint(out):
+    s = _h(out, "idle_skip")
+    assert (s["scene"], s["tInput"]) == ("전개", "")
+    s = _h(out, "idle_skip_send")
+    assert s["POST"] == ["advance", "enter"] and s["tInput"] == ""
+
+
+@_node
+def test_idle_next_clears_untouched_hint(out):
+    s = _h(out, "idle_next")
+    assert (s["scene"], s["tInput"]) == ("전개", "")
+
+
+@_node
+@pytest.mark.parametrize(
+    ("name", "text"),
+    [
+        ("idle_edited_skip", "발문 그런데 왜 그럴까요?"),
+        ("idle_retyped_skip", "발문"),
+        ("idle_typed_skip", "직접 쓴 글"),
+        ("restored_then_skip", SENT),
+    ],
+)
+def test_touched_or_restored_text_survives_skip(out, name, text):
+    s = _h(out, name)
+    assert (s["scene"], s["tInput"]) == ("전개", text)
+
+
+@_node
+@pytest.mark.parametrize(
+    "name", ["skip_post", "skip_get", "next_post", "next_get", "refetch409"]
+)
+def test_hint_clicked_while_scene_changes_is_cleared(out, name):
+    s = _h(out, name)
+    assert s["afterClick"] == "발문"
+    assert (s["scene"], s["tInput"]) == ("전개", "")
+
+
+@_node
+def test_hint_clicked_while_entering_new_scene_stays(out):
+    s = _h(out, "skip_enter")
+    assert (s["afterClick"], s["scene"], s["tInput"]) == (
+        "발문2",
+        "전개",
+        "발문2",
+    )
+
+
+@_node
+def test_hint_stays_when_state_get_fails_after_skip(out):
+    s = _h(out, "skip_get_fail")
+    assert (s["scene"], s["tInput"]) == ("도입", "발문")
+
+
+@_node
+@pytest.mark.parametrize(
+    ("name", "scene", "text"),
+    [("idle_dm409_moved", "전개", ""), ("idle_dm200_same", "도입", "발문")],
+)
+def test_hint_after_dm_turn(out, name, scene, text):
+    s = _h(out, name)
+    assert (s["scene"], s["tInput"]) == (scene, text)
+
+
+@_node
+def test_say_409_same_scene_keeps_hint(out):
+    s = _h(out, "say_409_same")
+    assert (s["scene"], s["tInput"]) == ("도입", "발문")
+
+
+@_node
+def test_say_409_moved_clears_hint(out):
+    s = _h(out, "say_409_moved")
+    assert s["afterClick"] == "발문"
+    assert (s["scene"], s["tInput"]) == ("전개", "")
+
+
+@_node
+def test_sent_hint_409_moved_restores_sent_text(out):
+    s = _h(out, "sent_hint_409_moved")
+    assert (s["scene"], s["tInput"]) == ("전개", "발문")
+
+
+@_node
+def test_hint_clicked_again_in_new_scene_gives_new_prompt(out):
+    s = _h(out, "idle_skip_click_again")
+    assert (s["scene"], s["tInput"]) == ("전개", "발문2")
