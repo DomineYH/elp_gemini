@@ -224,3 +224,5 @@ async def test_replace_creates_active_without_demoting_others():
     insert_kwargs = repo.insert.await_args.kwargs
     assert insert_kwargs["status"] == "active"
     assert insert_kwargs["activated_at"] is not None
+    # 올린 바이트 수를 저장한다 (#446)
+    assert insert_kwargs["file_size"] == len(b"%PDF-1.4 r")
