@@ -159,12 +159,14 @@ async def general_exception_handler(request: Request, exc: Exception):
 
     # 500 은 사용자 미들웨어 바깥(ServerErrorMiddleware)에서 나가므로
     # 아래 두 응답 모두 보안 헤더를 직접 지정
+    # 오류 화면에도 세션 닉네임이 보이므로 저장 금지를 함께 붙인다 (#440)
+    headers = {**SECURITY_HEADERS, "Cache-Control": "no-store"}
     # API 요청인 경우 JSON 응답
     if request.url.path.startswith("/api"):
         return JSONResponse(
             status_code=500,
             content={"detail": "내부 서버 오류가 발생했습니다."},
-            headers=SECURITY_HEADERS,
+            headers=headers,
         )
 
     # 웹 요청인 경우 HTML 응답
@@ -176,7 +178,7 @@ async def general_exception_handler(request: Request, exc: Exception):
             "detail": "내부 서버 오류가 발생했습니다.",
         },
         status_code=500,
-        headers=SECURITY_HEADERS,
+        headers=headers,
     )
 
 

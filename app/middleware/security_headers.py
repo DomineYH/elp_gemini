@@ -48,6 +48,10 @@ class SecurityHeadersMiddleware:
                 headers = MutableHeaders(scope=message)
                 for name, value in SECURITY_HEADERS.items():
                     headers.setdefault(name, value)
+                # 로그아웃 뒤 뒤로 가기로 개인 화면이 보이지 않게 정적 파일 밖은 저장 금지 (#440)
+                path = scope["path"]
+                if not path.startswith("/static/") and path != "/favicon.ico":
+                    headers.setdefault("Cache-Control", "no-store")
             await send(message)
 
         await self.app(scope, receive, send_with_headers)
