@@ -1,6 +1,6 @@
 {
   "$schema": "./jev_task_routing.schema.json",
-  "version": "2.5.5-draft",
+  "version": "2.5.7-draft",
   "policy_doc": "ROUTING_POLICY.md",
   "purpose": "Route development work through the smallest adequate workflow using Jev for semantic classification, the current host coordinator for all task authority, and bounded worker assignments for execution.",
   "nature": "policy configuration; not a runtime enforcement implementation (see ENF-* in policy_doc)",
@@ -31,7 +31,10 @@
       "2.5.2: model settings (roles harness/model/effort, defaults, router connection, profiles, adapters) moved to models.json; policy roles reference it",
       "2.5.5: launch channel fixed to herdr_pane for every delegated role (ORDER-9); work_order gains launch_channel/pane_id; models.json adapters gain launch_channels and a claude entry",
       "2.5.4: modifiers ui_ux/database/security/api_integration also activate on their task_type (MOD-1); CLS-7b analysis x delivery -> NEEDS_CONTEXT; change_kind gains test_only",
-      "2.5.3: document precedence (AUTH-7), host never writes product code (AUTH-1), delegation.liveness with heartbeat/exit-without-report handling (ORDER-8), independence wording 'different model preferred, not sufficient' (ROLE-7), minimal-worker rule scoped to implementation workers (WF-2)"
+      "2.5.6: advisor gets positive triggers ADV-1..5, order defaults, an output contract, a mandatory skip record and task_record.consultations_evaluated (ROLE-8, ROLE-9, ORDER-10); needs_specialist becomes a consultation trigger; review and consultation orders may name one report path under .routing/evidence/",
+      "2.5.6: new code_quality and playbooks sections (QUAL-1..11), templates.worker_report and templates.review_report, work_order.playbook_ref/design_note_ref, task_record.playbook_id/design_note; stage summaries updated; no new stage, role or Jev question",
+      "2.5.3: document precedence (AUTH-7), host never writes product code (AUTH-1), delegation.liveness with heartbeat/exit-without-report handling (ORDER-8), independence wording 'different model preferred, not sufficient' (ROLE-7), minimal-worker rule scoped to implementation workers (WF-2)",
+      "2.5.7: playbook steps, report evidence and notes move to playbooks/<id>.md (Markdown + frontmatter), installed to .routing/playbooks/; playbooks.catalog keeps only id -> path; task_record gains playbook_sha256; modifiers gain five checks from the former per-type notes; no stage, role, workflow, threshold or Jev question changed"
     ]
   },
   "precedence": {
@@ -124,12 +127,13 @@
       "rule_refs": [
         "AUTH-3",
         "ROLE-1",
-        "ROLE-7"
+        "ROLE-7",
+        "QUAL-2"
       ]
     },
     "implementer": {
       "settings": "models.json#/roles/implementer",
-      "mission": "Execute an issued implementation, prototype or repair order within its scope and accepted testing_mode.",
+      "mission": "Execute an issued implementation, prototype or repair order within its scope, playbook and accepted testing_mode.",
       "target_access": "write_in_scope",
       "may_write": [
         "write_scope"
@@ -150,15 +154,18 @@
       "rule_refs": [
         "AUTH-3",
         "ROLE-2",
-        "ORDER-4"
+        "ORDER-4",
+        "QUAL-1",
+        "QUAL-4",
+        "QUAL-8"
       ]
     },
     "task-verifier": {
       "settings": "models.json#/roles/task-verifier",
-      "mission": "Independently review the fixed current diff and evidence; report PASS/FAIL/BLOCKED findings to the host.",
+      "mission": "Independently review the fixed current diff and evidence against the criteria and quality bar; report PASS/FAIL/BLOCKED with proven findings to the host.",
       "target_access": "read_only",
       "may_write": [
-        "reports",
+        "review_report",
         "disposable_diagnostics"
       ],
       "dispatch_when": [
@@ -177,7 +184,8 @@
       "rule_refs": [
         "AUTH-3",
         "ROLE-3",
-        "ROLE-7"
+        "ROLE-7",
+        "QUAL-9"
       ]
     },
     "inspector": {
@@ -260,9 +268,10 @@
       "mission": "Give the host one evidence-based second opinion on a specific unresolved technical decision.",
       "target_access": "read_only",
       "may_write": [
-        "reports"
+        "consultation_report"
       ],
       "dispatch_when": [
+        "any consultation_orders.advisor_triggers condition holds (ROLE-9)",
         "explicit_host_consultation"
       ],
       "order_purposes": [
@@ -273,7 +282,9 @@
       ],
       "rule_refs": [
         "AUTH-3",
-        "ROLE-8"
+        "ROLE-8",
+        "ROLE-9",
+        "ORDER-10"
       ]
     }
   },
@@ -372,6 +383,8 @@
       "testing_decision_ref": "required for implementation/prototype/repair orders unless an authorized documented exception",
       "verification_plan_ref": "required for orders that execute checks or evaluate final verification",
       "decision_question": "required for advisor",
+      "playbook_ref": "required for implementation/repair/prototype orders when playbooks.select names a playbook; null otherwise (QUAL-1)",
+      "design_note_ref": "required for implementation orders when code_quality.design_note.required_when holds (QUAL-2)",
       "pane_id": "null at issuance; the host fills the Herdr pane id immediately after launch (ORDER-9)"
     },
     "empty_semantics": {
@@ -384,7 +397,10 @@
       "ORDER-3",
       "ORDER-4",
       "ORDER-5",
-      "ORDER-9"
+      "ORDER-9",
+      "ORDER-10",
+      "QUAL-1",
+      "QUAL-2"
     ]
   },
   "jev": {
@@ -701,8 +717,8 @@
       },
       "needs_specialist": {
         "type": "boolean|null",
-        "effect": "triage_hint",
-        "note": "evidence of an unresolved issue for host triage only; never auto-dispatches (ROLE-8)"
+        "effect": "consultation_trigger",
+        "note": "true -> advisor trigger ADV-5: the host writes a decision_question or records a skip (ROLE-9); never supplies consent or assigns planner; 2.5.6: was a hint consumed nowhere"
       },
       "needs_post_deployment_verification": {
         "type": "boolean|null",
@@ -802,6 +818,7 @@
       "budget_reset_on": [
         "new_task_revision_with_materially_changed_evidence"
       ],
+      "consultations_consume_jev_budget": false,
       "budget_not_reset_on": [
         "order_revision",
         "clarification",
@@ -994,6 +1011,318 @@
       "ROLE-5"
     ]
   },
+  "consultation_orders": {
+    "purpose": "Make advisor dispatch a rule-driven, auditable decision instead of host discretion (ROLE-8, ROLE-9).",
+    "consume_jev_budget": false,
+    "evaluate_at": [
+      "after brief_plan or the planner proposal",
+      "after each review verdict",
+      "before each repair order",
+      "on a worker NEEDS_DECISION"
+    ],
+    "advisor_triggers": [
+      {
+        "id": "ADV-1",
+        "when": "task_record.repair_cycles >= 1 AND the check or finding that motivated the last repair still fails",
+        "ask": "which premise do the failed fixes share, and what would test it directly?"
+      },
+      {
+        "id": "ADV-2",
+        "when": "a blocking task-verifier finding that the host intends not to repair, or that the implementer report contradicts with evidence",
+        "ask": "is the finding valid for the stated intent, and what run would settle it?"
+      },
+      {
+        "id": "ADV-3",
+        "when": "design_note lists two or more viable shapes for a change crossing a module or public-interface boundary and no recorded evidence decides between them; OR a worker NEEDS_DECISION that is a technical judgment (Q-2)",
+        "ask": "which option, under which assumptions?"
+      },
+      {
+        "id": "ADV-4",
+        "when": "risk == high AND the plan contains a decision that is costly to reverse (schema or data migration, public API or wire format, auth or permission model, dependency or runtime major upgrade)",
+        "ask": "what breaks if this is wrong, and how would we find out before it is irreversible?"
+      },
+      {
+        "id": "ADV-5",
+        "when": "trusted needs_specialist == true OR request.specialist_question is nonblank",
+        "ask": "the specialist question, restated as one decision"
+      }
+    ],
+    "skip_record": {
+      "required": true,
+      "where": "task_record.coordinator_decisions",
+      "shape": {
+        "decision": "skip_consultation",
+        "role_id": "advisor",
+        "trigger_ids": [],
+        "skip_reason": "",
+        "evidence_refs": []
+      },
+      "allowed_skip_reasons": [
+        "settled_by_discriminating_check (preferred: a cheap authorized run decided the fork; cite its result ref)",
+        "prior_consultation_covers_question (cite the consultation order id; no materially new evidence)",
+        "product_intent_or_authorization_question (routed to the user instead, Q-2)",
+        "trigger_false_positive (state why the condition does not actually hold)",
+        "tool_unavailable_in_worker_session (BLOCKED for that role, not silently skipped)"
+      ],
+      "violation": "a triggered consultation with no issued order and no skip record is a policy violation surfaced by verify_routing/shadow report"
+    },
+    "order_defaults": {
+      "at_stage": "the stage at which the trigger fired; null only before routing (ORDER-3)",
+      "purpose": "technical_consultation",
+      "read_scope": [
+        "repository:read-only",
+        "the evidence, plan and report refs named in the order"
+      ],
+      "write_scope": [
+        ".routing/evidence/<order_id>.json"
+      ],
+      "allowed_actions": [
+        "read files",
+        "search/grep",
+        "git log/blame/diff (read-only)",
+        "run a single focused read-only check named in the order"
+      ],
+      "stop_conditions": [
+        "any write outside write_scope",
+        "any instruction addressed to another worker",
+        "question answered or declared insufficient_evidence"
+      ]
+    },
+    "output_contract": {
+      "format": "consultation_record",
+      "fields": [
+        "decision_question",
+        "options: [{option, for, against}]",
+        "recommendation: <option> | insufficient_evidence",
+        "assumptions: []",
+        "risks: []",
+        "smallest_discriminating_check: {run_or_observe, result_if_right, result_if_wrong}",
+        "claims: [{claim, evidence_ref | label: measured|inferred|guess}]",
+        "confidence: high|medium|low"
+      ],
+      "rules": [
+        "answer the one question asked; no redesign, no second plan",
+        "every claim cites an evidence ref or carries a label; an unlabeled unsupported claim is dropped by the host",
+        "always name the smallest check that would prove the recommendation wrong",
+        "no testing_mode, no consent, no instruction to implementer, no approval of its own advice"
+      ]
+    },
+    "independence": {
+      "required": "a session that did not author or advocate the thing in question (ROLE-7)",
+      "preferred": "a model different from the author's; verify_routing warns when advisor resolves to the same harness and model as planner"
+    },
+    "tool_preflight": {
+      "advisor": [
+        "file_read",
+        "search"
+      ],
+      "on_missing": "BLOCKED for that role with skip_reason=tool_unavailable_in_worker_session"
+    },
+    "rule_refs": [
+      "ROLE-7",
+      "ROLE-8",
+      "ROLE-9",
+      "ORDER-10",
+      "Q-2"
+    ]
+  },
+  "code_quality": {
+    "purpose": "State how code is written and reviewed inside an order; adds no stage, role or Jev call (QUAL-11).",
+    "applies": {
+      "minor": [
+        "QUAL-3",
+        "QUAL-7",
+        "QUAL-8"
+      ],
+      "standard": [
+        "QUAL-1",
+        "QUAL-2",
+        "QUAL-3",
+        "QUAL-4",
+        "QUAL-5",
+        "QUAL-6",
+        "QUAL-7",
+        "QUAL-8",
+        "QUAL-9",
+        "QUAL-10"
+      ],
+      "high": [
+        "QUAL-1",
+        "QUAL-2",
+        "QUAL-3",
+        "QUAL-4",
+        "QUAL-5",
+        "QUAL-6",
+        "QUAL-7",
+        "QUAL-8",
+        "QUAL-9",
+        "QUAL-10"
+      ],
+      "emergency": [
+        "QUAL-3",
+        "QUAL-5",
+        "QUAL-7"
+      ],
+      "exploration_prototype": []
+    },
+    "design_note": {
+      "required_when": "mode == delivery AND risk in [standard, high] AND change_kind in [change_behavior, preserve_behavior]",
+      "owner": "host at brief_plan; planner at risk_design_recovery_plan",
+      "fields": [
+        "data_shape: types, signatures, key structures",
+        "state_owners: each piece of state and its single owner",
+        "boundary: the module or interface the change sits behind",
+        "candidates: [{shape, why_rejected}] (two or more when a module or public-interface boundary is crossed)",
+        "decomposition: {blocking_first, independent_streams, shared_mutable_state, why_this_split}"
+      ],
+      "pick_rule": "one owner per piece of state; one way to do each task; callers need to know least"
+    },
+    "hygiene": [
+      "no narrating or leftover comments; keep license headers, public-API docs, links and constraints the code cannot express",
+      "no debug output, commented-out code or TODO without an owner",
+      "no speculative abstraction, guard for a state that cannot occur, or compatibility shim the order did not ask for",
+      "no unrelated edits or formatting churn outside the changed lines",
+      "names and structure follow the surrounding code"
+    ],
+    "surfaces": {
+      "cli": "run the real command",
+      "ui": "drive the changed flow in the running app",
+      "parser_or_migration": "replay a saved input",
+      "performance": "compare before/after measurements from the same harness",
+      "storage": "read back the written value",
+      "library": "call the public interface from a consumer"
+    },
+    "verdicts": [
+      "pass",
+      "fail",
+      "inconclusive"
+    ],
+    "finding_proof": {
+      "blocking_requires": [
+        "run",
+        "failing_check",
+        "file_line"
+      ],
+      "safety_fact_levels": [
+        "asserted",
+        "pointed_at",
+        "shown_unreachable",
+        "run"
+      ],
+      "non_blocking": [
+        "style",
+        "naming",
+        "preference",
+        "risk that needs a future change to matter"
+      ]
+    },
+    "claim_labels": [
+      "measured",
+      "inferred",
+      "guess"
+    ],
+    "pr_body": {
+      "title": "type(scope): subject",
+      "max_lines": 40,
+      "sections": [
+        "Why",
+        "What changed",
+        "Scope",
+        "Tradeoffs",
+        "Blast radius",
+        "Verification"
+      ],
+      "long_evidence": "link to a file or comment; never paste logs"
+    },
+    "report_shapes": {
+      "worker_report": {
+        "units": "{change, check, result_ref}",
+        "reproduction": "{command, before_ref, after_ref} | null when the playbook needs none",
+        "verification": "{check, surface, verdict: pass|fail|inconclusive, result_ref}",
+        "claims": "{claim, evidence_ref | label: measured|inferred|guess}"
+      },
+      "review_report": {
+        "findings": "{id, blocking, rule_ref, location, claim, proof: {kind: run|failing_check|file_line, ref}}",
+        "safety_fact": "the one fact beyond the diff the change is safe because of; level: asserted|pointed_at|shown_unreachable|run"
+      }
+    },
+    "rule_refs": [
+      "QUAL-1",
+      "QUAL-2",
+      "QUAL-3",
+      "QUAL-4",
+      "QUAL-5",
+      "QUAL-6",
+      "QUAL-7",
+      "QUAL-8",
+      "QUAL-9",
+      "QUAL-10",
+      "QUAL-11"
+    ]
+  },
+  "playbooks": {
+    "purpose": "Ordered steps the host renders into an implementation order, and the evidence that order's report must contain (QUAL-1). The playbook text lives in the files named by catalog; this section only selects.",
+    "select": [
+      {
+        "when": "mode == emergency",
+        "playbook": null
+      },
+      {
+        "when": "mode == exploration AND change_kind == disposable_prototype",
+        "playbook": "prototype"
+      },
+      {
+        "when": "mode == exploration",
+        "playbook": "investigation"
+      },
+      {
+        "when": "task_type == bug_fix",
+        "playbook": "bug_fix"
+      },
+      {
+        "when": "task_type == refactor",
+        "playbook": "refactor"
+      },
+      {
+        "when": "task_type == performance",
+        "playbook": "performance"
+      },
+      {
+        "when": "task_type in [feature, ui_ux, api_integration, database, security]",
+        "playbook": "feature"
+      },
+      {
+        "when": "otherwise (docs, tests, dependency_update, infrastructure; analysis, mixed and other in delivery are stopped earlier by CLS-7b, CLS-8 and CLS-5)",
+        "playbook": null
+      }
+    ],
+    "non_override": "never selects or overrides testing_mode, workflow, roles or risk (VER-1, WF-1); a step that says to delegate is done by the worker itself (AUTH-3)",
+    "render": "read .routing/<catalog path>; send the '## Steps' list verbatim and the frontmatter report_evidence; '## Notes' guide the host and are not sent; record task_record.playbook_sha256 of the file read",
+    "catalog": {
+      "bug_fix": {
+        "path": "playbooks/bug_fix.md"
+      },
+      "feature": {
+        "path": "playbooks/feature.md"
+      },
+      "refactor": {
+        "path": "playbooks/refactor.md"
+      },
+      "performance": {
+        "path": "playbooks/performance.md"
+      },
+      "investigation": {
+        "path": "playbooks/investigation.md"
+      },
+      "prototype": {
+        "path": "playbooks/prototype.md"
+      }
+    },
+    "rule_refs": [
+      "QUAL-1",
+      "QUAL-11"
+    ]
+  },
   "workflows": {
     "minor": {
       "select_when": {
@@ -1151,41 +1480,49 @@
     },
     "brief_plan": {
       "owner": "host",
-      "summary": "Record goal, scope, acceptance criteria, testing_decision and compact verification_plan in the task record.",
+      "summary": "Record goal, scope, criteria, testing_decision, playbook, design_note and compact verification_plan in the task record; evaluate advisor triggers.",
       "rule_refs": [
         "ROLE-1",
-        "VER-5"
+        "VER-5",
+        "QUAL-1",
+        "QUAL-2",
+        "ROLE-9"
       ]
     },
     "risk_design_recovery_plan": {
       "owner": "planner",
-      "summary": "Plan impact, contracts, failure cases, verification, rollout, recovery; name every affected critical boundary.",
+      "summary": "Plan impact, contracts, design_note with candidate shapes, failure cases, verification, rollout, recovery; name every affected critical boundary.",
       "rule_refs": [
         "ROLE-1",
-        "VER-6"
+        "VER-6",
+        "QUAL-2"
       ]
     },
     "pre_change_risk_check": {
       "owner": "host",
-      "summary": "Confirm the plan addresses known risks before issuing dependent implementation orders.",
+      "summary": "Confirm the plan addresses known risks and evaluate advisor triggers (ADV-3, ADV-4) before issuing dependent implementation orders.",
       "rule_refs": [
-        "ROLE-1"
+        "ROLE-1",
+        "ROLE-9"
       ]
     },
     "implement_and_verify": {
       "owner": "implementer",
-      "summary": "Execute the order with accepted testing_mode; run development_iteration checks; self-repair within budget.",
+      "summary": "Execute the order per its playbook and accepted testing_mode in verifiable units; run development_iteration checks; self-review the diff; self-repair within budget.",
       "rule_refs": [
         "ROLE-2",
         "VER-2",
-        "VER-5"
+        "VER-5",
+        "QUAL-4",
+        "QUAL-8"
       ]
     },
     "pr_if_authorized": {
       "owner": "host",
-      "summary": "Create PR only if user-authorized scope permits; otherwise report ready with the local diff.",
+      "summary": "Create PR only if user-authorized scope permits, in the QUAL-10 form; otherwise report ready with the local diff.",
       "rule_refs": [
-        "AUTH-4"
+        "AUTH-4",
+        "QUAL-10"
       ]
     },
     "repository_checks": {
@@ -1198,11 +1535,12 @@
     },
     "independent_review_and_ci": {
       "owner": "task-verifier",
-      "summary": "Fixed-target independent review in a separate context; CI runs normally; collect each planned result once.",
+      "summary": "Fixed-target independent review in a separate context against criteria and QUAL-2..8; blocking findings carry proof; CI runs normally; collect each planned result once.",
       "rule_refs": [
         "ROLE-3",
         "ROLE-7",
-        "VER-9"
+        "VER-9",
+        "QUAL-9"
       ]
     },
     "risk_specific_verification": {
@@ -1215,11 +1553,12 @@
     },
     "conditional_repair": {
       "owner": "host",
-      "summary": "Validate findings; issue bounded repair order for actual blocking defects; revalidate affected entries only.",
+      "summary": "Validate findings; consult advisor on a disputed finding or repeated failure (ADV-1, ADV-2); issue bounded repair order for actual blocking defects; revalidate affected entries only.",
       "rule_refs": [
         "ORDER-6",
         "VER-9",
-        "VER-10"
+        "VER-10",
+        "ROLE-9"
       ]
     },
     "completion_gate": {
@@ -1362,7 +1701,8 @@
         "rendered output",
         "accessibility behavior",
         "interactions",
-        "affected viewport sizes"
+        "affected viewport sizes",
+        "visual baseline never refreshed just to make a diff pass"
       ],
       "rule_refs": [
         "MOD-1",
@@ -1375,7 +1715,8 @@
         "migration with representative nonproduction data",
         "compatibility",
         "integrity",
-        "recovery"
+        "recovery",
+        "no production data in an implementer workspace"
       ],
       "rule_refs": [
         "MOD-1",
@@ -1387,7 +1728,8 @@
       "checks": [
         "request/response compatibility",
         "errors/timeouts/malformed data/retries",
-        "mock vs real connectivity distinguished"
+        "mock vs real connectivity distinguished",
+        "contract source and its version or retrieval date recorded"
       ],
       "rule_refs": [
         "MOD-1",
@@ -1400,7 +1742,8 @@
         "version compatibility",
         "configuration",
         "runtime consequences",
-        "never auto-minor"
+        "never auto-minor",
+        "before/after version identifiers recorded"
       ],
       "rule_refs": [
         "MOD-1",
@@ -1450,7 +1793,8 @@
         "negative authorization cases",
         "trust boundaries",
         "secret handling",
-        "regression coverage"
+        "regression coverage",
+        "checked at the real enforcement point, not only a helper unit test"
       ],
       "rule_refs": [
         "MOD-1",
@@ -1665,6 +2009,42 @@
       "valid_prior_evidence_reused",
       "trigger_false_positive",
       "tool_unavailable_in_worker_session"
+    ],
+    "consultation_skip_reason": [
+      "settled_by_discriminating_check",
+      "prior_consultation_covers_question",
+      "product_intent_or_authorization_question",
+      "trigger_false_positive",
+      "tool_unavailable_in_worker_session"
+    ],
+    "playbook_id": [
+      "bug_fix",
+      "feature",
+      "refactor",
+      "performance",
+      "investigation",
+      "prototype"
+    ],
+    "check_verdict": [
+      "pass",
+      "fail",
+      "inconclusive"
+    ],
+    "finding_proof_kind": [
+      "run",
+      "failing_check",
+      "file_line"
+    ],
+    "safety_fact_level": [
+      "asserted",
+      "pointed_at",
+      "shown_unreachable",
+      "run"
+    ],
+    "claim_label": [
+      "measured",
+      "inferred",
+      "guess"
     ]
   },
   "templates": {
@@ -1761,7 +2141,9 @@
       "report_to": "current_host_session",
       "decision_question": null,
       "launch_channel": "herdr_pane",
-      "pane_id": null
+      "pane_id": null,
+      "playbook_ref": null,
+      "design_note_ref": null
     },
     "worker_question": {
       "task_id": null,
@@ -1778,7 +2160,7 @@
       "task_id": null,
       "revision": null,
       "state_digest": null,
-      "policy_version": "2.5.5-draft",
+      "policy_version": "2.5.7-draft",
       "router_requested_model": null,
       "router_actual_model": null,
       "status": null,
@@ -1828,7 +2210,50 @@
         "researcher_triggers": [],
         "issued": [],
         "skipped": []
+      },
+      "playbook_id": null,
+      "playbook_sha256": null,
+      "design_note": null,
+      "consultations_evaluated": {
+        "advisor_triggers": [],
+        "issued": [],
+        "skipped": []
       }
+    },
+    "worker_report": {
+      "task_id": null,
+      "order_id": null,
+      "order_revision": null,
+      "status": "RESULT_SUBMITTED",
+      "head_revision": null,
+      "goal": "",
+      "playbook_id": null,
+      "changes": [],
+      "units": [],
+      "reproduction": null,
+      "verification": [],
+      "self_review": {
+        "hygiene_checked": false,
+        "notes": []
+      },
+      "claims": [],
+      "out_of_scope_findings": [],
+      "open_decisions": []
+    },
+    "review_report": {
+      "task_id": null,
+      "order_id": null,
+      "order_revision": null,
+      "reviewed_revision": null,
+      "verdict": null,
+      "findings": [],
+      "safety_fact": {
+        "statement": null,
+        "level": null,
+        "ref": null
+      },
+      "cleared": [],
+      "not_reviewed": []
     }
   },
   "validation": {
@@ -1868,6 +2293,16 @@
       "https://docs.typesafe.ai/cookbooks/skill_suggestion",
       "https://docs.typesafe.ai/models",
       "https://docs.typesafe.ai/model-jaggedness/jev-1.13"
+    ],
+    "adapted_from": [
+      {
+        "name": "pstack (cursor/plugins)",
+        "url": "https://github.com/cursor/plugins/tree/main/pstack",
+        "revision": "005d8f6",
+        "license": "MIT",
+        "used_for": "code_quality, playbooks, advisor triggers and output contract",
+        "checked_on": "2026-11-24"
+      }
     ]
   }
 }

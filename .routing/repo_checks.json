@@ -1,16 +1,50 @@
 {
-  "_comment": "Edit for your repository. The host copies these into verification_plan entries with required_by=repository (VER-5). Keep commands exactly as CI runs them.",
-  "required_ci": ["test", "lint"],
+  "_comment": "CI is one job, 'checks' (.github/workflows/ci.yml); required_ci lists its check steps. CI job env: GOOGLE_API_KEY=ci-placeholder SECRET_KEY=ci-placeholder-secret-key-0123456789abcdef SESSION_HTTPS_ONLY=false TZ=UTC (README: run locally with the same env, without .env). Setup step: uv sync --frozen --extra dev --python 3.12. Review: the user reviews each PR manually after it is opened, so require_review stays false (decided 2026-11-25). E2E: no command by decision; live browser E2E is manual (README 'live 검사 (수동)'). JS browser checks run inside test-ratchet (README '브라우저(JS) 검사').",
+  "generated_by": "claude-code (claude-opus-5-5)",
+  "generated_on": "2026-11-25",
+  "sources": [
+    ".routing/repo_checks.schema.json",
+    ".routing/repo_checks.example.json",
+    ".github/workflows/ci.yml",
+    "Makefile",
+    ".pre-commit-config.yaml",
+    "pyproject.toml",
+    "README.md",
+    "pytest.md",
+    "tests/e2e/conftest.py",
+    "app/routers/ (route decorators only)",
+    "gh api repos/DomineYH/elp_gemini/branches/main/protection"
+  ],
+  "required_ci": [
+    "emoji-check",
+    "ruff",
+    "black",
+    "test-ratchet"
+  ],
   "commands": {
-    "test": "npm test",
-    "lint": "npm run lint"
+    "emoji-check": "uv run --frozen python scripts/check_no_emojis_in_reports.py",
+    "ruff": "uv run --frozen ruff check .",
+    "black": "uv run --frozen black --check .",
+    "test-ratchet": "uv run --frozen python scripts/ci_ratchet.py tests"
   },
   "branch_protection": {
-    "require_review": true,
-    "required_status_checks": ["test", "lint"]
+    "require_review": false,
+    "required_status_checks": [
+      "checks"
+    ],
+    "source": "gh api -X PUT repos/DomineYH/elp_gemini/branches/main/protection (2026-11-25): required check 'checks' (GitHub Actions), strict false, no review requirement, enforce_admins false"
   },
   "e2e": {
     "command": null,
-    "critical_flows": []
-  }
+    "critical_flows": [
+      "user register and login (/register, /auth/login/user)",
+      "lesson plan upload and analysis report (/dashboard/upload, /analyze, /reports/{report_id})",
+      "QnA chat over criteria and lesson plan",
+      "simulation setup and session turns (/simulation/setup, /api/simulation/sessions/{sid}/say)",
+      "simulation feedback (/simulation/sessions/{sid}/feedback)",
+      "admin login and criteria upload/activate",
+      "admin user, report and session management with bulk delete and export (/admin/users, /admin/api/exports/all.zip)"
+    ]
+  },
+  "unknowns": []
 }

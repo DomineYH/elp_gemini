@@ -182,6 +182,22 @@ uv run --frozen python scripts/ci_ratchet.py tests
 uv tool install pre-commit && pre-commit install
 ```
 
+### 브라우저(JS) 검사
+
+`tests/**/test_*_js.py`는 정적 JS를 Node로 실행해 검사합니다. 테스트 래칫에 포함되어 CI(Node 20)에서 함께 돌고, `node`가 없으면 건너뜁니다. 이것만 따로 돌리려면 (위 환경변수 설정 후):
+
+```bash
+uv run --frozen python -m pytest tests -k _js
+```
+
+### live 검사 (수동)
+
+실제 Gemini 호출과 실제 브라우저로 시뮬레이션을 끝까지 돌리는 검사입니다. CI에서는 돌지 않고 저장소에 스크립트도 없으며, 병합 후 사람이 직접 돌립니다.
+
+1. `data/app.db` 사본을 쓰는 작업 트리에서 실제 `GOOGLE_API_KEY`로 서버를 띄웁니다 (`uvicorn app.main:app --host 127.0.0.1 --port 8000`).
+2. 브라우저로 로그인 → 지도안 업로드 → 시뮬레이션 설정 → 장면별 발화 → 피드백까지 진행합니다.
+3. 서버 로그와 DB 사본에서 실패, 재시도, 차단된 입력을 확인합니다.
+
 ### 분석 보고서 이모지 회귀 점검
 
 `prompt/prompt.md`의 `lesson_analysis` 섹션, `app/schemas/lessonplan_analysis.py`의 OpenAPI 예시, `app/static/reports/*_reports.md` 보고서에 이모지가 재유입되는 것을 차단합니다 (이슈 #31).

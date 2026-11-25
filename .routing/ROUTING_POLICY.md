@@ -1,8 +1,8 @@
-# Jev Task Routing Policy — v2.5.5-draft
+# Jev Task Routing Policy — v2.5.7-draft
 
 Normative companion to `jev_task_routing.json` and `models.json`. The policy JSON holds every machine-readable value except model settings (thresholds, stage lists, templates, the Jev question rubric); `models.json` holds harness/model/effort for every delegated role, the router connection, profiles and adapter capabilities. This document holds the rules, each stated **once** under a stable ID. JSON fields named `rule_refs` point here. When the two disagree, the JSON value wins for numbers and enums; this document wins for behavior.
 
-Nothing in either file enforces itself. Section 11 lists what the host executor must implement before any rule here can be trusted at runtime.
+Nothing in either file enforces itself. Section 11 lists what the host executor must implement before any rule here can be trusted at runtime. Section 13 states how code is written and reviewed inside an order.
 
 Terminology: **host** = the already-running coordinating session. **worker** = a delegated role session launched by the host. **order** = a host-issued work order (`templates.work_order`). **Jev** = the TypeSafe semantic classifier called with the 14 questions in `jev.questions`.
 
@@ -40,11 +40,11 @@ Terminology: **host** = the already-running coordinating session. **worker** = a
 
 Settings and structured fields are in `roles`. Only behavior that the JSON cannot express is stated here.
 
-**ROLE-1 planner.** Dispatched for high-risk delivery, a concrete `needs_design` signal, or substantive replanning. Returns a proposal covering approach, contracts, dependencies, failure handling, verification, rollout/recovery — not an approval, a classification or instructions to implementer. Ordinary design is resolved inside that one plan; a routine brief plan stays with the host. Disputed decisions are reported to the host, not escalated to advisor by planner.
+**ROLE-1 planner.** Dispatched for high-risk delivery, a concrete `needs_design` signal, or substantive replanning. Returns a proposal covering approach, the design note (QUAL-2), contracts, dependencies, failure handling, verification, rollout/recovery — not an approval, a classification or instructions to implementer. Ordinary design is resolved inside that one plan; a routine brief plan stays with the host. Disputed decisions are reported to the host, not escalated to advisor by planner.
 
-**ROLE-2 implementer.** Executes an issued implementation/repair/prototype order with its approved scope, design constraints and accepted `testing_mode`; owns focused tests and self-checks; returns the current diff and actual results. In-scope self-repair may be preauthorized within the repair budget. Asks (Q-1) before crossing scope, design, risk, test or permission boundaries. A routing result or peer report never starts work.
+**ROLE-2 implementer.** Executes an issued implementation/repair/prototype order with its approved scope, design constraints and accepted `testing_mode`; follows the order's playbook (QUAL-1) in verifiable units (QUAL-4); owns focused tests and the diff self-review (QUAL-8); returns the current diff and a worker report with actual results (QUAL-10). In-scope self-repair may be preauthorized within the repair budget. Asks (Q-1) before crossing scope, design, risk, test or permission boundaries. A routing result or peer report never starts work.
 
-**ROLE-3 task-verifier.** Required for standard/high delivery, emergency, repository rules, high-risk live-system experiments, and whenever trusted `require_independent_review` is true. Reviews a *fixed* current diff plus evidence in a context that did not author it (same model allowed; ROLE-7). Returns PASS/FAIL/BLOCKED findings with evidence to the host — verdicts, not acceptance or commands. May run an authorized focused diagnostic for a concrete concern. Rechecks invalidated scope, not the full review mechanically. No fixes, no test weakening.
+**ROLE-3 task-verifier.** Required for standard/high delivery, emergency, repository rules, high-risk live-system experiments, and whenever trusted `require_independent_review` is true. Reviews a *fixed* current diff plus evidence in a context that did not author it (same model allowed; ROLE-7). Returns a review report (QUAL-9) — PASS/FAIL/BLOCKED with findings, each blocking one carrying its proof — to the host: verdicts, not acceptance or commands. May run an authorized focused diagnostic for a concrete concern. Rechecks invalidated scope, not the full review mechanically. No fixes, no test weakening.
 
 **ROLE-4 inspector.** Dispatched whenever any `evidence_orders.inspector_triggers` condition (INS-1..7) holds after host intake, or a `NEEDS_CONTEXT` names a repository fact (EVID-6). Runs before Jev under a read-only evidence order with the defaults in ORDER-7. Returns an **evidence-packet delta** (`evidence_orders.output_contracts.inspector`): filled packet fields, each with a source ref; resolved and remaining unknowns; any diagnostics run with exit status. Never fills a field from inference, never chooses a TDD mode, never duplicates review, never starts external research.
 
@@ -54,7 +54,9 @@ Settings and structured fields are in `roles`. Only behavior that the JSON canno
 
 **ROLE-7 Independence.** A session that authored or advocated a result does not independently review it — that is the requirement. A different model from the implementer's is **preferred** (and is what the shipped `models.json` gives) but is not sufficient on its own and is never a substitute for a separate session. Reusing an existing worker pane is fine for fresh work, never for reviewing what that pane produced. An advisor that advocated a solution is not its task-verifier. Reporting to the host never requires agreeing with it.
 
-**ROLE-8 advisor.** Dispatched only by an explicit host consultation carrying a nonblank `decision_question`, pertinent evidence refs and purpose `technical_consultation`; not a workflow stage, automatic high-risk reviewer or second planner. Trusted `needs_specialist` and `request.specialist_question` are triage hints only — they neither assign planner nor invoke advisor; a hint without a question blocks nothing; an attempted consultation without a question is not dispatched. Flow: host asks → advisor recommends (assumptions, risks, smallest discriminating check; or "insufficient evidence") → host records decision → host revises the order or asks planner. One consultation per question; repeat only on materially new evidence. Advisor cannot pick a testing mode, supply user consent, approve its own advice or address implementer.
+**ROLE-8 advisor.** A second opinion for the host on one named technical decision. Dispatched whenever any `consultation_orders.advisor_triggers` condition (ADV-1..5) holds (ROLE-9), or on any explicit host consultation. Every order carries a nonblank `decision_question`, the options under consideration, pertinent evidence refs and purpose `technical_consultation`; an order without a question is not dispatched. Returns a **consultation record** (`consultation_orders.output_contract`): a recommendation or `insufficient_evidence`, its assumptions and risks, and the smallest check that would prove it wrong; every claim carries an evidence ref or the label measured / inferred / guess. Flow: host asks → advisor recommends → host records the decision in `coordinator_decisions` → host revises the order or asks planner. One consultation per question; repeat only on materially new evidence. Advisor is not a workflow stage or a second planner; it cannot pick a testing mode, supply user consent, approve its own advice, address implementer, or task-verify what it advocated (ROLE-7). It is a second opinion only from a session that did not author the thing in question; a model different from the author's is preferred, and `verify_routing` warns when advisor resolves to the same harness and model as planner.
+
+**ROLE-9 Consultation triggers.** At each point in `consultation_orders.evaluate_at` — after the plan, after each review verdict, before each repair order, on a worker `NEEDS_DECISION` — the host evaluates every `advisor_triggers` condition and records the IDs that hold in `task_record.consultations_evaluated`. For each true trigger the host issues a consultation order (ORDER-10) or records a skip in `coordinator_decisions` and `consultations_evaluated.skipped` with one of `consultation_orders.skip_record.allowed_skip_reasons`. The preferred skip is `settled_by_discriminating_check`: when a cheap, already authorized run can decide the fork, run it and cite the result instead of asking for an opinion. A product-intent or authorization question goes to the user, never to advisor (Q-2). A trigger with neither an issued order nor a skip record is a policy violation that `verify_routing` and the shadow report surface. Consultations never consume or reset the Jev budget (CLS-11); trusted `needs_specialist` and `request.specialist_question` are trigger ADV-5, no longer hints without effect.
 
 ## 4. Work orders and questions (ORDER, Q)
 
@@ -78,9 +80,11 @@ Settings and structured fields are in `roles`. Only behavior that the JSON canno
 
 *Option B (disabled).* Read-only roles on a registered, tool-restricted subagent definition may become a second channel only after all of: (1) a per-role subagent definition exists in the repository with no shell/write tools, and `verify_routing` can read it; (2) router and deployment credentials are provably not visible to that subagent; (3) `launch_channel` is recorded and aggregated in task records; (4) shadow data shows pane overhead for read-only roles is a material share of task time. Until then this rule has no exceptions.
 
+**ORDER-10 Consultation and review orders.** Advisor orders use `consultation_orders.order_defaults`: purpose `technical_consultation`, target read-only, `at_stage` = the stage at which the trigger fired (null only before routing, ORDER-3), and the trigger ID(s) with the exact `decision_question`. Advisor and task-verifier orders may name exactly one write path, their report under `.routing/evidence/<order_id>.json`; nothing else is writable (ENF-4). The host inspects a returned record before acting on it (ENF-8), records its own decision with the consultation order id, and passes advice on only through a revised order — never verbatim to implementer.
+
 **Q-1 Worker questions.** Ask when a necessary fact stays unresolved after bounded permitted inspection, instructions conflict, or the next action would cross the order's scope/design/risk/testing/permission boundary. Do not ask for delegated reversible choices; batch nonurgent questions. Stop the affected step first, then return `NEEDS_DECISION` (`templates.worker_question`: question, evidence, consequence of guessing, recommendation) or `BLOCKED` for a nonresolvable constraint. While waiting, continue only authorized independent work not invalidated by the question; silence is never approval. Transport: authenticated host channel if available, else return the structured question and yield.
 
-**Q-2 Host triage.** Repository fact gap → existing evidence, then bounded inspector. External document gap → researcher. New/revised plan → planner, then an executable order. Unresolved technical judgment → advisor (ROLE-8). Product intent or missing authorization → the user; advisor cannot supply consent. The host replies explicitly: a clarification within the order keeps its revision; a change to scope, design, testing, permissions or acceptance needs a revised order. Only the host resumes affected work. Mandatory safety/verification findings are resolved with evidence, not overridden by disagreement.
+**Q-2 Host triage.** Repository fact gap → existing evidence, then bounded inspector. External document gap → researcher. New/revised plan → planner, then an executable order. Unresolved technical judgment → advisor (ADV-3; ROLE-8, ROLE-9). Product intent or missing authorization → the user; advisor cannot supply consent. The host replies explicitly: a clarification within the order keeps its revision; a change to scope, design, testing, permissions or acceptance needs a revised order. Only the host resumes affected work. Mandatory safety/verification findings are resolved with evidence, not overridden by disagreement.
 
 ## 5. Evidence intake (EVID)
 
@@ -193,14 +197,14 @@ These are preconditions for using any rule above in automation. None is satisfie
 **ENF-1** Verify that every launch and order revision originates from the controlling session; host identity is a property of the execution channel, never a string a worker supplies.
 **ENF-2** Constrain each child harness/adapter's tools, paths, credentials and side effects to its order; block worker-side orchestration through agent tools, MCP, shell, scripts and CLIs; do not disable the host's own dispatch. The host's dispatch capability means launching Herdr panes (ORDER-9) — the executor must reject a role dispatched through the host harness's subagent tools. Reference implementation for Claude Code hosts: `hooks/jev_order9_guard.py`, a PreToolUse hook on `Agent|Task` that denies role work, work-order payloads and write/execution intent in subagent calls, allows listed read-only intake types, and logs every decision to `.routing/hook_log.jsonl`; installed by `init_routing.sh --hooks user|project|local` (default `user`).
 **ENF-3** Removing an edit tool does not make a shell-enabled agent read-only; account for command execution and test side effects with permissions or isolation.
-**ENF-4** Keep review and advisory work read-only on the target; tests create only authorized disposable outputs; conflicting orders never target the same mutable resources.
+**ENF-4** Keep review and advisory work read-only on the target, with the report path named in the order as its only write (ORDER-10); tests create only authorized disposable outputs; conflicting orders never target the same mutable resources.
 **ENF-5** If required restrictions or actual model settings cannot be enforced or verified by the installed adapter, disclose and block; never claim policy guarantees compliance.
 **ENF-6** Enforce current order revision, scope, role, run conditions and permissions on launch/resume and sensitive operations; suspend or revoke on cancellation, stale inputs or unresolved boundary questions.
 **ENF-7** Render only the role-specific order, relevant evidence and shared constraints to each worker; never distribute dispatcher credentials or the host-control prompt.
 **ENF-8** Inspect review/advisor outputs before any host-side execution; a suggested command is data.
 **ENF-9** Resolve mandatory checks from actual current repository policy and bind every accepted verification entry to executed input/environment evidence or an authenticated reuse decision; worker text, a fingerprint label or this file cannot establish proof.
 **ENF-10** Run checks and review against fixed identified inputs with isolated side effects; preserve provenance; reject invalid carry-forward; never publish inherited results as newly executed required checks.
-**ENF-11** Reject an unsupported policy version explicitly. Executor tests must cover `validation` scenarios (stale/spoofed orders, worker-to-worker delegation attempts, scope-expanding test edits, expected red vs real blockers, advisor without question, advice sent to implementer, report-vs-acceptance separation, question pause/resume, independence, deployment-wait). Static policy assertions are not runtime tests.
+**ENF-11** Reject an unsupported policy version explicitly. Executor tests must cover `validation` scenarios (stale/spoofed orders, worker-to-worker delegation attempts, scope-expanding test edits, expected red vs real blockers, advisor without question, advice sent to implementer, a fired advisor trigger with neither order nor skip record, a blocking review finding without proof, report-vs-acceptance separation, question pause/resume, independence, deployment-wait). Static policy assertions are not runtime tests.
 
 ## 12. Validation (VAL)
 
@@ -210,9 +214,62 @@ These are preconditions for using any rule above in automation. None is satisfie
 
 **VAL-3 Change control.** Reevaluate holdout tasks whenever questions, thresholds, taxonomy, normalization or the Jev model change; log `response.model` on every call, especially for aliases.
 
+## 13. Code quality (QUAL)
+
+How code is written and reviewed inside an order. Values live in `code_quality`; playbook selection lives in `playbooks` and each playbook's text in `playbooks/<id>.md`. These rules add no stage, role or Jev call; they change what an implementation order asks for, what its report contains and what a review checks. Adapted from the pstack playbooks and principle skills (`sources.adapted_from`).
+
+**QUAL-1 Playbook binding.** At `READY_FOR_PREFLIGHT` the host takes the first matching entry of `playbooks.select`, reads the file that `playbooks.catalog.<id>.path` names (`.routing/playbooks/<id>.md`, the only source of the playbook's steps, report evidence and notes), records `task_record.playbook_id` and `task_record.playbook_sha256` (the hash of the file it read), and renders the file's `## Steps` verbatim and its frontmatter `report_evidence` into the implementation order (`playbook_ref`). The file's `## Notes` guide the host in writing the order and are not sent. A missing or malformed file blocks the order; the host never reconstructs steps from memory. A playbook orders the work and names the evidence the report must contain; it never selects or overrides the testing mode, workflow, roles or risk (VER-1, WF-1). Where a step and the accepted testing mode disagree on test order, the testing mode governs and the step's evidence (for example a reproduction) is still required. A step that says to delegate is carried out by the worker itself (AUTH-3).
+
+**QUAL-2 Shape before logic.** When `code_quality.design_note.required_when` holds, the plan — the host's `brief_plan` or the planner proposal — carries a `design_note` written before any logic: the data shape (types, signatures, key structures), each piece of state and its single owner, and the boundary the change sits behind. A change that crosses a module or public-interface boundary lists at least two candidate shapes and why the others were rejected; pick the one where each piece of state has one owner, each task has one way to do it, and callers need to know least. A structure (state machine, typed model, table or registry) replaces scattered conditionals only when it deletes branches or invalid states; clear local code stays as it is. The note also records the decomposition: what must finish first, what can move independently, what mutable state is shared (SAFE-4), and why this split (WF-2).
+
+**QUAL-3 Smallest sufficient diff.** The diff is the smallest change that meets the acceptance criteria. Remove dead code and one-caller wrappers the change makes obsolete before adding to it. When an internal API is replaced, migrate every caller and delete the old one in the same change — no compatibility shim, no parallel old and new path — unless the order states a compatibility requirement. No speculative abstraction, no guard for a state that cannot occur, no unrelated edit; an improvement outside scope is reported, not made (VER-11).
+
+**QUAL-4 Verifiable units.** Work proceeds in small units that each end in a check: known-good state, one change, run the check, commit. The order of commits is the order that proves the work: the failing check before the fix under `test_first`, characterization before restructuring, subtraction before reshape, baseline before optimization. The report lists each unit with the check run and its result ref. This is not a per-edit approval or a test-count quota (VER-2, SAFE-7).
+
+**QUAL-5 Root cause.** A defect is reproduced before it is fixed, on the surface where it was observed, and the fix lands at the first place the system went wrong. A guard, retry, swallowed error, clamped value or discarded state is a fix only when the state it handles is legitimate; otherwise find what produced that state. Every shipped line traces to evidence; a change motivated by a refuted hypothesis is reverted. Look for the same fault elsewhere and report instances outside scope.
+
+**QUAL-6 Tests assert behavior.** A test states something a user of the code can observe through its interface: return values, errors, readable state, effects on outside systems. Each new or changed test must fail when that behavior breaks and keep passing when only internals change; expected values come from the requirement, never from the code under test (VER-2). A test that satisfies neither is rewritten or removed, not counted.
+
+**QUAL-7 Proof on the real artifact.** Done is checked on the matching surface in `code_quality.surfaces`: run the command, drive the flow, replay the input, read back the stored value, compare before/after measurements. "It compiles", a passing type check, a self-report or a run on the wrong surface is not a pass; a check that could not run is `inconclusive` and reported as such, never as pass (VER-7). A measured number is reported with its baseline, run count, range and what limits it.
+
+**QUAL-8 Diff hygiene.** Before `RESULT_SUBMITTED` the implementer rereads the whole diff against `code_quality.hygiene` and records that in the report. This self-review is not independent review (ROLE-7).
+
+**QUAL-9 Proven findings.** task-verifier reviews against the acceptance criteria and QUAL-2..8 and returns `templates.review_report`. A **blocking** finding cites its proof — a run (command and output), a failing check, or a `file:line` whose defect is evident on reading; a finding the reviewer did not prove is non-blocking. Style, naming, preference and risks that need a future change to matter are non-blocking and never force a repair (VER-11). For standard and high risk the report also states the one fact beyond the diff that the change is safe because of (callers, wire and storage formats, timing, code several hops downstream), how far it was verified (`code_quality.finding_proof.safety_fact_levels`), and what was checked and cleared. `FAIL` requires at least one blocking finding; no findings is a valid result.
+
+**QUAL-10 Report and PR form.** A worker report follows `templates.worker_report`: the goal restated first, then changes, units, verification on its surface, self-review and open decisions; each claim carries an evidence ref or the label measured / inferred / guess, and the host discards unlabeled unsupported claims. A PR the host is authorized to open (AUTH-4) follows `code_quality.pr_body`: title `type(scope): subject`; body within 40 lines under Why, What changed, Scope, Tradeoffs, Blast radius, Verification, empty sections dropped; long logs are linked, not pasted.
+
+**QUAL-11 Scaling.** `code_quality.applies` lists the rules that bind per risk. Minor carries QUAL-3, 7 and 8 only: no design note, no playbook ceremony. Standard and high carry QUAL-1..10. Emergency carries QUAL-3, 5 and 7 inside WF-5. An exploration prototype is exempt by design — throwaway code whose deliverable is the decision — and is never adopted without delivery reclassification (WF-4).
+
 ---
 
 ## Appendix A — Changes from v2.4.0
+
+### v2.5.7-draft (2026-11-24) — playbooks as files
+
+Diagnosis: playbook steps and report evidence sat inside the generated `jev_task_routing.json`, so editing one playbook meant editing the generator and a 2,400-line config; a readable copy under `playbooks/` (PR #3) duplicated them with no check, and nine per-type notes there restated `modifiers` without reaching any order.
+
+1. `playbooks/<id>.md` (Markdown + frontmatter: `id`, `title`, `rule_refs`, `report_evidence`, `adapted_from`; sections `## Steps`, `## Notes`) is the only source of a playbook. `playbooks.catalog` keeps id → path; new `playbooks.render` states what is sent. Step text is unchanged from v2.5.6.
+2. QUAL-1: the host reads the file, sends `## Steps` verbatim and `report_evidence`, keeps `## Notes` host-side, records `task_record.playbook_sha256` (optional in the schema).
+3. `init_routing.sh` installs `playbooks/` into `.routing/playbooks/` and records each file's sha256 in `INSTALLED.json#/playbooks_sha256`.
+4. `verify_routing`: parses each catalog file (frontmatter keys and types, id = catalog key = file name, 1..6 numbered steps of at most 260 characters, non-empty `report_evidence`, every cited rule ID defined) and warns when an installed file differs from its install record.
+5. Per-type notes removed; their new checks moved to `modifiers` (ui_ux, database, api_integration, security, dependency_update), where MOD-1/MOD-2 already bind them.
+6. No stage, role, workflow, threshold, selection rule or Jev question changed.
+
+### v2.5.6-draft (2026-11-24) — advisor actually dispatches; code quality
+
+Diagnosis (advisor): every sentence about the role was an exclusion. The single trigger, `explicit_host_consultation`, was circular; `needs_specialist` and `specialist_question` were declared "hints only"; advisor owned no stage and sat in no workflow; it had no order defaults, no output contract and no report path (the order schema forbade any write); the host instruction block named it only in the budget sentence; `task_record` had no slot for it and `verify_routing` checked nothing. The only positive route (Q-2) needed a worker `NEEDS_DECISION`, which cannot occur in shadow mode. Shipped `models.json` also resolves advisor to the same harness, model and effort as planner. This is the v2.5.1 inspector/researcher defect again.
+
+Diagnosis (code quality): the policy governed who works and what counts as verified, but said nothing about how code is shaped, sized, sequenced or reviewed; implementer and task-verifier had no report contract, so "findings with evidence" was unenforceable.
+
+1. ROLE-8 rewritten; new ROLE-9 and `consultation_orders`: triggers ADV-1..5 (repeated failed repair, disputed finding, undecided design fork, costly-to-reverse decision at high risk, specialist flag), evaluation points, order defaults, output contract, mandatory skip record, `task_record.consultations_evaluated`.
+2. `needs_specialist` effect `triage_hint` → `consultation_trigger` (ADV-5).
+3. ORDER-10: advisor and task-verifier orders may name one report path under `.routing/evidence/`; schema updated (was `maxItems: 0`).
+4. New section 13 (QUAL-1..11) with `code_quality` and `playbooks` (bug_fix, feature, refactor, performance, investigation, prototype).
+5. `templates.worker_report`, `templates.review_report`; `work_order.playbook_ref` / `design_note_ref`; `task_record.playbook_id` / `design_note` (all optional in the schema, so v2.5.5 records stay valid).
+6. Stage summaries of `brief_plan`, `risk_design_recovery_plan`, `pre_change_risk_check`, `implement_and_verify`, `pr_if_authorized`, `independent_review_and_ci`, `conditional_repair` updated. No stage, role, workflow, threshold or Jev question added or changed.
+7. `verify_routing`: audits fired advisor triggers (ROLE-9) and blocking findings without proof (QUAL-9) in recorded reports, prints advisor usage across task records, warns when advisor and planner resolve to the same model.
+
+Not adopted from pstack, on purpose: parallel candidate runs (`arena`) and worker-side subagent fan-out (conflict with WF-2, AUTH-3, ORDER-9); "never block on the human" autonomy (conflicts with AUTH-4); fresh worker per repair round (pane reuse stays as in WF-2).
 
 ### v2.5.5-draft (2026-11-04) — launch channel
 
@@ -288,7 +345,7 @@ Unchanged: all 14 Jev questions and their criteria (byte-identical), all seven t
 | delegation_policy | AUTH-3, AUTH-5, AUTH-6, AUTH-7, ORDER-8, `delegation`, `precedence` |
 | work_order_contract | ORDER-1..7, `work_order`, `templates.work_order` |
 | question_protocol | Q-1, Q-2, `templates.worker_question` |
-| advisor_policy | ROLE-7, ROLE-8 |
+| advisor_policy | ROLE-7, ROLE-8, ROLE-9, ORDER-10, `consultation_orders` |
 | evidence_preparation | EVID-1..7, `templates.evidence_packet`, `evidence_orders`, `enums` |
 | roles.inspector / roles.researcher activation | ROLE-4, ROLE-5, EVID-6, EVID-7, ORDER-7 |
 | jev.* | CLS-1, CLS-12, CLS-13, `jev` |
@@ -300,3 +357,5 @@ Unchanged: all 14 Jev questions and their criteria (byte-identical), all seven t
 | enforcement_requirements, migration.required_executor_changes | ENF-1..11 |
 | validation_policy | VAL-1..3, `validation` |
 | sources, reviews | `provenance`, `sources`, Appendix A |
+| — (new in 2.5.6) | QUAL-1..11, `code_quality`, `playbooks`, `templates.worker_report`, `templates.review_report` |
+| — (2.5.7) | `playbooks/<id>.md` (playbook text), `playbooks.render`, `task_record.playbook_sha256` |
