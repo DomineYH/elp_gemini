@@ -8,6 +8,9 @@ import pytest
 from app.repositories.app_state_repository import KEY_SYNC_STATE
 from app.schemas.alias_map import AliasMap, AliasMapEntry
 
+# #439: 저장 전 검사를 통과하는 1~5절 제목 본문
+VALID_SECTIONS = "".join(f"## {n}. 절\n\n본문\n\n" for n in range(1, 6))
+
 
 def _file_search_for_store(config, store_name: str):
     for tool in config.tools:
@@ -101,7 +104,13 @@ def test_lessonplan_two_pass_retrieves_user_then_filters_only_rubric_store():
 
     client = MagicMock()
     pass1 = SimpleNamespace(
-        text="제목: 미래 인구 예측 / 학습목표: ...", candidates=[]
+        text="제목: 미래 인구 예측 / 학습목표: ...",
+        # #449: 검색 근거가 있어야 지도안 원문으로 본다
+        candidates=[
+            SimpleNamespace(
+                grounding_metadata=SimpleNamespace(grounding_chunks=[object()])
+            )
+        ],
     )
     pass2 = SimpleNamespace(text="report", candidates=[])
     client.models.generate_content.side_effect = [pass1, pass2]
@@ -162,6 +171,7 @@ async def test_lessonplan_analysis_skips_gemini_when_no_active_criteria():
                 id=11,
                 filename="lesson.pdf",
                 original_filename="lesson.pdf",
+                fs_document_id="documents/11",
             ),
             None,
         )
@@ -228,6 +238,7 @@ async def test_lessonplan_analysis_continues_without_filter_when_active_filter_f
                     id=11,
                     filename="lesson.pdf",
                     original_filename="lesson.pdf",
+                    fs_document_id="documents/11",
                 ),
                 None,
             )
@@ -259,7 +270,9 @@ async def test_lessonplan_analysis_continues_without_filter_when_active_filter_f
             patch(
                 "app.services.lessonplan_analysis_service.asyncio.to_thread",
                 new=AsyncMock(
-                    return_value=SimpleNamespace(text="report", candidates=[])
+                    return_value=SimpleNamespace(
+                        text=VALID_SECTIONS, candidates=[]
+                    )
                 ),
             ) as gemini_call,
         ):

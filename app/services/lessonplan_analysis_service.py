@@ -5,6 +5,7 @@
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -41,6 +42,73 @@ from app.utils.gemini_retry import (
 
 logger = logging.getLogger(__name__)
 
+# #439 저장 전 검사. 1~5 항목 번호는 _build_analysis_prompt 가 고정한다.
+_REPORT_SECTIONS = [
+    re.compile(rf"^#{{1,3}}[ \t]*{n}(?!\d)", re.MULTILINE) for n in range(1, 6)
+]
+# 구분선·표에 쓰는 글자(공백 - = _ * | . ~ # >)의 반복은 붕괴로 보지 않는다
+_REPORT_CONTENT_CHAR = re.compile(r"[^\s\-=_*|.~#>]")
+_REPORT_CHAR_RUN = re.compile(r"([^\s\-=_*|.~#>])\1{29,}")
+_REPORT_PHRASE_RUN = re.compile(r"(?=([^\n]{2,20}?)\1{9})")
+_INVALID_REPORT_MESSAGE = (
+    "분석 결과가 올바르게 만들어지지 않았습니다. 다시 시도해주세요."
+)
+_NOT_RETRIEVED_MESSAGE = (
+    "업로드한 지도안 내용을 읽지 못했습니다. "
+    "지도안을 다시 업로드한 뒤 분석해 주세요."
+)
+_INDEX_MISSING_MESSAGE = (
+    "지도안 검색 색인이 없습니다. 지도안을 다시 업로드한 뒤 분석해 주세요."
+)
+
+
+def _finish_reason_name(response) -> Optional[str]:
+    """첫 후보의 finish_reason 이름. 후보·값이 없거나 문자열이 아니면 None."""
+    candidates = getattr(response, "candidates", None) or []
+    reason = (
+        getattr(candidates[0], "finish_reason", None) if candidates else None
+    )
+    name = getattr(reason, "name", reason)
+    return name if isinstance(name, str) else None
+
+
+def _report_problems(text: str, finish_reason: Optional[str]) -> list[str]:
+    """보고서 원문의 문제 사유 목록(본문은 넣지 않는다). 비면 통과 (#439)."""
+    problems = []
+    if finish_reason is not None and finish_reason != "STOP":
+        problems.append(f"finish_reason={finish_reason}")
+    missing = [
+        str(n)
+        for n, section in enumerate(_REPORT_SECTIONS, 1)
+        if not section.search(text)
+    ]
+    if missing:
+        problems.append("절 없음: " + ",".join(missing))
+    repeated = bool(_REPORT_CHAR_RUN.search(text)) or any(
+        len(set(m[1])) > 1 and _REPORT_CONTENT_CHAR.search(m[1])
+        for m in _REPORT_PHRASE_RUN.finditer(text)
+    )
+    if repeated:
+        problems.append("반복")
+    return problems
+
+
+# 줄 전체가 닫는 ** 없는 '**라벨' 인 줄 (#441)
+_DANGLING_BOLD_LINE = re.compile(r"^([ \t]*)\*\*([^*\n]*[^*\s])[ \t]*$", re.M)
+
+
+def _close_dangling_bold(text: str) -> str:
+    """빈 줄로 나뉜 문단의 ** 개수가 홀수면 그 문단의 첫 '**라벨' 줄을 닫는다."""
+    parts = re.split(r"(\n[ \t]*\n)", text)
+    return "".join(
+        (
+            _DANGLING_BOLD_LINE.sub(r"\1**\2**", part, count=1)
+            if part.count("**") % 2
+            else part
+        )
+        for part in parts
+    )
+
 
 async def _mark_criteria_filter_needs_resync(
     db: AsyncSession, exc: Exception
@@ -69,7 +137,8 @@ def _retrieve_lessonplan_text(client, model, user_store_id) -> str:
     """1패스: 사용자 스토어에서 지도안 원문을 검색해 텍스트로 반환한다.
 
     내용 지향 질의를 사용해야 File Search 가 업로드 문서를 안정적으로
-    grounding 한다 (issue #118). 응답이 없으면 빈 문자열을 반환한다.
+    grounding 한다 (issue #118). 응답이 비었거나 검색 근거(grounding chunk)가
+    없으면 빈 문자열을 반환한다 (#449).
     """
     response = client.models.generate_content(
         model=model,
@@ -85,7 +154,13 @@ def _retrieve_lessonplan_text(client, model, user_store_id) -> str:
             temperature=0.2,
         ),
     )
-    return response.text or ""
+    text = response.text or ""
+    candidates = response.candidates or []
+    metadata = candidates[0].grounding_metadata if candidates else None
+    count = len(getattr(metadata, "grounding_chunks", None) or [])
+    logger.info("분석 1패스 chars=%d grounding_chunks=%d", len(text), count)
+    # 근거 없는 답은 "문서가 확인되지 않습니다" 같은 안내문이다 (#449)
+    return text if text.strip() and count else ""
 
 
 @retry_on_resource_exhausted(max_attempts=3, initial_wait=2.0, max_wait=16.0)
@@ -96,7 +171,7 @@ def _call_gemini_with_file_search(
     rubric_store_id,
     user_store_id,
     rubric_metadata_filter,
-):
+) -> types.GenerateContentResponse | None:
     """두 패스 grounded 평가 (issue #118).
 
     1패스(_retrieve_lessonplan_text): 사용자 스토어에서 지도안 원문을 검색.
@@ -104,16 +179,20 @@ def _call_gemini_with_file_search(
     적용)만으로 평가 보고서를 생성한다. 사용자 문서는 이미 본문에 주입되어
     있으므로 2패스에서는 사용자 스토어 도구를 두지 않는다 — 이중 File Search
     도구 조합이 사용자 문서 retrieval 을 저해하던 issue #86 도 함께 회피된다.
+
+    1패스가 지도안 원문을 얻지 못하면 2패스를 부르지 않고 None 을 돌려준다
+    (#449). 재시도와 오류 반환은 analyze_lesson_plan 이 한다.
     """
     lesson_text = _retrieve_lessonplan_text(client, model, user_store_id)
-    if lesson_text.strip():
-        contents = (
-            f"{contents}\n\n"
-            "**평가 대상 수업 지도안 원문 (아래 내용만을 근거로 평가하고, "
-            "'현재 지도안'과 '수업지도안' 인용은 반드시 이 원문에서 "
-            "발췌하세요):**\n"
-            f"---\n{lesson_text}\n---"
-        )
+    if not lesson_text:
+        return None
+    contents = (
+        f"{contents}\n\n"
+        "**평가 대상 수업 지도안 원문 (아래 내용만을 근거로 평가하고, "
+        "'현재 지도안'과 '수업지도안' 인용은 반드시 이 원문에서 "
+        "발췌하세요):**\n"
+        f"---\n{lesson_text}\n---"
+    )
 
     rubric_search_config = {
         "file_search_store_names": [rubric_store_id],
@@ -221,6 +300,18 @@ class LessonPlanAnalysisService:
                         LessonPlanUpload, latest_upload_id
                     )
 
+                # 색인 id 가 비면 스토어가 지워졌거나 재업로드 중이다. 대시보드가
+                # '분석 시작'을 숨기는 기준을 API 에도 적용한다 (#450)
+                if (
+                    latest_upload is not None
+                    and not latest_upload.fs_document_id
+                ):
+                    return {
+                        "success": False,
+                        "error_code": "LESSONPLAN_INDEX_MISSING",
+                        "error": _INDEX_MISSING_MESSAGE,
+                    }
+
                 legacy_lessonplans = []
                 if latest_upload is None:
                     legacy_lessonplans = (
@@ -292,18 +383,57 @@ class LessonPlanAnalysisService:
                 logger.info("프롬프트 구성 완료 (Store 역할 명시 포함)")
 
                 # 3. Gemini API 호출 (File Search - 평가기준 우선 순서)
-                response = await asyncio.to_thread(
-                    _call_gemini_with_file_search,
-                    self.client,
-                    self.model_name,
-                    full_prompt,
-                    rubric_store_id,
-                    user_store_id,
-                    rubric_metadata_filter,
-                )
+                # 원문이 검사를 통과하지 못하면 두 패스를 한 번 더 부르고,
+                # 그래도 나쁘면 저장하지 않는다(저장되면 409 로 굳는다) (#439)
+                for attempt in (1, 2):
+                    response = await asyncio.to_thread(
+                        _call_gemini_with_file_search,
+                        self.client,
+                        self.model_name,
+                        full_prompt,
+                        rubric_store_id,
+                        user_store_id,
+                        rubric_metadata_filter,
+                    )
+                    if response is None:
+                        # 1패스가 지도안을 찾지 못해 2패스를 건너뛰었다 (#449)
+                        problems = ["1패스 지도안 검색 실패"]
+                        error_code = "LESSONPLAN_NOT_RETRIEVED"
+                        error = _NOT_RETRIEVED_MESSAGE
+                    else:
+                        raw_report = response.text or ""
+                        reason = _finish_reason_name(response)
+                        tokens = getattr(
+                            getattr(response, "usage_metadata", None),
+                            "candidates_token_count",
+                            None,
+                        )
+                        logger.info(
+                            "분석 응답 attempt=%d finish_reason=%s "
+                            "output_tokens=%s chars=%d",
+                            attempt,
+                            reason,
+                            tokens,
+                            len(raw_report),
+                        )
+                        problems = _report_problems(raw_report, reason)
+                        error_code = "INVALID_REPORT"
+                        error = _INVALID_REPORT_MESSAGE
+                    if not problems:
+                        break
+                    logger.warning(
+                        "분석 보고서 검사 실패 attempt=%d %s",
+                        attempt,
+                        ", ".join(problems),
+                    )
+                else:
+                    return {
+                        "success": False,
+                        "error_code": error_code,
+                        "error": error,
+                    }
 
-                # 4. Markdown 보고서 추출 및 후처리
-                raw_report = response.text if response.text else ""
+                # 4. Markdown 보고서 후처리
                 criteria_aliases = (
                     await self._collect_active_criteria_display_names()
                 )
@@ -772,6 +902,9 @@ class LessonPlanAnalysisService:
                     if not report.endswith("\n"):
                         report += "\n"
                     report += suffix
+
+            # 살균보다 먼저 닫아야 짝 없는 ** 가 다음 줄의 ** 와 묶이지 않는다 (#441)
+            report = _close_dangling_bold(report)
 
             # 3) 본문 이모지 제거. 블록 인용 라인은 사용자 문서
             # 인용 충실성을 위해 보존한다.

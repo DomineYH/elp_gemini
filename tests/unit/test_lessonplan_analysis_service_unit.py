@@ -4,11 +4,24 @@ Phase 3에서 구현된 수업 지도안 분석 기능 검증
 """
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from app.services.lessonplan_analysis_service import LessonPlanAnalysisService
+
+# #439: 저장 전 검사를 통과하는 1~5절 제목 본문
+VALID_SECTIONS = "".join(f"## {n}. 절\n\n본문\n\n" for n in range(1, 6))
+# #449: 검색 근거가 있는 1패스 응답
+GROUNDED_PASS1 = SimpleNamespace(
+    text="지도안 원문",
+    candidates=[
+        SimpleNamespace(
+            grounding_metadata=SimpleNamespace(grounding_chunks=[object()])
+        )
+    ],
+)
 
 
 class TestLessonPlanAnalysisService:
@@ -169,10 +182,12 @@ class TestLessonPlanAnalysisService:
 
         # Mock Gemini API
         mock_response = Mock()
-        mock_response.text = "# 📚 수업 지도안 평가 보고서\n\n..."
+        mock_response.text = (
+            "# 📚 수업 지도안 평가 보고서\n\n...\n" + VALID_SECTIONS
+        )
         mock_response.candidates = []
         service.client.models.generate_content = Mock(
-            return_value=mock_response
+            side_effect=[GROUNDED_PASS1, mock_response]
         )
 
         # 문서 존재 가정 + 중복 보고서 없음 (no-document 조기 반환 회피)
@@ -235,7 +250,7 @@ class TestLessonPlanAnalysisService:
         # 최신 업로드 존재 가정 → no-document 조기 반환을 건너뛰고
         # _get_store_ids(실제 await 지점)까지 제어가 도달하도록 한다.
         service._find_existing_report_for_latest_upload = AsyncMock(
-            return_value=(Mock(), None)
+            return_value=(Mock(fs_document_id="documents/test"), None)
         )
 
         # _get_store_ids - 마감을 초과하는 지연
@@ -984,12 +999,13 @@ class TestLessonPlanAnalysisService:
             mock_response.text = (
                 "# 보고서\n\n"
                 "> **분석 모델**: secret-internal-model\n\n"
-                "## 종합 평가\n본문\n\n"
+                + VALID_SECTIONS
+                + "## 종합 평가\n본문\n\n"
                 "### File Search 참고 문서\n- 임의 항목\n"
             )
             mock_response.candidates = []
             service.client.models.generate_content = Mock(
-                return_value=mock_response
+                side_effect=[GROUNDED_PASS1, mock_response]
             )
 
             # legacy 경로 사용 — DB 의존 분기 회피
