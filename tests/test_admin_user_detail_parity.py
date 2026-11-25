@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.db import Base, get_db
 from app.dependencies import get_current_admin, get_current_user
@@ -190,3 +191,136 @@ def test_render_resets_bulk_bar_after_list_rerender():
         # 전부 삭제된 경우(빈 목록 분기)와 남은 항목이 있는 경우 모두
         assert update in empty_branch, render
         assert update in filled_branch, render
+
+
+_REPORT_ITEM_KEYS = {
+    "id",
+    "lessonplan_filename",
+    "lessonplan_original_name",
+    "report_filename",
+    "latency_ms",
+    "created_at",
+}
+
+
+@pytest.mark.asyncio
+async def test_report_list_hides_server_path(parity_setup):
+    """#451: 보고서 목록은 서버 파일 경로를 내려 주지 않는다."""
+    owner_id = parity_setup["owner_id"]
+    async with TestingSessionLocal() as db:
+        owner = await db.get(User, owner_id)
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = _override_current_user(owner)
+    try:
+        with TestClient(app) as client:
+            resp = client.get("/api/lessonplan/reports")
+        assert resp.status_code == 200
+        reports = resp.json()["reports"]
+        assert len(reports) == 2
+        for item in reports:
+            assert set(item) == _REPORT_ITEM_KEYS
+        assert "/tmp/report1.md" not in resp.text
+        assert "/tmp/report2.md" not in resp.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_analyze_returns_public_saved_report(parity_setup, monkeypatch):
+    """#451: 분석 응답의 saved_report에는 파일명과 시각만 있다."""
+    from app.routers import lessonplan_analysis
+
+    owner_id = parity_setup["owner_id"]
+    async with TestingSessionLocal() as db:
+        owner = await db.get(User, owner_id)
+
+    async def fake_analyze(self, session_id, user_id):
+        return {
+            "success": True,
+            "report": "# 보고서",
+            "latency_ms": 10,
+            "saved_report": {
+                "filename": "new_report.md",
+                "file_path": "app/static/reports/1/new_report.md",
+                "timestamp": "20261125120000",
+            },
+        }
+
+    monkeypatch.setattr(
+        lessonplan_analysis.LessonPlanAnalysisService,
+        "analyze_lesson_plan",
+        fake_analyze,
+    )
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = _override_current_user(owner)
+    try:
+        with TestClient(app) as client:
+            resp = client.post(
+                "/api/lessonplan/analyze", json={"session_id": 1}
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["success"] is True
+        assert body["report"] == "# 보고서"
+        assert body["saved_report"] == {
+            "filename": "new_report.md",
+            "timestamp": "20261125120000",
+        }
+        assert "app/static/reports" not in resp.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_openapi_has_no_report_path_fields():
+    """#451: 공개 스키마와 예시에도 저장 경로 키가 남지 않는다."""
+    schemas = app.openapi()["components"]["schemas"]
+    for model, key in [
+        ("AnalysisReportItem", "report_path"),
+        ("SavedReportInfo", "file_path"),
+    ]:
+        assert key not in schemas[model]["properties"], model
+        assert key not in schemas[model].get("required", []), model
+    list_example = schemas["AnalysisReportListResponse"]["example"]
+    for item in list_example["reports"]:
+        assert "report_path" not in item
+    analyze_example = schemas["LessonPlanAnalysisResponse"]["example"]
+    assert "file_path" not in analyze_example["saved_report"]
+
+
+@pytest.mark.asyncio
+async def test_owner_can_read_and_download_report(parity_setup, tmp_path):
+    """#451: DB의 경로는 그대로 쓰여 본인 상세·다운로드가 동작한다."""
+    owner_id = parity_setup["owner_id"]
+    report_file = tmp_path / "report1.md"
+    report_file.write_text("# 제목\n\n본문 내용", encoding="utf-8")
+    async with TestingSessionLocal() as db:
+        owner = await db.get(User, owner_id)
+        row = (
+            await db.execute(
+                select(AnalysisReport).where(
+                    AnalysisReport.report_filename == "report1.md"
+                )
+            )
+        ).scalar_one()
+        row.report_path = str(report_file)
+        await db.commit()
+        report_id = row.id
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = _override_current_user(owner)
+    try:
+        with TestClient(app) as client:
+            detail = client.get(f"/api/lessonplan/reports/{report_id}")
+            download = client.get(
+                f"/api/lessonplan/reports/{report_id}/download"
+            )
+        assert detail.status_code == 200
+        assert detail.json()["content"] == "# 제목\n\n본문 내용"
+        assert download.status_code == 200
+        assert download.content == report_file.read_bytes()
+        assert (
+            'filename="report1.md"' in download.headers["content-disposition"]
+        )
+    finally:
+        app.dependency_overrides.clear()
