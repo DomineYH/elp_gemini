@@ -19,7 +19,6 @@ class AnalysisReportItem(BaseModel):
         None, description="원본 지도안 파일명"
     )
     report_filename: str = Field(..., description="보고서 파일명")
-    report_path: str = Field(..., description="보고서 파일 경로")
     latency_ms: Optional[int] = Field(None, description="분석 소요 시간 (ms)")
     created_at: datetime = Field(..., description="생성 일시")
 
@@ -52,10 +51,6 @@ class AnalysisReportListResponse(BaseModel):
                         "report_filename": (
                             "111_20251128182530_수업지도안_"
                             "a1b2c3d4_reports.md"
-                        ),
-                        "report_path": (
-                            "app/static/reports/111_20251128182530_"
-                            "수업지도안_a1b2c3d4_reports.md"
                         ),
                         "latency_ms": 45000,
                         "created_at": "2025-11-28T18:25:30+00:00",

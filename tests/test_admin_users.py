@@ -546,7 +546,7 @@ async def test_session_detail_with_messages(seed_data):
     rpt = data["reports"][0]
     assert "id" in rpt
     assert "filename" in rpt
-    assert "report_path" in rpt
+    assert set(rpt) == {"id", "filename", "latency_ms", "created_at"}
 
 
 @pytest.mark.asyncio

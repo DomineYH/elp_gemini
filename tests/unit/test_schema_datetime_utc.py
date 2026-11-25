@@ -58,7 +58,6 @@ def test_analysis_report_item_has_utc_offset():
         id=1,
         lessonplan_filename="lp.pdf",
         report_filename="r.md",
-        report_path="app/static/reports/r.md",
         created_at=NAIVE,
     )
     assert item.model_dump(mode="json")["created_at"] == EXPECTED

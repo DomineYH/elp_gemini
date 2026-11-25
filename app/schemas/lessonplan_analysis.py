@@ -17,7 +17,6 @@ class SavedReportInfo(BaseModel):
     """저장된 보고서 정보 스키마"""
 
     filename: str = Field(..., description="저장된 파일명")
-    file_path: str = Field(..., description="저장된 파일 경로")
     timestamp: str = Field(..., description="저장 시간 (년월일시분초)")
 
 
@@ -48,10 +47,6 @@ class LessonPlanAnalysisResponse(BaseModel):
                 "saved_report": {
                     "filename": (
                         "111_20251128182530_수업지도안_" "a1b2c3d4_reports.md"
-                    ),
-                    "file_path": (
-                        "app/static/reports/111_20251128182530_"
-                        "수업지도안_a1b2c3d4_reports.md"
                     ),
                     "timestamp": "20251128182530",
                 },

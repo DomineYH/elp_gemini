@@ -434,7 +434,6 @@ async def get_session_detail(
             {
                 "id": r.id,
                 "filename": r.report_filename,
-                "report_path": r.report_path,
                 "latency_ms": r.latency_ms,
                 "created_at": utc_iso(r.created_at),
             }
