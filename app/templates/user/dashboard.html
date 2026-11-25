@@ -347,7 +347,7 @@
     </button>
 
     <!-- Analysis FAB -->
-    <button onclick="startAnalysis()" aria-label="분석 시작"
+    <button id="analysisStart" disabled onclick="startAnalysis()" aria-label="분석 시작"
         class="bg-indigo-600 text-white px-5 py-3 rounded-lg shadow-lg hover:bg-indigo-700 transition-colors flex items-center gap-2">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -837,7 +837,7 @@
         try {
             await Promise.all([
                 loadSessionPage(0, false),
-                loadReportList(),
+                resumeAnalysisIfRunning(),
             ]);
         } catch (error) {
             console.error('대시보드 기록 로드 실패:', error);
@@ -1117,16 +1117,89 @@
     loadDashboardHistory();
 
     // --- Analysis Logic ---
-    // --- Analysis Logic ---
-    async function startAnalysis() {
-        // Show loading
-        const loadingOverlay = document.getElementById('loadingOverlay');
-        const loadingText = loadingOverlay.querySelector('h3');
-        const loadingDesc = loadingOverlay.querySelector('p');
+    function setAnalysisOverlay(visible) {
+        const button = document.getElementById('analysisStart');
+        if (button) button.disabled = visible;
+        loadingOverlay.querySelector('h3').textContent = visible
+            ? '수업 지도안 분석 중...'
+            : '문서 처리 중...';
+        loadingOverlay.querySelector('p').textContent = visible
+            ? 'AI가 수업 지도안을 체계적으로 분석하고 있습니다. 약 1-3분 정도 소요됩니다.'
+            : 'AI가 문서를 분석하고 있습니다. 잠시만 기다려주세요.';
+        loadingOverlay.classList.toggle('hidden', !visible);
+    }
 
-        loadingText.textContent = '수업 지도안 분석 중...';
-        loadingDesc.textContent = 'AI가 수업 지도안을 체계적으로 분석하고 있습니다. 약 1-3분 정도 소요됩니다.';
-        loadingOverlay.classList.remove('hidden');
+    async function fetchAnalysisJson(url) {
+        const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    }
+
+    // 새로고침 뒤에도 서버가 분석 중이면 오버레이를 되살리고 끝날 때까지 확인한다 (#442)
+    async function resumeAnalysisIfRunning() {
+        const statusUrl = '/api/lessonplan/analyze/status';
+        const button = document.getElementById('analysisStart');
+        let knownIds = null;
+        try {
+            const before = await fetchAnalysisJson('/api/lessonplan/reports');
+            renderReportList(before.reports);
+            knownIds = new Set(before.reports.map(report => report.id));
+        } catch (error) {
+            setHistoryListState(document.getElementById('myReports'),
+                '보고서 정보를 불러올 수 없습니다.', 'error');
+        }
+        try {
+            if (!(await fetchAnalysisJson(statusUrl)).in_progress) return;
+        } catch (error) {
+            return;
+        } finally {
+            if (button) button.disabled = false;
+        }
+
+        setAnalysisOverlay(true);
+        try {
+            let finished = false;
+            try {
+                let failures = 0;
+                // 응답 후 3초 간격으로 최대 100번: 서버의 180초 제한보다 넉넉한 안전판
+                for (let i = 0; i < 100 && !finished; i++) {
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    try {
+                        finished = !(await fetchAnalysisJson(statusUrl)).in_progress;
+                        failures = 0;
+                    } catch (error) {
+                        failures += 1;
+                        if (failures >= 3) throw error;
+                    }
+                }
+            } finally {
+                setAnalysisOverlay(false);
+            }
+            if (!finished) throw new Error('poll limit');
+
+            const after = await fetchAnalysisJson('/api/lessonplan/reports');
+            const reports = after.reports || [];
+            renderReportList(reports);
+            if (!knownIds) throw new Error('missing initial report list');
+            const created = reports.find(report => !knownIds.has(report.id));
+            if (!created) {
+                alert('분석이 끝나지 않았습니다. 다시 시도해 주세요.');
+                return;
+            }
+            const report = await fetchAnalysisJson(
+                `/api/lessonplan/reports/${created.id}`
+            );
+            showAnalysisResult(report.content);
+        } catch (error) {
+            alert('분석 상태를 확인할 수 없습니다. 페이지를 새로고침해 주세요.');
+        }
+    }
+
+    async function startAnalysis() {
+        // 오버레이가 떠 있으면(업로드·분석 중) 다시 시작하지 않는다
+        if (document.getElementById('analysisStart')?.disabled) return;
+        if (!loadingOverlay.classList.contains('hidden')) return;
+        setAnalysisOverlay(true);
 
         try {
             const response = await fetch('/api/lessonplan/analyze', {
@@ -1170,10 +1243,7 @@
         } catch (error) {
             alert('오류가 발생했습니다: ' + error.message);
         } finally {
-            loadingOverlay.classList.add('hidden');
-            // Reset loading text
-            loadingText.textContent = '문서 처리 중...';
-            loadingDesc.textContent = 'AI가 문서를 분석하고 있습니다. 잠시만 기다려주세요.';
+            setAnalysisOverlay(false);
         }
     }
 

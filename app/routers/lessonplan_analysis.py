@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/lessonplan", tags=["lessonplan"])
 
+# 분석 요청을 처리 중인 사용자 id: 메모리에만 있어 단일 프로세스에서만 맞다 (#442)
+_analyzing_user_ids: set[int] = set()
+
+
+def is_analysis_in_progress(user_id: int) -> bool:
+    return user_id in _analyzing_user_ids
+
 
 @router.post("/analyze", response_model=LessonPlanAnalysisResponse)
 async def analyze_lesson_plan(
@@ -50,6 +57,19 @@ async def analyze_lesson_plan(
 
     **처리 시간:** 약 30-180초
     """
+    user_id = current_user.id
+    if is_analysis_in_progress(user_id):
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "detail": (
+                    "이미 분석이 진행 중입니다. "
+                    "잠시 후 '내 분석 보고서'를 확인해 주세요."
+                ),
+                "error_code": "ANALYSIS_IN_PROGRESS",
+            },
+        )
+    _analyzing_user_ids.add(user_id)
     try:
         service = LessonPlanAnalysisService(db=db)
         result = await service.analyze_lesson_plan(
@@ -103,6 +123,13 @@ async def analyze_lesson_plan(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="분석 중 오류가 발생했습니다.",
         )
+    finally:
+        _analyzing_user_ids.discard(user_id)
+
+
+@router.get("/analyze/status")
+async def get_analysis_status(current_user: User = Depends(get_current_user)):
+    return {"in_progress": is_analysis_in_progress(current_user.id)}
 
 
 @router.get("/reports", response_model=AnalysisReportListResponse)
