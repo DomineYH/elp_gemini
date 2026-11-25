@@ -126,3 +126,29 @@
     </div>
 </div>
 {% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+    const form = document.querySelector('form[action="/auth/register"]');
+    const button = form.querySelector('button[type="submit"]');
+    let submitted = false;
+    // 두 번째 요청의 409가 첫 요청의 302를 덮어 가입 실패처럼 보인다 (#443)
+    form.addEventListener('submit', (event) => {
+        if (submitted) {
+            event.preventDefault();
+            return;
+        }
+        submitted = true;
+        button.disabled = true;
+    });
+    // 뒤로 가기로 bfcache에서 되살아난 폼은 다시 제출할 수 있어야 한다 (#443)
+    window.addEventListener('pageshow', (event) => {
+        if (event.persisted) {
+            submitted = false;
+            button.disabled = false;
+        }
+    });
+})();
+</script>
+{% endblock %}
