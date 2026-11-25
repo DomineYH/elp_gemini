@@ -10,6 +10,8 @@ from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
 
+from app.utils.timestamps import kst_text
+
 templates = Jinja2Templates(directory="app/templates")
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SYSTEM_PATHS = ("/usr/bin", "/usr/local/bin", "/bin")
@@ -49,3 +51,4 @@ def _app_version() -> str:
 
 
 templates.env.globals["app_version"] = _app_version()
+templates.env.filters["kst"] = kst_text

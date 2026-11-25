@@ -1,12 +1,9 @@
 """criteria_list template rendering checks without ASGI/TestClient."""
 
 from datetime import datetime, timezone
-from pathlib import Path
 from types import SimpleNamespace
 
-from jinja2 import Environment, FileSystemLoader, select_autoescape
-
-TEMPLATE_DIR = Path("app/templates")
+from app.templating import templates
 
 
 def _item(
@@ -17,6 +14,9 @@ def _item(
     status: str = "uploaded",
     is_legacy: bool = False,
     id: int = 7,
+    created_at: datetime | None = datetime(
+        2026, 5, 15, 3, 21, tzinfo=timezone.utc
+    ),
 ):
     return SimpleNamespace(
         id=id,
@@ -24,23 +24,24 @@ def _item(
         title=title,
         display_alias=display_alias,
         status=status,
-        created_at=datetime(2026, 5, 15, 3, 21, tzinfo=timezone.utc),
+        created_at=created_at,
         is_legacy=is_legacy,
     )
 
 
-def _render(items, sync_state: str = "ok") -> str:
-    env = Environment(
-        loader=FileSystemLoader(TEMPLATE_DIR),
-        autoescape=select_autoescape(["html"]),
-    )
-    template = env.get_template("admin/criteria_list.html")
+def _render(
+    items,
+    sync_state: str = "ok",
+    last_synced_at: str | None = "2026-05-15T03:21:00Z",
+) -> str:
+    # 앱과 같은 환경으로 그린다: kst 필터가 여기에만 등록돼 있다 (#448)
+    template = templates.env.get_template("admin/criteria_list.html")
     return template.render(
         user=SimpleNamespace(is_admin=True, email="admin@example.com"),
         criteria_items=items,
         sync=SimpleNamespace(
             state=sync_state,
-            last_synced_at="2026-05-15T03:21:00Z",
+            last_synced_at=last_synced_at,
             error=None,
         ),
     )
@@ -123,3 +124,41 @@ def test_title_links_to_detail_page():
 
     assert '<a href="/admin/criteria/42"' in text
     assert "rubric.pdf</a>" in text
+
+
+def _created_cell(html: str) -> str:
+    row = html[html.index("<tbody") :]
+    return row[row.index('text-sm text-gray-500">') :].split("</td>")[0]
+
+
+def test_created_at_naive_utc_is_shown_in_kst():
+    """시간대 없는 저장값은 UTC로 보고 KST로 보여 준다 (#448)."""
+    text = _render([_item(created_at=datetime(2026, 11, 25, 1, 57, 23))])
+
+    assert "2026-11-25 10:57" in _created_cell(text)
+    assert "2026-11-25 01:57" not in text
+
+
+def test_created_at_aware_utc_is_shown_in_kst():
+    text = _render([_item()])
+
+    assert "2026-05-15 12:21" in _created_cell(text)
+
+
+def test_created_at_missing_shows_dash():
+    text = _render([_item(created_at=None)])
+
+    assert _created_cell(text).split(">")[1].strip() == "-"
+
+
+def test_last_synced_at_is_shown_in_kst():
+    text = _render([])
+
+    assert "마지막 동기화 2026-05-15 12:21<" in text
+    assert "2026-05-15T03:21:00Z" not in text
+
+
+def test_last_synced_at_missing_shows_dash():
+    text = _render([], last_synced_at=None)
+
+    assert "마지막 동기화 -<" in text

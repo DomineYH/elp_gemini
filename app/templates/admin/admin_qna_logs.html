@@ -104,12 +104,12 @@ async function loadLogs(page = 1) {
                         ${session.messages.map(msg => `
                             <div class="flex gap-3 ${msg.role === 'user' ? '' : 'flex-row-reverse'}">
                                 <div class="flex-shrink-0">
-                                    <span class="inline-flex items-center justify-center w-8 h-8 rounded-full ${msg.role === 'user' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}">
+                                    <span class="inline-flex items-center justify-center h-8 px-2 text-xs font-medium whitespace-nowrap rounded-full ${msg.role === 'user' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}">
                                         ${msg.role === 'user' ? '사용자' : 'AI'}
                                     </span>
                                 </div>
                                 <div class="flex-1 ${msg.role === 'user' ? 'text-left' : 'text-right'}">
-                                    <div class="inline-block max-w-[80%] ${msg.role === 'user' ? 'bg-blue-50 border-blue-200' : 'bg-green-50 border-green-200'} border rounded-lg p-3">
+                                    <div class="inline-block max-w-[80%] text-left ${msg.role === 'user' ? 'bg-blue-50 border-blue-200' : 'bg-green-50 border-green-200'} border rounded-lg p-3">
                                         <p class="text-sm text-gray-800 whitespace-pre-wrap">${escapeHtml(msg.content)}</p>
                                         <span class="text-xs text-gray-400 mt-1 block">${formatTime(msg.created_at)}</span>
                                     </div>

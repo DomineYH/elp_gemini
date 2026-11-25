@@ -69,7 +69,7 @@
     </div>
     {%- endmacro %}
     {% macro dt(value) -%}
-    {{ value.strftime('%Y-%m-%d %H:%M:%S') if value else '-' }}
+    {{ value | kst('%Y-%m-%d %H:%M:%S') }}
     {%- endmacro %}
     <div class="bg-white shadow-md rounded-lg p-6 mb-6">
         <h2 class="text-xl font-bold text-gray-800 mb-4">

@@ -1,12 +1,9 @@
 """criteria_detail template rendering checks without ASGI/TestClient."""
 
 from datetime import datetime, timezone
-from pathlib import Path
 from types import SimpleNamespace
 
-from jinja2 import Environment, FileSystemLoader, select_autoescape
-
-TEMPLATE_DIR = Path("app/templates")
+from app.templating import templates
 
 
 def _criteria(display_alias: str | None, **overrides):
@@ -30,11 +27,8 @@ def _criteria(display_alias: str | None, **overrides):
 
 
 def _render(criteria) -> str:
-    env = Environment(
-        loader=FileSystemLoader(TEMPLATE_DIR),
-        autoescape=select_autoescape(["html"]),
-    )
-    template = env.get_template("admin/criteria_detail.html")
+    # 앱과 같은 환경으로 그린다: kst 필터가 여기에만 등록돼 있다 (#448)
+    template = templates.env.get_template("admin/criteria_detail.html")
     return template.render(
         user=SimpleNamespace(is_admin=True, email="admin@example.com"),
         criteria=criteria,
@@ -59,7 +53,7 @@ def test_detail_shows_real_metadata_and_hides_missing_file_fields():
 
     assert "01HSTABLE001" in text
     assert "fileSearchStores/rubric/documents/doc-1" in text
-    assert "2026-05-15 03:21:00" in text  # synced_at
+    assert "2026-05-15 12:21:00" in text  # synced_at (KST)
     assert "admin" in text
     for gone in ("MIME 타입", "Vector Store ID", "0.00 MB", "파일 경로"):
         assert gone not in text, gone
@@ -98,11 +92,8 @@ def test_detail_renders_real_model_instance():
         synced_at=None,
         activated_at=None,
     )
-    env = Environment(
-        loader=FileSystemLoader(TEMPLATE_DIR),
-        autoescape=select_autoescape(["html"]),
-        undefined=StrictUndefined,
-    )
+    # overlay: 앱 환경의 필터·전역은 그대로 쓰고 undefined만 엄격하게 바꾼다
+    env = templates.env.overlay(undefined=StrictUndefined)
     text = env.get_template("admin/criteria_detail.html").render(
         user=SimpleNamespace(is_admin=True, nickname="admin"),
         criteria=row,
@@ -113,3 +104,21 @@ def test_detail_renders_real_model_instance():
     )
     assert "01HREAL" in text
     assert "rubric.pdf" in text
+    assert "2026-10-21 18:00:00" in text  # created_at 09:00 UTC → KST
+
+
+def test_detail_shows_times_in_kst_and_dash_when_missing():
+    """생성일은 초까지 KST로, 값이 없는 활성화 시각은 '-'로 보인다 (#448)."""
+    text = _render(
+        _criteria(
+            display_alias=None,
+            created_at=datetime(2026, 11, 25, 1, 57, 23),
+            synced_at=None,
+            activated_at=None,
+        )
+    )
+
+    assert "2026-11-25 10:57:23" in text
+    assert "2026-11-25 01:57:23" not in text
+    after = text[text.index("활성화 시각") :]
+    assert after.split("<dd")[1].split(">")[1].split("<")[0].strip() == "-"
