@@ -358,5 +358,17 @@ def test_error_cache_control(error_routes):
         response = client.get(path, headers=HTML)
         assert response.status_code == 500
         _assert_security_headers(response)
-        # 미처리 500 은 미들웨어 바깥에서 나가 기존 네 헤더만 붙는다 (#440 범위 밖)
-        assert "cache-control" not in response.headers
+        # 미처리 500 은 미들웨어 바깥에서 나가 핸들러가 no-store 를 직접 붙인다 (#440)
+        assert response.headers.get_list("cache-control") == ["no-store"]
+
+
+def test_logged_in_error_page_no_store(seeded, error_routes):
+    client = TestClient(app, raise_server_exceptions=False)
+    client.cookies.set(COOKIE, _cookie(seeded["user"]))
+
+    response = client.get("/__test_500", headers=HTML)
+
+    assert response.status_code == 500
+    assert f"{seeded['user'].nickname}님" in response.text
+    _assert_security_headers(response)
+    assert response.headers.get_list("cache-control") == ["no-store"]
