@@ -10,6 +10,9 @@ import pytest
 
 from app.services.lessonplan_analysis_service import LessonPlanAnalysisService
 
+# #439: 저장 전 검사를 통과하는 1~5절 제목 본문
+VALID_SECTIONS = "".join(f"## {n}. 절\n\n본문\n\n" for n in range(1, 6))
+
 
 class TestLessonPlanAnalysisService:
     """
@@ -169,7 +172,9 @@ class TestLessonPlanAnalysisService:
 
         # Mock Gemini API
         mock_response = Mock()
-        mock_response.text = "# 📚 수업 지도안 평가 보고서\n\n..."
+        mock_response.text = (
+            "# 📚 수업 지도안 평가 보고서\n\n...\n" + VALID_SECTIONS
+        )
         mock_response.candidates = []
         service.client.models.generate_content = Mock(
             return_value=mock_response
@@ -984,7 +989,8 @@ class TestLessonPlanAnalysisService:
             mock_response.text = (
                 "# 보고서\n\n"
                 "> **분석 모델**: secret-internal-model\n\n"
-                "## 종합 평가\n본문\n\n"
+                + VALID_SECTIONS
+                + "## 종합 평가\n본문\n\n"
                 "### File Search 참고 문서\n- 임의 항목\n"
             )
             mock_response.candidates = []

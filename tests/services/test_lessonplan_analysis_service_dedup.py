@@ -1,11 +1,15 @@
 """LessonPlanAnalysisService 중복 분석 차단 동작 테스트."""
 
 import asyncio
+import logging
+import threading
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
+from google.genai import types
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -17,6 +21,10 @@ from app.services.lessonplan_analysis_service import (
     LessonPlanAnalysisService,
 )
 from app.services.report_storage_service import ReportStorageService
+from app.utils.gemini_retry import GeminiQuotaExhausted, GeminiServerOverloaded
+
+# #439: 저장 전 검사를 통과하는 1~5절 제목 본문
+VALID_SECTIONS = "".join(f"## {n}. 절\n\n본문\n\n" for n in range(1, 6))
 
 
 @pytest.fixture(autouse=True)
@@ -103,7 +111,7 @@ async def test_analyze_proceeds_when_no_existing_report(session):
     svc = LessonPlanAnalysisService(db=session)
 
     fake_response = MagicMock()
-    fake_response.text = "# Report\n\nbody"
+    fake_response.text = "# Report\n\nbody\n\n" + VALID_SECTIONS
     fake_response.candidates = []
 
     with (
@@ -224,7 +232,7 @@ async def test_analyze_allows_premigration_file_search_upload_without_row(
     )
 
     fake_response = MagicMock()
-    fake_response.text = ""
+    fake_response.text = VALID_SECTIONS
     fake_response.candidates = []
     real_to_thread = asyncio.to_thread
 
@@ -298,7 +306,7 @@ async def test_analyze_falls_through_when_existing_report_file_missing(
     svc = LessonPlanAnalysisService(db=session)
 
     fake_response = MagicMock()
-    fake_response.text = "# Report\n\nbody"
+    fake_response.text = "# Report\n\nbody\n\n" + VALID_SECTIONS
     fake_response.candidates = []
 
     saved_report_path = tmp_path / "saved_report.md"
@@ -384,7 +392,7 @@ async def test_analyze_uses_upload_row_for_report_metadata(session, tmp_path):
     svc.lessonplan_storage.base_dir = empty_lessonplan_dir
 
     fake_response = MagicMock()
-    fake_response.text = "# Report\n\nbody"
+    fake_response.text = "# Report\n\nbody\n\n" + VALID_SECTIONS
     fake_response.candidates = []
 
     with (
@@ -448,7 +456,7 @@ async def test_analyze_race_fallback_on_integrity_error(session):
     # Then the INSERT below will hit IntegrityError, which should
     # be caught and converted to ALREADY_ANALYZED.
     fake_response = MagicMock()
-    fake_response.text = "# Report\n\nbody"
+    fake_response.text = "# Report\n\nbody\n\n" + VALID_SECTIONS
     fake_response.candidates = []
 
     real_find = svc._find_existing_report_for_latest_upload
@@ -532,7 +540,7 @@ async def test_analyze_race_fallback_does_not_delete_winner_when_paths_collide(
     svc = LessonPlanAnalysisService(db=session)
 
     fake_response = MagicMock()
-    fake_response.text = "# Report\n\nbody"
+    fake_response.text = "# Report\n\nbody\n\n" + VALID_SECTIONS
     fake_response.candidates = []
 
     real_find = svc._find_existing_report_for_latest_upload
@@ -620,7 +628,7 @@ async def test_analyze_race_loser_does_not_overwrite_winner_file(
     svc.report_storage = ReportStorageService(base_dir=str(reports_dir))
 
     fake_response = MagicMock()
-    fake_response.text = "LOSER_CONTENT"
+    fake_response.text = "LOSER_CONTENT\n\n" + VALID_SECTIONS
     fake_response.candidates = []
 
     real_find = svc._find_existing_report_for_latest_upload
@@ -701,7 +709,7 @@ async def test_analyze_race_fallback_cleans_up_orphan_report(session, tmp_path):
     svc = LessonPlanAnalysisService(db=session)
 
     fake_response = MagicMock()
-    fake_response.text = "# Report\n\nbody"
+    fake_response.text = "# Report\n\nbody\n\n" + VALID_SECTIONS
     fake_response.candidates = []
 
     real_find = svc._find_existing_report_for_latest_upload
@@ -805,7 +813,7 @@ async def test_analyze_creates_synthetic_upload_for_legacy_user(
     svc.lessonplan_storage.base_dir = lessonplan_dir
 
     fake_response = MagicMock()
-    fake_response.text = "# Report\n\nbody"
+    fake_response.text = "# Report\n\nbody\n\n" + VALID_SECTIONS
     fake_response.candidates = []
 
     with (
@@ -902,7 +910,7 @@ async def test_legacy_concurrent_analyze_does_not_create_duplicate_reports(
     svc.lessonplan_storage.base_dir = lessonplan_dir
 
     fake_response = MagicMock()
-    fake_response.text = "# Report\n\nbody"
+    fake_response.text = "# Report\n\nbody\n\n" + VALID_SECTIONS
     fake_response.candidates = []
 
     with (
@@ -1027,7 +1035,7 @@ async def test_analyze_race_fallback_uses_captured_upload_id_not_latest(
     svc = LessonPlanAnalysisService(db=session)
 
     fake_response = MagicMock()
-    fake_response.text = "# Report\n\nbody"
+    fake_response.text = "# Report\n\nbody\n\n" + VALID_SECTIONS
     fake_response.candidates = []
 
     call_count = {"n": 0}
@@ -1073,3 +1081,291 @@ async def test_analyze_race_fallback_uses_captured_upload_id_not_latest(
     assert result["success"] is False
     assert result["error_code"] == "ALREADY_ANALYZED"
     assert result["report_id"] == winner.id
+
+
+# ===== #439 저장 전 검사 + 1회 재시도 =====
+
+SERVICE_LOGGER = "app.services.lessonplan_analysis_service"
+INVALID_REPORT = {
+    "success": False,
+    "error_code": "INVALID_REPORT",
+    "error": "분석 결과가 올바르게 만들어지지 않았습니다. 다시 시도해주세요.",
+}
+
+
+def _response(text, finish_reason=None, tokens=6366):
+    """2패스 응답 대역. finish_reason 이 None 이면 후보 없음(미상)."""
+    return SimpleNamespace(
+        text=text,
+        candidates=(
+            []
+            if finish_reason is None
+            else [
+                SimpleNamespace(
+                    finish_reason=finish_reason, grounding_metadata=None
+                )
+            ]
+        ),
+        usage_metadata=SimpleNamespace(candidates_token_count=tokens),
+    )
+
+
+def _analysis_patches(svc, gemini_results):
+    return (
+        patch.object(
+            svc, "_get_store_ids", return_value=["user-store", "rubric-store"]
+        ),
+        patch.object(svc.prompt_loader, "get_prompt", return_value="SYS"),
+        patch(
+            "app.services.criteria_vector_service."
+            "CriteriaVectorService.active_stable_id_filter",
+            new=AsyncMock(return_value='stable_id="active"'),
+            create=True,
+        ),
+        patch(
+            "app.services.lessonplan_analysis_service."
+            "_call_gemini_with_file_search",
+            side_effect=gemini_results,
+        ),
+    )
+
+
+async def _analyze(svc, user_id, gemini_results):
+    """Gemini 래퍼가 gemini_results 를 차례로 돌려주게 하고 분석한다."""
+    stores, prompt, criteria, gemini = _analysis_patches(svc, gemini_results)
+    with (
+        stores,
+        prompt,
+        criteria,
+        gemini as mock_gemini,
+        patch.object(
+            svc.report_storage,
+            "save_report",
+            return_value={"filename": "r.md", "file_path": "/tmp/r.md"},
+        ) as mock_save,
+    ):
+        result = await svc.analyze_lesson_plan(session_id=1, user_id=user_id)
+    return result, mock_gemini, mock_save
+
+
+async def _report_rows(session, upload_id):
+    rows = await session.execute(
+        select(AnalysisReport).where(AnalysisReport.upload_id == upload_id)
+    )
+    return rows.scalars().all()
+
+
+def _messages(caplog, level, needle):
+    return [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelno == level and needle in r.getMessage()
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "first",
+    [
+        None,
+        _response("# Report\n\n## 1. 절\n\nBADMARK"),
+        _response(
+            "BADMARK\n\n" + VALID_SECTIONS, types.FinishReason.MAX_TOKENS
+        ),
+    ],
+    ids=["정상 1회", "2-5절 없음 → 재시도", "MAX_TOKENS → 재시도"],
+)
+async def test_analyze_saves_first_report_that_passes_check(
+    session, caplog, first
+):
+    u, up = await _seed_user_and_upload(session)
+    svc = LessonPlanAnalysisService(db=session)
+    good_text = "GOODMARK\n\n" + VALID_SECTIONS
+    good = _response(good_text, types.FinishReason.STOP, tokens=7090)
+    responses = [good] if first is None else [first, good]
+
+    with caplog.at_level(logging.INFO, logger=SERVICE_LOGGER):
+        result, mock_gemini, mock_save = await _analyze(svc, u.id, responses)
+
+    assert result["success"] is True
+    assert mock_gemini.call_count == len(responses)
+    mock_save.assert_called_once()
+    saved = mock_save.call_args.kwargs["report_content"]
+    assert "GOODMARK" in saved
+    assert "BADMARK" not in saved
+    assert len(await _report_rows(session, up.id)) == 1
+
+    warnings = _messages(caplog, logging.WARNING, "검사 실패")
+    assert len(warnings) == len(responses) - 1
+    infos = _messages(caplog, logging.INFO, "분석 응답")
+    assert len(infos) == len(responses)
+    assert "finish_reason=STOP" in infos[-1]
+    assert "output_tokens=7090" in infos[-1]
+    assert f"chars={len(good_text)}" in infos[-1]
+    assert "BADMARK" not in caplog.text
+    assert "GOODMARK" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad_text",
+    [VALID_SECTIONS + "도입 단계에서" + "거" * 30, ""],
+    ids=["같은 글자 30회", "빈 응답"],
+)
+async def test_analyze_returns_invalid_report_and_saves_nothing(
+    session, caplog, bad_text
+):
+    u, up = await _seed_user_and_upload(session)
+    svc = LessonPlanAnalysisService(db=session)
+
+    with caplog.at_level(logging.INFO, logger=SERVICE_LOGGER):
+        result, mock_gemini, mock_save = await _analyze(
+            svc, u.id, [_response(bad_text), _response(bad_text)]
+        )
+
+    assert result == INVALID_REPORT
+    assert mock_gemini.call_count == 2
+    mock_save.assert_not_called()
+    assert await _report_rows(session, up.id) == []
+    assert len(_messages(caplog, logging.INFO, "분석 응답")) == 2
+    assert len(_messages(caplog, logging.WARNING, "검사 실패")) == 2
+    assert "거거거" not in caplog.text
+
+    # 실패 직후 같은 업로드: 409 가 아니라 새로 분석된다
+    retry, mock_gemini, mock_save = await _analyze(
+        svc, u.id, [_response(VALID_SECTIONS)]
+    )
+    assert retry["success"] is True
+    assert mock_gemini.call_count == 1
+    mock_save.assert_called_once()
+    assert len(await _report_rows(session, up.id)) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error, code",
+    [
+        (GeminiQuotaExhausted("429"), "RESOURCE_EXHAUSTED"),
+        (GeminiServerOverloaded("503"), "MODEL_OVERLOADED"),
+    ],
+    ids=["429", "503"],
+)
+async def test_analyze_does_not_retry_check_on_api_error(session, error, code):
+    u, up = await _seed_user_and_upload(session)
+    svc = LessonPlanAnalysisService(db=session)
+
+    result, mock_gemini, mock_save = await _analyze(svc, u.id, [error])
+
+    assert result["success"] is False
+    assert result["error_code"] == code
+    assert mock_gemini.call_count == 1
+    mock_save.assert_not_called()
+    assert await _report_rows(session, up.id) == []
+
+
+@pytest.mark.asyncio
+async def test_analyze_retry_then_race_falls_back_to_already_analyzed(
+    session, tmp_path
+):
+    u, up = await _seed_user_and_upload(session)
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir()
+    winner_path = reports_dir / "winner.md"
+    winner_path.write_text("WINNER_CONTENT", encoding="utf-8")
+    winner = AnalysisReport(
+        user_id=u.id,
+        lessonplan_filename=up.filename,
+        lessonplan_original_name=up.original_filename,
+        report_filename=winner_path.name,
+        report_path=str(winner_path),
+        upload_id=up.id,
+    )
+    session.add(winner)
+    await session.commit()
+    winner_id, upload_id = winner.id, up.id
+
+    svc = LessonPlanAnalysisService(db=session)
+    svc.report_storage = ReportStorageService(base_dir=str(reports_dir))
+    real_find = svc._find_existing_report_for_latest_upload
+    calls = {"n": 0}
+
+    async def racing_find(user_id):
+        # 사전 확인 때는 아직 승자 보고서가 없었던 것처럼 보인다
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return (up, None)
+        return await real_find(user_id)
+
+    stores, prompt, criteria, gemini = _analysis_patches(
+        svc, [_response("## 1. 절\n"), _response(VALID_SECTIONS)]
+    )
+    with (
+        patch.object(
+            svc,
+            "_find_existing_report_for_latest_upload",
+            side_effect=racing_find,
+        ),
+        stores,
+        prompt,
+        criteria,
+        gemini as mock_gemini,
+    ):
+        result = await svc.analyze_lesson_plan(session_id=1, user_id=u.id)
+
+    assert mock_gemini.call_count == 2
+    assert result["success"] is False
+    assert result["error_code"] == "ALREADY_ANALYZED"
+    assert result["report_id"] == winner_id
+    files = [p.name for p in reports_dir.rglob("*") if p.is_file()]
+    assert files == ["winner.md"]
+    assert winner_path.read_text(encoding="utf-8") == "WINNER_CONTENT"
+    assert [r.id for r in await _report_rows(session, upload_id)] == [winner_id]
+
+
+@pytest.mark.asyncio
+async def test_analyze_timeout_covers_check_retry(session):
+    u, up = await _seed_user_and_upload(session)
+    svc = LessonPlanAnalysisService(db=session)
+    release = threading.Event()
+    calls = []
+
+    def gemini(*args):
+        calls.append(args)
+        if len(calls) == 1:
+            return _response("## 1. 절\n")
+        release.wait(5)  # 마감이 지날 때까지 둘째 시도를 붙잡는다
+        return _response(VALID_SECTIONS)
+
+    real_timeout = asyncio.timeout
+    deadlines = []
+
+    def short_timeout(seconds):
+        deadlines.append(seconds)
+        return real_timeout(1.0)
+
+    stores, prompt, criteria, _ = _analysis_patches(svc, None)
+    try:
+        with (
+            stores,
+            prompt,
+            criteria,
+            patch(
+                "app.services.lessonplan_analysis_service."
+                "_call_gemini_with_file_search",
+                side_effect=gemini,
+            ),
+            patch(
+                "app.services.lessonplan_analysis_service.asyncio.timeout",
+                side_effect=short_timeout,
+            ),
+            patch.object(svc.report_storage, "save_report") as mock_save,
+        ):
+            result = await svc.analyze_lesson_plan(session_id=1, user_id=u.id)
+    finally:
+        release.set()
+
+    assert result == {"success": False, "error": "분석 시간 초과 (180초)"}
+    assert deadlines == [180]
+    assert len(calls) == 2
+    mock_save.assert_not_called()
+    assert await _report_rows(session, up.id) == []

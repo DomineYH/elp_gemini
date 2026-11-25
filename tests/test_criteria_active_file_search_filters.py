@@ -8,6 +8,9 @@ import pytest
 from app.repositories.app_state_repository import KEY_SYNC_STATE
 from app.schemas.alias_map import AliasMap, AliasMapEntry
 
+# #439: 저장 전 검사를 통과하는 1~5절 제목 본문
+VALID_SECTIONS = "".join(f"## {n}. 절\n\n본문\n\n" for n in range(1, 6))
+
 
 def _file_search_for_store(config, store_name: str):
     for tool in config.tools:
@@ -259,7 +262,9 @@ async def test_lessonplan_analysis_continues_without_filter_when_active_filter_f
             patch(
                 "app.services.lessonplan_analysis_service.asyncio.to_thread",
                 new=AsyncMock(
-                    return_value=SimpleNamespace(text="report", candidates=[])
+                    return_value=SimpleNamespace(
+                        text=VALID_SECTIONS, candidates=[]
+                    )
                 ),
             ) as gemini_call,
         ):

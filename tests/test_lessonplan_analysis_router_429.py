@@ -104,3 +104,34 @@ async def test_analyze_returns_409_on_already_analyzed(client):
     assert body["detail"] == "이미 분석된 문서입니다."
     assert body["report_id"] == 17
     assert res.headers.get("x-report-id") == "17"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error_code, message",
+    [
+        (
+            "INVALID_REPORT",
+            "분석 결과가 올바르게 만들어지지 않았습니다. 다시 시도해주세요.",
+        ),
+    ],
+)
+async def test_analyze_returns_500_with_message_on_invalid_report(
+    client, error_code, message
+):
+    """#439: 보고서 검사 실패는 일반 500 분기로 나가고 문구가 그대로 보인다"""
+    mock_result = {"success": False, "error_code": error_code, "error": message}
+
+    with patch(
+        "app.routers.lessonplan_analysis.LessonPlanAnalysisService"
+    ) as mock_service:
+        instance = mock_service.return_value
+        instance.analyze_lesson_plan = AsyncMock(return_value=mock_result)
+
+        res = await client.post(
+            "/api/lessonplan/analyze",
+            json={"session_id": 1},
+        )
+
+    assert res.status_code == 500
+    assert res.json() == {"detail": message}

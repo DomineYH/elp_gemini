@@ -3,11 +3,17 @@ LessonPlanAnalysisService 테스트
 """
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
+from google.genai import types
 
-from app.services.lessonplan_analysis_service import LessonPlanAnalysisService
+from app.services.lessonplan_analysis_service import (
+    LessonPlanAnalysisService,
+    _finish_reason_name,
+    _report_problems,
+)
 
 
 def _reach_store_lookup(service):
@@ -176,3 +182,100 @@ class TestLessonPlanAnalysisService:
         # Then
         assert result["success"] is False
         assert "시간 초과" in result["error"]
+
+
+# #439: 저장 전 검사를 통과하는 1~5절 제목 본문
+VALID_SECTIONS = "".join(f"## {n}. 절\n\n본문\n\n" for n in range(1, 6))
+
+
+@pytest.mark.parametrize(
+    "text, finish_reason, expected",
+    [
+        (VALID_SECTIONS, "STOP", []),
+        (VALID_SECTIONS, None, []),
+        ("# 3. 절\n#1 절\n###  2\n## 4 절\n# 5", None, []),
+        ("# 보고서\n\n## 1. 절\n\n본문", "STOP", ["절 없음: 2,3,4,5"]),
+        ("", None, ["절 없음: 1,2,3,4,5"]),
+        (
+            "## 10. 절\n" + VALID_SECTIONS.replace("## 1. 절", "본문"),
+            "STOP",
+            ["절 없음: 1"],
+        ),
+        (
+            VALID_SECTIONS.replace("## 1. 절", "#### 1. 절"),
+            None,
+            ["절 없음: 1"],
+        ),
+        (VALID_SECTIONS, "MAX_TOKENS", ["finish_reason=MAX_TOKENS"]),
+        (VALID_SECTIONS + "도입 단계에서" + "거" * 29, "STOP", []),
+        (VALID_SECTIONS + "도입 단계에서" + "거" * 30, "STOP", ["반복"]),
+        (VALID_SECTIONS + "학습 목표를 " * 9, "STOP", []),
+        (VALID_SECTIONS + "학습 목표를 " * 10, "STOP", ["반복"]),
+        (
+            VALID_SECTIONS
+            + "---\n\n| a | b |\n|---|---|\n\n"
+            + "-" * 40
+            + "\n"
+            + "|---" * 12
+            + "|\n"
+            + "=" * 40,
+            "STOP",
+            [],
+        ),
+        (
+            "## 1\n" + "거" * 30,
+            "MAX_TOKENS",
+            ["finish_reason=MAX_TOKENS", "절 없음: 2,3,4,5", "반복"],
+        ),
+    ],
+    ids=[
+        "1-5절 정상",
+        "finish_reason 미상",
+        "제목 모양 변형",
+        "2-5절 없음",
+        "빈 본문",
+        "10절은 1절이 아님",
+        "h4 는 제목 아님",
+        "MAX_TOKENS",
+        "같은 글자 29회",
+        "같은 글자 30회",
+        "구절 9회",
+        "구절 10회",
+        "구분선·표·대시 40개",
+        "사유 여러 개",
+    ],
+)
+def test_report_problems(text, finish_reason, expected):
+    assert _report_problems(text, finish_reason) == expected
+
+
+@pytest.mark.parametrize(
+    "candidates, expected",
+    [
+        ([], None),
+        (None, None),
+        ([SimpleNamespace()], None),
+        ([SimpleNamespace(finish_reason=None)], None),
+        ([MagicMock()], None),
+        ([SimpleNamespace(finish_reason="MAX_TOKENS")], "MAX_TOKENS"),
+        ([SimpleNamespace(finish_reason=types.FinishReason.STOP)], "STOP"),
+        (
+            [SimpleNamespace(finish_reason=types.FinishReason.MAX_TOKENS)],
+            "MAX_TOKENS",
+        ),
+    ],
+    ids=[
+        "후보 없음",
+        "후보 None",
+        "속성 없음",
+        "값 None",
+        "Mock",
+        "문자열",
+        "enum STOP",
+        "enum MAX_TOKENS",
+    ],
+)
+def test_finish_reason_name(candidates, expected):
+    assert (
+        _finish_reason_name(SimpleNamespace(candidates=candidates)) == expected
+    )

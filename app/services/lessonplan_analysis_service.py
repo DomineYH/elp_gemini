@@ -5,6 +5,7 @@
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -40,6 +41,49 @@ from app.utils.gemini_retry import (
 )
 
 logger = logging.getLogger(__name__)
+
+# #439 저장 전 검사. 1~5 항목 번호는 _build_analysis_prompt 가 고정한다.
+_REPORT_SECTIONS = [
+    re.compile(rf"^#{{1,3}}[ \t]*{n}(?!\d)", re.MULTILINE) for n in range(1, 6)
+]
+# 구분선·표에 쓰는 글자(공백 - = _ * | . ~ # >)의 반복은 붕괴로 보지 않는다
+_REPORT_CONTENT_CHAR = re.compile(r"[^\s\-=_*|.~#>]")
+_REPORT_CHAR_RUN = re.compile(r"([^\s\-=_*|.~#>])\1{29,}")
+_REPORT_PHRASE_RUN = re.compile(r"(?=([^\n]{2,20}?)\1{9})")
+_INVALID_REPORT_MESSAGE = (
+    "분석 결과가 올바르게 만들어지지 않았습니다. 다시 시도해주세요."
+)
+
+
+def _finish_reason_name(response) -> Optional[str]:
+    """첫 후보의 finish_reason 이름. 후보·값이 없거나 문자열이 아니면 None."""
+    candidates = getattr(response, "candidates", None) or []
+    reason = (
+        getattr(candidates[0], "finish_reason", None) if candidates else None
+    )
+    name = getattr(reason, "name", reason)
+    return name if isinstance(name, str) else None
+
+
+def _report_problems(text: str, finish_reason: Optional[str]) -> list[str]:
+    """보고서 원문의 문제 사유 목록(본문은 넣지 않는다). 비면 통과 (#439)."""
+    problems = []
+    if finish_reason is not None and finish_reason != "STOP":
+        problems.append(f"finish_reason={finish_reason}")
+    missing = [
+        str(n)
+        for n, section in enumerate(_REPORT_SECTIONS, 1)
+        if not section.search(text)
+    ]
+    if missing:
+        problems.append("절 없음: " + ",".join(missing))
+    repeated = bool(_REPORT_CHAR_RUN.search(text)) or any(
+        len(set(m[1])) > 1 and _REPORT_CONTENT_CHAR.search(m[1])
+        for m in _REPORT_PHRASE_RUN.finditer(text)
+    )
+    if repeated:
+        problems.append("반복")
+    return problems
 
 
 async def _mark_criteria_filter_needs_resync(
@@ -292,18 +336,49 @@ class LessonPlanAnalysisService:
                 logger.info("프롬프트 구성 완료 (Store 역할 명시 포함)")
 
                 # 3. Gemini API 호출 (File Search - 평가기준 우선 순서)
-                response = await asyncio.to_thread(
-                    _call_gemini_with_file_search,
-                    self.client,
-                    self.model_name,
-                    full_prompt,
-                    rubric_store_id,
-                    user_store_id,
-                    rubric_metadata_filter,
-                )
+                # 원문이 검사를 통과하지 못하면 두 패스를 한 번 더 부르고,
+                # 그래도 나쁘면 저장하지 않는다(저장되면 409 로 굳는다) (#439)
+                for attempt in (1, 2):
+                    response = await asyncio.to_thread(
+                        _call_gemini_with_file_search,
+                        self.client,
+                        self.model_name,
+                        full_prompt,
+                        rubric_store_id,
+                        user_store_id,
+                        rubric_metadata_filter,
+                    )
+                    raw_report = response.text or ""
+                    reason = _finish_reason_name(response)
+                    tokens = getattr(
+                        getattr(response, "usage_metadata", None),
+                        "candidates_token_count",
+                        None,
+                    )
+                    logger.info(
+                        "분석 응답 attempt=%d finish_reason=%s "
+                        "output_tokens=%s chars=%d",
+                        attempt,
+                        reason,
+                        tokens,
+                        len(raw_report),
+                    )
+                    problems = _report_problems(raw_report, reason)
+                    if not problems:
+                        break
+                    logger.warning(
+                        "분석 보고서 검사 실패 attempt=%d %s",
+                        attempt,
+                        ", ".join(problems),
+                    )
+                else:
+                    return {
+                        "success": False,
+                        "error_code": "INVALID_REPORT",
+                        "error": _INVALID_REPORT_MESSAGE,
+                    }
 
-                # 4. Markdown 보고서 추출 및 후처리
-                raw_report = response.text if response.text else ""
+                # 4. Markdown 보고서 후처리
                 criteria_aliases = (
                     await self._collect_active_criteria_display_names()
                 )
