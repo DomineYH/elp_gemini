@@ -88,3 +88,38 @@ async def test_insert_persists_activated_at():
     assert len(db.added) == 1
     row = db.added[0]
     assert isinstance(row.activated_at, datetime)
+
+
+def _insert_kwargs(**overrides):
+    kwargs = dict(
+        stable_id="01HSIZE",
+        document_id="doc-size",
+        title="size.pdf",
+        display_alias=None,
+        status="active",
+        created_at=None,
+        activated_at=None,
+    )
+    kwargs.update(overrides)
+    return kwargs
+
+
+@pytest.mark.asyncio
+async def test_insert_stores_given_file_size():
+    """업로드가 넘긴 크기를 그대로 저장한다. file_path는 계속 빈 문자열 (#446)."""
+    db = _RecordingDb()
+
+    await CriteriaRepository(db).insert(**_insert_kwargs(file_size=173765))
+
+    row = db.added[0]
+    assert row.file_size == 173765
+    assert row.file_path == ""
+
+
+@pytest.mark.asyncio
+async def test_insert_file_size_defaults_to_zero():
+    db = _RecordingDb()
+
+    await CriteriaRepository(db).insert(**_insert_kwargs())
+
+    assert db.added[0].file_size == 0

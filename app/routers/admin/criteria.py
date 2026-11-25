@@ -327,6 +327,7 @@ async def upload_criteria(
                 created_at=None,
                 activated_at=_now_iso_utc(),
                 uploaded_by=current_admin.username,
+                file_size=len(file_content),
             )
             await db.commit()
             logger.debug("5단계: DB 행 삽입 완료")
@@ -560,6 +561,7 @@ async def replace_legacy_criteria(
                 created_at=None,
                 activated_at=_now_iso_utc(),
                 uploaded_by=current_admin.username,
+                file_size=len(file_content),
             )
             await db.commit()
 

@@ -262,6 +262,8 @@ async def test_upload_creates_active_entry():
     insert_kwargs = repo_cls.return_value.insert.await_args.kwargs
     assert insert_kwargs["status"] == "active"
     assert insert_kwargs["activated_at"] is not None
+    # 올린 바이트 수를 저장한다 (#446)
+    assert insert_kwargs["file_size"] == len(b"%PDF-1.4 rubric")
 
 
 @pytest.mark.asyncio

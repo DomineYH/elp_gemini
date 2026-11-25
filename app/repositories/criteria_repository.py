@@ -363,15 +363,16 @@ class CriteriaRepository:
         created_at: Optional[str],
         activated_at: Optional[str],
         uploaded_by: str = "cloud-sync",
+        file_size: int = 0,
     ) -> None:
-        """reconcile에서 사용. 호출자가 트랜잭션을 관리."""
+        """업로드·레거시 교체에서 사용. 호출자가 트랜잭션을 관리."""
         row = Criteria(
             stable_id=stable_id,
             document_id=document_id,
             title=title,
             display_alias=display_alias,
             status=status,
-            file_size=0,
+            file_size=file_size,
             file_path="",
             uploaded_by=uploaded_by,
         )
