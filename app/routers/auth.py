@@ -25,6 +25,7 @@ from app.db import get_db
 from app.dependencies import get_current_user
 from app.models.users import User
 from app.rate_limit import (
+    allow_register_request,
     check_admin_id_rate_limit,
     check_admin_ip_rate_limit,
     limiter,
@@ -282,6 +283,12 @@ async def register_user(
         )
     except ValidationError as exc:
         return render_error(_validation_error_message(exc))
+
+    if not allow_register_request(request):
+        return render_error(
+            "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+            status_code=429,
+        )
 
     try:
         auth_service = AuthService(db)
