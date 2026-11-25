@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
+from google.genai import errors as genai_errors
 from google.genai import types
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -1367,5 +1368,201 @@ async def test_analyze_timeout_covers_check_retry(session):
     assert result == {"success": False, "error": "분석 시간 초과 (180초)"}
     assert deadlines == [180]
     assert len(calls) == 2
+    mock_save.assert_not_called()
+    assert await _report_rows(session, up.id) == []
+
+
+# ===== #449 1패스 지도안 검색 실패도 같은 시도 예산을 쓴다 =====
+
+NOT_RETRIEVED = {
+    "success": False,
+    "error_code": "LESSONPLAN_NOT_RETRIEVED",
+    "error": (
+        "업로드한 지도안 내용을 읽지 못했습니다. "
+        "지도안을 다시 업로드한 뒤 분석해 주세요."
+    ),
+}
+NOTICE = "업로드된 수업 지도안 문서가 확인되지 않습니다. NOTICEMARK"
+
+
+def _pass1(text, chunks):
+    return SimpleNamespace(
+        text=text,
+        candidates=[
+            SimpleNamespace(
+                grounding_metadata=SimpleNamespace(
+                    grounding_chunks=[object()] * chunks
+                )
+            )
+        ],
+    )
+
+
+def _fake_models(steps):
+    """steps: 1패스/2패스 응답(또는 예외)을 차례로 돌려주는 대역.
+
+    도구의 스토어 이름으로 어느 패스의 호출인지 기록한다.
+    """
+    seen = []
+    queue = list(steps)
+
+    def generate_content(model, contents, config):
+        (store,) = config.tools[0].file_search.file_search_store_names
+        seen.append("pass1" if store == "user-store" else "pass2")
+        step = queue.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        return step
+
+    return generate_content, seen
+
+
+async def _analyze_real_wrapper(svc, user_id, steps):
+    generate_content, seen = _fake_models(steps)
+    svc.client.models.generate_content = MagicMock(side_effect=generate_content)
+    stores, prompt, criteria, _ = _analysis_patches(svc, None)
+    with (
+        stores,
+        prompt,
+        criteria,
+        patch.object(
+            svc.report_storage,
+            "save_report",
+            return_value={"filename": "r.md", "file_path": "/tmp/r.md"},
+        ) as mock_save,
+    ):
+        result = await svc.analyze_lesson_plan(session_id=1, user_id=user_id)
+    return result, seen, mock_save
+
+
+GROUNDED = _pass1("지도안 원문", 2)
+UNGROUNDED = _pass1(NOTICE, 0)
+GOOD = _response(VALID_SECTIONS, types.FinishReason.STOP)
+BAD = _response("## 1. 절\n", types.FinishReason.STOP)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "steps, seen, expected, warnings",
+    [
+        ([GROUNDED, GOOD], ["pass1", "pass2"], None, 0),
+        (
+            [UNGROUNDED, GROUNDED, GOOD],
+            ["pass1", "pass1", "pass2"],
+            None,
+            1,
+        ),
+        ([UNGROUNDED, UNGROUNDED], ["pass1", "pass1"], NOT_RETRIEVED, 2),
+        (
+            [UNGROUNDED, GROUNDED, BAD],
+            ["pass1", "pass1", "pass2"],
+            INVALID_REPORT,
+            2,
+        ),
+        (
+            [GROUNDED, BAD, UNGROUNDED],
+            ["pass1", "pass2", "pass1"],
+            NOT_RETRIEVED,
+            2,
+        ),
+    ],
+    ids=[
+        "정상 1+1",
+        "안내문 → 정상",
+        "두 번 다 근거 없음",
+        "검색 실패 → 보고서 실패",
+        "보고서 실패 → 검색 실패",
+    ],
+)
+async def test_retrieval_retry_shares_report_budget(
+    session, caplog, steps, seen, expected, warnings
+):
+    u, up = await _seed_user_and_upload(session)
+    svc = LessonPlanAnalysisService(db=session)
+
+    with caplog.at_level(logging.INFO, logger=SERVICE_LOGGER):
+        result, actual_seen, mock_save = await _analyze_real_wrapper(
+            svc, u.id, steps
+        )
+
+    assert actual_seen == seen
+    if expected is None:
+        assert result["success"] is True
+        mock_save.assert_called_once()
+        assert len(await _report_rows(session, up.id)) == 1
+    else:
+        assert result == expected
+        mock_save.assert_not_called()
+        assert await _report_rows(session, up.id) == []
+    assert len(_messages(caplog, logging.WARNING, "검사 실패")) == warnings
+    pass1_logs = _messages(caplog, logging.INFO, "분석 1패스")
+    expected_logs = [
+        (
+            "chars=6 grounding_chunks=2"
+            if step is GROUNDED
+            else f"chars={len(NOTICE)} grounding_chunks=0"
+        )
+        for step in steps
+        if step is GROUNDED or step is UNGROUNDED
+    ]
+    assert len(pass1_logs) == len(expected_logs)
+    for log, expected_log in zip(pass1_logs, expected_logs):
+        assert expected_log in log
+    assert "NOTICEMARK" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_retrieval_failure_leaves_upload_retryable(session):
+    u, up = await _seed_user_and_upload(session)
+    svc = LessonPlanAnalysisService(db=session)
+
+    result, seen, mock_save = await _analyze_real_wrapper(
+        svc, u.id, [UNGROUNDED, UNGROUNDED]
+    )
+    assert result == NOT_RETRIEVED
+    mock_save.assert_not_called()
+
+    # 실패 직후 같은 업로드: 409 가 아니라 새로 분석된다
+    retry, seen, mock_save = await _analyze_real_wrapper(
+        svc, u.id, [GROUNDED, GOOD]
+    )
+    assert retry["success"] is True
+    assert seen == ["pass1", "pass2"]
+    mock_save.assert_called_once()
+    assert len(await _report_rows(session, up.id)) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error, code",
+    [
+        (
+            genai_errors.ClientError(
+                429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED"}}
+            ),
+            "RESOURCE_EXHAUSTED",
+        ),
+        (
+            genai_errors.ServerError(
+                503, {"error": {"code": 503, "status": "UNAVAILABLE"}}
+            ),
+            "MODEL_OVERLOADED",
+        ),
+    ],
+    ids=["429", "503"],
+)
+async def test_pass1_api_error_keeps_status(session, error, code):
+    u, up = await _seed_user_and_upload(session)
+    svc = LessonPlanAnalysisService(db=session)
+
+    # SDK 일시 장애 재시도(기존 3회)는 대기 없이 돌린다
+    with patch("tenacity.nap.time.sleep"):
+        result, seen, mock_save = await _analyze_real_wrapper(
+            svc, u.id, [error, error, error, GROUNDED, GOOD]
+        )
+
+    assert result["success"] is False
+    assert result["error_code"] == code
+    assert seen == ["pass1", "pass1", "pass1"]
     mock_save.assert_not_called()
     assert await _report_rows(session, up.id) == []

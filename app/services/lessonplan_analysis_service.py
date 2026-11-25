@@ -53,6 +53,10 @@ _REPORT_PHRASE_RUN = re.compile(r"(?=([^\n]{2,20}?)\1{9})")
 _INVALID_REPORT_MESSAGE = (
     "분석 결과가 올바르게 만들어지지 않았습니다. 다시 시도해주세요."
 )
+_NOT_RETRIEVED_MESSAGE = (
+    "업로드한 지도안 내용을 읽지 못했습니다. "
+    "지도안을 다시 업로드한 뒤 분석해 주세요."
+)
 
 
 def _finish_reason_name(response) -> Optional[str]:
@@ -130,7 +134,8 @@ def _retrieve_lessonplan_text(client, model, user_store_id) -> str:
     """1패스: 사용자 스토어에서 지도안 원문을 검색해 텍스트로 반환한다.
 
     내용 지향 질의를 사용해야 File Search 가 업로드 문서를 안정적으로
-    grounding 한다 (issue #118). 응답이 없으면 빈 문자열을 반환한다.
+    grounding 한다 (issue #118). 응답이 비었거나 검색 근거(grounding chunk)가
+    없으면 빈 문자열을 반환한다 (#449).
     """
     response = client.models.generate_content(
         model=model,
@@ -146,7 +151,13 @@ def _retrieve_lessonplan_text(client, model, user_store_id) -> str:
             temperature=0.2,
         ),
     )
-    return response.text or ""
+    text = response.text or ""
+    candidates = response.candidates or []
+    metadata = candidates[0].grounding_metadata if candidates else None
+    count = len(getattr(metadata, "grounding_chunks", None) or [])
+    logger.info("분석 1패스 chars=%d grounding_chunks=%d", len(text), count)
+    # 근거 없는 답은 "문서가 확인되지 않습니다" 같은 안내문이다 (#449)
+    return text if text.strip() and count else ""
 
 
 @retry_on_resource_exhausted(max_attempts=3, initial_wait=2.0, max_wait=16.0)
@@ -157,7 +168,7 @@ def _call_gemini_with_file_search(
     rubric_store_id,
     user_store_id,
     rubric_metadata_filter,
-):
+) -> types.GenerateContentResponse | None:
     """두 패스 grounded 평가 (issue #118).
 
     1패스(_retrieve_lessonplan_text): 사용자 스토어에서 지도안 원문을 검색.
@@ -165,16 +176,20 @@ def _call_gemini_with_file_search(
     적용)만으로 평가 보고서를 생성한다. 사용자 문서는 이미 본문에 주입되어
     있으므로 2패스에서는 사용자 스토어 도구를 두지 않는다 — 이중 File Search
     도구 조합이 사용자 문서 retrieval 을 저해하던 issue #86 도 함께 회피된다.
+
+    1패스가 지도안 원문을 얻지 못하면 2패스를 부르지 않고 None 을 돌려준다
+    (#449). 재시도와 오류 반환은 analyze_lesson_plan 이 한다.
     """
     lesson_text = _retrieve_lessonplan_text(client, model, user_store_id)
-    if lesson_text.strip():
-        contents = (
-            f"{contents}\n\n"
-            "**평가 대상 수업 지도안 원문 (아래 내용만을 근거로 평가하고, "
-            "'현재 지도안'과 '수업지도안' 인용은 반드시 이 원문에서 "
-            "발췌하세요):**\n"
-            f"---\n{lesson_text}\n---"
-        )
+    if not lesson_text:
+        return None
+    contents = (
+        f"{contents}\n\n"
+        "**평가 대상 수업 지도안 원문 (아래 내용만을 근거로 평가하고, "
+        "'현재 지도안'과 '수업지도안' 인용은 반드시 이 원문에서 "
+        "발췌하세요):**\n"
+        f"---\n{lesson_text}\n---"
+    )
 
     rubric_search_config = {
         "file_search_store_names": [rubric_store_id],
@@ -365,22 +380,30 @@ class LessonPlanAnalysisService:
                         user_store_id,
                         rubric_metadata_filter,
                     )
-                    raw_report = response.text or ""
-                    reason = _finish_reason_name(response)
-                    tokens = getattr(
-                        getattr(response, "usage_metadata", None),
-                        "candidates_token_count",
-                        None,
-                    )
-                    logger.info(
-                        "분석 응답 attempt=%d finish_reason=%s "
-                        "output_tokens=%s chars=%d",
-                        attempt,
-                        reason,
-                        tokens,
-                        len(raw_report),
-                    )
-                    problems = _report_problems(raw_report, reason)
+                    if response is None:
+                        # 1패스가 지도안을 찾지 못해 2패스를 건너뛰었다 (#449)
+                        problems = ["1패스 지도안 검색 실패"]
+                        error_code = "LESSONPLAN_NOT_RETRIEVED"
+                        error = _NOT_RETRIEVED_MESSAGE
+                    else:
+                        raw_report = response.text or ""
+                        reason = _finish_reason_name(response)
+                        tokens = getattr(
+                            getattr(response, "usage_metadata", None),
+                            "candidates_token_count",
+                            None,
+                        )
+                        logger.info(
+                            "분석 응답 attempt=%d finish_reason=%s "
+                            "output_tokens=%s chars=%d",
+                            attempt,
+                            reason,
+                            tokens,
+                            len(raw_report),
+                        )
+                        problems = _report_problems(raw_report, reason)
+                        error_code = "INVALID_REPORT"
+                        error = _INVALID_REPORT_MESSAGE
                     if not problems:
                         break
                     logger.warning(
@@ -391,8 +414,8 @@ class LessonPlanAnalysisService:
                 else:
                     return {
                         "success": False,
-                        "error_code": "INVALID_REPORT",
-                        "error": _INVALID_REPORT_MESSAGE,
+                        "error_code": error_code,
+                        "error": error,
                     }
 
                 # 4. Markdown 보고서 후처리

@@ -114,6 +114,11 @@ async def test_analyze_returns_409_on_already_analyzed(client):
             "INVALID_REPORT",
             "분석 결과가 올바르게 만들어지지 않았습니다. 다시 시도해주세요.",
         ),
+        (
+            "LESSONPLAN_NOT_RETRIEVED",
+            "업로드한 지도안 내용을 읽지 못했습니다. "
+            "지도안을 다시 업로드한 뒤 분석해 주세요.",
+        ),
     ],
 )
 async def test_analyze_returns_500_with_message_on_invalid_report(

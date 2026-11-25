@@ -104,7 +104,13 @@ def test_lessonplan_two_pass_retrieves_user_then_filters_only_rubric_store():
 
     client = MagicMock()
     pass1 = SimpleNamespace(
-        text="제목: 미래 인구 예측 / 학습목표: ...", candidates=[]
+        text="제목: 미래 인구 예측 / 학습목표: ...",
+        # #449: 검색 근거가 있어야 지도안 원문으로 본다
+        candidates=[
+            SimpleNamespace(
+                grounding_metadata=SimpleNamespace(grounding_chunks=[object()])
+            )
+        ],
     )
     pass2 = SimpleNamespace(text="report", candidates=[])
     client.models.generate_content.side_effect = [pass1, pass2]
