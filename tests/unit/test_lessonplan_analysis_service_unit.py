@@ -250,7 +250,7 @@ class TestLessonPlanAnalysisService:
         # 최신 업로드 존재 가정 → no-document 조기 반환을 건너뛰고
         # _get_store_ids(실제 await 지점)까지 제어가 도달하도록 한다.
         service._find_existing_report_for_latest_upload = AsyncMock(
-            return_value=(Mock(), None)
+            return_value=(Mock(fs_document_id="documents/test"), None)
         )
 
         # _get_store_ids - 마감을 초과하는 지연

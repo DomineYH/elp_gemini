@@ -61,6 +61,7 @@ async def _seed_user_and_upload(s):
         filename="alice_plan.pdf",
         original_filename="plan.pdf",
         file_hash="a" * 64,
+        fs_document_id="documents/a",
     )
     s.add(up)
     await s.flush()
@@ -382,6 +383,7 @@ async def test_analyze_uses_upload_row_for_report_metadata(session, tmp_path):
         filename="alice_20260514_plan.pdf",
         original_filename="plan.pdf",
         file_hash="b" * 64,
+        fs_document_id="documents/a",
     )
     session.add(up)
     await session.flush()
@@ -1010,6 +1012,7 @@ async def test_analyze_race_fallback_uses_captured_upload_id_not_latest(
         filename="alice_plan_a.pdf",
         original_filename="plan_a.pdf",
         file_hash="a" * 64,
+        fs_document_id="documents/a",
     )
     session.add(upload_a)
     await session.flush()
@@ -1018,6 +1021,7 @@ async def test_analyze_race_fallback_uses_captured_upload_id_not_latest(
         filename="alice_plan_b.pdf",
         original_filename="plan_b.pdf",
         file_hash="b" * 64,
+        fs_document_id="documents/b",
     )
     session.add(upload_b)
     await session.flush()
@@ -1566,3 +1570,161 @@ async def test_pass1_api_error_keeps_status(session, error, code):
     assert seen == ["pass1", "pass1", "pass1"]
     mock_save.assert_not_called()
     assert await _report_rows(session, up.id) == []
+
+
+# ===== #450 최신 업로드의 검색 색인 사전 확인 =====
+
+INDEX_MISSING = {
+    "success": False,
+    "error_code": "LESSONPLAN_INDEX_MISSING",
+    "error": "지도안 검색 색인이 없습니다. 지도안을 다시 업로드한 뒤 분석해 주세요.",
+}
+
+
+async def _analyze_tracked(svc, user_id, gemini_results):
+    """_analyze 와 같되 스토어 조회 대역도 돌려준다."""
+    stores, prompt, criteria, gemini = _analysis_patches(svc, gemini_results)
+    with (
+        stores as mock_stores,
+        prompt,
+        criteria,
+        gemini as mock_gemini,
+        patch.object(
+            svc.report_storage,
+            "save_report",
+            return_value={"filename": "r.md", "file_path": "/tmp/r.md"},
+        ) as mock_save,
+    ):
+        result = await svc.analyze_lesson_plan(session_id=1, user_id=user_id)
+    return result, mock_stores, mock_gemini, mock_save
+
+
+def _assert_stopped_before_model(svc, mock_stores, mock_gemini, mock_save):
+    mock_stores.assert_not_called()
+    mock_gemini.assert_not_called()
+    svc.client.models.generate_content.assert_not_called()
+    mock_save.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("document_id", [None, ""], ids=["None", "빈 문자열"])
+async def test_missing_index_stops_before_store_lookup(session, document_id):
+    u, up = await _seed_user_and_upload(session)
+    up.fs_document_id = document_id
+    await session.commit()
+    svc = LessonPlanAnalysisService(db=session)
+
+    result, mock_stores, mock_gemini, mock_save = await _analyze_tracked(
+        svc, u.id, [_response(VALID_SECTIONS)]
+    )
+
+    assert result == INDEX_MISSING
+    _assert_stopped_before_model(svc, mock_stores, mock_gemini, mock_save)
+    assert await _report_rows(session, up.id) == []
+
+
+@pytest.mark.asyncio
+async def test_existing_report_precedes_missing_index(session, tmp_path):
+    u, up = await _seed_user_and_upload(session)
+    up.fs_document_id = None
+    report_path = tmp_path / "r.md"
+    report_path.write_text("# Existing report\n", encoding="utf-8")
+    existing = AnalysisReport(
+        user_id=u.id,
+        lessonplan_filename=up.filename,
+        lessonplan_original_name=up.original_filename,
+        report_filename="r.md",
+        report_path=str(report_path),
+        upload_id=up.id,
+    )
+    session.add(existing)
+    await session.commit()
+    svc = LessonPlanAnalysisService(db=session)
+
+    result, mock_stores, mock_gemini, mock_save = await _analyze_tracked(
+        svc, u.id, [_response(VALID_SECTIONS)]
+    )
+
+    assert result["error_code"] == "ALREADY_ANALYZED"
+    assert result["report_id"] == existing.id
+    _assert_stopped_before_model(svc, mock_stores, mock_gemini, mock_save)
+
+
+@pytest.mark.asyncio
+async def test_missing_file_then_missing_index(session, tmp_path):
+    u, up = await _seed_user_and_upload(session)
+    up.fs_document_id = None
+    stale = AnalysisReport(
+        user_id=u.id,
+        lessonplan_filename=up.filename,
+        lessonplan_original_name=up.original_filename,
+        report_filename="gone.md",
+        report_path=str(tmp_path / "gone.md"),
+        upload_id=up.id,
+    )
+    session.add(stale)
+    await session.commit()
+    upload_id = up.id
+    svc = LessonPlanAnalysisService(db=session)
+
+    result, mock_stores, mock_gemini, mock_save = await _analyze_tracked(
+        svc, u.id, [_response(VALID_SECTIONS)]
+    )
+
+    assert result == INDEX_MISSING
+    _assert_stopped_before_model(svc, mock_stores, mock_gemini, mock_save)
+    # 파일 없는 보고서 행은 기존대로 정리된다
+    assert await _report_rows(session, upload_id) == []
+
+
+@pytest.mark.asyncio
+async def test_analyze_during_and_after_reindex(session):
+    from app.services.simulation.lessonplan_source import (
+        forget_file_search_ids,
+    )
+
+    u, upload_a = await _seed_user_and_upload(session)
+    user_id, upload_a_id = u.id, upload_a.id
+    svc = LessonPlanAnalysisService(db=session)
+
+    # B 업로드가 스토어를 지우고 색인 id 를 비운 직후(B 행은 아직 없음)
+    await forget_file_search_ids(session, user_id)
+    result, mock_stores, mock_gemini, mock_save = await _analyze_tracked(
+        svc, user_id, [_response("BMARK\n\n" + VALID_SECTIONS)]
+    )
+    assert result == INDEX_MISSING
+    _assert_stopped_before_model(svc, mock_stores, mock_gemini, mock_save)
+
+    # B 의 외부 색인은 끝났지만 B 행 commit 전: 스토어에는 B 문서가 있다
+    with patch.object(
+        svc, "_user_file_search_store_has_documents", return_value=True
+    ):
+        result, mock_stores, mock_gemini, mock_save = await _analyze_tracked(
+            svc, user_id, [_response("BMARK\n\n" + VALID_SECTIONS)]
+        )
+    assert result == INDEX_MISSING
+    _assert_stopped_before_model(svc, mock_stores, mock_gemini, mock_save)
+    assert await _report_rows(session, upload_a_id) == []
+
+    # B 행 commit 뒤: B 로 분석되고 B 행에 저장된다
+    upload_b = LessonPlanUpload(
+        user_id=user_id,
+        filename="alice_plan_b.pdf",
+        original_filename="plan_b.pdf",
+        file_hash="b" * 64,
+        fs_document_id="documents/b",
+    )
+    session.add(upload_b)
+    await session.commit()
+    upload_b_id = upload_b.id
+
+    result, mock_stores, mock_gemini, mock_save = await _analyze_tracked(
+        svc, user_id, [_response("BMARK\n\n" + VALID_SECTIONS)]
+    )
+    assert result["success"] is True
+    assert mock_save.call_args.kwargs["original_filename"] == "plan_b.pdf"
+    assert "BMARK" in mock_save.call_args.kwargs["report_content"]
+    assert await _report_rows(session, upload_a_id) == []
+    (row,) = await _report_rows(session, upload_b_id)
+    assert row.lessonplan_filename == "alice_plan_b.pdf"
+    assert row.lessonplan_original_name == "plan_b.pdf"

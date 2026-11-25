@@ -57,6 +57,9 @@ _NOT_RETRIEVED_MESSAGE = (
     "업로드한 지도안 내용을 읽지 못했습니다. "
     "지도안을 다시 업로드한 뒤 분석해 주세요."
 )
+_INDEX_MISSING_MESSAGE = (
+    "지도안 검색 색인이 없습니다. 지도안을 다시 업로드한 뒤 분석해 주세요."
+)
 
 
 def _finish_reason_name(response) -> Optional[str]:
@@ -296,6 +299,18 @@ class LessonPlanAnalysisService:
                     latest_upload = await self.db.get(
                         LessonPlanUpload, latest_upload_id
                     )
+
+                # 색인 id 가 비면 스토어가 지워졌거나 재업로드 중이다. 대시보드가
+                # '분석 시작'을 숨기는 기준을 API 에도 적용한다 (#450)
+                if (
+                    latest_upload is not None
+                    and not latest_upload.fs_document_id
+                ):
+                    return {
+                        "success": False,
+                        "error_code": "LESSONPLAN_INDEX_MISSING",
+                        "error": _INDEX_MISSING_MESSAGE,
+                    }
 
                 legacy_lessonplans = []
                 if latest_upload is None:

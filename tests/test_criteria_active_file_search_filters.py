@@ -171,6 +171,7 @@ async def test_lessonplan_analysis_skips_gemini_when_no_active_criteria():
                 id=11,
                 filename="lesson.pdf",
                 original_filename="lesson.pdf",
+                fs_document_id="documents/11",
             ),
             None,
         )
@@ -237,6 +238,7 @@ async def test_lessonplan_analysis_continues_without_filter_when_active_filter_f
                     id=11,
                     filename="lesson.pdf",
                     original_filename="lesson.pdf",
+                    fs_document_id="documents/11",
                 ),
                 None,
             )

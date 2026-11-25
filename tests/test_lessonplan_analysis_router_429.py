@@ -119,6 +119,10 @@ async def test_analyze_returns_409_on_already_analyzed(client):
             "업로드한 지도안 내용을 읽지 못했습니다. "
             "지도안을 다시 업로드한 뒤 분석해 주세요.",
         ),
+        (
+            "LESSONPLAN_INDEX_MISSING",
+            "지도안 검색 색인이 없습니다. 지도안을 다시 업로드한 뒤 분석해 주세요.",
+        ),
     ],
 )
 async def test_analyze_returns_500_with_message_on_invalid_report(
