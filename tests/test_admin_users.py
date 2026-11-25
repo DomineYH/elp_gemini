@@ -833,3 +833,37 @@ def test_admin_users_delete_button_uses_data_attributes():
     assert "s.user_identifier || s.username" in source
     assert "btn.addEventListener('click'" in source
     assert "deleteUser(userId, userLabel);" in source
+
+
+def test_admin_users_password_cell_text_depends_on_is_admin():
+    """Only admins read '관리자 변경 불가'; other blocked accounts read '로그인 불가 계정' (#447)."""
+    source = Path("app/templates/admin/admin_users.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert (
+        '` : `<span class="text-xs text-gray-400">${account.is_admin '
+        "? '관리자 변경 불가' : '로그인 불가 계정'}</span>`;" in source
+    )
+    assert (
+        "'<span class=\"text-xs text-gray-400\">관리자 변경 불가</span>'"
+        not in source
+    )
+    # can_change_password=true 행은 지금처럼 입력란과 '변경' 버튼을 그린다 (#447)
+    assert "const passwordAction = account.can_change_password ? `" in source
+    assert 'id="password-${account.user_id}"' in source
+    assert 'onclick="changePassword(${account.user_id})"' in source
+
+
+def test_admin_users_accounts_table_fits_desktop_width():
+    """The password cell has no fixed min width and the activity cell may wrap (#447)."""
+    source = Path("app/templates/admin/admin_users.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "min-w-[240px]" not in source
+    assert '<div class="flex gap-2">' in source
+    assert (
+        '<td class="px-3 py-3 text-sm text-gray-600">\n'
+        "                        세션 ${account.session_count}" in source
+    )
