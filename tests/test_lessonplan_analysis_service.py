@@ -279,3 +279,48 @@ def test_finish_reason_name(candidates, expected):
     assert (
         _finish_reason_name(SimpleNamespace(candidates=candidates)) == expected
     )
+
+
+@pytest.mark.parametrize(
+    "given, expected",
+    [
+        (
+            "**개선점 (현재 → 수정 제안)\n\n본문",
+            "**개선점 (현재 → 수정 제안)**\n\n본문",
+        ),
+        (
+            "**구체적 제안 (현재 → 수정 제안)\n1. **제목**: 내용",
+            "**구체적 제안 (현재 → 수정 제안)**\n1. **제목**: 내용",
+        ),
+        ("   **수정 근거\n", "   **수정 근거**\n"),
+        (
+            "**📌 개선점 (현재 → 수정 제안)\n\n본문",
+            "**개선점 (현재 → 수정 제안)**\n\n본문",
+        ),
+        (
+            "**개선점\n본문 **굵게** 끝\n\n**다음 라벨\n- **항목**: 내용",
+            "**개선점**\n본문 **굵게** 끝\n\n**다음 라벨**\n- **항목**: 내용",
+        ),
+        ("**강점**\n- **항목**: 내용\n1. **제목**", None),
+        ("**foo\nbar** 뒤", None),
+        ('> **수업지도안**: "**강조 없는 원문"', None),
+        ("내용 **강조 없이 끝", None),
+        ('- 현재 지도안: "| 1 | 도입 | 관찰 | 상 |"', None),
+    ],
+    ids=[
+        "빈 줄 앞 라벨",
+        "번호 목록 앞 라벨",
+        "들여쓴 라벨",
+        "이모지 라벨",
+        "문단당 첫 라벨만",
+        "닫힌 라벨·목록",
+        "여러 줄 굵게",
+        "인용 블록",
+        "문장 중간",
+        "파이프 인용",
+    ],
+)
+def test_post_process_closes_dangling_bold_label(service, given, expected):
+    """#441: 닫히지 않은 단독 굵은 라벨만 닫고 나머지는 그대로 둔다"""
+    processed = service._post_process_report(given)
+    assert processed == (given if expected is None else expected)

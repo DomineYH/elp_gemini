@@ -86,6 +86,23 @@ def _report_problems(text: str, finish_reason: Optional[str]) -> list[str]:
     return problems
 
 
+# 줄 전체가 닫는 ** 없는 '**라벨' 인 줄 (#441)
+_DANGLING_BOLD_LINE = re.compile(r"^([ \t]*)\*\*([^*\n]*[^*\s])[ \t]*$", re.M)
+
+
+def _close_dangling_bold(text: str) -> str:
+    """빈 줄로 나뉜 문단의 ** 개수가 홀수면 그 문단의 첫 '**라벨' 줄을 닫는다."""
+    parts = re.split(r"(\n[ \t]*\n)", text)
+    return "".join(
+        (
+            _DANGLING_BOLD_LINE.sub(r"\1**\2**", part, count=1)
+            if part.count("**") % 2
+            else part
+        )
+        for part in parts
+    )
+
+
 async def _mark_criteria_filter_needs_resync(
     db: AsyncSession, exc: Exception
 ) -> None:
@@ -847,6 +864,9 @@ class LessonPlanAnalysisService:
                     if not report.endswith("\n"):
                         report += "\n"
                     report += suffix
+
+            # 살균보다 먼저 닫아야 짝 없는 ** 가 다음 줄의 ** 와 묶이지 않는다 (#441)
+            report = _close_dangling_bold(report)
 
             # 3) 본문 이모지 제거. 블록 인용 라인은 사용자 문서
             # 인용 충실성을 위해 보존한다.
