@@ -21,6 +21,7 @@ limiter = Limiter(
 # 관리자 로그인 rate limit (Issue #5: IP + admin_id 이중 방어)
 _admin_login_ip_limit_item = parse(settings.ADMIN_LOGIN_RATE_LIMIT)
 _admin_id_limit_item = parse(settings.ADMIN_LOGIN_RATE_LIMIT_PER_ID)
+_register_ip_limit_item = parse(settings.REGISTER_RATE_LIMIT)
 
 
 def check_admin_ip_rate_limit(request: Request) -> None:
@@ -38,6 +39,17 @@ def check_admin_ip_rate_limit(request: Request) -> None:
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
         )
+
+
+def allow_register_request(request: Request) -> bool:
+    """가입 IP 기반 rate limit 검사. 한도 안이면 True.
+
+    입력 검증을 통과한 요청만 세도록 라우트가 검증 뒤에 부른다(#452).
+    """
+    if not settings.RATE_LIMIT_ENABLED or not limiter.enabled:
+        return True
+    key = f"register-ip:{get_remote_address(request)}"
+    return limiter._limiter.hit(_register_ip_limit_item, key)
 
 
 def check_admin_id_rate_limit(admin_id: str) -> None:

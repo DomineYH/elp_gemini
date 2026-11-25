@@ -176,6 +176,10 @@ class Settings(BaseSettings):
         default="30/minute",
         description="/auth/login/user 의 IP 기반 rate limit",
     )
+    REGISTER_RATE_LIMIT: str = Field(
+        default="30/minute",
+        description="/auth/register 의 IP 기반 rate limit",
+    )
     ADMIN_LOGIN_RATE_LIMIT_PER_ID: str = Field(
         default="20/hour",
         description="/auth/login/admin 의 admin_id 기반 rate limit",
