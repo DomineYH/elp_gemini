@@ -6,7 +6,14 @@ FastAPI 애플리케이션 메인 엔트리포인트
 import asyncio
 import logging
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
+from fastapi.exception_handlers import (
+    http_exception_handler as default_http_handler,
+)
+from fastapi.exception_handlers import (
+    request_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
@@ -16,6 +23,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -112,16 +120,33 @@ app.mount(
 # Note: /files 정적 마운트 제거 (보안 강화)
 # 파일 다운로드는 /docs/{document_id}/download 엔드포인트 사용
 # 커스텀 예외 핸들러 (T015)
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
+def _accepts_html(request: Request) -> bool:
+    return "text/html" in request.headers.get("accept", "").lower()
+
+
+def _error_page(request: Request, status_code: int, detail, headers=None):
+    return templates.TemplateResponse(
+        "error.html",
+        {
+            "request": request,
+            "status_code": status_code,
+            "detail": detail,
+        },
+        status_code=status_code,
+        headers=headers,
+    )
+
+
+# 라우트 없음·메서드 불일치는 Starlette 예외라 부모 클래스에 건다 (#444)
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """HTTP 예외 핸들러"""
     logger.warning(
         f"HTTP {exc.status_code}: {exc.detail} - " f"Path: {request.url.path}"
     )
 
     # HTML 요청 여부 확인
-    accept = request.headers.get("accept", "")
-    is_html_request = "text/html" in accept.lower()
+    is_html_request = _accepts_html(request)
 
     # 401 + HTML 요청은 로그인 페이지로 (403은 아래 error.html 안내)
     if exc.status_code == 401 and is_html_request:
@@ -131,22 +156,25 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
     # API 요청인 경우 JSON 응답
     if request.url.path.startswith("/api") or not is_html_request:
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={"detail": exc.detail},
-            headers=exc.headers,
-        )
+        return await default_http_handler(request, exc)
 
-    # 웹 요청인 경우 HTML 응답
-    return templates.TemplateResponse(
-        "error.html",
-        {
-            "request": request,
-            "status_code": exc.status_code,
-            "detail": exc.detail,
-        },
-        status_code=exc.status_code,
-    )
+    # 웹 요청인 경우 HTML 응답 (Starlette 기본 영어 문구만 한국어로, #444)
+    detail = exc.detail
+    if exc.status_code == 404 and detail == "Not Found":
+        detail = "페이지를 찾을 수 없습니다."
+    elif exc.status_code == 405 and detail == "Method Not Allowed":
+        detail = "잘못된 접근입니다."
+    return _error_page(request, exc.status_code, detail, exc.headers)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+):
+    """검증 예외 핸들러 (#444)"""
+    if request.url.path.startswith("/api") or not _accepts_html(request):
+        return await request_validation_exception_handler(request, exc)
+    return _error_page(request, 422, "주소 또는 입력값이 올바르지 않습니다.")
 
 
 @app.exception_handler(Exception)
