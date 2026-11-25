@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/schemas/jev_task_routing.schema.json",
   "title": "Jev task routing policy configuration",
-  "description": "Schema for jev_task_routing.json (v2.5.5-draft) and the runtime objects it defines. Model settings live in models.json (models.schema.json); the policy only references them.",
+  "description": "Schema for jev_task_routing.json (v2.5.7-draft) and the runtime objects it defines. Model settings live in models.json (models.schema.json); the policy only references them.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -21,6 +21,9 @@
     "jev",
     "decision",
     "evidence_orders",
+    "consultation_orders",
+    "code_quality",
+    "playbooks",
     "workflows",
     "stages",
     "modifiers",
@@ -598,7 +601,8 @@
                   "role_candidate",
                   "triage_hint",
                   "post_deploy_schedule",
-                  "review_floor"
+                  "review_floor",
+                  "consultation_trigger"
                 ]
               },
               "note": {
@@ -690,6 +694,9 @@
               "type": "string"
             },
             "evidence_orders_consume_jev_budget": {
+              "const": false
+            },
+            "consultations_consume_jev_budget": {
               "const": false
             }
           }
@@ -995,7 +1002,9 @@
         "evidence_packet",
         "work_order",
         "worker_question",
-        "task_record"
+        "task_record",
+        "worker_report",
+        "review_report"
       ],
       "additionalProperties": false,
       "properties": {
@@ -1013,6 +1022,12 @@
         },
         "task_record": {
           "$ref": "#/$defs/taskRecord"
+        },
+        "worker_report": {
+          "$ref": "#/$defs/workerReport"
+        },
+        "review_report": {
+          "$ref": "#/$defs/reviewReport"
         }
       }
     },
@@ -1054,6 +1069,39 @@
           "items": {
             "type": "string",
             "format": "uri"
+          }
+        },
+        "adapted_from": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "url",
+              "license"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "revision": {
+                "type": "string"
+              },
+              "license": {
+                "type": "string"
+              },
+              "used_for": {
+                "type": "string"
+              },
+              "checked_on": {
+                "type": "string",
+                "format": "date"
+              }
+            }
           }
         }
       }
@@ -1384,6 +1432,432 @@
           "$ref": "#/$defs/ruleRefs"
         }
       }
+    },
+    "consultation_orders": {
+      "type": "object",
+      "required": [
+        "purpose",
+        "consume_jev_budget",
+        "evaluate_at",
+        "advisor_triggers",
+        "skip_record",
+        "order_defaults",
+        "output_contract",
+        "independence",
+        "tool_preflight"
+      ],
+      "properties": {
+        "purpose": {
+          "type": "string"
+        },
+        "consume_jev_budget": {
+          "const": false
+        },
+        "evaluate_at": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "advisor_triggers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "when"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^ADV-\\d+$"
+              },
+              "when": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ask": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "skip_record": {
+          "type": "object",
+          "required": [
+            "required",
+            "where",
+            "shape",
+            "allowed_skip_reasons",
+            "violation"
+          ],
+          "properties": {
+            "required": {
+              "const": true
+            },
+            "where": {
+              "type": "string"
+            },
+            "shape": {
+              "type": "object"
+            },
+            "allowed_skip_reasons": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "violation": {
+              "type": "string"
+            }
+          }
+        },
+        "order_defaults": {
+          "type": "object",
+          "required": [
+            "at_stage",
+            "purpose",
+            "read_scope",
+            "write_scope",
+            "allowed_actions",
+            "stop_conditions"
+          ],
+          "properties": {
+            "at_stage": {
+              "type": "string"
+            },
+            "purpose": {
+              "const": "technical_consultation"
+            },
+            "read_scope": {
+              "$ref": "#/$defs/stringList"
+            },
+            "write_scope": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "items": {
+                "type": "string",
+                "pattern": "^\\.routing/evidence/"
+              }
+            },
+            "allowed_actions": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "stop_conditions": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "output_contract": {
+          "type": "object",
+          "required": [
+            "format",
+            "fields",
+            "rules"
+          ],
+          "properties": {
+            "format": {
+              "const": "consultation_record"
+            },
+            "fields": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "rules": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "independence": {
+          "type": "object",
+          "required": [
+            "required",
+            "preferred"
+          ],
+          "properties": {
+            "required": {
+              "type": "string"
+            },
+            "preferred": {
+              "type": "string"
+            }
+          }
+        },
+        "tool_preflight": {
+          "type": "object",
+          "required": [
+            "advisor",
+            "on_missing"
+          ],
+          "properties": {
+            "advisor": {
+              "$ref": "#/$defs/stringList"
+            },
+            "on_missing": {
+              "type": "string"
+            }
+          }
+        },
+        "rule_refs": {
+          "$ref": "#/$defs/ruleRefs"
+        }
+      },
+      "description": "Positive dispatch triggers and contracts for advisor (ROLE-8, ROLE-9, ORDER-10). Without this section the role is defined only by exclusion and is never dispatched (defect up to v2.5.5)."
+    },
+    "code_quality": {
+      "type": "object",
+      "required": [
+        "purpose",
+        "applies",
+        "design_note",
+        "hygiene",
+        "surfaces",
+        "verdicts",
+        "finding_proof",
+        "claim_labels",
+        "pr_body",
+        "report_shapes"
+      ],
+      "properties": {
+        "purpose": {
+          "type": "string"
+        },
+        "applies": {
+          "type": "object",
+          "required": [
+            "minor",
+            "standard",
+            "high"
+          ],
+          "properties": {},
+          "additionalProperties": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^QUAL-\\d+$"
+            }
+          }
+        },
+        "design_note": {
+          "type": "object",
+          "required": [
+            "required_when",
+            "owner",
+            "fields",
+            "pick_rule"
+          ],
+          "properties": {
+            "required_when": {
+              "type": "string"
+            },
+            "owner": {
+              "type": "string"
+            },
+            "fields": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "pick_rule": {
+              "type": "string"
+            }
+          }
+        },
+        "hygiene": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "surfaces": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "verdicts": {
+          "const": [
+            "pass",
+            "fail",
+            "inconclusive"
+          ]
+        },
+        "finding_proof": {
+          "type": "object",
+          "required": [
+            "blocking_requires",
+            "safety_fact_levels",
+            "non_blocking"
+          ],
+          "properties": {
+            "blocking_requires": {
+              "const": [
+                "run",
+                "failing_check",
+                "file_line"
+              ]
+            },
+            "safety_fact_levels": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "non_blocking": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "claim_labels": {
+          "const": [
+            "measured",
+            "inferred",
+            "guess"
+          ]
+        },
+        "pr_body": {
+          "type": "object",
+          "required": [
+            "title",
+            "max_lines",
+            "sections"
+          ],
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "max_lines": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 200
+            },
+            "sections": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "long_evidence": {
+              "type": "string"
+            }
+          }
+        },
+        "report_shapes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "rule_refs": {
+          "$ref": "#/$defs/ruleRefs"
+        }
+      },
+      "description": "How code is written and reviewed inside an order (QUAL-1..11). Adds no stage, role or Jev question."
+    },
+    "playbooks": {
+      "type": "object",
+      "required": [
+        "purpose",
+        "select",
+        "non_override",
+        "render",
+        "catalog"
+      ],
+      "properties": {
+        "purpose": {
+          "type": "string"
+        },
+        "select": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "when",
+              "playbook"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "when": {
+                "type": "string",
+                "minLength": 1
+              },
+              "playbook": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "non_override": {
+          "type": "string"
+        },
+        "render": {
+          "type": "string",
+          "minLength": 1
+        },
+        "catalog": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^playbooks/[a-z][a-z0-9_]*\\.md$",
+                "description": "Relative to the directory holding this config (.routing/ when installed). The file is the only source of the playbook's steps, report evidence and notes (QUAL-1)."
+              }
+            }
+          }
+        },
+        "rule_refs": {
+          "$ref": "#/$defs/ruleRefs"
+        }
+      },
+      "description": "Selects a playbook and names its file (QUAL-1). Steps, report evidence and notes live in playbooks/<id>.md; verify_routing.py checks the files."
     }
   },
   "$defs": {
@@ -1401,7 +1875,7 @@
     },
     "ruleId": {
       "type": "string",
-      "pattern": "^(AUTH|MODEL|ROLE|ORDER|Q|EVID|CLS|WF|MOD|VER|SAFE|ENF|VAL)-\\d+[a-z]?$"
+      "pattern": "^(AUTH|MODEL|ROLE|ORDER|Q|EVID|CLS|WF|MOD|VER|SAFE|ENF|VAL|QUAL)-\\d+[a-z]?$"
     },
     "ruleRefs": {
       "type": "array",
@@ -1414,6 +1888,22 @@
       "type": [
         "string",
         "null"
+      ]
+    },
+    "playbookId": {
+      "description": "playbooks.catalog key, or null when playbooks.select names none (QUAL-1).",
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "bug_fix",
+        "feature",
+        "refactor",
+        "performance",
+        "investigation",
+        "prototype",
+        null
       ]
     },
     "routerStatus": {
@@ -2050,6 +2540,17 @@
             "null"
           ],
           "description": "Herdr pane id, filled by the host after launch."
+        },
+        "playbook_ref": {
+          "$ref": "#/$defs/playbookId",
+          "description": "playbooks.catalog key whose steps are rendered into this order (QUAL-1)."
+        },
+        "design_note_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to task_record.design_note the implementation must follow (QUAL-2)."
         }
       },
       "allOf": [
@@ -2072,9 +2573,6 @@
               },
               "purpose": {
                 "const": "technical_consultation"
-              },
-              "write_scope": {
-                "maxItems": 0
               }
             }
           }
@@ -2096,9 +2594,14 @@
           "then": {
             "properties": {
               "write_scope": {
-                "maxItems": 0
+                "maxItems": 1,
+                "items": {
+                  "type": "string",
+                  "pattern": "^\\.routing/evidence/"
+                }
               }
-            }
+            },
+            "description": "Review and consultation orders are read-only on the target; their only permitted write is one report path under .routing/evidence/ (ORDER-10, ENF-4)."
           }
         },
         {
@@ -2611,6 +3114,649 @@
               }
             }
           }
+        },
+        "playbook_id": {
+          "$ref": "#/$defs/playbookId",
+          "description": "Selected playbooks.catalog key, or null when playbooks.select names none (QUAL-1). Optional for records written before v2.5.6."
+        },
+        "playbook_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "sha256 of the playbook file the host rendered into the order (QUAL-1). Optional for records written before v2.5.7."
+        },
+        "design_note": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Shape per code_quality.design_note.fields (QUAL-2).",
+          "properties": {
+            "data_shape": {
+              "type": "string"
+            },
+            "state_owners": {
+              "type": "array"
+            },
+            "boundary": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "candidates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "shape"
+                ],
+                "properties": {
+                  "shape": {
+                    "type": "string"
+                  },
+                  "why_rejected": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            },
+            "decomposition": {
+              "type": [
+                "object",
+                "null"
+              ]
+            }
+          }
+        },
+        "consultations_evaluated": {
+          "type": "object",
+          "required": [
+            "advisor_triggers",
+            "issued",
+            "skipped"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "advisor_triggers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^ADV-\\d+$"
+              }
+            },
+            "issued": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "skipped": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "trigger_ids",
+                  "skip_reason"
+                ],
+                "properties": {
+                  "role_id": {
+                    "const": "advisor"
+                  },
+                  "trigger_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "skip_reason": {
+                    "enum": [
+                      "settled_by_discriminating_check",
+                      "prior_consultation_covers_question",
+                      "product_intent_or_authorization_question",
+                      "trigger_false_positive",
+                      "tool_unavailable_in_worker_session"
+                    ]
+                  },
+                  "evidence_refs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "workerReport": {
+      "description": "What an implementer hands back with RESULT_SUBMITTED (QUAL-10). Goal first; every claim carries an evidence ref or a label.",
+      "type": "object",
+      "required": [
+        "task_id",
+        "order_id",
+        "order_revision",
+        "status",
+        "goal",
+        "changes",
+        "units",
+        "verification",
+        "self_review",
+        "open_decisions"
+      ],
+      "properties": {
+        "task_id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "order_id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "order_revision": {
+          "type": [
+            "integer",
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/workerStatus"
+        },
+        "head_revision": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "goal": {
+          "type": "string"
+        },
+        "playbook_id": {
+          "$ref": "#/$defs/playbookId"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "units": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "change",
+              "check"
+            ],
+            "properties": {
+              "change": {
+                "type": "string"
+              },
+              "check": {
+                "type": "string"
+              },
+              "result_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "reproduction": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "command": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "before_ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "after_ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "verification": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "check",
+              "verdict"
+            ],
+            "properties": {
+              "check": {
+                "type": "string"
+              },
+              "surface": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "verdict": {
+                "enum": [
+                  "pass",
+                  "fail",
+                  "inconclusive"
+                ]
+              },
+              "result_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "self_review": {
+          "type": "object",
+          "required": [
+            "hygiene_checked"
+          ],
+          "properties": {
+            "hygiene_checked": {
+              "type": "boolean"
+            },
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "claims": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "claim"
+            ],
+            "properties": {
+              "claim": {
+                "type": "string"
+              },
+              "evidence_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "label": {
+                "enum": [
+                  "measured",
+                  "inferred",
+                  "guess",
+                  null
+                ]
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "evidence_ref"
+                ],
+                "properties": {
+                  "evidence_ref": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              {
+                "required": [
+                  "label"
+                ],
+                "properties": {
+                  "label": {
+                    "enum": [
+                      "measured",
+                      "inferred",
+                      "guess"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "out_of_scope_findings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "open_decisions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "reviewReport": {
+      "description": "What a task-verifier hands back (QUAL-9). A blocking finding without proof is invalid; FAIL requires at least one blocking finding.",
+      "type": "object",
+      "required": [
+        "task_id",
+        "order_id",
+        "order_revision",
+        "reviewed_revision",
+        "verdict",
+        "findings",
+        "safety_fact",
+        "cleared"
+      ],
+      "properties": {
+        "task_id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "order_id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "order_revision": {
+          "type": [
+            "integer",
+            "string",
+            "null"
+          ]
+        },
+        "reviewed_revision": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "verdict": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "BLOCKED",
+            null
+          ]
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "blocking",
+              "claim"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "blocking": {
+                "type": "boolean"
+              },
+              "rule_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "location": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "claim": {
+                "type": "string"
+              },
+              "proof": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "run",
+                      "failing_check",
+                      "file_line"
+                    ]
+                  },
+                  "ref": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "blocking": {
+                  "const": true
+                }
+              },
+              "required": [
+                "blocking"
+              ]
+            },
+            "then": {
+              "required": [
+                "proof"
+              ],
+              "properties": {
+                "proof": {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "ref"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "run",
+                        "failing_check",
+                        "file_line"
+                      ]
+                    },
+                    "ref": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "safety_fact": {
+          "type": "object",
+          "required": [
+            "statement",
+            "level"
+          ],
+          "properties": {
+            "statement": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "level": {
+              "enum": [
+                "asserted",
+                "pointed_at",
+                "shown_unreachable",
+                "run",
+                null
+              ]
+            },
+            "ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "cleared": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "not_reviewed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "verdict": {
+                "const": "FAIL"
+              }
+            },
+            "required": [
+              "verdict"
+            ]
+          },
+          "then": {
+            "properties": {
+              "findings": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "blocking": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "blocking"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "consultationRecord": {
+      "description": "What an advisor hands back (ROLE-8, consultation_orders.output_contract).",
+      "type": "object",
+      "required": [
+        "decision_question",
+        "recommendation",
+        "assumptions",
+        "risks",
+        "smallest_discriminating_check"
+      ],
+      "properties": {
+        "decision_question": {
+          "type": "string",
+          "minLength": 1
+        },
+        "options": {
+          "type": "array"
+        },
+        "recommendation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "risks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "smallest_discriminating_check": {
+          "type": [
+            "object",
+            "string",
+            "null"
+          ]
+        },
+        "claims": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "claim"
+            ],
+            "properties": {
+              "claim": {
+                "type": "string"
+              },
+              "evidence_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "label": {
+                "enum": [
+                  "measured",
+                  "inferred",
+                  "guess",
+                  null
+                ]
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "evidence_ref"
+                ],
+                "properties": {
+                  "evidence_ref": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              {
+                "required": [
+                  "label"
+                ],
+                "properties": {
+                  "label": {
+                    "enum": [
+                      "measured",
+                      "inferred",
+                      "guess"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
         }
       }
     }

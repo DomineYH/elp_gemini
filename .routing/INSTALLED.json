@@ -1,8 +1,16 @@
 {
-  "policy_version": "2.5.5-draft",
+  "policy_version": "2.5.7-draft",
   "source": "https://github.com/DomineYH/jev_task_routing.git",
-  "source_revision": "acfc619",
-  "installed_at": "2026-11-04T05:38:36+00:00",
+  "source_revision": "9122ccf",
+  "installed_at": "2026-11-25T00:36:17+00:00",
   "shadow_mode": true,
-  "hook_scope": "user"
+  "hook_scope": "user",
+  "playbooks_sha256": {
+    "bug_fix": "b647783747db72dc8b4a5a23a7d137928bbd7767e500d31f8a6d4c253ad676ab",
+    "feature": "628ab04a509bce9ede30cf3a3ba782866df5a18735a6520c681c62359df4d9a4",
+    "refactor": "c51b1fd74a9136de8c0c05cec0e9115c37faa7cde336dd43fa981619fa7bf186",
+    "performance": "bbe0bf74d074a63f4318702c27531e492aeb17a73ca0ae8983d822036a31b793",
+    "investigation": "b3f72346bae0b712546f9e6af5503fb482c06d37182aef3419d5e73e5667fd5e",
+    "prototype": "4be7ba6237cd35edd7dd25039e2e74e058c78c36580b7cf6d555410a5873a36f"
+  }
 }

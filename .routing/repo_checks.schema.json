@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Repository-required checks for jev_task_routing (.routing/repo_checks.json)",
+  "description": "What the host copies into verification_plan entries with required_by=repository (VER-5). Commands must be the exact commands CI runs; never invent a command that does not exist in the repository.",
+  "type": "object",
+  "required": [
+    "required_ci",
+    "commands",
+    "branch_protection",
+    "e2e"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "_comment": {
+      "type": "string"
+    },
+    "generated_by": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "harness/model that filled this file, e.g. 'claude-code' or 'codex'"
+    },
+    "generated_on": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "files inspected, e.g. package.json, .github/workflows/ci.yml"
+    },
+    "required_ci": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Names of checks that must pass before merge. Every entry must have a matching key in commands."
+    },
+    "commands": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9_.:-]+$"
+      },
+      "additionalProperties": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "minLength": 1
+      },
+      "description": "check name -> exact shell command as CI runs it (null = runs only in CI, no local equivalent)"
+    },
+    "branch_protection": {
+      "type": "object",
+      "required": [
+        "require_review",
+        "required_status_checks"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "require_review": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "true -> host attests require_independent_review (WF-3); null = unknown"
+        },
+        "required_status_checks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "e.g. 'gh api branches/main/protection' or 'not checked'"
+        }
+      }
+    },
+    "e2e": {
+      "type": "object",
+      "required": [
+        "command",
+        "critical_flows"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "critical_flows": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "named user journeys for broad_critical_flows (VER-6)"
+        }
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "what could not be determined from the repository; the human fills these"
+    }
+  }
+}
