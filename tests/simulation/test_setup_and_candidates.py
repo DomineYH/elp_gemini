@@ -81,3 +81,31 @@ def test_setup_uses_own_upload_only(
     as_user(other_teacher)
     r = client.get("/simulation/setup")
     assert 'id="candRows"' not in r.text
+
+
+def test_setup_extracts_plan_off_event_loop_thread(
+    client, teacher, make_upload, extract_on_loop
+):
+    # 화면을 열 때마다 도는 추출이 서버를 멈추면 안 된다 (#453)
+    make_upload(teacher, text="Intro lesson about maps")
+    r = client.get("/simulation/setup")
+    assert r.status_code == 200
+    assert "Intro lesson about maps" in r.text
+    assert extract_on_loop == [False]
+
+
+def test_setup_with_missing_file_has_empty_summary(
+    client, teacher, make_upload, tmp_path, extract_on_loop
+):
+    make_upload(teacher, text="Intro lesson about maps")
+    for pdf in (tmp_path / "uploads").rglob("*.pdf"):
+        pdf.unlink()
+    r = client.get("/simulation/setup")
+    assert r.status_code == 200
+    assert "Intro lesson about maps" not in r.text
+    assert extract_on_loop == [False]
+
+
+def test_setup_without_upload_does_not_extract(client, extract_on_loop):
+    assert client.get("/simulation/setup").status_code == 200
+    assert extract_on_loop == []

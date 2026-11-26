@@ -218,3 +218,16 @@ def test_inherited_keeps_cautions_and_source_span(ready, fake_gemini):
     body = ready.get(DRAFT).json()
     assert body["source"] == "inherited"
     assert body["phases"] == [phase]
+
+
+def test_draft_extracts_off_event_loop_thread_and_not_when_inherited(
+    ready, fake_gemini, extract_on_loop
+):
+    # (#453) 승계되면 추출하지 않는다
+    body = ready.get(DRAFT).json()
+    assert body["source"] == "generated"
+    assert extract_on_loop == [False]
+
+    _create_session(ready, body["phases"])
+    assert ready.get(DRAFT).json()["source"] == "inherited"
+    assert extract_on_loop == [False]

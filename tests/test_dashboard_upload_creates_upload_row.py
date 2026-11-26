@@ -2,7 +2,10 @@
 /dashboard/upload 이 LessonPlanUpload 행을 만드는지 검증.
 """
 
+import asyncio
 import re
+import threading
+import time
 from io import BytesIO
 from unittest.mock import AsyncMock, patch
 
@@ -256,3 +259,60 @@ async def test_dashboard_upload_rejects_textless_pdf_before_store_delete(
     async with session_factory() as s:
         rows = (await s.execute(select(LessonPlanUpload))).scalars().all()
         assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_dashboard_upload_extracts_off_event_loop_thread(client):
+    # 추출이 루프 스레드에서 돌면 그동안 서버 전체가 멈춘다 (#453)
+    c, session_factory = client
+    from app.routers import views as views_mod
+
+    real = views_mod.extract_pdf_text
+    seen = []
+
+    def recording(source):
+        seen.append(threading.get_ident())
+        return real(source)
+
+    files = {"file": ("plan.pdf", BytesIO(text_pdf()), "application/pdf")}
+    with patch("app.routers.views.extract_pdf_text", recording):
+        res = await c.post("/dashboard/upload", files=files)
+
+    assert res.status_code == 303
+    assert len(seen) == 1
+    assert seen[0] != threading.get_ident()
+    async with session_factory() as s:
+        rows = (await s.execute(select(LessonPlanUpload))).scalars().all()
+        assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_dashboard_upload_keeps_event_loop_responsive(client):
+    # 추출이 0.3초 막는 동안에도 10ms 간격 코루틴이 제때 깨어난다 (#453)
+    c, _ = client
+
+    def slow(source):
+        time.sleep(0.3)
+        return "x" * 40
+
+    gaps = []
+
+    async def ticker():
+        last = time.perf_counter()
+        while True:
+            await asyncio.sleep(0.01)
+            now = time.perf_counter()
+            gaps.append(now - last)
+            last = now
+
+    files = {"file": ("plan.pdf", BytesIO(text_pdf()), "application/pdf")}
+    with patch("app.routers.views.extract_pdf_text", slow):
+        task = asyncio.create_task(ticker())
+        try:
+            res = await c.post("/dashboard/upload", files=files)
+        finally:
+            task.cancel()
+
+    assert res.status_code == 303
+    # 10ms 대기를 뺀 지연이 0.15초 미만 (루프에서 돌면 약 0.3초)
+    assert max(gaps) - 0.01 < 0.15
