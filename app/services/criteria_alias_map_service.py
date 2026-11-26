@@ -51,8 +51,15 @@ class _UnparseableAliasMapDoc:
 class AliasMapParseError(RuntimeError):
     """Raised when an existing alias_map document cannot be parsed safely."""
 
-    def __init__(self, doc_name: str, original_error: Exception):
+    def __init__(
+        self,
+        doc_name: str,
+        original_error: Exception,
+        doc_names: Optional[list[str]] = None,
+    ):
         self.doc_name = doc_name
+        # 못 읽는 alias_map 문서 전부. 복구가 이것들을 지운다 (#471)
+        self.doc_names = list(doc_names or [doc_name])
         self.original_error = original_error
         super().__init__(
             f"alias_map parse failed for {doc_name}: {original_error}"
@@ -182,9 +189,12 @@ class CriteriaAliasMapService:
                 alias_doc_names,
             )
 
+        unparseable_names = [bad_doc.name for bad_doc in unparseable_docs]
         if not parsed_docs:
             first_bad = unparseable_docs[0]
-            raise AliasMapParseError(first_bad.name, first_bad.error)
+            raise AliasMapParseError(
+                first_bad.name, first_bad.error, unparseable_names
+            )
 
         parsed_docs.sort(key=lambda parsed: parsed.updated_at, reverse=True)
         newest = parsed_docs[0]
@@ -194,7 +204,9 @@ class CriteriaAliasMapService:
                 bad_doc.updated_at is None
                 or bad_doc.updated_at >= newest.updated_at
             ):
-                raise AliasMapParseError(bad_doc.name, bad_doc.error)
+                raise AliasMapParseError(
+                    bad_doc.name, bad_doc.error, unparseable_names
+                )
 
         cleanup_names = [parsed.name for parsed in parsed_docs[1:]]
         cleanup_names.extend(
@@ -220,6 +232,15 @@ class CriteriaAliasMapService:
                 )
 
         return newest.name, newest.alias_map
+
+    async def delete_documents(self, doc_names: list[str]) -> None:
+        """alias_map 문서를 지운다. 실패는 그대로 올린다 (#471 복구용)."""
+        for doc_name in doc_names:
+            await asyncio.to_thread(
+                self._client.file_search_stores.documents.delete,
+                name=doc_name,
+                config={"force": True},
+            )
 
     async def replace(
         self, alias_map: AliasMap, old_doc_name: Optional[str]

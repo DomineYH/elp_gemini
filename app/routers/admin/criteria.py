@@ -900,3 +900,43 @@ async def reconcile_criteria(
         "sync_state": await state_repo.get(KEY_SYNC_STATE),
         "last_synced_at": await state_repo.get(KEY_LAST_SYNCED_AT),
     }
+
+
+@router.post(
+    "/rebuild-alias-map",
+    summary="깨진 alias_map을 저장된 목록으로 복구",
+    description=(
+        "클라우드 alias_map을 읽을 수 없을 때만, DB의 평가기준 목록"
+        "(표시 이름·활성 상태)으로 alias_map을 다시 씁니다."
+    ),
+)
+async def rebuild_alias_map(
+    db: AsyncSession = Depends(get_db),
+    _admin=Depends(get_current_admin),
+):
+    """alias_map 복구 (#471). sync 상태가 ok가 아닐 때 쓰는 길이라 require_criteria_sync_ready를 걸지 않는다."""
+    vector_svc = CriteriaVectorService()
+    svc = CriteriaReconciliationService(
+        db=db,
+        vector_service=vector_svc,
+        alias_map_service=CriteriaAliasMapService(
+            client=vector_svc.file_search_service.client,
+            store_display_name=settings.FS_RUBRIC_STORE_NAME,
+        ),
+        criteria_repo=CriteriaRepository(db=db),
+        app_state_repo=AppStateRepository(db=db),
+    )
+    result = await svc.reconcile(rebuild_alias_map_from_cache=True)
+    if result.skipped:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="alias_map을 읽을 수 있거나 없습니다 — 복구할 것이 없습니다",
+        )
+    # 예외로 나가면 get_db가 rollback하므로 상태 표시를 먼저 확정한다
+    await db.commit()
+    if not result.ok:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="alias_map 복구에 실패했습니다. 재동기화 후 다시 시도하세요.",
+        )
+    return {"ok": True, "count": result.count}
