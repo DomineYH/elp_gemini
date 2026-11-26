@@ -451,3 +451,26 @@ async def test_bulk_delete_rejects_non_object_payload(seeded):
             json=None,
         )
         assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_signup_after_deleting_latest_user_gets_new_id(seeded):
+    """#468: 가장 최근 가입자를 지워도 다음 가입자가 그 id를 받지 않는다."""
+    async with TestingSessionLocal() as db:
+        latest = User(username="v468", nickname="V", hashed_password="h")
+        db.add(latest)
+        await db.commit()
+        latest_id = latest.id
+
+    with TestClient(app) as client:
+        resp = client.delete(
+            f"/admin/api/users/{latest_id}",
+            headers={ADMIN_CSRF_HEADER: _get_token(client)},
+        )
+    assert resp.status_code == 200
+
+    async with TestingSessionLocal() as db:
+        newcomer = User(username="n468", nickname="N", hashed_password="h")
+        db.add(newcomer)
+        await db.commit()
+        assert newcomer.id > latest_id
