@@ -293,3 +293,44 @@ async def test_session_version_migration_adds_column(tmp_path):
     assert "session_version" in cols
     assert value == 0
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_deleted_user_cookie_rejected_after_next_signup(
+    make_client, session_factory
+):
+    """#468: 지워진 사용자의 쿠키가 다음 가입자의 계정으로 통하지 않는다."""
+    old_cookie = await _login(make_client())
+    old_pk = await _user_pk(session_factory)
+
+    async with session_factory() as s:
+        await s.execute(delete(User).where(User.username == USER_ID))
+        await s.commit()
+    newcomer = make_client()
+    res = await newcomer.post(
+        "/auth/register",
+        data={
+            "user_id": "next468",
+            "password": USER_PASSWORD,
+            "password_confirm": USER_PASSWORD,
+        },
+        follow_redirects=False,
+    )
+    assert res.status_code in (200, 302)
+    new_cookie = newcomer.cookies.get(COOKIE)
+    assert new_cookie
+
+    async with session_factory() as s:
+        new_pk = (
+            await s.execute(select(User.id).where(User.username == "next468"))
+        ).scalar_one()
+    assert new_pk > old_pk
+    assert await _me_status(make_client, old_cookie) == 401
+    stale = make_client()
+    stale.cookies.set(COOKIE, old_cookie)
+    res = await stale.get(
+        "/dashboard", headers={"Accept": "text/html"}, follow_redirects=False
+    )
+    assert res.status_code == 302
+    assert res.headers["location"].startswith("/login")
+    assert await _me_status(make_client, new_cookie) == 200
