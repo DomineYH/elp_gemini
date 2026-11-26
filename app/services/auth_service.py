@@ -3,6 +3,7 @@
 사용자 인증 및 비밀번호 관리
 """
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -24,6 +25,9 @@ from app.schemas.users import (
 from app.utils.logging import log_auth_event
 
 # 비밀번호 해싱 컨텍스트 (T020)
+# bcrypt 한 번이 약 0.3초 걸린다. async 경로에서는 이벤트 루프가 멈추지 않게
+# hash_password / verify_password / _dummy_password_verify 를
+# asyncio.to_thread 로 부른다 (#467)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 logger = logging.getLogger(__name__)
@@ -129,13 +133,13 @@ class AuthService:
 
         # 2. 사용자가 없거나 관리자가 아닌 경우 — 동일 응답
         if not user or not user.is_admin:
-            self._dummy_password_verify(password)
+            await asyncio.to_thread(self._dummy_password_verify, password)
             await self._touch_missing_admin_attempt()
             return AdminLoginResult(user=None, locked=False)
 
         # 3. 잠금 상태면 비밀번호 검증 없이 즉시 반환
         if self._is_account_locked(user):
-            self._dummy_password_verify(password)
+            await asyncio.to_thread(self._dummy_password_verify, password)
             # invalid-password 경로의 DB UPDATE 비용과 타이밍을 맞춘다.
             await self._touch_locked_attempt(user)
             log_auth_event(
@@ -153,12 +157,14 @@ class AuthService:
 
         # 4. 비밀번호 미설정 → 인증 실패로 카운터 증가
         if not user.hashed_password:
-            self._dummy_password_verify(password)
+            await asyncio.to_thread(self._dummy_password_verify, password)
             await self._record_failed_admin_login(user, admin_id)
             return AdminLoginResult(user=None, locked=False)
 
         # 5. 비밀번호 검증
-        if not self.verify_password(password, user.hashed_password):
+        if not await asyncio.to_thread(
+            self.verify_password, password, user.hashed_password
+        ):
             await self._record_failed_admin_login(user, admin_id)
             return AdminLoginResult(user=None, locked=False)
 
@@ -339,7 +345,9 @@ class AuthService:
         """
         hashed_password = None
         if user_data.password:
-            hashed_password = self.hash_password(user_data.password)
+            hashed_password = await asyncio.to_thread(
+                self.hash_password, user_data.password
+            )
 
         user = User(
             username=user_data.username,
@@ -414,10 +422,12 @@ class AuthService:
         user = await self.get_regular_user_by_username(user_id)
         if not user or not user.hashed_password:
             # 미존재 id 도 dummy verify 로 bcrypt 비용 보정 (타이밍 완화)
-            self._dummy_password_verify(password)
+            await asyncio.to_thread(self._dummy_password_verify, password)
             return None
 
-        if not self.verify_password(password, user.hashed_password):
+        if not await asyncio.to_thread(
+            self.verify_password, password, user.hashed_password
+        ):
             return None
 
         return user
@@ -475,7 +485,9 @@ class AuthService:
                 "비밀번호를 변경할 수 없습니다."
             )
 
-        user.hashed_password = self.hash_password(validated_password)
+        user.hashed_password = await asyncio.to_thread(
+            self.hash_password, validated_password
+        )
         user.failed_login_count = 0
         user.locked_until = None
         user.last_failed_login_at = None
@@ -503,10 +515,15 @@ class AuthService:
         """
         loaded_version = user.session_version or 0
         loaded_hash = user.hashed_password
-        if not self.verify_password(current_password, loaded_hash):
+        if not await asyncio.to_thread(
+            self.verify_password, current_password, loaded_hash
+        ):
             raise ValueError("현재 비밀번호가 올바르지 않습니다.")
         validated_password = validate_password_strength(new_password)
 
+        new_hash = await asyncio.to_thread(
+            self.hash_password, validated_password
+        )
         # 인증 이후 다른 요청이 먼저 바꿨다면 덮어쓰지 않는다
         result = await self.db.execute(
             update(User)
@@ -516,7 +533,7 @@ class AuthService:
                 User.hashed_password == loaded_hash,
             )
             .values(
-                hashed_password=self.hash_password(validated_password),
+                hashed_password=new_hash,
                 failed_login_count=0,
                 locked_until=None,
                 last_failed_login_at=None,
