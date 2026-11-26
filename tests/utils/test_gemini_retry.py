@@ -139,3 +139,33 @@ def test_timeout_is_not_retried():
     with pytest.raises(httpx.ReadTimeout):
         slow()
     assert calls["n"] == 1
+
+
+def test_timeout_is_retried_when_opted_in():
+    """retry_timeouts=True 면 timeout도 다시 부르고, 소진되면 그대로 올린다 (#464)."""
+    calls = {"n": 0}
+
+    @retry_on_resource_exhausted(
+        max_attempts=3, initial_wait=0.0, retry_timeouts=True
+    )
+    def slow():
+        calls["n"] += 1
+        raise httpx.ReadTimeout("timed out")
+
+    with pytest.raises(httpx.ReadTimeout):
+        slow()
+    assert calls["n"] == 3
+
+
+def test_opted_in_timeout_once_then_succeeds():
+    calls = {"n": 0}
+
+    @retry_on_resource_exhausted(initial_wait=0.0, retry_timeouts=True)
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise httpx.ReadTimeout("timed out")
+        return "ok"
+
+    assert flaky() == "ok"
+    assert calls["n"] == 2

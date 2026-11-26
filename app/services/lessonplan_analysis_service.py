@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import httpx
 from google import genai
 from google.api_core import exceptions
 from google.genai import types
@@ -335,8 +336,8 @@ class LessonPlanAnalysisService:
                     return {
                         "success": False,
                         "error": (
-                            "분석할 문서가 없습니다. "
-                            "수업 지도안을 먼저 업로드해주세요."
+                            "평가기준 스토어를 찾을 수 없습니다. "
+                            "관리자에게 문의하세요."
                         ),
                     }
 
@@ -652,6 +653,18 @@ class LessonPlanAnalysisService:
                 "error_code": "MODEL_OVERLOADED",
             }
 
+        except httpx.TransportError as e:
+            # 원문에는 응답 헤더 줄이 섞일 수 있어 종류만 남긴다 (#368)
+            logger.error("Gemini 전송 오류: %s", type(e).__name__)
+            return {
+                "success": False,
+                "error": (
+                    "AI 서비스 응답이 지연되고 있습니다. "
+                    "잠시 후 다시 시도해주세요."
+                ),
+                "error_code": "MODEL_OVERLOADED",
+            }
+
         except exceptions.GoogleAPIError as e:
             logger.error(f"Google API 오류: {e}")
             return {
@@ -683,10 +696,8 @@ class LessonPlanAnalysisService:
             logger.info(f"✅ Store ID 조회 완료: {len(store_ids)}개")
             return store_ids
         except ValueError as e:
+            # rubricstore 없음. 그 밖의 조회 오류는 호출부가 가른다 (#464)
             logger.error(f"❌ Store ID 조회 실패: {e}")
-            return []
-        except Exception as e:
-            logger.error(f"❌ 예상치 못한 오류: {e}")
             return []
 
     def _user_file_search_store_has_documents(self, user_id: int) -> bool:

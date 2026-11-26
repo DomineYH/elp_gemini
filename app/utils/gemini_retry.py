@@ -75,6 +75,8 @@ def retry_on_resource_exhausted(
     max_attempts: int = 3,
     initial_wait: float = 2.0,
     max_wait: float = 16.0,
+    *,
+    retry_timeouts: bool = False,
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Decorator: retry the wrapped sync callable on transient Gemini errors
@@ -83,11 +85,17 @@ def retry_on_resource_exhausted(
     (initial_wait, 2x, 4x ... capped at max_wait).
     """
 
+    def should_retry(exc: BaseException) -> bool:
+        # 요청별 제한이 짧은 조회(GET)만 timeout도 다시 부른다 (#464)
+        return _is_retryable(exc) or (
+            retry_timeouts and isinstance(exc, httpx.TimeoutException)
+        )
+
     def decorator(fn: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(fn)
         def wrapper(*args, **kwargs) -> T:
             tenacity_retry = retry(
-                retry=retry_if_exception(_is_retryable),
+                retry=retry_if_exception(should_retry),
                 stop=stop_after_attempt(max_attempts),
                 wait=(
                     wait_exponential(multiplier=initial_wait, max=max_wait)

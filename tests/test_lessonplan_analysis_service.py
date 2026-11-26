@@ -3,12 +3,16 @@ LessonPlanAnalysisService 테스트
 """
 
 import asyncio
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock
 
+import httpx
 import pytest
 from google.genai import types
 
+from app.services import lessonplan_analysis_service as svc_mod
+from app.services.criteria_vector_service import CriteriaVectorService
 from app.services.lessonplan_analysis_service import (
     LessonPlanAnalysisService,
     _finish_reason_name,
@@ -156,7 +160,7 @@ class TestLessonPlanAnalysisService:
         # Then
         service._get_store_ids.assert_awaited_once_with(user_id)
         assert result["success"] is False
-        assert "분석할 문서가 없습니다" in result["error"]
+        assert "평가기준 스토어를 찾을 수 없습니다" in result["error"]
 
     @pytest.mark.asyncio
     async def test_analyze_lesson_plan_timeout(self, service, monkeypatch):
@@ -324,3 +328,33 @@ def test_post_process_closes_dangling_bold_label(service, given, expected):
     """#441: 닫히지 않은 단독 굵은 라벨만 닫고 나머지는 그대로 둔다"""
     processed = service._post_process_report(given)
     assert processed == (given if expected is None else expected)
+
+
+@pytest.mark.asyncio
+async def test_analyze_generate_transport_error_is_retry_later(
+    service, monkeypatch, caplog
+):
+    """생성 호출의 전송 오류도 재시도 안내로, 로그에는 종류만 남긴다 (#464)"""
+    _reach_store_lookup(service)
+    service._get_store_ids = AsyncMock(return_value=["u", "r"])
+    monkeypatch.setattr(
+        CriteriaVectorService,
+        "active_stable_id_filter",
+        AsyncMock(return_value='stable_id="X"'),
+    )
+    monkeypatch.setattr(
+        svc_mod,
+        "_call_gemini_with_file_search",
+        Mock(
+            side_effect=httpx.RemoteProtocolError(
+                "Server disconnected: Set-Cookie: secret"
+            )
+        ),
+    )
+
+    with caplog.at_level(logging.DEBUG):
+        result = await service.analyze_lesson_plan(1, 123)
+
+    assert result["error_code"] == "MODEL_OVERLOADED"
+    assert "잠시 후 다시 시도" in result["error"]
+    assert "Set-Cookie" not in caplog.text
