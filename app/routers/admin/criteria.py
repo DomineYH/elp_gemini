@@ -8,6 +8,7 @@ import os
 import tempfile
 from typing import Optional
 
+import httpx
 from fastapi import (
     APIRouter,
     Depends,
@@ -82,7 +83,15 @@ async def _mark_criteria_needs_resync(db: AsyncSession, exc: Exception) -> None:
     try:
         state_repo = AppStateRepository(db=db)
         await state_repo.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
-        await state_repo.set(KEY_SYNC_ERROR, str(exc))
+        # 전송 오류 원문에는 헤더 값이 들어갈 수 있다 (#469)
+        await state_repo.set(
+            KEY_SYNC_ERROR,
+            (
+                type(exc).__name__
+                if isinstance(exc, httpx.TransportError)
+                else str(exc)
+            ),
+        )
         await db.commit()
     except Exception:
         logger.error(

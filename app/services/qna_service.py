@@ -548,7 +548,8 @@ class QnAService:
                 "sources": citation_source_titles(
                     extended_citations, getattr(session, "title", None)
                 ),
-                "criteria_notice": criteria_notice,
+                # 일반 질문에는 평가기준 안내를 싣지 않는다 (#469)
+                "criteria_notice": criteria_notice if is_evaluation else None,
                 "grounding_metadata": {
                     "search_performed": bool(citations),
                     "sources_count": sources_count,

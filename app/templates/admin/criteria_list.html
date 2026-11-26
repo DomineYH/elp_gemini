@@ -16,6 +16,7 @@
     {% elif sync.state == 'needs_resync' %}
       <span class="text-yellow-700 font-medium">⚠ 동기화 필요</span>
       <button type="button" class="ml-3 px-2 py-1 text-sm bg-yellow-600 text-white rounded" data-action="reconcile">재동기화</button>
+      {% if sync.error %}<div class="text-sm text-gray-600 mt-1">{{ sync.error }}</div>{% endif %}
     {% elif sync.state == 'error' %}
       <span class="text-red-700 font-medium">✗ 동기화 실패 — 평가기준 기능 비활성</span>
       {% if sync.error %}<div class="text-sm text-gray-600 mt-1">{{ sync.error }}</div>{% endif %}

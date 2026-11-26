@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
+import httpx
+
 from app.config import settings
 from app.repositories.app_state_repository import (
     KEY_API_KEY_HASH,
@@ -283,7 +285,12 @@ class CriteriaReconciliationService:
                                 KEY_SYNC_STATE: (
                                     "error" if key_changed else "needs_resync"
                                 ),
-                                KEY_SYNC_ERROR: str(e),
+                                # 전송 오류 원문에는 헤더 값이 들어갈 수 있다 (#469)
+                                KEY_SYNC_ERROR: (
+                                    type(e).__name__
+                                    if isinstance(e, httpx.TransportError)
+                                    else str(e)
+                                ),
                             }
                         )
                     return ReconcileResult(error=str(e))

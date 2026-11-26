@@ -225,7 +225,7 @@ async def test_lessonplan_analysis_skips_gemini_when_no_active_criteria():
 
 
 @pytest.mark.asyncio
-async def test_lessonplan_analysis_continues_without_filter_when_active_filter_fails():
+async def test_lessonplan_analysis_stops_when_active_filter_fails():
     from app.services.lessonplan_analysis_service import (
         LessonPlanAnalysisService,
     )
@@ -299,11 +299,16 @@ async def test_lessonplan_analysis_continues_without_filter_when_active_filter_f
                 user_id=7,
             )
 
-    assert result["success"] is True
-    assert result["criteria_notice"]
-    assert "평가기준" in result["criteria_notice"]
-    assert gemini_call.await_args.args[6] is None
+    assert result == {
+        "success": False,
+        "error_code": "CRITERIA_SYNC_REQUIRED",
+        "error": "평가기준 동기화가 필요합니다. 관리자에게 문의하세요.",
+    }
+    gemini_call.assert_not_awaited()
+    service.report_storage.save_report.assert_not_called()
     state.set.assert_any_await(KEY_SYNC_STATE, "needs_resync")
+    state.set.assert_any_await(KEY_SYNC_ERROR, "alias map corrupt")
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -1033,33 +1038,73 @@ async def test_other_user_after_active_lookup_failure(env465):
     assert await env.state() == ("ok", None)
 
 
+_PERSISTENT = [
+    ("corrupt", "parse failed"),
+    ("sdk403", "403"),
+    ("runtime", "boom"),
+]
+
+
+def _arm_persistent(env, cause):
+    if cause == "corrupt":
+        env.fake.corrupt = True
+    else:
+        make = _sdk(403) if cause == "sdk403" else lambda: RuntimeError("boom")
+        env.fake.active_fail = ("stores", 99, make)
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("cause", ["corrupt", "sdk403"])
-async def test_persistent_active_lookup_failure(env465, cause):
+@pytest.mark.parametrize("cause, stored", _PERSISTENT)
+async def test_persistent_active_lookup_failure(env465, cause, stored):
     env = env465
+    _arm_persistent(env, cause)
 
-    def arm():
-        if cause == "corrupt":
-            env.fake.corrupt = True
-        else:
-            env.fake.active_fail = ("stores", 99, _sdk(403))
-            env.fake.active_failed = 0
-
-    arm()
     res = await _ask(env)
     assert res.status_code == 200, res.text
     assert "평가기준" in res.json()["criteria_notice"]
     assert env.fake.answer_gens()[-1]["stores"] == ["fileSearchStores/user1"]
     sync_state, sync_error = await env.state()
     assert sync_state == "needs_resync"
-    assert ("parse failed" if cause == "corrupt" else "403") in sync_error
+    assert stored in sync_error
 
-    await env.set_ok()
-    arm()
+    res = await _ask(env, _Q_PLAIN)
+    assert res.status_code == 200, res.text
+    assert res.json()["criteria_notice"] is None
+
+    res = await _ask(env)
+    assert res.status_code == 200, res.text
+    assert "평가기준" in res.json()["criteria_notice"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cause, stored", _PERSISTENT)
+async def test_analysis_stops_on_persistent_lookup_failure(
+    env465, cause, stored
+):
+    """#469: 멈추고 저장하지 않으며 표시는 실패 응답 뒤에도 남는다."""
+    env = env465
+    _arm_persistent(env, cause)
+
+    res, in_progress = await _analyze(env)
+
+    assert res.status_code == 503, res.text
+    assert "retry-after" not in res.headers
+    assert (
+        res.json()["detail"]
+        == "평가기준 동기화가 필요합니다. 관리자에게 문의하세요."
+    )
+    assert (env.analysis_gens, env.saved, in_progress) == ([], [], False)
+    assert await env.report_rows() == 0
+    sync_state, sync_error = await env.state()
+    assert sync_state == "needs_resync"
+    assert stored in sync_error
+
+    # 관리자가 고친 뒤(상태는 needs_resync 그대로) 같은 업로드가 분석된다
+    env.fake.corrupt, env.fake.active_fail = False, None
     res, _ = await _analyze(env)
     assert res.status_code == 200, res.text
-    assert [g["filter"] for g in env.analysis_gens] == [None]
-    assert (await env.state())[0] == "needs_resync"
+    assert [g["filter"] for g in env.analysis_gens] == ['stable_id="SIDA"']
+    assert (len(env.saved), await env.report_rows()) == (1, 1)
 
 
 @pytest.mark.asyncio

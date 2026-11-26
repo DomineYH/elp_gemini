@@ -116,6 +116,8 @@ async def _mark_criteria_filter_needs_resync(
         state_repo = AppStateRepository(db=db)
         await state_repo.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
         await state_repo.set(KEY_SYNC_ERROR, str(exc))
+        # 요청이 503 으로 끝나면 get_db 가 롤백하므로 여기서 남긴다 (#469)
+        await db.commit()
     except Exception:
         logger.warning("평가기준 동기화 필요 상태 표시 실패", exc_info=True)
 
@@ -334,7 +336,6 @@ class LessonPlanAnalysisService:
                 # Store ID 분리 및 역할 명확화
                 user_store_id = store_ids[0]  # 사용자 업로드 수업 지도안
                 rubric_store_id = store_ids[1]  # 평가기준 문서
-                criteria_notice = None
 
                 logger.info(
                     f"File Search Store 조회 완료:\n"
@@ -357,13 +358,20 @@ class LessonPlanAnalysisService:
                             raise GeminiServerOverloaded(str(e)) from e
                         raise
                     logger.warning(
-                        f"활성 평가기준 필터 조회 실패 (무시): {e}",
+                        f"활성 평가기준 필터 조회 실패 (분석 중단): {e}",
                         exc_info=True,
                     )
-                    rubric_metadata_filter = None
-                    criteria_notice = "평가기준 동기화가 필요합니다."
                     await _mark_criteria_filter_needs_resync(self.db, e)
-                if not rubric_metadata_filter and not criteria_notice:
+                    # 기준을 확인하지 못한 보고서는 저장되면 409 로 굳는다 (#469)
+                    return {
+                        "success": False,
+                        "error_code": "CRITERIA_SYNC_REQUIRED",
+                        "error": (
+                            "평가기준 동기화가 필요합니다. "
+                            "관리자에게 문의하세요."
+                        ),
+                    }
+                if not rubric_metadata_filter:
                     logger.info("활성 평가기준 없음 — 수업지도안 분석 생략")
                     return {
                         "success": False,
@@ -543,7 +551,6 @@ class LessonPlanAnalysisService:
                     "report": report,
                     "citations": citations,
                     "latency_ms": latency_ms,
-                    "criteria_notice": criteria_notice,
                     "saved_report": saved_report,
                 }
 

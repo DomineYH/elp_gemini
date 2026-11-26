@@ -66,6 +66,34 @@ async def test_analyze_returns_503_on_model_overloaded(client):
     assert "혼잡" in res.json()["detail"]
 
 
+@pytest.mark.asyncio
+async def test_analyze_returns_503_without_retry_after_on_criteria_sync(client):
+    """#469: 평가기준 동기화가 필요하면 Retry-After 없는 503 으로 멈춘다."""
+    detail = "평가기준 동기화가 필요합니다. 관리자에게 문의하세요."
+    mock_result = {
+        "success": False,
+        "error_code": "CRITERIA_SYNC_REQUIRED",
+        "error": detail,
+    }
+
+    with patch(
+        "app.routers.lessonplan_analysis.LessonPlanAnalysisService"
+    ) as mock_service:
+        instance = mock_service.return_value
+        instance.analyze_lesson_plan = AsyncMock(return_value=mock_result)
+
+        res = await client.post(
+            "/api/lessonplan/analyze",
+            json={"session_id": 1},
+        )
+
+    assert res.status_code == 503
+    assert "retry-after" not in res.headers
+    assert res.json()["detail"] == detail
+    status_res = await client.get("/api/lessonplan/analyze/status")
+    assert status_res.json() == {"in_progress": False}
+
+
 # 스토어 조회 실패가 '분석할 문서가 없습니다'가 아니라 재시도 안내로 나간다 (#464)
 UPLOAD = SimpleNamespace(
     id=27,
