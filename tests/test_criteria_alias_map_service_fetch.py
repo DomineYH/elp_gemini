@@ -315,6 +315,54 @@ async def test_fetch_raises_parse_error_for_corrupted_payload():
     assert exc_info.value.doc_name == "docs/alias-map"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_valid_doc", [False, True])
+async def test_parse_error_carries_every_unreadable_document(with_valid_doc):
+    """#471: 복구가 못 읽는 문서를 한 번에 모두 지울 수 있어야 한다."""
+
+    def alias_doc(name, chunks):
+        return _doc(
+            name,
+            [
+                _meta("type", string_value="alias_map"),
+                _meta(ALIAS_MAP_PAYLOAD_KEY, string_list_value=chunks),
+            ],
+        )
+
+    docs = [
+        alias_doc("docs/bad-1", ["not-base64"]),
+        alias_doc("docs/bad-2", []),
+    ]
+    if with_valid_doc:
+        docs.insert(
+            0,
+            alias_doc(
+                "docs/valid", _alias_map_chunks("2026-05-15T00:00:00Z", "v")
+            ),
+        )
+    client = MagicMock()
+    store = MagicMock()
+    store.name = "stores/x"
+    store.display_name = "rubric-store"
+    client.file_search_stores.list.return_value = iter([store])
+    client.file_search_stores.documents.list.return_value = iter(docs)
+
+    svc = CriteriaAliasMapService(
+        client=client, store_display_name="rubric-store"
+    )
+    with pytest.raises(AliasMapParseError) as exc_info:
+        await svc.fetch()
+
+    assert exc_info.value.doc_name == "docs/bad-1"
+    assert exc_info.value.doc_names == ["docs/bad-1", "docs/bad-2"]
+    assert str(exc_info.value).startswith(
+        "alias_map parse failed for docs/bad-1: "
+    )
+    assert AliasMapParseError("docs/one", ValueError("x")).doc_names == [
+        "docs/one"
+    ]
+
+
 # 조회 GET 은 요청별 10초 제한과 일시 오류 재시도를 받고, 쓰기는 다시 부르지 않는다 (#465)
 def _rubric_store():
     store = MagicMock()
