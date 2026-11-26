@@ -162,6 +162,9 @@ class TestQnAStoreUserIdKeying:
             pass1 = svc.client.models.generate_content.call_args_list[0]
             assert _store_names(pass1.kwargs["config"]) == [[ROW_STORE]]
             svc.file_search_service.get_rubric_store_id.assert_called_once_with()
+            svc.file_search_service.store_exists.assert_called_once_with(
+                ROW_STORE
+            )
             # Sanity
             assert result["answer"] == "answer"
 

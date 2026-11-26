@@ -273,17 +273,24 @@ def test_lookup_failure_on_a_later_page_is_retried(service, sleeps):
         ),
     ],
 )
+# 사용자 스토어 GET 도 평가기준 목록 조회와 같은 재시도·변환을 거친다 (#470)
+@pytest.mark.parametrize(
+    "method, lookup",
+    [
+        ("list", lambda svc: svc.get_rubric_store_id()),
+        ("get", lambda svc: svc.store_exists(USER.name)),
+    ],
+)
 def test_lookup_gives_up_after_three_tries_and_caches_nothing(
-    service, sleeps, error, raised
+    service, sleeps, method, lookup, error, raised
 ):
-    service.client.file_search_stores.list.side_effect = lambda **kw: (
-        _ for _ in ()
-    ).throw(error())
+    sdk_call = getattr(service.client.file_search_stores, method)
+    sdk_call.side_effect = lambda **kw: (_ for _ in ()).throw(error())
 
     with pytest.raises(raised):
-        service.get_rubric_store_id()
+        lookup(service)
 
-    assert service.client.file_search_stores.list.call_count == 3
+    assert sdk_call.call_count == 3
     assert sleeps == [2.0, 4.0]
     assert service._store_cache == {}
     service.client.file_search_stores.create.assert_not_called()
@@ -402,6 +409,27 @@ async def test_user_upload_creates_a_store_without_listing(service, tmp_path):
     assert upload.call_args.kwargs["file_search_store_name"] == created.name
     service.client.file_search_stores.list.assert_not_called()
     service.client.file_search_stores.delete.assert_not_called()
+
+
+# 생성은 재시도하지 않는다. 끊긴 요청이 이미 만들었을 수 있다 (#470)
+@pytest.mark.asyncio
+async def test_user_store_creation_is_not_retried(service, sleeps, tmp_path):
+    service.client.file_search_stores.create.side_effect = (
+        httpx.RemoteProtocolError("Server disconnected")
+    )
+    path = tmp_path / "plan.txt"
+    path.write_text("x")
+
+    with pytest.raises(httpx.RemoteProtocolError):
+        await service.upload_document(str(path), "plan.txt", {"user_id": 7})
+
+    service.client.file_search_stores.create.assert_called_once()
+    upload = service.client.file_search_stores.upload_to_file_search_store
+    upload.assert_not_called()
+    service.client.file_search_stores.list.assert_not_called()
+    service.client.file_search_stores.delete.assert_not_called()
+    assert sleeps == []
+    assert service._store_cache == {}
 
 
 @pytest.mark.asyncio

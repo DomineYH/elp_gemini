@@ -191,6 +191,7 @@ async def test_qna_transient_error_once_is_retried(ask, stage, error):
     other = "final" if stage == "pass1" else "pass1"
     assert models.calls == {stage: 2, other: 1}
     # 재시도는 앞선 스토어 조회·세션 생성을 다시 하지 않는다
+    store.store_exists.assert_called_once()
     store.get_rubric_store_id.assert_called_once()
     assert len(await _rows(ChatSession)) == 1
     assert len(await _rows(ChatMessage)) == 2
