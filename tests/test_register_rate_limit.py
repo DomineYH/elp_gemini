@@ -31,6 +31,7 @@ from app.main import app
 from app.models.users import User
 from app.rate_limit import limiter
 from app.services.auth_service import AuthService
+from tests.test_user_id_password_auth import _record_pwd_calls
 
 PASSWORD = "TeacherPass123"
 LIMIT_MESSAGE = "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."
@@ -229,3 +230,33 @@ async def test_disabled_register_limit(
     for n in range(10):
         response = await _register(client, f"user{n}")
         assert response.status_code == 302, n
+
+
+@pytest.mark.asyncio
+async def test_limited_requests_do_not_hash(make_client, monkeypatch):
+    """한도를 넘은 가입·로그인은 bcrypt 에 닿지 않는다 (#467)."""
+    client = make_client()
+    for user_id in ("teach1", "teach2", "teach3"):
+        assert (await _register(client, user_id)).status_code == 302
+    calls = _record_pwd_calls(monkeypatch)
+
+    assert (await _register(client, "teach4")).status_code == 429
+    assert calls == []
+
+    # 로그인 한도는 라우트 데코레이터가 import 때 읽은 값이다
+    monkeypatch.setattr(
+        AuthService, "_dummy_password_verify", staticmethod(calls.append)
+    )
+    client.cookies.clear()
+    login_limit = parse(settings.USER_LOGIN_RATE_LIMIT).amount
+    statuses = [
+        (
+            await client.post(
+                "/auth/login/user",
+                data={"user_id": "nouser1", "password": PASSWORD},
+            )
+        ).status_code
+        for _ in range(login_limit + 1)
+    ]
+    assert statuses == [401] * login_limit + [429]
+    assert calls == [PASSWORD] * login_limit

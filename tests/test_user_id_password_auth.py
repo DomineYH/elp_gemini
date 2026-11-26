@@ -10,9 +10,12 @@ Task 2 — 로그인 식별자를 email → 사용자 지정 id 로 전환.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import inspect
 import json
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,14 +27,15 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool, StaticPool
 
+import app.services.auth_service as auth_service_module
 from app.config import settings
 from app.db import Base, get_db
 from app.main import app
@@ -189,6 +193,42 @@ def _assert_form_error(response):
     if response.status_code == 200:
         lowered = response.text.lower()
         assert "error" in lowered or "오류" in response.text
+
+
+class _PwdRecorder:
+    """pwd_context 대역: 진짜로 넘기면서 (종류, 호출 스레드)를 적는다 (#467)."""
+
+    def __init__(self, real):
+        self.real = real
+        self.calls: list[tuple[str, int]] = []
+
+    def verify(self, secret, hashed):
+        dummy = hashed == auth_service_module._DUMMY_BCRYPT_HASH
+        self.calls.append(
+            ("dummy" if dummy else "verify", threading.get_ident())
+        )
+        return self.real.verify(secret, hashed)
+
+    def hash(self, secret):
+        self.calls.append(("hash", threading.get_ident()))
+        return self.real.hash(secret)
+
+
+def _record_pwd_calls(monkeypatch) -> list[tuple[str, int]]:
+    """이 뒤의 bcrypt 호출을 기록한다. 사용자 준비가 끝난 뒤에 부른다."""
+    recorder = _PwdRecorder(auth_service_module.pwd_context)
+    monkeypatch.setattr(auth_service_module, "pwd_context", recorder)
+    return recorder.calls
+
+
+def _assert_off_loop(calls, *kinds):
+    """호출이 kinds 그대로이고 모두 이벤트 루프 밖 스레드에서 돌았다.
+
+    테스트 코루틴(= 루프 스레드)에서 불러야 한다.
+    """
+    assert [kind for kind, _ in calls] == list(kinds)
+    loop_thread = threading.get_ident()
+    assert all(thread != loop_thread for _, thread in calls)
 
 
 # ===== 등록 페이지/폼 (Task 1) =====
@@ -889,7 +929,9 @@ async def test_admin_can_change_password_for_login_capable_users(
 
 
 @pytest.mark.asyncio
-async def test_admin_can_change_id_only_user_password(client, session_factory):
+async def test_admin_can_change_id_only_user_password(
+    client, session_factory, monkeypatch
+):
     """email 이 없는 id 기반 사용자도 관리자 비밀번호 재설정이 가능해야 한다."""
     admin = await _create_user(
         session_factory,
@@ -909,6 +951,7 @@ async def test_admin_can_change_id_only_user_password(client, session_factory):
             "admin_csrf_token": ADMIN_CSRF_TOKEN,
         }
     )
+    calls = _record_pwd_calls(monkeypatch)
 
     response = await client.post(
         f"/admin/api/users/{regular.id}/password",
@@ -919,8 +962,10 @@ async def test_admin_can_change_id_only_user_password(client, session_factory):
     )
 
     assert response.status_code in {200, 204}
+    _assert_off_loop(calls, "hash")  # #467
     changed = await _fetch_user_by_username(session_factory, "managed1")
     assert changed is not None
+    assert changed.session_version == (regular.session_version or 0) + 1
     assert AuthService.verify_password(
         NEW_ADMIN_SET_PASSWORD, changed.hashed_password
     )
@@ -1031,3 +1076,142 @@ async def test_non_admin_cannot_change_user_password(client, session_factory):
     assert response.status_code in {401, 403}
     unchanged = await _fetch_user_by_username(session_factory, "target1")
     assert AuthService.verify_password(USER_PASSWORD, unchanged.hashed_password)
+
+
+# ===== #467: 비밀번호 해시는 이벤트 루프 밖 스레드에서 =====
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "user_id, password, status_code, kind",
+    [
+        (USER_ID, USER_PASSWORD, 302, "verify"),
+        (USER_ID, "WrongPass999", 401, "verify"),
+        ("nouser1", USER_PASSWORD, 401, "dummy"),
+    ],
+    ids=["success", "wrong-password", "unknown-id"],
+)
+async def test_login_hashes_once_off_event_loop(
+    client, session_factory, monkeypatch, user_id, password, status_code, kind
+):
+    before = await _create_user(
+        session_factory, username=USER_ID, password=USER_PASSWORD
+    )
+    calls = _record_pwd_calls(monkeypatch)
+
+    response = await client.post(
+        "/auth/login/user",
+        data={"user_id": user_id, "password": password},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status_code
+    _assert_off_loop(calls, kind)
+    cookie = response.cookies.get(settings.SESSION_COOKIE_NAME)
+    if status_code == 302:
+        assert _decode_session_cookie(cookie)["user_id"] == before.id
+    else:
+        assert cookie is None
+        assert auth_router.INVALID_USER_CREDENTIALS_MESSAGE in response.text
+    after = await _fetch_user_by_username(session_factory, USER_ID)
+    assert (
+        after.hashed_password,
+        after.session_version,
+        after.failed_login_count,
+    ) == (
+        before.hashed_password,
+        before.session_version,
+        before.failed_login_count,
+    )
+
+
+@pytest.mark.asyncio
+async def test_login_hash_does_not_block_event_loop(
+    client, session_factory, monkeypatch
+):
+    await _create_user(
+        session_factory, username=USER_ID, password=USER_PASSWORD
+    )
+
+    def slow_verify(plain_password, hashed_password):
+        time.sleep(0.3)
+        return True
+
+    monkeypatch.setattr(
+        AuthService, "verify_password", staticmethod(slow_verify)
+    )
+    lags: list[float] = []
+
+    async def probe():
+        while True:
+            started = time.perf_counter()
+            await asyncio.sleep(0.01)
+            lags.append(time.perf_counter() - started - 0.01)
+
+    task = asyncio.create_task(probe())
+    try:
+        response = await client.post(
+            "/auth/login/user",
+            data={"user_id": USER_ID, "password": USER_PASSWORD},
+            follow_redirects=False,
+        )
+    finally:
+        task.cancel()
+
+    assert response.status_code == 302
+    assert max(lags) < 0.15
+
+
+@pytest.mark.asyncio
+async def test_register_hashes_once_off_event_loop(
+    client, session_factory, monkeypatch
+):
+    calls = _record_pwd_calls(monkeypatch)
+
+    response = await _register(client)
+
+    assert response.status_code == 302
+    _assert_off_loop(calls, "hash")
+    user = await _fetch_user_by_username(session_factory, USER_ID)
+    assert user.hashed_password.startswith("$2b$12$")
+    assert AuthService.verify_password(USER_PASSWORD, user.hashed_password)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_same_id_registration_creates_one_user(tmp_path):
+    """같은 아이디 가입 2건이 겹쳐도 하나만 만들어진다 (#467).
+
+    운영처럼 요청마다 연결이 따로여야 하므로 파일 DB + NullPool 을 쓴다.
+    """
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'race.db'}", poolclass=NullPool
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    async def _get_db_override() -> AsyncIterator[AsyncSession]:
+        async with factory() as session:
+            yield session
+
+    async def register_once() -> int:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as one_client:
+            return (await _register(one_client)).status_code
+
+    app.dependency_overrides[get_db] = _get_db_override
+    try:
+        statuses = await asyncio.gather(register_once(), register_once())
+        async with factory() as session:
+            rows = (
+                await session.execute(select(func.count()).select_from(User))
+            ).scalar_one()
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        await engine.dispose()
+
+    assert sorted(statuses) == [302, 409]
+    assert rows == 1

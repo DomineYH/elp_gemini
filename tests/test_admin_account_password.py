@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import AsyncIterator
 from unittest.mock import patch
 
@@ -14,7 +15,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool, StaticPool
 
 import app.db as db_mod
 from app.config import settings
@@ -23,8 +24,10 @@ from app.main import app
 from app.models.users import User
 from app.services.auth_service import AuthService
 from tests.test_user_id_password_auth import (
+    _assert_off_loop,
     _build_session_cookie,
     _decode_session_cookie,
+    _record_pwd_calls,
 )
 
 ADMIN_PASSWORD = "AdminPass123"
@@ -234,6 +237,79 @@ async def test_stale_request_cannot_override_concurrent_change(
 
     admin = await _user(session_factory, "admin")
     assert admin.hashed_password == b_hash
+    assert admin.session_version == 1
+
+
+@pytest.mark.asyncio
+async def test_change_hashes_off_event_loop(
+    make_client, session_factory, monkeypatch
+):
+    """검증 1회 + 해시 1회가 모두 이벤트 루프 밖 스레드에서 돈다 (#467)."""
+    client = make_client(await _cookie(session_factory))
+    calls = _record_pwd_calls(monkeypatch)
+
+    res = await _post(client, _body())
+
+    assert res.status_code == 200
+    _assert_off_loop(calls, "verify", "hash")
+    assert (await _user(session_factory, "admin")).session_version == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_changes_only_one_wins(tmp_path):
+    """세션 2개가 같은 현재 비밀번호로 동시에 바꾸면 하나만 된다 (#467).
+
+    운영처럼 요청마다 연결이 따로여야 하므로 파일 DB + NullPool 을 쓴다.
+    """
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'race.db'}", poolclass=NullPool
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with factory() as s:
+        s.add(
+            User(
+                username="admin",
+                nickname="admin",
+                hashed_password=AuthService.hash_password(ADMIN_PASSWORD),
+                is_admin=True,
+            )
+        )
+        await s.commit()
+    cookie = await _cookie(factory)
+    new_passwords = ["FirstNew123", "SecondNew456"]
+
+    async def _get_db_override() -> AsyncIterator[AsyncSession]:
+        async with factory() as session:
+            yield session
+
+    async def change(new_password: str):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            client.cookies.set(COOKIE, cookie)
+            return await _post(client, _body(new=new_password))
+
+    app.dependency_overrides[get_db] = _get_db_override
+    try:
+        with patch(
+            "app.middleware.auth_middleware.async_session_maker", factory
+        ):
+            results = await asyncio.gather(*map(change, new_passwords))
+        admin = await _user(factory, "admin")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        await engine.dispose()
+
+    statuses = [res.status_code for res in results]
+    assert sorted(statuses) == [200, 400]
+    assert "다른 곳에서" in results[statuses.index(400)].json()["detail"]
+    assert AuthService.verify_password(
+        new_passwords[statuses.index(200)], admin.hashed_password
+    )
     assert admin.session_version == 1
 
 
