@@ -1,7 +1,9 @@
 """alias-map 문서 fetch & parse — type=alias_map 만 인식"""
 
+import time
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 from app.services.alias_map_codec import (
@@ -311,3 +313,146 @@ async def test_fetch_raises_parse_error_for_corrupted_payload():
         await svc.fetch()
 
     assert exc_info.value.doc_name == "docs/alias-map"
+
+
+# 조회 GET 은 요청별 10초 제한과 일시 오류 재시도를 받고, 쓰기는 다시 부르지 않는다 (#465)
+def _rubric_store():
+    store = MagicMock()
+    store.name = "stores/x"
+    store.display_name = "rubric-store"
+    return store
+
+
+def _alias_doc():
+    return _doc(
+        "docs/alias-map",
+        [
+            _meta("type", string_value="alias_map"),
+            _meta(
+                ALIAS_MAP_PAYLOAD_KEY,
+                string_list_value=_alias_map_chunks(
+                    "2026-05-15T00:00:00Z", "a"
+                ),
+            ),
+        ],
+    )
+
+
+def _failing_then(n_fail, value, make=lambda: httpx.ReadTimeout("timed out")):
+    calls = []
+
+    def call(*args, **kwargs):
+        calls.append(kwargs)
+        if len(calls) <= n_fail:
+            raise make()
+        return value()
+
+    return call, calls
+
+
+def _midway_failing_pager(value):
+    """첫 쪽은 내주고 다음 쪽 요청에서 끊기는 지연 순회."""
+
+    def pages():
+        yield from value()[:1]
+        raise httpx.RemoteProtocolError("Server disconnected")
+
+    return pages
+
+
+@pytest.fixture
+def no_sleep(monkeypatch):
+    slept = []
+    monkeypatch.setattr(time, "sleep", slept.append)
+    return slept
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failing", ["stores", "docs"])
+@pytest.mark.parametrize("n_fail", [0, 1, 3])
+async def test_fetch_retries_only_failed_get(no_sleep, failing, n_fail):
+    stores_value = lambda: [_rubric_store()]  # noqa: E731
+    docs_value = lambda: [_alias_doc()]  # noqa: E731
+    stores, store_calls = _failing_then(
+        n_fail if failing == "stores" else 0, stores_value
+    )
+    docs, doc_calls = _failing_then(
+        n_fail if failing == "docs" else 0, docs_value
+    )
+    client = MagicMock()
+    client.file_search_stores.list.side_effect = stores
+    client.file_search_stores.documents.list.side_effect = docs
+    svc = CriteriaAliasMapService(
+        client=client, store_display_name="rubric-store"
+    )
+
+    if n_fail == 3:
+        with pytest.raises(httpx.ReadTimeout):
+            await svc.fetch()
+    else:
+        doc_name, _ = await svc.fetch()
+        assert doc_name == "docs/alias-map"
+
+    attempts = min(n_fail + 1, 3)
+    if failing == "stores":
+        expected = (attempts, 0 if n_fail == 3 else 1)
+    else:
+        expected = (1, attempts)
+    assert (len(store_calls), len(doc_calls)) == expected
+    timeout = {"http_options": {"timeout": 10_000}}
+    assert all(c == {"config": timeout} for c in store_calls)
+    assert all(
+        c == {"parent": "stores/x", "config": timeout} for c in doc_calls
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_retries_docs_when_paging_breaks_midway(no_sleep):
+    client = MagicMock()
+    client.file_search_stores.list.return_value = [_rubric_store()]
+    pages = _midway_failing_pager(lambda: [_alias_doc(), _alias_doc()])
+    client.file_search_stores.documents.list.side_effect = [
+        pages(),
+        iter([_alias_doc()]),
+    ]
+    svc = CriteriaAliasMapService(
+        client=client, store_display_name="rubric-store"
+    )
+
+    doc_name, _ = await svc.fetch()
+
+    assert doc_name == "docs/alias-map"
+    assert client.file_search_stores.list.call_count == 1
+    assert client.file_search_stores.documents.list.call_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failing_write", ["upload", "delete"])
+async def test_replace_write_failure_is_not_retried(no_sleep, failing_write):
+    from app.schemas.alias_map import AliasMap
+
+    client = MagicMock()
+    client.file_search_stores.list.return_value = [_rubric_store()]
+    upload = client.file_search_stores.upload_to_file_search_store
+    delete = client.file_search_stores.documents.delete
+    if failing_write == "upload":
+        upload.side_effect = httpx.RemoteProtocolError("Server disconnected")
+    else:
+        upload.return_value = MagicMock(done=True, error=None)
+        upload.return_value.response.document_name = "docs/new"
+        delete.side_effect = httpx.RemoteProtocolError("Server disconnected")
+    svc = CriteriaAliasMapService(
+        client=client, store_display_name="rubric-store"
+    )
+    am = AliasMap(
+        schema_version=1, updated_at="2026-05-15T00:00:00Z", entries={}
+    )
+
+    with pytest.raises(httpx.RemoteProtocolError):
+        await svc.replace(am, old_doc_name="docs/old")
+
+    assert upload.call_count == 1
+    assert delete.call_count == (0 if failing_write == "upload" else 1)
+    assert client.file_search_stores.list.call_args.kwargs == {
+        "config": {"http_options": {"timeout": 10_000}}
+    }

@@ -71,6 +71,19 @@ def _is_retryable(exc: BaseException) -> bool:
     )
 
 
+def is_transient_lookup_error(exc: BaseException) -> bool:
+    """조회 실패가 일시 오류인지: 재시도 대상, 시간 초과, 모든 5xx, 재시도 소진 뒤의 변환 예외 (#465)."""
+    return _is_retryable(exc) or isinstance(
+        exc,
+        (
+            httpx.TimeoutException,
+            genai_errors.ServerError,
+            GeminiQuotaExhausted,
+            GeminiServerOverloaded,
+        ),
+    )
+
+
 def retry_on_resource_exhausted(
     max_attempts: int = 3,
     initial_wait: float = 2.0,

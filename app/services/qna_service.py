@@ -28,7 +28,10 @@ from app.services.lessonplan_analysis_service import (
     _LESSONPLAN_RETRIEVE_QUERY,
 )
 from app.services.prompt_loader_service import PromptLoaderService
-from app.utils.gemini_retry import retry_on_resource_exhausted
+from app.utils.gemini_retry import (
+    is_transient_lookup_error,
+    retry_on_resource_exhausted,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -248,6 +251,9 @@ class QnAService:
                         )
                     )
                 except Exception as e:
+                    # 일시 오류는 이번 요청만 실패시키고 전역 상태는 그대로 둔다 (#465)
+                    if is_transient_lookup_error(e):
+                        raise
                     logger.warning(
                         f"활성 평가기준 필터 조회 실패 (무시): {e}",
                         exc_info=True,

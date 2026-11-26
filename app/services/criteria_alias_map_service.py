@@ -24,7 +24,9 @@ from app.services.alias_map_codec import (
     decode_alias_map_payload,
     encode_alias_map_payload,
 )
+from app.services.file_search_service import list_stores
 from app.services.operation_polling import poll_operation
+from app.utils.gemini_retry import retry_on_resource_exhausted
 
 logger = logging.getLogger(__name__)
 
@@ -97,15 +99,23 @@ def _try_parse_updated_at(value) -> Optional[datetime]:
         return None
 
 
+@retry_on_resource_exhausted(retry_timeouts=True)
+def _list_alias_documents(client, parent: str) -> list:
+    # 다음 쪽 요청도 재시도 안에 들도록 여기서 끝까지 읽는다 (#465)
+    return list(
+        client.file_search_stores.documents.list(
+            parent=parent, config={"http_options": {"timeout": 10_000}}
+        )
+    )
+
+
 class CriteriaAliasMapService:
     def __init__(self, client, store_display_name: str):
         self._client = client
         self._store_display_name = store_display_name
 
     async def _find_store(self):
-        stores = await asyncio.to_thread(
-            lambda: list(self._client.file_search_stores.list())
-        )
+        stores = await asyncio.to_thread(list_stores, self._client)
         for s in stores:
             if s.display_name == self._store_display_name:
                 return s
@@ -122,11 +132,7 @@ class CriteriaAliasMapService:
         alias_doc_names: list[str] = []
 
         docs = await asyncio.to_thread(
-            lambda: list(
-                self._client.file_search_stores.documents.list(
-                    parent=store.name
-                )
-            )
+            _list_alias_documents, self._client, store.name
         )
         for doc in docs:
             kv = _read_metadata_kv(getattr(doc, "custom_metadata", None))
