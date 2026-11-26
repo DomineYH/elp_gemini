@@ -204,6 +204,119 @@ async def test_dashboard_upload_failure_removes_file_and_hides_error(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("failing", ["delete", "list"])
+async def test_reupload_stops_when_old_store_delete_fails(
+    client, tmp_path, monkeypatch, failing
+):
+    # 옛 문서가 남은 스토어에 새 문서를 더하지 않는다 (#466)
+    from unittest.mock import Mock
+
+    import httpx
+
+    from app.routers import views as views_mod
+    from app.services.file_search_service import FileSearchService
+
+    c, session_factory = client
+    first = {"file": ("planA.pdf", BytesIO(text_pdf()), "application/pdf")}
+    assert (await c.post("/dashboard/upload", files=first)).status_code == 303
+    async with session_factory() as s:
+        user_id = (
+            (await s.execute(select(LessonPlanUpload))).scalar_one().user_id
+        )
+
+    # 삭제 코드는 진짜를 쓰고 SDK 클라이언트만 가짜로 둔다
+    service = FileSearchService.__new__(FileSearchService)
+    service.client = Mock()
+    store = Mock(display_name=f"user-{user_id}-store")
+    store.name = "fileSearchStores/old"
+    timeout = httpx.ReadTimeout("The read operation timed out")
+    if failing == "delete":
+        service.client.file_search_stores.list.return_value = [store]
+        service.client.file_search_stores.delete.side_effect = timeout
+    else:
+        service.client.file_search_stores.list.side_effect = timeout
+    service.upload_document = AsyncMock()
+    monkeypatch.setattr("time.sleep", lambda seconds: None)
+    monkeypatch.setattr(views_mod.FileSearchService, "return_value", service)
+
+    second = {"file": ("planB.pdf", BytesIO(text_pdf()), "application/pdf")}
+    res = await c.post("/dashboard/upload", files=second)
+
+    assert res.status_code == 503
+    assert (
+        "지도안 저장소를 정리하지 못했습니다. 잠시 후 다시 업로드해 주세요."
+        in res.text
+    )
+    assert "The read operation timed out" not in res.text
+    service.upload_document.assert_not_awaited()
+    async with session_factory() as s:
+        row = (await s.execute(select(LessonPlanUpload))).scalar_one()
+    assert row.original_filename == "planA.pdf"
+    assert (row.fs_document_id, row.fs_store_id) == ("doc-1", "store-1")
+    assert [p.name for p in _uploaded_files(tmp_path)] == [row.filename]
+    # 대시보드는 옛 지도안을 그대로 보여 준다
+    assert "planA.pdf" in (await c.get("/dashboard")).text
+
+
+@pytest.mark.asyncio
+async def test_same_name_same_time_failed_reupload_keeps_old_file(
+    client, tmp_path, monkeypatch
+):
+    # 같은 시각·같은 이름이라도 실패 정리가 기존 지도안 파일을 지우지 않는다 (#466)
+    from datetime import datetime as real_datetime
+    from unittest.mock import Mock
+
+    from app.routers import views as views_mod
+
+    c, session_factory = client
+    fixed = Mock(now=Mock(return_value=real_datetime(2026, 1, 1)))
+    monkeypatch.setattr(views_mod, "datetime", fixed)
+    first = {"file": ("plan.pdf", BytesIO(text_pdf()), "application/pdf")}
+    assert (await c.post("/dashboard/upload", files=first)).status_code == 303
+    [old_file] = _uploaded_files(tmp_path)
+    old_bytes = old_file.read_bytes()
+
+    service = views_mod.FileSearchService.return_value
+    service.delete_store_by_display_name.side_effect = RuntimeError("failed")
+    second = {"file": ("plan.pdf", BytesIO(text_pdf()), "application/pdf")}
+    res = await c.post("/dashboard/upload", files=second)
+
+    assert res.status_code == 503
+    assert _uploaded_files(tmp_path) == [old_file]
+    assert old_file.read_bytes() == old_bytes
+    async with session_factory() as s:
+        row = (await s.execute(select(LessonPlanUpload))).scalar_one()
+    assert row.filename == old_file.name
+
+
+@pytest.mark.asyncio
+async def test_first_upload_without_store_still_succeeds(client, monkeypatch):
+    # 지울 스토어가 없는 것은 실패가 아니다 (#466)
+    from unittest.mock import Mock
+
+    from app.routers import views as views_mod
+    from app.services.file_search_service import FileSearchService
+
+    c, session_factory = client
+    service = FileSearchService.__new__(FileSearchService)
+    service.client = Mock()
+    service.client.file_search_stores.list.return_value = []
+    service.upload_document = AsyncMock(
+        return_value={"document_id": "doc-1", "store_id": "store-1"}
+    )
+    monkeypatch.setattr(views_mod.FileSearchService, "return_value", service)
+
+    files = {"file": ("plan.pdf", BytesIO(text_pdf()), "application/pdf")}
+    res = await c.post("/dashboard/upload", files=files)
+
+    assert res.status_code == 303
+    service.client.file_search_stores.delete.assert_not_called()
+    async with session_factory() as s:
+        rows = (await s.execute(select(LessonPlanUpload))).scalars().all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
 async def test_dashboard_upload_failure_after_flush_rolls_back_row(
     client, tmp_path
 ):

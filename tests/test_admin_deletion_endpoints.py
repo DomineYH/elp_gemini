@@ -185,6 +185,61 @@ async def test_delete_user_not_found(seeded):
 
 
 @pytest.mark.asyncio
+async def test_delete_user_store_failure_returns_503_and_keeps_user(
+    seeded, monkeypatch, caplog
+):
+    """#466: 스토어를 못 지우면 아무것도 지우지 않고 다시 누르게 한다."""
+    import app.services.file_search_service as fss_module
+
+    class FailingFSS:
+        async def delete_store_by_display_name(self, display_name):
+            raise RuntimeError("raw detail")
+
+    monkeypatch.setattr(
+        fss_module, "FileSearchService", lambda *a, **k: FailingFSS()
+    )
+
+    with caplog.at_level("INFO"):
+        with TestClient(app) as client:
+            resp = client.delete(
+                f"/admin/api/users/{seeded['user_id']}",
+                headers={ADMIN_CSRF_HEADER: _get_token(client)},
+            )
+
+    assert resp.status_code == 503
+    assert "잠시 후 다시" in resp.json()["detail"]
+    assert "raw detail" not in resp.text
+    audit = [r.getMessage() for r in caplog.records if r.name == "app.audit"]
+    assert any(
+        "admin_user_delete" in m
+        and "FAILURE" in m
+        and "file_search_store_delete_failed" in m
+        for m in audit
+    )
+    assert not any("admin_user_delete" in m and "SUCCESS" in m for m in audit)
+    async with TestingSessionLocal() as db:
+        assert await db.get(User, seeded["user_id"]) is not None
+        assert await db.get(AnalysisReport, seeded["report_id"]) is not None
+    assert seeded["report_file"].exists()
+
+    # 스토어가 지워지면 같은 버튼으로 끝난다
+    class OkFSS:
+        async def delete_store_by_display_name(self, display_name):
+            return None
+
+    monkeypatch.setattr(
+        fss_module, "FileSearchService", lambda *a, **k: OkFSS()
+    )
+    with TestClient(app) as client:
+        resp = client.delete(
+            f"/admin/api/users/{seeded['user_id']}",
+            headers={ADMIN_CSRF_HEADER: _get_token(client)},
+        )
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "deleted": 1, "files_removed": 1}
+
+
+@pytest.mark.asyncio
 async def test_delete_chat_session_happy(seeded):
     with TestClient(app) as client:
         token = _get_token(client)

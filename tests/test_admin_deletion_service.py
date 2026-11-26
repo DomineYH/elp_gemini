@@ -294,6 +294,100 @@ async def test_delete_user_calls_file_search_cleanup(seeded, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_delete_user_stops_before_db_when_store_delete_fails(
+    seeded, monkeypatch, caplog
+):
+    # 스토어가 남으면 사용자도 남겨 다시 누를 수 있게 한다 (#466)
+    import app.services.file_search_service as fss_module
+    from app.services.admin_deletion_service import StoreCleanupError
+
+    class FailingFSS:
+        async def delete_store_by_display_name(self, display_name):
+            raise RuntimeError("raw detail")
+
+    monkeypatch.setattr(
+        fss_module, "FileSearchService", lambda *a, **k: FailingFSS()
+    )
+
+    async with TestingSessionLocal() as db:
+        service = AdminDeletionService(db)
+        with caplog.at_level("WARNING"):
+            with pytest.raises(StoreCleanupError) as excinfo:
+                await service.delete_user(
+                    target_user_id=seeded["user_id"],
+                    current_admin_id=seeded["admin_id"],
+                )
+
+    assert excinfo.value.__cause__ is None
+    assert f"user_id={seeded['user_id']}" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert "raw detail" not in caplog.text
+    assert "'status': 'SUCCESS'" not in caplog.text
+    async with TestingSessionLocal() as db:
+        assert await db.get(User, seeded["user_id"]) is not None
+        assert await db.get(ChatSession, seeded["session_id"]) is not None
+        assert await db.get(AnalysisReport, seeded["report_id"]) is not None
+    assert seeded["report_file"].exists()
+    assert seeded["lessonplan_file"].exists()
+    assert seeded["dashboard_upload_file"].exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_user_deletes_store_before_db_rows(seeded, monkeypatch):
+    import app.services.file_search_service as fss_module
+
+    user_seen = []
+
+    class FakeFSS:
+        async def delete_store_by_display_name(self, display_name):
+            async with TestingSessionLocal() as other:
+                user_seen.append(await other.get(User, seeded["user_id"]))
+
+    monkeypatch.setattr(
+        fss_module, "FileSearchService", lambda *a, **k: FakeFSS()
+    )
+
+    async with TestingSessionLocal() as db:
+        await AdminDeletionService(db).delete_user(
+            target_user_id=seeded["user_id"],
+            current_admin_id=seeded["admin_id"],
+        )
+
+    assert user_seen and user_seen[0] is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_user_rejects_admin_target_before_store_delete(
+    seeded, monkeypatch
+):
+    import app.services.file_search_service as fss_module
+
+    called = []
+
+    class FakeFSS:
+        async def delete_store_by_display_name(self, display_name):
+            called.append(display_name)
+
+    monkeypatch.setattr(
+        fss_module, "FileSearchService", lambda *a, **k: FakeFSS()
+    )
+
+    async with TestingSessionLocal() as db:
+        service = AdminDeletionService(db)
+        with pytest.raises(PermissionError):
+            await service.delete_user(
+                target_user_id=seeded["admin_id"],
+                current_admin_id=seeded["admin_id"],
+            )
+        with pytest.raises(LookupError):
+            await service.delete_user(
+                target_user_id=99999, current_admin_id=seeded["admin_id"]
+            )
+
+    assert called == []
+
+
+@pytest.mark.asyncio
 async def test_delete_user_removes_orphaned_upload(seeded):
     async with TestingSessionLocal() as db:
         user = User(

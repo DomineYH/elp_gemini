@@ -223,6 +223,26 @@ async def test_cleanup_forgets_fs_ids(env):
 
 
 @pytest.mark.asyncio
+async def test_cleanup_keeps_fs_ids_when_store_delete_fails(env):
+    # 스토어가 남았는데 id만 비우면 다음 업로드가 옛 문서 옆에 더한다 (#466)
+    c, factory, _, _ = env
+    await _upload(c)
+    from app.routers import views as views_mod
+
+    fss = views_mod.FileSearchService.return_value
+    fss.delete_store_by_display_name.side_effect = RuntimeError("raw detail")
+
+    res = await c.post("/dashboard/cleanup")
+
+    assert res.json()["status"] == "error"
+    assert "raw detail" not in res.text
+    async with factory() as s:
+        row = (await s.execute(select(LessonPlanUpload))).scalar_one()
+    assert row.fs_document_id.endswith("/documents/doc-1")
+    assert row.fs_store_id == "fileSearchStores/user1store-abc"
+
+
+@pytest.mark.asyncio
 async def test_failed_replacement_upload_forgets_deleted_doc(env):
     c, factory, _, _ = env
     await _upload(c)

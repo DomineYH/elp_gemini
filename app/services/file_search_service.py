@@ -503,18 +503,18 @@ class FileSearchService:
 
         Args:
             display_name: 스토어 표시 이름
+
+        Raises:
+            조회·삭제 실패를 그대로 올린다. 스토어가 없으면 조용히 끝난다 (#466)
         """
-        try:
-            await asyncio.to_thread(
-                self._delete_store_by_display_name_sync, display_name
-            )
-        except Exception as e:
-            logger.warning(f"스토어 삭제 중 오류 발생: {str(e)}")
+        await asyncio.to_thread(
+            self._delete_store_by_display_name_sync, display_name
+        )
 
     def _delete_store_by_display_name_sync(self, display_name: str) -> None:
         target_store = None
         # 스토어 목록에서 이름으로 검색
-        for store in self.client.file_search_stores.list():
+        for store in list_stores(self.client):
             if store.display_name == display_name:
                 target_store = store
                 break
