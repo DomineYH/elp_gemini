@@ -651,3 +651,21 @@ def test_feedback_input_numbers_teacher_lines(ready, fake_gemini, monkeypatch):
     monkeypatch.setattr(gemini, "call_structured", recording)
     assert ready.post(_api(sid, "/feedback")).status_code == 200
     assert f"교사(전체) #{seq}: 질문" in prompts[0]
+
+
+def test_feedback_input_extracts_plan_off_event_loop_thread(
+    ready, fake_gemini, monkeypatch, extract_on_loop
+):
+    # (#453) 입력 문자열은 그대로, 추출만 루프 밖 스레드에서
+    sid = _finished(ready)
+    prompts = []
+
+    def recording(kind, **kw):
+        prompts.append(kw["user"])
+        return fake_gemini(kind, **kw)
+
+    monkeypatch.setattr(gemini, "call_structured", recording)
+    assert ready.post(_api(sid, "/feedback")).status_code == 200
+    [user] = prompts
+    assert user.startswith("[지도안 전문]\nIntro lesson about maps\n\n[장면]\n")
+    assert extract_on_loop == [False]

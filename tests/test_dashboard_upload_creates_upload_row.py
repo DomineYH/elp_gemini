@@ -2,7 +2,10 @@
 /dashboard/upload 이 LessonPlanUpload 행을 만드는지 검증.
 """
 
+import asyncio
 import re
+import threading
+import time
 from io import BytesIO
 from unittest.mock import AsyncMock, patch
 
@@ -111,8 +114,8 @@ async def test_dashboard_upload_inserts_lessonplan_upload_row(client):
         assert row.original_filename == "plan.pdf"
         assert row.file_hash is not None
         assert len(row.file_hash) == 64
-        # filename is "{YYYYMMDDHHMMSS}_{original}"; user is the directory
-        assert re.fullmatch(r"\d{14}_plan\.pdf", row.filename)
+        # filename is "{YYYYMMDDHHMMSSffffff}_{original}"; user is the directory
+        assert re.fullmatch(r"\d{20}_plan\.pdf", row.filename)
 
     # 리다이렉트 전에 commit 되어 이어진 GET 이 업로드를 본다
     follow = await c.get("/dashboard")
@@ -256,3 +259,124 @@ async def test_dashboard_upload_rejects_textless_pdf_before_store_delete(
     async with session_factory() as s:
         rows = (await s.execute(select(LessonPlanUpload))).scalars().all()
         assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_dashboard_upload_extracts_off_event_loop_thread(client):
+    # 추출이 루프 스레드에서 돌면 그동안 서버 전체가 멈춘다 (#453)
+    c, session_factory = client
+    from app.routers import views as views_mod
+
+    real = views_mod.extract_pdf_text
+    seen = []
+
+    def recording(source):
+        seen.append(threading.get_ident())
+        return real(source)
+
+    files = {"file": ("plan.pdf", BytesIO(text_pdf()), "application/pdf")}
+    with patch("app.routers.views.extract_pdf_text", recording):
+        res = await c.post("/dashboard/upload", files=files)
+
+    assert res.status_code == 303
+    assert len(seen) == 1
+    assert seen[0] != threading.get_ident()
+    async with session_factory() as s:
+        rows = (await s.execute(select(LessonPlanUpload))).scalars().all()
+        assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_dashboard_upload_keeps_event_loop_responsive(client):
+    # 추출이 0.3초 막는 동안에도 10ms 간격 코루틴이 제때 깨어난다 (#453)
+    c, _ = client
+
+    def slow(source):
+        time.sleep(0.3)
+        return "x" * 40
+
+    gaps = []
+
+    async def ticker():
+        last = time.perf_counter()
+        while True:
+            await asyncio.sleep(0.01)
+            now = time.perf_counter()
+            gaps.append(now - last)
+            last = now
+
+    files = {"file": ("plan.pdf", BytesIO(text_pdf()), "application/pdf")}
+    with patch("app.routers.views.extract_pdf_text", slow):
+        task = asyncio.create_task(ticker())
+        try:
+            res = await c.post("/dashboard/upload", files=files)
+        finally:
+            task.cancel()
+
+    assert res.status_code == 303
+    # 10ms 대기를 뺀 지연이 0.15초 미만 (루프에서 돌면 약 0.3초)
+    assert max(gaps) - 0.01 < 0.15
+
+
+@pytest.mark.asyncio
+async def test_concurrent_same_name_upload_keeps_first_file(
+    client, tmp_path, monkeypatch
+):
+    # 같은 초·같은 이름의 두 번째 업로드가 첫 요청의 파일을 지우면 안 된다 (#453)
+    from datetime import datetime as real_datetime
+
+    from app.routers import views as views_mod
+
+    class FrozenDatetime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 1, 1, 0, 0, 0, next(micros))
+
+    micros = iter(range(1, 100))
+    monkeypatch.setattr(views_mod, "datetime", FrozenDatetime)
+
+    real = views_mod.extract_pdf_text
+    started = threading.Event()
+    release = threading.Event()
+    calls = []
+
+    def extract(source):
+        calls.append(source)
+        result = real(source)
+        if len(calls) == 1:
+            started.set()
+            assert release.wait(10)
+        return result
+
+    monkeypatch.setattr(views_mod, "extract_pdf_text", extract)
+    c, session_factory = client
+    first = asyncio.create_task(
+        c.post(
+            "/dashboard/upload",
+            files={
+                "file": ("same.pdf", BytesIO(text_pdf()), "application/pdf")
+            },
+        )
+    )
+    try:
+        for _ in range(500):
+            if started.is_set():
+                break
+            await asyncio.sleep(0.01)
+        assert started.is_set()
+        second = await c.post(
+            "/dashboard/upload",
+            files={
+                "file": ("same.pdf", BytesIO(blank_pdf()), "application/pdf")
+            },
+        )
+        assert second.status_code == 400
+    finally:
+        release.set()
+    assert (await first).status_code == 303
+
+    async with session_factory() as s:
+        rows = (await s.execute(select(LessonPlanUpload))).scalars().all()
+    assert len(rows) == 1
+    stored = tmp_path / "uploads" / str(rows[0].user_id) / rows[0].filename
+    assert stored.exists()

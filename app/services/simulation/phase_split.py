@@ -2,6 +2,8 @@
 장면 초안: 직전 세션 승계 → 지도안 자동 분해 → 실패 시 빈 3행(도입/활동1/정리)
 """
 
+import asyncio
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -107,7 +109,9 @@ async def draft_phases(
     phases = [] if fresh else await _inherited(db, upload.id)
     if phases:
         return {"source": "inherited", "phases": phases, "notice": None}
-    text = lessonplan_source.extract_text(upload).strip()
+    text = (
+        await asyncio.to_thread(lessonplan_source.extract_text, upload)
+    ).strip()
     phases = await _generated(text) if text else []
     if phases:
         return {"source": "generated", "phases": phases, "notice": None}

@@ -286,3 +286,21 @@ def fake_gemini(monkeypatch):
     fake = FakeGemini()
     monkeypatch.setattr(gemini, "call_structured", fake)
     return fake
+
+
+@pytest.fixture
+def extract_on_loop(monkeypatch):
+    """extract_text 호출마다 '그 스레드에 실행 중인 루프가 있었나'를 기록 (#453)."""
+    on_loop = []
+    real = lessonplan_source.extract_text
+
+    def recording(upload):
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return real(upload)
+
+    monkeypatch.setattr(lessonplan_source, "extract_text", recording)
+    return on_loop
