@@ -62,6 +62,7 @@ async def _seed_user_and_upload(s):
         original_filename="plan.pdf",
         file_hash="a" * 64,
         fs_document_id="documents/a",
+        fs_store_id="fileSearchStores/a",
     )
     s.add(up)
     await s.flush()
@@ -336,6 +337,7 @@ async def test_analyze_uses_upload_row_for_report_metadata(session, tmp_path):
         original_filename="plan.pdf",
         file_hash="b" * 64,
         fs_document_id="documents/a",
+        fs_store_id="fileSearchStores/a",
     )
     session.add(up)
     await session.flush()
@@ -797,6 +799,7 @@ async def test_analyze_race_fallback_uses_captured_upload_id_not_latest(
         original_filename="plan_a.pdf",
         file_hash="a" * 64,
         fs_document_id="documents/a",
+        fs_store_id="fileSearchStores/a",
     )
     session.add(upload_a)
     await session.flush()
@@ -806,6 +809,7 @@ async def test_analyze_race_fallback_uses_captured_upload_id_not_latest(
         original_filename="plan_b.pdf",
         file_hash="b" * 64,
         fs_document_id="documents/b",
+        fs_store_id="fileSearchStores/b",
     )
     session.add(upload_b)
     await session.flush()
@@ -1499,6 +1503,7 @@ async def test_analyze_during_and_after_reindex(session):
         original_filename="plan_b.pdf",
         file_hash="b" * 64,
         fs_document_id="documents/b",
+        fs_store_id="fileSearchStores/b",
     )
     session.add(upload_b)
     await session.commit()
@@ -1617,6 +1622,7 @@ async def test_indexed_upload_keeps_analysis_search(session, analyze_post):
         filename="newcomer_plan.pdf",
         original_filename="plan.pdf",
         fs_document_id="documents/new",
+        fs_store_id=f"fileSearchStores/u{user.id}",
     )
     session.add(upload)
     await session.commit()

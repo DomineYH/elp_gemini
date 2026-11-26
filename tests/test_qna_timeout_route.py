@@ -46,6 +46,7 @@ async def user():
                 filename="plan.pdf",
                 original_filename="plan.pdf",
                 fs_document_id="documents/d",
+                fs_store_id="fileSearchStores/d",
             )
         )
         await db.commit()

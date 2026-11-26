@@ -190,6 +190,7 @@ async def test_lessonplan_analysis_skips_gemini_when_no_active_criteria():
                 filename="lesson.pdf",
                 original_filename="lesson.pdf",
                 fs_document_id="documents/11",
+                fs_store_id="fileSearchStores/user",
             ),
             None,
         )
@@ -257,6 +258,7 @@ async def test_lessonplan_analysis_stops_when_active_filter_fails():
                     filename="lesson.pdf",
                     original_filename="lesson.pdf",
                     fs_document_id="documents/11",
+                    fs_store_id="fileSearchStores/user",
                 ),
                 None,
             )
@@ -318,7 +320,9 @@ async def test_qna_evaluation_filters_rubric_store_by_active_stable_id():
     db = AsyncMock()
     # 색인된 최신 업로드가 있다 (#468)
     db.execute.return_value.scalar_one_or_none = MagicMock(
-        return_value=MagicMock(fs_document_id="documents/d")
+        return_value=MagicMock(
+            fs_document_id="documents/d", fs_store_id="fileSearchStores/user"
+        )
     )
     client = MagicMock()
     response = MagicMock()
@@ -344,11 +348,8 @@ async def test_qna_evaluation_filters_rubric_store_by_active_stable_id():
         ),
     ):
         file_search = file_search_cls.return_value
-        file_search.get_user_store_id = MagicMock(
-            return_value="fileSearchStores/user"
-        )
-        file_search.get_dual_store_ids = MagicMock(
-            return_value=["fileSearchStores/user", "fileSearchStores/rubric"]
+        file_search.get_rubric_store_id = MagicMock(
+            return_value="fileSearchStores/rubric"
         )
 
         service = QnAService(db)
@@ -388,7 +389,9 @@ async def test_qna_evaluation_skips_rubric_store_when_no_active_criteria():
     db = AsyncMock()
     # 색인된 최신 업로드가 있다 (#468)
     db.execute.return_value.scalar_one_or_none = MagicMock(
-        return_value=MagicMock(fs_document_id="documents/d")
+        return_value=MagicMock(
+            fs_document_id="documents/d", fs_store_id="fileSearchStores/user"
+        )
     )
     client = MagicMock()
     response = MagicMock()
@@ -414,11 +417,8 @@ async def test_qna_evaluation_skips_rubric_store_when_no_active_criteria():
         ),
     ):
         file_search = file_search_cls.return_value
-        file_search.get_user_store_id = MagicMock(
-            return_value="fileSearchStores/user"
-        )
-        file_search.get_dual_store_ids = MagicMock(
-            return_value=["fileSearchStores/user", "fileSearchStores/rubric"]
+        file_search.get_rubric_store_id = MagicMock(
+            return_value="fileSearchStores/rubric"
         )
 
         service = QnAService(db)
@@ -455,7 +455,9 @@ async def test_qna_evaluation_continues_user_store_when_active_filter_fails():
     db = AsyncMock()
     # 색인된 최신 업로드가 있다 (#468)
     db.execute.return_value.scalar_one_or_none = MagicMock(
-        return_value=MagicMock(fs_document_id="documents/d")
+        return_value=MagicMock(
+            fs_document_id="documents/d", fs_store_id="fileSearchStores/user"
+        )
     )
     client = MagicMock()
     response = MagicMock()
@@ -486,11 +488,8 @@ async def test_qna_evaluation_continues_user_store_when_active_filter_fails():
         state = state_cls.return_value
         state.set = AsyncMock()
         file_search = file_search_cls.return_value
-        file_search.get_user_store_id = MagicMock(
-            return_value="fileSearchStores/user"
-        )
-        file_search.get_dual_store_ids = MagicMock(
-            return_value=["fileSearchStores/user", "fileSearchStores/rubric"]
+        file_search.get_rubric_store_id = MagicMock(
+            return_value="fileSearchStores/rubric"
         )
 
         service = QnAService(db)
@@ -588,6 +587,7 @@ class _FakeGenai:
         self.calls, self.gens = [], []
         self.file_search_stores = SimpleNamespace(
             list=self._stores,
+            get=lambda name=None, **kwargs: _store_ns("", name),
             upload_to_file_search_store=self._write,
             documents=SimpleNamespace(list=self._docs, delete=self._write),
         )

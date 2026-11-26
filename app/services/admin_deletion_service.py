@@ -267,15 +267,18 @@ class AdminDeletionService:
         self,
         user_id: int,
     ) -> None:
-        """사용자 전용 File Search 스토어를 삭제한다. 실패하면 StoreCleanupError."""
+        """업로드 행이 가리키는 File Search 스토어를 삭제한다. 실패하면 StoreCleanupError."""
         try:
             from app.services.file_search_service import (
                 FileSearchService,
             )
+            from app.services.simulation.lessonplan_source import (
+                get_store_ids,
+            )
 
-            store_name = f"user-{user_id}-store"
             service = FileSearchService()
-            await service.delete_store_by_display_name(store_name)
+            for store_id in await get_store_ids(self.db, user_id):
+                await service.delete_store(store_id)
         except Exception as exc:
             # 원문에는 응답 헤더 줄이 섞일 수 있어 종류만 남긴다 (#368)
             logger.warning(

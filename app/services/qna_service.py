@@ -136,10 +136,15 @@ class QnAIndexMissing(ValueError):
     pass
 
 
+_INDEX_MISSING_MESSAGE = (
+    "지도안 검색 색인이 없습니다. 지도안을 다시 업로드한 뒤 질문해 주세요."
+)
+
+
 async def require_indexed_upload(
     db: AsyncSession, user_id: int
 ) -> LessonPlanUpload:
-    """최신 업로드가 색인돼 있어야 user-{id}-store 를 검색한다 (#468)."""
+    """최신 업로드 행에 문서·스토어 id 가 있어야 그 스토어를 검색한다 (#468, #470)."""
     result = await db.execute(
         select(LessonPlanUpload)
         .where(LessonPlanUpload.user_id == user_id)
@@ -151,10 +156,8 @@ async def require_indexed_upload(
         .execution_options(populate_existing=True)
     )
     upload = result.scalar_one_or_none()
-    if upload is None or not upload.fs_document_id:
-        raise QnAIndexMissing(
-            "지도안 검색 색인이 없습니다. 지도안을 다시 업로드한 뒤 질문해 주세요."
-        )
+    if upload is None or not upload.fs_document_id or not upload.fs_store_id:
+        raise QnAIndexMissing(_INDEX_MISSING_MESSAGE)
     return upload
 
 
@@ -200,7 +203,14 @@ class QnAService:
             session = await self._get_session(session_id, user_id)
             if not session:
                 raise ValueError(f"세션을 찾을 수 없습니다: {session_id}")
-            await require_indexed_upload(self.db, user_id)
+            upload = await require_indexed_upload(self.db, user_id)
+            # 사용자 스토어는 업로드 행의 id 로만 쓴다. 이름으로 찾거나 만들지 않는다 (#470)
+            user_store_id = upload.fs_store_id
+            if not await asyncio.to_thread(
+                self.file_search_service.store_exists, user_store_id
+            ):
+                # 클라우드에서 지워진 스토어다. 빈 스토어를 만들지 않는다
+                raise QnAIndexMissing(_INDEX_MISSING_MESSAGE)
 
             # QnA 시스템 프롬프트 로드
             system_prompt = self.prompt_loader.get_prompt("qna")
@@ -301,10 +311,6 @@ class QnAService:
             # Store ID 결정
             try:
                 if criteria_notice or not is_evaluation:
-                    user_store_id = await asyncio.to_thread(
-                        self.file_search_service.get_user_store_id,
-                        user_key=user_id,
-                    )
                     rubric_store_id = None
                     store_ids = [user_store_id]
                     if criteria_notice:
@@ -318,16 +324,11 @@ class QnAService:
                             store_ids,
                         )
                 else:
-                    # 사용자 스토어와 평가기준 스토어 모두 가져오기
-                    store_ids = await asyncio.to_thread(
-                        self.file_search_service.get_dual_store_ids,
-                        user_key=user_id,
+                    rubric_store_id = await asyncio.to_thread(
+                        self.file_search_service.get_rubric_store_id
                     )
+                    store_ids = [user_store_id, rubric_store_id]
                     logger.info(f"🎯 Store 조회 완료: {store_ids}")
-
-                    # Store ID 분리 (첫 번째: user store, 두 번째: rubric store)
-                    user_store_id = store_ids[0]
-                    rubric_store_id = store_ids[1]
 
             except ValueError as e:
                 logger.error(f"❌ Store 조회 실패: {e}")

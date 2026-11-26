@@ -32,6 +32,22 @@ async def get_latest_upload(
     return result.scalar_one_or_none()
 
 
+async def get_store_ids(db: AsyncSession, user_id: int) -> list[str]:
+    """사용자의 업로드 행들이 가리키는 File Search 스토어 id (#470).
+
+    사용자 스토어는 이 id 로만 지운다. 표시 이름으로는 찾지 않는다.
+    """
+    result = await db.scalars(
+        select(LessonPlanUpload.fs_store_id)
+        .where(
+            LessonPlanUpload.user_id == user_id,
+            LessonPlanUpload.fs_store_id.is_not(None),
+        )
+        .distinct()
+    )
+    return [store_id for store_id in result if store_id]
+
+
 async def forget_file_search_ids(db: AsyncSession, user_id: int) -> None:
     """사용자 File Search 스토어 삭제 뒤 업로드 행의 문서 ID를 비운다 (#173)."""
     await db.execute(

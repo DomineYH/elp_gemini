@@ -115,7 +115,9 @@ async def _ask(
     db = AsyncMock()
     # 색인된 최신 업로드가 있다 (#468)
     db.execute.return_value.scalar_one_or_none = MagicMock(
-        return_value=MagicMock(fs_document_id="documents/d")
+        return_value=MagicMock(
+            fs_document_id="documents/d", fs_store_id=USER_STORE
+        )
     )
     client = MagicMock()
     response = MagicMock()
@@ -146,10 +148,7 @@ async def _ask(
         ),
     ):
         fs = fs_cls.return_value
-        fs.get_user_store_id = MagicMock(return_value=USER_STORE)
-        fs.get_dual_store_ids = MagicMock(
-            return_value=[USER_STORE, RUBRIC_STORE]
-        )
+        fs.get_rubric_store_id = MagicMock(return_value=RUBRIC_STORE)
         service = QnAService(db)
         service._get_session = AsyncMock(
             return_value=SimpleNamespace(id=1, user_id=7, title=SESSION_TITLE)
@@ -344,6 +343,7 @@ async def qna_client():
                 filename="plan.pdf",
                 original_filename="plan.pdf",
                 fs_document_id="documents/d",
+                fs_store_id=USER_STORE,
             )
         )
         await db.flush()

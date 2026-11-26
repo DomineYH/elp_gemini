@@ -65,13 +65,12 @@ async def test_qna_ask_question_does_not_block_loop():
     service._get_session = AsyncMock(return_value=Mock(title="t"))
     # 색인된 최신 업로드가 있다 (#468)
     service.db.execute.return_value.scalar_one_or_none = Mock(
-        return_value=Mock(fs_document_id="documents/d")
+        return_value=Mock(
+            fs_document_id="documents/d", fs_store_id="fileSearchStores/u1"
+        )
     )
     service.prompt_loader.get_prompt = Mock(return_value="prompt")
     service.get_conversation_history = AsyncMock(return_value=[])
-    service.file_search_service.get_user_store_id = Mock(
-        return_value="fileSearchStores/u1"
-    )
     service._save_messages = AsyncMock()
     service.client.models.generate_content = Mock(side_effect=_slow_response)
 
@@ -130,7 +129,9 @@ async def test_upload_document_store_lookup_does_not_block_loop(tmp_path):
     service = FileSearchService.__new__(FileSearchService)
     service.client = Mock()
     service.main_store_name = "main"
-    service._get_or_create_store = _slow(Mock(name="store"))
+    store = Mock()
+    store.name = "fileSearchStores/u1"
+    service.client.file_search_stores.create = _slow(store)
     operation = Mock(done=True, error=None)
     operation.response.document_name = "fileSearchStores/u1/documents/d1"
     operation.response.parent = "fileSearchStores/u1"
@@ -162,11 +163,13 @@ async def test_qna_store_lookup_does_not_block_loop():
     service._get_session = AsyncMock(return_value=Mock(title="t"))
     # 색인된 최신 업로드가 있다 (#468)
     service.db.execute.return_value.scalar_one_or_none = Mock(
-        return_value=Mock(fs_document_id="documents/d")
+        return_value=Mock(
+            fs_document_id="documents/d", fs_store_id="fileSearchStores/u1"
+        )
     )
     service.prompt_loader.get_prompt = Mock(return_value="prompt")
     service.get_conversation_history = AsyncMock(return_value=[])
-    service.file_search_service.get_user_store_id = _slow("fileSearchStores/u1")
+    service.file_search_service.store_exists = _slow(True)
     service._save_messages = AsyncMock()
     response = Mock(text="답변", candidates=[])
     service.client.models.generate_content = Mock(return_value=response)
@@ -190,13 +193,13 @@ async def test_qna_store_lookup_does_not_block_loop():
 
 
 @pytest.mark.asyncio
-async def test_delete_store_by_display_name_does_not_block_loop():
+async def test_delete_store_does_not_block_loop():
     service = FileSearchService.__new__(FileSearchService)
     service.client = Mock()
     service.client.file_search_stores.list = _slow([])
 
     result, ticks = await _ticks_while(
-        service.delete_store_by_display_name("user-1-store")
+        service.delete_store("fileSearchStores/u1")
     )
 
     assert result is None
@@ -209,9 +212,10 @@ async def test_analysis_get_store_ids_does_not_block_loop():
     service = LessonPlanAnalysisService.__new__(LessonPlanAnalysisService)
     service.file_search_service = Mock()
     store_ids = ["fileSearchStores/u1", "fileSearchStores/rubric"]
-    service.file_search_service.get_dual_store_ids = _slow(store_ids)
+    service.file_search_service.store_exists = _slow(True)
+    service.file_search_service.get_rubric_store_id = _slow(store_ids[1])
 
-    result, ticks = await _ticks_while(service._get_store_ids(1))
+    result, ticks = await _ticks_while(service._get_store_ids(store_ids[0]))
 
     assert result == store_ids
     assert ticks >= 5

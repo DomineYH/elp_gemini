@@ -66,8 +66,8 @@ async def session_factory():
 def store_delete():
     """로그아웃의 File Search 스토어 삭제가 실제 API로 나가지 않게 한다."""
     with patch("app.services.file_search_service.FileSearchService") as fss:
-        fss.return_value.delete_store_by_display_name = AsyncMock()
-        yield fss.return_value.delete_store_by_display_name
+        fss.return_value.delete_store = AsyncMock()
+        yield fss.return_value.delete_store
 
 
 @pytest_asyncio.fixture
@@ -143,7 +143,8 @@ async def test_old_cookie_rejected_after_logout(make_client, store_delete):
     assert await _logout(make_client, old_cookie) == 302
 
     assert await _me_status(make_client, old_cookie) == 401
-    store_delete.assert_awaited_once()
+    # 업로드 행이 없는 사용자의 로그아웃은 클라우드를 건드리지 않는다 (#470)
+    store_delete.assert_not_awaited()
 
 
 @pytest.mark.asyncio
