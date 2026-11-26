@@ -172,7 +172,10 @@ def test_escape_html_attribute_helper_blocks_quote_breakout_payloads():
 def test_answer_and_history_render_sources_line():
     source = _dashboard_source()
 
-    assert "updateMessage(loadingId, data.answer, 'ai', data.sources)" in source
+    assert (
+        "updateMessage(loadingId, data.answer, 'ai', data.sources, "
+        "data.criteria_notice)" in source
+    )
     assert "renderSourcesLine(message.sources)" in source
     function_source = _extract_js_function(source, "renderSourcesLine")
     assert "map(escapeHtml)" in function_source
@@ -208,5 +211,58 @@ def test_sources_line_escapes_titles_and_skips_empty():
         const html = renderSourcesLine(['기준 A', '<img src=x onerror=1>']);
         assert.match(html, /참고 문서: 기준 A · &lt;img/);
         assert.equal(html.includes('<img'), false);
+    """
+    )
+
+
+def test_answer_bubble_shows_escaped_criteria_notice():
+    """#469: 안내는 말풍선 안 답변 위에 이스케이프되어 보이고, 없으면 그대로다."""
+    source = _dashboard_source()
+    functions = "\n".join(
+        _extract_js_function(source, name)
+        for name in (
+            "escapeHtml",
+            "renderSourcesLine",
+            "renderCriteriaNotice",
+            "updateMessage",
+        )
+    )
+
+    _run_node_script(
+        f"""
+        const assert = require('node:assert/strict');
+        const bubble = {{}};
+        global.document = {{
+            getElementById(id) {{
+                return id === 'm1' ? bubble : {{}};
+            }},
+            createElement() {{
+                return {{
+                    innerHTML: '',
+                    set textContent(value) {{
+                        this.innerHTML = String(value)
+                            .replace(/&/g, '&amp;')
+                            .replace(/</g, '&lt;')
+                            .replace(/>/g, '&gt;');
+                    }},
+                }};
+            }},
+        }};
+        function renderSafeMarkdown(text) {{ return '<p>' + text + '</p>'; }}
+        {functions}
+
+        const plain = '<div class="prose prose-sm max-w-none"><p>답</p></div>';
+        for (const none of [null, undefined, '']) {{
+            updateMessage('m1', '답', 'ai', [], none);
+            assert.equal(bubble.innerHTML, plain);
+        }}
+
+        updateMessage('m1', '답', 'ai', [], '기준 <img src=x onerror=1> 필요.');
+        assert.equal(bubble.innerHTML.includes('<img'), false);
+        assert.match(
+            bubble.innerHTML,
+            /^<div [^>]*>기준 &lt;img src=x onerror=1&gt; 필요\\. 지도안 내용만으로 답했습니다\\.<\\/div><div class="prose/
+        );
+        assert.equal(bubble.innerHTML.endsWith(plain), true);
     """
     )

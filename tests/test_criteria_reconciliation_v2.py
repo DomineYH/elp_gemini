@@ -888,3 +888,48 @@ async def test_reconcile_completes_dbcache_after_chunk_size_fix():
 
     # Sync state was advanced to ok (not stuck on needs_resync).
     assert state_values.get("criteria_sync_state") == "ok"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_stores_transport_error_type_not_message():
+    """#469: 전송 오류 원문(헤더 값이 들어갈 수 있다)은 저장하지 않는다."""
+    import httpx
+
+    from app.services.criteria_reconciliation_service import (
+        CriteriaReconciliationService,
+    )
+
+    fake_vec = MagicMock()
+    fake_vec.list_criteria_documents = AsyncMock(
+        side_effect=httpx.LocalProtocolError(
+            "Illegal header value b'FAKE-KEY-MARKER\\n'"
+        )
+    )
+    state_values = {
+        "criteria_api_key_hash": "samehash",
+        "criteria_sync_state": "ok",
+        "criteria_migration_v2_done": "true",
+    }
+    fake_state = MagicMock()
+    fake_state.get = AsyncMock(side_effect=lambda key: state_values.get(key))
+    fake_state.set_many = AsyncMock(side_effect=state_values.update)
+
+    db = MagicMock()
+    db.begin.return_value.__aenter__ = AsyncMock(return_value=None)
+    db.begin.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    with patch(
+        "app.services.criteria_reconciliation_service.sha256_hex_of_api_key",
+        return_value="samehash",
+    ):
+        svc = CriteriaReconciliationService(
+            db=db,
+            vector_service=fake_vec,
+            alias_map_service=MagicMock(),
+            criteria_repo=MagicMock(),
+            app_state_repo=fake_state,
+        )
+        await svc.reconcile()
+
+    assert state_values["criteria_sync_state"] == "needs_resync"
+    assert state_values["criteria_sync_error"] == "LocalProtocolError"

@@ -255,3 +255,26 @@ async def test_upload_does_not_publish_manifest_before_cloud_document_exists():
 
     assert response.file_id == "123"
     publish.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_mark_needs_resync_stores_transport_error_type_not_message():
+    """#469: 전송 오류 원문(헤더 값이 들어갈 수 있다)은 저장하지 않는다."""
+    import httpx
+
+    from app.repositories.app_state_repository import KEY_SYNC_ERROR
+    from app.routers.admin.criteria import _mark_criteria_needs_resync
+
+    db = AsyncMock()
+    with patch("app.routers.admin.criteria.AppStateRepository") as state_cls:
+        state = state_cls.return_value
+        state.set = AsyncMock()
+        await _mark_criteria_needs_resync(
+            db,
+            httpx.LocalProtocolError(
+                "Illegal header value b'FAKE-KEY-MARKER\\n'"
+            ),
+        )
+
+    state.set.assert_any_await(KEY_SYNC_ERROR, "LocalProtocolError")
+    assert "FAKE-KEY-MARKER" not in str(state.set.await_args_list)

@@ -33,6 +33,7 @@ def _render(
     items,
     sync_state: str = "ok",
     last_synced_at: str | None = "2026-05-15T03:21:00Z",
+    sync_error: str | None = None,
 ) -> str:
     # 앱과 같은 환경으로 그린다: kst 필터가 여기에만 등록돼 있다 (#448)
     template = templates.env.get_template("admin/criteria_list.html")
@@ -42,7 +43,7 @@ def _render(
         sync=SimpleNamespace(
             state=sync_state,
             last_synced_at=last_synced_at,
-            error=None,
+            error=sync_error,
         ),
     )
 
@@ -162,3 +163,33 @@ def test_last_synced_at_missing_shows_dash():
     text = _render([], last_synced_at=None)
 
     assert "마지막 동기화 -<" in text
+
+
+def _sync_block(html: str) -> str:
+    start = html.index('id="criteria-sync-status"')
+    return html[start : html.index("</div>\n\n", start)]
+
+
+def test_needs_resync_shows_escaped_sync_error():
+    """#469: 동기화 필요 배지 아래에 오류 원문이 이스케이프되어 보인다."""
+    block = _sync_block(
+        _render(
+            [],
+            sync_state="needs_resync",
+            sync_error="403 DENIED. {'error': '<b>x</b>'}",
+        )
+    )
+
+    assert "동기화 필요" in block
+    assert (
+        "403 DENIED. {&#39;error&#39;: &#39;&lt;b&gt;x&lt;/b&gt;&#39;}" in block
+    )
+    assert "<b>" not in block
+    assert block.index("재동기화") < block.index("403 DENIED")
+
+
+def test_needs_resync_without_error_shows_badge_only():
+    block = _sync_block(_render([], sync_state="needs_resync"))
+
+    assert "동기화 필요" in block
+    assert "text-gray-600" not in block
