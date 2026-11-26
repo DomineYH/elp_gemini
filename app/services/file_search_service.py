@@ -26,6 +26,8 @@ _MANIFEST_PAYLOAD_METADATA_KEY = "manifest_payload_base64"
 # Google File Search caps each string_list_value entry at 256 chars (issue #60).
 # Keep in sync with alias_map_codec._CHUNK_SIZE.
 _MANIFEST_PAYLOAD_CHUNK_SIZE = 240
+# 스토어 목록 조회(GET) 요청 하나의 제한. 평소 0.6초인데 기본 120초는 길다 (#464)
+_STORE_LIST_TIMEOUT_MS = 10_000
 
 
 def _sanitize_display_name(name: str) -> str:
@@ -110,6 +112,21 @@ def _payload_from_metadata(custom_metadata) -> bytes | None:
         return base64.b64decode(encoded.encode("ascii"))
 
     return None
+
+
+@retry_on_resource_exhausted(retry_timeouts=True)
+def list_stores(client) -> list:
+    """스토어 목록 전체(GET). 요청마다 10초 제한, 일시 오류와 시간 초과는 3번까지 부른다 (#464).
+
+    소진되면 429는 GeminiQuotaExhausted, 5xx는 GeminiServerOverloaded,
+    전송 오류는 httpx 예외 그대로 올린다.
+    """
+    # 다음 쪽 요청도 재시도 안에 들도록 여기서 끝까지 읽는다
+    return list(
+        client.file_search_stores.list(
+            config={"http_options": {"timeout": _STORE_LIST_TIMEOUT_MS}}
+        )
+    )
 
 
 class FileSearchService:
@@ -220,9 +237,10 @@ class FileSearchService:
             logger.debug(f"캐시에서 Store ID 조회: {user_key}")
             return cached["ids"]
 
-        # 2. rubricstore 조회
+        # 2. rubricstore 조회 (목록은 한 번만 읽어 아래에서도 쓴다)
+        stores = list_stores(self.client)
         rubric_store_id = None
-        for store in self.client.file_search_stores.list():
+        for store in stores:
             # 하이픈, 언더스코어 제거 후 비교
             normalized_name = (
                 store.display_name.lower().replace("-", "").replace("_", "")
@@ -248,7 +266,7 @@ class FileSearchService:
         safe_user_store_name = _sanitize_display_name(user_store_name)
         user_store_id = None
 
-        for store in self.client.file_search_stores.list():
+        for store in stores:
             if safe_user_store_name == store.display_name:
                 user_store_id = store.name
                 logger.info(
@@ -307,7 +325,7 @@ class FileSearchService:
         safe_user_store_name = _sanitize_display_name(user_store_name)
         user_store_id = None
 
-        for store in self.client.file_search_stores.list():
+        for store in list_stores(self.client):
             if safe_user_store_name == store.display_name:
                 user_store_id = store.name
                 logger.info(
