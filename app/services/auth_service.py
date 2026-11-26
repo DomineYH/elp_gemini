@@ -11,7 +11,7 @@ from typing import Optional
 
 from passlib.context import CryptContext
 from sqlalchemy import case, func, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -169,12 +169,19 @@ class AuthService:
             await self._record_failed_admin_login(user, admin_id)
             return AdminLoginResult(user=None, locked=False)
         # 검증 중 비밀번호가 바뀌었으면 새 session_version 세션을 주지 않는다 (#467)
-        await self.db.refresh(user)
+        try:
+            await self.db.refresh(user)
+            if user.hashed_password != checked_hash:
+                return AdminLoginResult(user=None, locked=False)
+
+            # 6. 성공 → 카운터 리셋
+            await self._reset_admin_login_counter(user)
+        except InvalidRequestError:
+            # 검증 중 행이 지워지면 refresh 가 실패한다: 500 대신 로그인 실패 (#467)
+            return AdminLoginResult(user=None, locked=False)
+        # 리셋이 행을 다시 읽으므로 그 사이 바뀐 비밀번호도 막는다 (#467)
         if user.hashed_password != checked_hash:
             return AdminLoginResult(user=None, locked=False)
-
-        # 6. 성공 → 카운터 리셋
-        await self._reset_admin_login_counter(user)
         return AdminLoginResult(user=user, locked=False)
 
     def _is_account_locked(self, user: User) -> bool:
@@ -436,7 +443,11 @@ class AuthService:
         ):
             return None
         # 검증 중 비밀번호가 바뀌었으면 새 session_version 세션을 주지 않는다 (#467)
-        await self.db.refresh(user)
+        try:
+            await self.db.refresh(user)
+        except InvalidRequestError:
+            # 검증 중 행이 지워지면 refresh 가 실패한다: 500 대신 로그인 실패 (#467)
+            return None
         if user.hashed_password != checked_hash:
             return None
 

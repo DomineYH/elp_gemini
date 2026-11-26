@@ -27,7 +27,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import ValidationError
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -1289,3 +1289,118 @@ async def test_password_change_during_check_rejects_login(
 
     user = result.user if is_admin else result
     assert user is None
+
+
+async def _race_factory(tmp_path, is_admin):
+    """파일 SQLite + NullPool 에 실패 기록 1회가 있는 raceuser 를 만든다 (#467)."""
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'race.db'}", poolclass=NullPool
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with factory() as session:
+        session.add(
+            User(
+                username="raceuser",
+                nickname="raceuser",
+                is_admin=is_admin,
+                hashed_password=AuthService.hash_password("OldPassword123"),
+                failed_login_count=1,
+                session_version=0,
+            )
+        )
+        await session.commit()
+    return engine, factory
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("point", ["after_refresh1", "before_refresh2"])
+async def test_admin_password_change_around_reset_rejects_login(
+    tmp_path, point
+):
+    """비교 뒤 카운터 리셋이 행을 다시 읽기 전 변경이 끼어들어도 로그인은 실패한다 (#467)."""
+    engine, factory = await _race_factory(tmp_path, is_admin=True)
+    new_hash = AuthService.hash_password("NewPassword123")
+
+    async def change():
+        async with factory() as other:
+            await other.execute(
+                update(User)
+                .where(User.username == "raceuser")
+                .values(hashed_password=new_hash, session_version=1)
+            )
+            await other.commit()
+
+    try:
+        async with factory() as login:
+            calls = {"n": 0}
+            original_refresh = login.refresh
+
+            async def hooked_refresh(obj, *args, **kwargs):
+                calls["n"] += 1
+                if point == f"before_refresh{calls['n']}":
+                    await change()
+                outcome = await original_refresh(obj, *args, **kwargs)
+                if point == f"after_refresh{calls['n']}":
+                    await change()
+                return outcome
+
+            login.refresh = hooked_refresh
+            result = await AuthService(login).authenticate_admin(
+                "raceuser", "OldPassword123"
+            )
+    finally:
+        await engine.dispose()
+
+    assert calls["n"] == 2
+    assert result.user is None
+    assert result.locked is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("is_admin", [True, False], ids=["admin", "regular"])
+async def test_user_deleted_during_check_fails_login(
+    tmp_path, monkeypatch, is_admin
+):
+    """검증 스레드가 도는 사이 행이 지워지면 500 대신 로그인 실패다 (#467)."""
+    engine, factory = await _race_factory(tmp_path, is_admin=is_admin)
+    started, resume = threading.Event(), threading.Event()
+    original = AuthService.verify_password
+
+    def held_verify(password, hashed):
+        started.set()
+        assert resume.wait(10)
+        return original(password, hashed)
+
+    monkeypatch.setattr(
+        AuthService, "verify_password", staticmethod(held_verify)
+    )
+    try:
+        async with factory() as login, factory() as other:
+            service = AuthService(login)
+            if is_admin:
+                login_call = service.authenticate_admin(
+                    "raceuser", "OldPassword123"
+                )
+            else:
+                login_call = service.authenticate_regular_user_by_username(
+                    "raceuser", "OldPassword123"
+                )
+            task = asyncio.create_task(login_call)
+            assert await asyncio.to_thread(started.wait, 10)
+            await other.execute(delete(User).where(User.username == "raceuser"))
+            await other.commit()
+            resume.set()
+            result = await task
+    finally:
+        resume.set()
+        await engine.dispose()
+
+    if is_admin:
+        assert result.user is None
+        assert result.locked is False
+    else:
+        assert result is None
