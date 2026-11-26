@@ -114,3 +114,16 @@ def test_checkbox_re_enabled_after_request_finishes():
     assert (
         "} finally {" in src
     ), "try/finally 패턴으로 disabled 해제를 보장해야 한다"
+
+
+def test_rebuild_alias_map_confirms_then_posts():
+    """#471: 복구는 마지막 동기화 시각을 넣은 확인 창 뒤에만 요청한다."""
+    src = JS_SOURCE.read_text()
+    fn = src[src.index("async function rebuildAliasMap") :]
+
+    assert '[data-action="rebuild-alias-map"]' in src
+    assert fn.index("confirm(") < fn.index("fetch(")
+    assert "btn.dataset.lastSynced" in fn
+    assert "다른 서버에서 바꾼 내용은 사라집니다" in fn
+    assert "'/api/admin/criteria/rebuild-alias-map', { method: 'POST' }" in fn
+    assert "location.reload()" in fn

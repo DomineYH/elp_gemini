@@ -193,3 +193,28 @@ def test_needs_resync_without_error_shows_badge_only():
 
     assert "동기화 필요" in block
     assert "text-gray-600" not in block
+
+
+PARSE_ERROR = "alias_map parse failed for fileSearchStores/r/documents/<x>: bad"
+
+
+def test_rebuild_button_only_for_alias_map_parse_failure():
+    """#471: 복구 버튼은 needs_resync + 파싱 실패 문구에서만 보인다."""
+    block = _sync_block(
+        _render([], sync_state="needs_resync", sync_error=PARSE_ERROR)
+    )
+
+    assert 'data-action="rebuild-alias-map"' in block
+    assert "저장된 목록으로 복구" in block
+    assert 'data-last-synced="2026-05-15 12:21"' in block
+    assert "documents/&lt;x&gt;: bad" in block and "<x>" not in block
+
+    for state, error in [
+        ("needs_resync", "503 UNAVAILABLE"),
+        ("needs_resync", "x alias_map parse failed"),
+        ("needs_resync", None),
+        ("ok", PARSE_ERROR),
+        ("error", PARSE_ERROR),
+    ]:
+        other = _sync_block(_render([], sync_state=state, sync_error=error))
+        assert "rebuild-alias-map" not in other, (state, error)

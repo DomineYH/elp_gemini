@@ -61,6 +61,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (reconcileBtn) {
     reconcileBtn.addEventListener('click', reconcile);
   }
+  const rebuildBtn = document.querySelector('[data-action="rebuild-alias-map"]');
+  if (rebuildBtn) {
+    rebuildBtn.addEventListener('click', () => rebuildAliasMap(rebuildBtn));
+  }
 });
 
 async function startInlineEdit(cell) {
@@ -149,4 +153,22 @@ async function reconcile() {
   } catch (e) {
     alert(`재동기화 실패: ${e.message}`);
   }
+}
+
+async function rebuildAliasMap(btn) {
+  if (!confirm(
+    '클라우드의 평가기준 설정을 읽을 수 없습니다. ' +
+    '지금 이 목록의 표시 이름과 활성 상태로 다시 씁니다. ' +
+    `마지막 동기화(${btn.dataset.lastSynced}) 뒤에 다른 서버에서 바꾼 내용은 사라집니다. ` +
+    '이 목록에 없는 기준 문서는 비활성으로 추가됩니다. 계속할까요?'
+  )) return;
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/admin/criteria/rebuild-alias-map', { method: 'POST' });
+    if (!r.ok) throw new Error(await r.text());
+  } catch (e) {
+    alert(`복구 실패: ${e.message}`);
+  }
+  // 실패해도 상태와 오류 문구가 바뀌므로 다시 그린다
+  location.reload();
 }

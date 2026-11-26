@@ -29,6 +29,7 @@ from app.repositories.app_state_repository import (
 from app.repositories.criteria_repository import CriteriaRepository
 from app.schemas.alias_map import AliasMap, AliasMapEntry, empty_alias_map
 from app.services.criteria_alias_map_service import (
+    AliasMapParseError,
     CriteriaAliasMapService,
     alias_map_mutation_lock,
 )
@@ -58,6 +59,15 @@ def is_legacy_surrogate_stable_id(stable_id: str) -> bool:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _iso_z(value: Optional[datetime]) -> Optional[str]:
+    """DB의 시각(시간대 없으면 UTC) → alias_map의 'Z' 표기."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _normalize_active_entries(
@@ -113,7 +123,10 @@ class CriteriaReconciliationService:
         self._state = app_state_repo
 
     async def reconcile(
-        self, *, swallow_errors: bool = False
+        self,
+        *,
+        swallow_errors: bool = False,
+        rebuild_alias_map_from_cache: bool = False,
     ) -> ReconcileResult:
         async with alias_map_mutation_lock:
             async with _reconcile_lock:
@@ -193,16 +206,50 @@ class CriteriaReconciliationService:
                                 surrogate,
                             )
 
-                    fetched = (
-                        fetched_for_guard
-                        if fetched_for_guard is not None
-                        else await self._alias.fetch()
-                    )
-                    old_doc_name, alias_map = (
-                        fetched
-                        if fetched
-                        else (None, empty_alias_map(_now_iso()))
-                    )
+                    # 못 읽는 alias_map 문서들. None이 아니면 캐시로 다시 쓴다 (#471)
+                    unreadable_docs: Optional[list[str]] = None
+                    try:
+                        fetched = (
+                            fetched_for_guard
+                            if fetched_for_guard is not None
+                            else await self._alias.fetch()
+                        )
+                    except AliasMapParseError as e:
+                        if not rebuild_alias_map_from_cache:
+                            raise
+                        unreadable_docs = e.doc_names
+                        fetched = None
+
+                    if rebuild_alias_map_from_cache and unreadable_docs is None:
+                        # 읽히거나 없는 지도는 복구가 쓰지 않는다. 재동기화 버튼의 몫 (#471)
+                        return ReconcileResult(skipped=True)
+
+                    if unreadable_docs is not None:
+                        async with _transaction_if_needed(self._db):
+                            cached_entries = {
+                                row.stable_id: AliasMapEntry(
+                                    alias=row.display_alias,
+                                    status=row.status,
+                                    activated_at=(
+                                        _iso_z(row.activated_at)
+                                        if row.status == "active"
+                                        else None
+                                    ),
+                                )
+                                for row in await self._repo.get_all_criteria()
+                                if row.stable_id
+                            }
+                        old_doc_name, alias_map = None, AliasMap(
+                            schema_version=1,
+                            updated_at=_now_iso(),
+                            entries=cached_entries,
+                        )
+                    else:
+                        old_doc_name, alias_map = (
+                            fetched
+                            if fetched
+                            else (None, empty_alias_map(_now_iso()))
+                        )
 
                     valid_stable_ids = set(stable_ids_by_document.values())
 
@@ -213,19 +260,26 @@ class CriteriaReconciliationService:
                         if sid in valid_stable_ids
                     }
                     # 4b. Synthesize entries for unmapped cloud docs
-                    #     (auto-active)
+                    #     (auto-active; 캐시 복구에서는 비활성 #471)
                     for d in criteria_docs:
                         sid = stable_ids_by_document[d["document_id"]]
                         if sid not in cleaned:
-                            cleaned[sid] = AliasMapEntry(
-                                alias=None,
-                                status="active",
-                                activated_at=_now_iso(),
+                            cleaned[sid] = (
+                                AliasMapEntry(alias=None, status="uploaded")
+                                if unreadable_docs is not None
+                                else AliasMapEntry(
+                                    alias=None,
+                                    status="active",
+                                    activated_at=_now_iso(),
+                                )
                             )
                     cleaned = _normalize_active_entries(cleaned)
 
                     # Single re-upload if anything changed
-                    if cleaned != alias_map.entries:
+                    if (
+                        unreadable_docs is not None
+                        or cleaned != alias_map.entries
+                    ):
                         alias_map = AliasMap(
                             schema_version=1,
                             updated_at=_now_iso(),
@@ -234,6 +288,9 @@ class CriteriaReconciliationService:
                         await self._alias.replace(
                             alias_map, old_doc_name=old_doc_name
                         )
+                        if unreadable_docs is not None:
+                            # 하나라도 남으면 새 문서가 있어도 계속 못 읽는다
+                            await self._alias.delete_documents(unreadable_docs)
 
                     # Rebuild local DB cache (upsert preserves local-only cols)
                     async with _transaction_if_needed(self._db):
@@ -277,7 +334,12 @@ class CriteriaReconciliationService:
 
                 except Exception as e:
                     logger.error(f"reconcile 실패: {e}", exc_info=True)
-                    if swallow_errors and not key_changed:
+                    # 파싱 실패는 일시 오류가 아니다: 자동 검사도 표시한다 (#471)
+                    if (
+                        swallow_errors
+                        and not key_changed
+                        and not isinstance(e, AliasMapParseError)
+                    ):
                         return ReconcileResult(error=str(e))
                     async with _transaction_if_needed(self._db):
                         await self._state.set_many(
