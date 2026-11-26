@@ -27,7 +27,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -1215,3 +1215,77 @@ async def test_concurrent_same_id_registration_creates_one_user(tmp_path):
 
     assert sorted(statuses) == [302, 409]
     assert rows == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("is_admin", [True, False], ids=["admin", "regular"])
+async def test_password_change_during_check_rejects_login(
+    tmp_path, monkeypatch, is_admin
+):
+    """검증 스레드가 도는 사이 비밀번호가 바뀌면 이전 비밀번호 로그인은 실패한다 (#467).
+
+    성공하면 라우터가 새 session_version 으로 쿠키를 만들어 변경 뒤에도
+    이전 비밀번호 세션이 살아남는다.
+    """
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'race.db'}", poolclass=NullPool
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with factory() as session:
+        session.add(
+            User(
+                username="raceuser",
+                nickname="raceuser",
+                is_admin=is_admin,
+                hashed_password=AuthService.hash_password("OldPassword123"),
+                failed_login_count=1,
+                session_version=0,
+            )
+        )
+        await session.commit()
+
+    started, resume = threading.Event(), threading.Event()
+    original = AuthService.verify_password
+
+    def held_verify(password, hashed):
+        started.set()
+        assert resume.wait(10)
+        return original(password, hashed)
+
+    monkeypatch.setattr(
+        AuthService, "verify_password", staticmethod(held_verify)
+    )
+    try:
+        async with factory() as login, factory() as change:
+            service = AuthService(login)
+            if is_admin:
+                login_call = service.authenticate_admin(
+                    "raceuser", "OldPassword123"
+                )
+            else:
+                login_call = service.authenticate_regular_user_by_username(
+                    "raceuser", "OldPassword123"
+                )
+            task = asyncio.create_task(login_call)
+            assert await asyncio.to_thread(started.wait, 10)
+            await change.execute(
+                update(User)
+                .where(User.username == "raceuser")
+                .values(
+                    hashed_password=AuthService.hash_password("NewPassword123"),
+                    session_version=1,
+                )
+            )
+            await change.commit()
+            resume.set()
+            result = await task
+    finally:
+        resume.set()
+        await engine.dispose()
+
+    user = result.user if is_admin else result
+    assert user is None

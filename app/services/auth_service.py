@@ -162,10 +162,15 @@ class AuthService:
             return AdminLoginResult(user=None, locked=False)
 
         # 5. 비밀번호 검증
+        checked_hash = user.hashed_password
         if not await asyncio.to_thread(
-            self.verify_password, password, user.hashed_password
+            self.verify_password, password, checked_hash
         ):
             await self._record_failed_admin_login(user, admin_id)
+            return AdminLoginResult(user=None, locked=False)
+        # 검증 중 비밀번호가 바뀌었으면 새 session_version 세션을 주지 않는다 (#467)
+        await self.db.refresh(user)
+        if user.hashed_password != checked_hash:
             return AdminLoginResult(user=None, locked=False)
 
         # 6. 성공 → 카운터 리셋
@@ -425,9 +430,14 @@ class AuthService:
             await asyncio.to_thread(self._dummy_password_verify, password)
             return None
 
+        checked_hash = user.hashed_password
         if not await asyncio.to_thread(
-            self.verify_password, password, user.hashed_password
+            self.verify_password, password, checked_hash
         ):
+            return None
+        # 검증 중 비밀번호가 바뀌었으면 새 session_version 세션을 주지 않는다 (#467)
+        await self.db.refresh(user)
+        if user.hashed_password != checked_hash:
             return None
 
         return user
