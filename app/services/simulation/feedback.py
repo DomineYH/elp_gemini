@@ -4,6 +4,7 @@
 생성은 세션당 한 번. feedback_json이 있으면 Gemini를 부르지 않는다.
 """
 
+import asyncio
 import dataclasses
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,7 +55,8 @@ async def build_inputs(db: AsyncSession, session: SimulationSession) -> str:
     names = {p.id: p.display_name for p in personas}
     phase_name = {p.idx: p.name for p in phases}
 
-    lines = ["[지도안 전문]", lessonplan_source.extract_text(upload), ""]
+    plan_text = await asyncio.to_thread(lessonplan_source.extract_text, upload)
+    lines = ["[지도안 전문]", plan_text, ""]
     lines.append("[장면]")
     for p in phases:
         minutes = f" ({p.minutes}분)" if p.minutes else ""

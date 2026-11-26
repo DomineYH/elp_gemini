@@ -2,6 +2,7 @@
 HTML 뷰 라우터
 """
 
+import asyncio
 import hashlib
 import logging
 from datetime import datetime
@@ -236,7 +237,9 @@ async def upload_document(
 
         # PDF 텍스트 추출
         try:
-            extracted_text = extract_pdf_text(str(file_path))
+            extracted_text = await asyncio.to_thread(
+                extract_pdf_text, str(file_path)
+            )
         except PdfReadError:
             return bad_pdf_response()
         # 기존 스토어를 지우기 전에 거부해야 지도안이 남는다 (#249)

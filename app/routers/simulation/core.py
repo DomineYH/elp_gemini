@@ -2,6 +2,7 @@
 수업 시뮬레이션 핵심 라우터: 설정 화면, 후보 페르소나, 세션 생성·진입·실행 화면
 """
 
+import asyncio
 import random
 from typing import Literal
 
@@ -48,11 +49,10 @@ async def simulation_setup_page(
     db: AsyncSession = Depends(get_db),
 ):
     upload = await lessonplan_source.get_latest_upload(db, current_user.id)
-    summary = (
-        lessonplan_source.extract_text(upload)[:PLAN_SUMMARY_CHARS]
-        if upload
-        else ""
-    )
+    summary = ""
+    if upload:
+        text = await asyncio.to_thread(lessonplan_source.extract_text, upload)
+        summary = text[:PLAN_SUMMARY_CHARS]
     limit = await persona_pool.effective_max_personas(db)
     return templates.TemplateResponse(
         "user/simulation_setup.html",

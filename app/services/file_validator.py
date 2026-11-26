@@ -3,6 +3,7 @@
 업로드된 파일의 보안 및 유효성 검증
 """
 
+import asyncio
 import logging
 import re
 from io import BytesIO
@@ -92,8 +93,10 @@ class FileValidator:
             # 파일 포인터 초기화 (재사용 가능하도록)
             await file.seek(0)
 
-            # 동기 validate_pdf 호출
-            file_size, metadata = self.validate_pdf(file, contents)
+            # pypdf 추출이 이벤트 루프를 막지 않게 스레드에서 돈다 (#453)
+            file_size, metadata = await asyncio.to_thread(
+                self.validate_pdf, file, contents
+            )
 
             return {
                 "valid": True,
