@@ -63,6 +63,10 @@ async def test_qna_ask_question_does_not_block_loop():
     ):
         service = QnAService(AsyncMock())
     service._get_session = AsyncMock(return_value=Mock(title="t"))
+    # 색인된 최신 업로드가 있다 (#468)
+    service.db.execute.return_value.scalar_one_or_none = Mock(
+        return_value=Mock(fs_document_id="documents/d")
+    )
     service.prompt_loader.get_prompt = Mock(return_value="prompt")
     service.get_conversation_history = AsyncMock(return_value=[])
     service.file_search_service.get_user_store_id = Mock(
@@ -156,6 +160,10 @@ async def test_qna_store_lookup_does_not_block_loop():
     ):
         service = QnAService(AsyncMock())
     service._get_session = AsyncMock(return_value=Mock(title="t"))
+    # 색인된 최신 업로드가 있다 (#468)
+    service.db.execute.return_value.scalar_one_or_none = Mock(
+        return_value=Mock(fs_document_id="documents/d")
+    )
     service.prompt_loader.get_prompt = Mock(return_value="prompt")
     service.get_conversation_history = AsyncMock(return_value=[])
     service.file_search_service.get_user_store_id = _slow("fileSearchStores/u1")

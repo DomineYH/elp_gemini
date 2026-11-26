@@ -97,6 +97,7 @@ async def test_new_session_uses_upload_filename_and_is_reused(client, user):
                 user_id=user.id,
                 filename="title_user_lesson.pdf",
                 original_filename="lesson.pdf",
+                fs_document_id="documents/d1",
             )
         )
         await db.commit()
@@ -111,8 +112,23 @@ async def test_new_session_uses_upload_filename_and_is_reused(client, user):
     assert sessions[0].document_id == DOC
 
 
+async def _seed_indexed_upload(user, original_filename="lesson.pdf"):
+    # 색인된 업로드가 있어야 질문할 수 있다 (#468)
+    async with SessionLocal() as db:
+        db.add(
+            LessonPlanUpload(
+                user_id=user.id,
+                filename="title_user_lesson.pdf",
+                original_filename=original_filename,
+                fs_document_id="documents/d1",
+            )
+        )
+        await db.commit()
+
+
 @pytest.mark.asyncio
-async def test_without_upload_title_is_fixed_label(client):
+async def test_unnamed_upload_title_is_fixed_label(client, user):
+    await _seed_indexed_upload(user, original_filename=None)
     await _ask(client)
 
     sessions = await _sessions()
@@ -122,6 +138,7 @@ async def test_without_upload_title_is_fixed_label(client):
 
 @pytest.mark.asyncio
 async def test_legacy_session_is_reused_after_backfill(client, user):
+    await _seed_indexed_upload(user)
     async with SessionLocal() as db:
         legacy = ChatSession(user_id=user.id, title=DOC, user_type="교사")
         db.add(legacy)
@@ -149,6 +166,7 @@ async def test_new_session_stores_upload_id(client, user):
             user_id=user.id,
             filename="title_user_lesson.pdf",
             original_filename="lesson.pdf",
+            fs_document_id="documents/d1",
         )
         db.add(upload)
         await db.commit()
@@ -160,8 +178,12 @@ async def test_new_session_stores_upload_id(client, user):
 
 
 @pytest.mark.asyncio
-async def test_without_upload_upload_id_is_null(client):
-    await _ask(client)
+async def test_without_upload_is_rejected_without_session(client):
+    response = await client.post(f"/api/qna/{DOC}", json={"question": "질문"})
 
-    sessions = await _sessions()
-    assert [s.upload_id for s in sessions] == [None]
+    assert response.status_code == 404, response.text
+    assert response.json() == {
+        "detail": "지도안 검색 색인이 없습니다. "
+        "지도안을 다시 업로드한 뒤 질문해 주세요."
+    }
+    assert await _sessions() == []

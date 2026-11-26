@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.chat_messages import ChatMessage, MessageRole
 from app.models.chat_sessions import ChatSession
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.repositories.app_state_repository import (
     KEY_SYNC_ERROR,
     KEY_SYNC_STATE,
@@ -131,6 +132,32 @@ def citation_source_titles(
     return list(dict.fromkeys(t for t in titles if isinstance(t, str) and t))
 
 
+class QnAIndexMissing(ValueError):
+    pass
+
+
+async def require_indexed_upload(
+    db: AsyncSession, user_id: int
+) -> LessonPlanUpload:
+    """최신 업로드가 색인돼 있어야 user-{id}-store 를 검색한다 (#468)."""
+    result = await db.execute(
+        select(LessonPlanUpload)
+        .where(LessonPlanUpload.user_id == user_id)
+        .order_by(
+            LessonPlanUpload.created_at.desc(), LessonPlanUpload.id.desc()
+        )
+        .limit(1)
+        # 같은 세션에 잡혀 있던 행도 지금 열 값으로 다시 읽는다
+        .execution_options(populate_existing=True)
+    )
+    upload = result.scalar_one_or_none()
+    if upload is None or not upload.fs_document_id:
+        raise QnAIndexMissing(
+            "지도안 검색 색인이 없습니다. 지도안을 다시 업로드한 뒤 질문해 주세요."
+        )
+    return upload
+
+
 class QnAService:
     """QnA 서비스 클래스 (세션 기반 FileSearch RAG)"""
 
@@ -173,6 +200,7 @@ class QnAService:
             session = await self._get_session(session_id, user_id)
             if not session:
                 raise ValueError(f"세션을 찾을 수 없습니다: {session_id}")
+            await require_indexed_upload(self.db, user_id)
 
             # QnA 시스템 프롬프트 로드
             system_prompt = self.prompt_loader.get_prompt("qna")

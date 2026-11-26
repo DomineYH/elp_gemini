@@ -311,6 +311,10 @@ async def test_qna_evaluation_filters_rubric_store_by_active_stable_id():
     from app.services.qna_service import QnAService
 
     db = AsyncMock()
+    # 색인된 최신 업로드가 있다 (#468)
+    db.execute.return_value.scalar_one_or_none = MagicMock(
+        return_value=MagicMock(fs_document_id="documents/d")
+    )
     client = MagicMock()
     response = MagicMock()
     response.text = "answer"
@@ -377,6 +381,10 @@ async def test_qna_evaluation_skips_rubric_store_when_no_active_criteria():
     from app.services.qna_service import QnAService
 
     db = AsyncMock()
+    # 색인된 최신 업로드가 있다 (#468)
+    db.execute.return_value.scalar_one_or_none = MagicMock(
+        return_value=MagicMock(fs_document_id="documents/d")
+    )
     client = MagicMock()
     response = MagicMock()
     response.text = "answer"
@@ -440,6 +448,10 @@ async def test_qna_evaluation_continues_user_store_when_active_filter_fails():
     from app.services.qna_service import QnAService
 
     db = AsyncMock()
+    # 색인된 최신 업로드가 있다 (#468)
+    db.execute.return_value.scalar_one_or_none = MagicMock(
+        return_value=MagicMock(fs_document_id="documents/d")
+    )
     client = MagicMock()
     response = MagicMock()
     response.text = "answer"

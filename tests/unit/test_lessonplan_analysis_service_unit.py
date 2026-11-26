@@ -24,6 +24,16 @@ GROUNDED_PASS1 = SimpleNamespace(
 )
 
 
+def _indexed_upload(original_filename="plan.pdf"):
+    # 분석은 색인된 업로드 행이 있어야 진행한다 (#468)
+    return SimpleNamespace(
+        id=1,
+        filename="u_plan.pdf",
+        original_filename=original_filename,
+        fs_document_id="documents/d",
+    )
+
+
 class TestLessonPlanAnalysisService:
     """
     LessonPlanAnalysisService 테스트
@@ -190,12 +200,10 @@ class TestLessonPlanAnalysisService:
             side_effect=[GROUNDED_PASS1, mock_response]
         )
 
-        # 문서 존재 가정 + 중복 보고서 없음 (no-document 조기 반환 회피)
+        # 색인된 최신 업로드 + 중복 보고서 없음 (#468)
         service._find_existing_report_for_latest_upload = AsyncMock(
-            return_value=(None, None)
+            return_value=(_indexed_upload(), None)
         )
-        service._user_file_search_store_has_documents = Mock(return_value=True)
-        service.lessonplan_storage.list_lessonplans = Mock(return_value=[])
         # 보고서 저장 모킹 — 파일 시스템 회피
         service.report_storage.save_report = Mock(
             return_value={
@@ -228,6 +236,10 @@ class TestLessonPlanAnalysisService:
         """
         # Mock _get_store_ids - 빈 리스트 반환
         service._get_store_ids = AsyncMock(return_value=[])
+        # 업로드 행 없음 (#468)
+        service._find_existing_report_for_latest_upload = AsyncMock(
+            return_value=(None, None)
+        )
 
         # When
         result = await service.analyze_lesson_plan(session_id=1, user_id=123)
@@ -910,47 +922,6 @@ class TestLessonPlanAnalysisService:
         )
         assert rendered == "(표시할 항목이 없습니다)"
 
-    def test_resolve_lessonplan_original_filename_from_upload(self, service):
-        """latest_upload 가 있으면 그것의 original_filename 을 반환한다."""
-        upload = Mock()
-        upload.original_filename = "수업안.pdf"
-        result = service._resolve_lessonplan_original_filename(
-            latest_upload=upload,
-            legacy_lessonplans=[],
-        )
-        assert result == "수업안.pdf"
-
-    def test_resolve_lessonplan_original_filename_from_legacy(self, service):
-        """latest_upload 가 None 이면 legacy 목록 중 최신 항목 사용."""
-        from datetime import datetime, timedelta, timezone
-
-        now = datetime.now(timezone.utc)
-        legacy = [
-            {
-                "original_filename": "old.pdf",
-                "filename": "x_old.pdf",
-                "created_at": now - timedelta(days=1),
-            },
-            {
-                "original_filename": "new.pdf",
-                "filename": "x_new.pdf",
-                "created_at": now,
-            },
-        ]
-        result = service._resolve_lessonplan_original_filename(
-            latest_upload=None,
-            legacy_lessonplans=legacy,
-        )
-        assert result == "new.pdf"
-
-    def test_resolve_lessonplan_original_filename_none(self, service):
-        """둘 다 없으면 None 반환."""
-        result = service._resolve_lessonplan_original_filename(
-            latest_upload=None,
-            legacy_lessonplans=[],
-        )
-        assert result is None
-
     @pytest.mark.asyncio
     async def test_analyze_lesson_plan_writes_server_rendered_refs(
         self, service
@@ -1008,14 +979,10 @@ class TestLessonPlanAnalysisService:
                 side_effect=[GROUNDED_PASS1, mock_response]
             )
 
-            # legacy 경로 사용 — DB 의존 분기 회피
+            # 색인된 최신 업로드 + 중복 보고서 없음 (#468)
             service._find_existing_report_for_latest_upload = AsyncMock(
-                return_value=(None, None)
+                return_value=(_indexed_upload("수업안.pdf"), None)
             )
-            service._user_file_search_store_has_documents = Mock(
-                return_value=True
-            )
-            service.lessonplan_storage.list_lessonplans = Mock(return_value=[])
             # 보고서 저장 모킹 — 파일 시스템 회피
             service.report_storage.save_report = Mock(
                 return_value={
@@ -1032,6 +999,7 @@ class TestLessonPlanAnalysisService:
         assert result["success"] is True
         report = result["report"]
         assert "정보 교육과정 평가기준" in report
+        assert "수업안.pdf" in report
         assert "secret-internal-model" not in report
         assert "**분석 모델**" not in report
         assert "임의 항목" not in report

@@ -472,13 +472,14 @@ async def chat_with_document(
     Returns:
         답변 정보
     """
+    from app.services.qna_service import (
+        QnAIndexMissing,
+        QnAService,
+        require_indexed_upload,
+    )
+
     created_session_id = None
     try:
-        from app.services.qna_service import QnAService
-        from app.services.simulation.lessonplan_source import (
-            get_latest_upload,
-        )
-
         qna_service = QnAService(db)
 
         # 1. 해당 문서에 대한 기존 세션 찾기
@@ -498,18 +499,16 @@ async def chat_with_document(
             session_segment = await _session_segment_label_for_user(
                 db, current_user
             )
-            upload = await get_latest_upload(db, _model_int(current_user.id))
-            title = (
-                upload.original_filename
-                if upload and upload.original_filename
-                else "업로드한 지도안"
+            upload = await require_indexed_upload(
+                db, _model_int(current_user.id)
             )
+            title = upload.original_filename or "업로드한 지도안"
             session = await qna_service.create_session(
                 user_id=_model_int(current_user.id),
                 title=title[:255],  # chat_sessions.title 길이
                 user_type=session_segment,
                 document_id=document_id,
-                upload_id=upload.id if upload else None,
+                upload_id=upload.id,
             )
             await db.commit()
             created_session_id = _model_int(session.id)
@@ -555,6 +554,10 @@ async def chat_with_document(
             except Exception:
                 await db.rollback()
                 logger.warning("빈 세션 정리 실패", exc_info=True)
+        if isinstance(e, QnAIndexMissing):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=str(e)
+            ) from e
         if isinstance(e, httpx.TimeoutException):
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,

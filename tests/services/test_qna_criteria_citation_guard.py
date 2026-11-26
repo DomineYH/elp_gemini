@@ -61,6 +61,10 @@ async def test_qna_uses_only_user_store_when_criteria_sync_not_ok():
     from app.services.qna_service import QnAService
 
     db = AsyncMock()
+    # 색인된 최신 업로드가 있다 (#468)
+    db.execute.return_value.scalar_one_or_none = MagicMock(
+        return_value=MagicMock(fs_document_id="documents/d")
+    )
     client = MagicMock()
     response = MagicMock()
     response.text = "answer"

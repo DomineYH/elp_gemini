@@ -17,6 +17,7 @@ from app.db import Base, get_db
 from app.dependencies import get_current_user
 from app.models.chat_messages import ChatMessage
 from app.models.chat_sessions import ChatSession
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
 from app.routers import evaluations, qna
 from app.services.criteria_vector_service import CriteriaVectorService
@@ -106,6 +107,16 @@ async def user():
             is_admin=False,
         )
         db.add(row)
+        await db.commit()
+        # 색인된 업로드가 있어야 질문할 수 있다 (#468)
+        db.add(
+            LessonPlanUpload(
+                user_id=row.id,
+                filename="plan.pdf",
+                original_filename="plan.pdf",
+                fs_document_id="documents/d",
+            )
+        )
         await db.commit()
     yield row
     async with engine.begin() as conn:
@@ -406,6 +417,16 @@ async def test_qna_exhausted_first_request_keeps_session_another_tab_used(
             is_admin=False,
         )
         db.add(owner)
+        await db.commit()
+        # 색인된 업로드가 있어야 질문할 수 있다 (#468)
+        db.add(
+            LessonPlanUpload(
+                user_id=owner.id,
+                filename="plan.pdf",
+                original_filename="plan.pdf",
+                fs_document_id="documents/d",
+            )
+        )
         await db.commit()
 
     async def file_db():

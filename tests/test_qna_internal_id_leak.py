@@ -22,6 +22,7 @@ from app.db import Base, get_db
 from app.dependencies import get_current_user
 from app.models.chat_messages import ChatMessage, MessageRole
 from app.models.chat_sessions import ChatSession
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
 from app.routers import qna as qna_router
 from app.services.lessonplan_analysis_service import (
@@ -112,6 +113,10 @@ async def _ask(
     criteria_result=None,
 ):
     db = AsyncMock()
+    # 색인된 최신 업로드가 있다 (#468)
+    db.execute.return_value.scalar_one_or_none = MagicMock(
+        return_value=MagicMock(fs_document_id="documents/d")
+    )
     client = MagicMock()
     response = MagicMock()
     response.text = model_answer
@@ -331,6 +336,16 @@ async def qna_client():
     async with make_db() as db:
         user = User(username="u206", nickname="u", hashed_password="h")
         db.add(user)
+        await db.flush()
+        # 색인된 업로드가 있어야 질문할 수 있다 (#468)
+        db.add(
+            LessonPlanUpload(
+                user_id=user.id,
+                filename="plan.pdf",
+                original_filename="plan.pdf",
+                fs_document_id="documents/d",
+            )
+        )
         await db.flush()
         session = ChatSession(user_id=user.id, title=SESSION_TITLE)
         db.add(session)

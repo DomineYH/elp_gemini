@@ -22,13 +22,16 @@ from app.services.lessonplan_analysis_service import (
 
 def _reach_store_lookup(service):
     """중복 분석·업로드 확인을 통과시켜 _get_store_ids 단계까지 보낸다."""
+    # 색인된 최신 업로드, 보고서 없음 (#468)
+    upload = SimpleNamespace(
+        id=1,
+        filename="u_plan.pdf",
+        original_filename="plan.pdf",
+        fs_document_id="documents/d",
+    )
     service._find_existing_report_for_latest_upload = AsyncMock(
-        return_value=(None, None)
+        return_value=(upload, None)
     )
-    service.lessonplan_storage.list_lessonplans = Mock(
-        return_value=[{"filename": "plan.pdf"}]
-    )
-    service._user_file_search_store_has_documents = Mock(return_value=False)
 
 
 @pytest.fixture
