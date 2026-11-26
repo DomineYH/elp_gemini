@@ -919,9 +919,11 @@ async def test_evaluation_active_lookup_retry(env465):
 
     assert res.status_code == 200, res.text
     assert res.json()["criteria_notice"] is None
-    (answer,) = env.fake.answer_gens()
-    assert answer["stores"] == ["fileSearchStores/rubric"]
-    assert answer["filters"] == ['stable_id="SIDA"']
+    # 2-패스(#199): 지도안 검색 뒤 rubric 스토어만 활성 필터로
+    assert [(g["stores"], g["filters"]) for g in env.fake.answer_gens()] == [
+        (["fileSearchStores/user1"], [None]),
+        (["fileSearchStores/rubric"], ['stable_id="SIDA"']),
+    ]
     assert len(env.fake.active_calls("docs")) == 2
     _assert_lookup_timeouts(env)
     assert await env.state() == ("ok", None)
@@ -1067,9 +1069,9 @@ async def test_analysis_lookup_retry_budget(env465, monkeypatch):
         at_generate.append(clock.now)
         return real_generate(*args)
 
-    monkeypatch.setattr(lpa_mod, "_call_gemini_with_file_search", generate)
-
-    res, in_progress = await _analyze(env)
+    # 픽스처의 patch 보다 먼저 풀리도록 with 로 건다
+    with patch.object(lpa_mod, "_call_gemini_with_file_search", generate):
+        res, in_progress = await _analyze(env)
 
     assert res.status_code == 200, res.text
     # 스토어 1 + 활성 stores/docs 2 = 3 GET × (3 × 10 + 2 + 4)
