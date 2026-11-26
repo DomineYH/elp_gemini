@@ -930,7 +930,7 @@ async def rebuild_alias_map(
     if result.skipped:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="alias_map을 읽을 수 있거나 없습니다 — 복구할 것이 없습니다",
+            detail="alias_map을 읽을 수 있거나 없어 복구할 것이 없습니다. 재동기화 버튼을 쓰세요.",
         )
     # 예외로 나가면 get_db가 rollback하므로 상태 표시를 먼저 확정한다
     await db.commit()

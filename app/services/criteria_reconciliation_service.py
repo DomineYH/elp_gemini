@@ -221,10 +221,8 @@ class CriteriaReconciliationService:
                         fetched = None
 
                     if rebuild_alias_map_from_cache and unreadable_docs is None:
-                        # 복구할 것이 없다. 읽히는데 상태만 ok가 아니면
-                        # (복구 뒤 삭제 실패) 아래의 보통 동기화로 끝낸다
-                        if fetched is None or stored_state == "ok":
-                            return ReconcileResult(skipped=True)
+                        # 읽히거나 없는 지도는 복구가 쓰지 않는다. 재동기화 버튼의 몫 (#471)
+                        return ReconcileResult(skipped=True)
 
                     if unreadable_docs is not None:
                         async with _transaction_if_needed(self._db):

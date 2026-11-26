@@ -22,6 +22,8 @@ from app.repositories.app_state_repository import (
 )
 from app.repositories.criteria_repository import CriteriaRepository
 from app.schemas.alias_map import AliasMap
+from app.services import criteria_alias_map_service as alias_map_module
+from app.services import criteria_reconciliation_service as reconcile_module
 from app.services.alias_map_codec import (
     decode_alias_map_payload,
     encode_alias_map_payload,
@@ -40,6 +42,16 @@ BASE = {
     "A": {"alias": "기준 A", "status": "active", "activated_at": A_AT},
     "B": {"alias": "기준 B", "status": "uploaded", "activated_at": None},
 }
+
+
+@pytest.fixture(autouse=True)
+def _fresh_alias_map_lock(monkeypatch):
+    """전역 asyncio.Lock은 처음 쓴 이벤트 루프에 묶이므로 테스트마다 새로 만든다 (#471)."""
+    from app.routers.admin import criteria as criteria_router
+
+    lock = asyncio.Lock()
+    for module in (alias_map_module, reconcile_module, criteria_router):
+        monkeypatch.setattr(module, "alias_map_mutation_lock", lock)
 
 
 def _payload(entries, **extra):
@@ -222,6 +234,7 @@ async def _world():
             cloud.writes.clear()
             yield SimpleNamespace(
                 cloud=cloud,
+                factory=factory,
                 run=run,
                 state=state,
                 cache=cache,
@@ -274,6 +287,24 @@ async def test_rebuild_is_refused_without_writes_when_map_is_fine_or_absent(
 
 
 @pytest.mark.asyncio
+async def test_rebuild_is_refused_without_writes_when_map_is_readable_but_not_ok():
+    """읽히는 지도면 상태가 ok가 아니어도 복구는 아무것도 쓰지 않는다."""
+    async with _world() as w:
+        async with w.factory() as db:
+            await AppStateRepository(db=db).set(KEY_SYNC_STATE, "needs_resync")
+            await db.commit()
+        w.cloud.criteria.append("C")
+
+        result = await w.run(rebuild_alias_map_from_cache=True)
+
+        assert (result.ok, result.skipped) == (False, True)
+        assert w.cloud.writes == []
+        (alias_map,) = w.cloud.valid_maps()
+        assert set(alias_map.entries) == {"A", "B"}
+        assert (await w.state())[0] == "needs_resync"
+
+
+@pytest.mark.asyncio
 async def test_rebuild_deletes_every_unreadable_document():
     async with _world() as w:
         w.cloud.break_map("garbage")
@@ -300,7 +331,14 @@ async def test_rebuild_delete_failure_marks_needs_resync_and_retry_works(kind):
 
         retried = await w.run(rebuild_alias_map_from_cache=True)
 
-        assert retried.ok is True
+        if kind == "garbage":
+            # 시각 없는 못 읽는 문서가 남아 있어 다시 복구한다
+            assert retried.ok is True
+        else:
+            # 옛 시각의 v2 문서는 fetch가 치웠다: 복구는 409, 재동기화로 끝낸다
+            assert (retried.ok, retried.skipped) == (False, True)
+            assert (await w.state())[0] == "needs_resync"
+            assert (await w.run()).ok
         assert await w.state() == ("ok", None)
         assert await _active_filter(w.cloud) == 'stable_id="A"'
         # 첫 시도가 올린 문서는 다음 조회(fetch)가 치운다
@@ -448,6 +486,8 @@ def test_rebuild_route_maps_result_to_status(
     reconcile.assert_awaited_once_with(rebuild_alias_map_from_cache=True)
     assert db.commit.await_count == commits
     assert "삭제 실패" not in response.text
+    if status_code == 409:
+        assert "재동기화" in response.json()["detail"]
 
 
 def test_rebuild_route_rejects_non_admin(monkeypatch, _clear_overrides):
