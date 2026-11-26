@@ -93,4 +93,23 @@ async def test_background_delete_failure_only_warns(patched, caplog):
         await tasks()
 
     assert res.status_code == 302
-    assert "로그아웃 시 스토어 정리 실패: boom" in caplog.text
+    assert (
+        f"로그아웃 시 스토어 정리 실패: user_id={USER_ID}, RuntimeError"
+        in caplog.text
+    )
+    assert "boom" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_forget_ids_failure_logs_type_only(patched, caplog):
+    # DB 오류 원문에는 쿼리나 값이 섞일 수 있어 종류만 남긴다 (#466)
+    forget, _ = patched
+    forget.side_effect = RuntimeError("sensitive-marker")
+
+    with caplog.at_level("WARNING", logger="app.routers.auth"):
+        res = await logout(_request(), BackgroundTasks(), db=MagicMock())
+
+    assert res.status_code == 302
+    assert "로그아웃 시 스토어 정리 실패" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert "sensitive-marker" not in caplog.text

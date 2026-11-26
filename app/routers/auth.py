@@ -528,7 +528,12 @@ async def _delete_user_store(user_id) -> None:
             f"user-{user_id}-store"
         )
     except Exception as e:
-        logger.warning(f"로그아웃 시 스토어 정리 실패: {str(e)}")
+        # 원문에는 응답 헤더 줄이 섞일 수 있어 종류만 남긴다 (#368)
+        logger.warning(
+            "로그아웃 시 스토어 정리 실패: user_id=%s, %s",
+            user_id,
+            type(e).__name__,
+        )
 
 
 # T025: POST /auth/logout - 로그아웃 처리
@@ -573,7 +578,12 @@ async def logout(
 
             await forget_file_search_ids(db, user_id)
         except Exception as e:
-            logger.warning(f"로그아웃 시 스토어 정리 실패: {str(e)}")
+            # DB 오류 원문에는 쿼리나 값이 섞일 수 있어 종류만 남긴다 (#466)
+            logger.warning(
+                "로그아웃 시 스토어 정리 실패: user_id=%s, %s",
+                user_id,
+                type(e).__name__,
+            )
 
         background_tasks.add_task(_delete_user_store, user_id)
 

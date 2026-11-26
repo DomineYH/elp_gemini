@@ -31,7 +31,10 @@ from app.models.chat_messages import (
 from app.models.chat_sessions import ChatSession
 from app.models.simulation_session import SimulationSession
 from app.models.users import User
-from app.services.admin_deletion_service import AdminDeletionService
+from app.services.admin_deletion_service import (
+    AdminDeletionService,
+    StoreCleanupError,
+)
 from app.services.auth_service import AuthService
 from app.templating import templates
 from app.utils.admin_csrf import (
@@ -856,6 +859,24 @@ async def delete_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
+        ) from exc
+    except StoreCleanupError as exc:
+        # 아무것도 지우지 않았다. 같은 삭제를 다시 누르면 된다 (#466)
+        log_user_action(
+            user_id=current_admin.id,
+            action="admin_user_delete",
+            details={
+                "target_user_id": user_id,
+                "reason": "file_search_store_delete_failed",
+            },
+            success=False,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "지도안 저장소를 정리하지 못해 사용자를 삭제하지 않았습니다. "
+                "잠시 후 다시 시도해 주세요."
+            ),
         ) from exc
 
     logger.info(

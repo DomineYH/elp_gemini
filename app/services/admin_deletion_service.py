@@ -26,6 +26,10 @@ STATIC_UPLOADS_DIR = "app/static/uploads"
 SIMULATION_REPORTS_DIR = "app/static/reports"
 
 
+class StoreCleanupError(Exception):
+    """사용자 File Search 스토어를 지우지 못했다. DB와 파일은 그대로다 (#466)."""
+
+
 class AdminDeletionService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -67,6 +71,10 @@ class AdminDeletionService:
             ).all()
         )
 
+        # 스토어를 DB보다 먼저 지운다. 실패하면 사용자 행이 남아
+        # 같은 삭제를 다시 누를 수 있다 (#466)
+        await self._delete_file_search_store(target_user_id)
+
         # DB 삭제 — relationship cascade가 세션/메시지/프로필 처리
         await self.db.delete(user)
         await self.db.commit()
@@ -77,7 +85,6 @@ class AdminDeletionService:
             target_user_id, reports_snapshot
         )
         files_removed = md_count + upload_count
-        await self._delete_file_search_store(target_user_id)
 
         log_user_action(
             user_id=current_admin_id,
@@ -260,7 +267,7 @@ class AdminDeletionService:
         self,
         user_id: int,
     ) -> None:
-        """사용자 전용 File Search 스토어를 삭제한다."""
+        """사용자 전용 File Search 스토어를 삭제한다. 실패하면 StoreCleanupError."""
         try:
             from app.services.file_search_service import (
                 FileSearchService,
@@ -270,11 +277,13 @@ class AdminDeletionService:
             service = FileSearchService()
             await service.delete_store_by_display_name(store_name)
         except Exception as exc:
+            # 원문에는 응답 헤더 줄이 섞일 수 있어 종류만 남긴다 (#368)
             logger.warning(
-                "File Search 스토어 삭제 실패 (무시): " "user_id=%s, err=%s",
+                "File Search 스토어 삭제 실패: user_id=%s, %s",
                 user_id,
-                exc,
+                type(exc).__name__,
             )
+            raise StoreCleanupError(f"user-{user_id}-store") from None
 
     async def _remove_report_md_files(
         self, reports: list[AnalysisReport]

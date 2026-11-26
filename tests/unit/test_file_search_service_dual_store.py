@@ -295,6 +295,70 @@ def test_lookup_does_not_retry_permission_error(service, sleeps):
     assert service.client.file_search_stores.list.call_count == 1
 
 
+# 스토어 삭제: 실패를 올린다. 조회만 다시 부르고 삭제는 한 번만 부른다 (#466)
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        _timeout,
+        lambda: genai_errors.ServerError(503, {"error": {"code": 503}}),
+    ],
+    ids=["timeout", "503"],
+)
+async def test_delete_store_raises_when_delete_fails(service, sleeps, error):
+    service.client.file_search_stores.list.return_value = [RUBRIC, USER]
+    service.client.file_search_stores.delete.side_effect = error()
+
+    with pytest.raises(type(error())):
+        await service.delete_store_by_display_name("user-7-store")
+
+    service.client.file_search_stores.delete.assert_called_once_with(
+        name=USER.name, config={"force": True}
+    )
+    assert sleeps == []
+
+
+@pytest.mark.asyncio
+async def test_delete_store_raises_when_lookup_fails(service, sleeps):
+    service.client.file_search_stores.list.side_effect = lambda **kw: (
+        _ for _ in ()
+    ).throw(_timeout())
+
+    with pytest.raises(httpx.ReadTimeout):
+        await service.delete_store_by_display_name("user-7-store")
+
+    assert service.client.file_search_stores.list.call_count == 3
+    service.client.file_search_stores.list.assert_called_with(
+        config=LIST_CONFIG
+    )
+    assert sleeps == [2.0, 4.0]
+    service.client.file_search_stores.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_delete_store_retries_lookup_then_deletes_once(service, sleeps):
+    service.client.file_search_stores.list.side_effect = [
+        _timeout(),
+        [RUBRIC, USER],
+    ]
+
+    await service.delete_store_by_display_name("user-7-store")
+
+    service.client.file_search_stores.delete.assert_called_once_with(
+        name=USER.name, config={"force": True}
+    )
+    assert sleeps == [2.0]
+
+
+@pytest.mark.asyncio
+async def test_delete_store_without_store_does_not_raise(service, sleeps):
+    service.client.file_search_stores.list.return_value = [RUBRIC]
+
+    assert await service.delete_store_by_display_name("user-7-store") is None
+
+    service.client.file_search_stores.delete.assert_not_called()
+
+
 def test_store_creation_is_not_retried(service, sleeps):
     service.client.file_search_stores.list.return_value = [RUBRIC]
     service.client.file_search_stores.create.side_effect = (

@@ -5,6 +5,7 @@ HTML 뷰 라우터
 import asyncio
 import hashlib
 import logging
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -187,6 +188,13 @@ async def upload_document(
     user_upload_dir.mkdir(parents=True, exist_ok=True)
     saved_filename = f"{timestamp}_{safe_original}"
     file_path = user_upload_dir / saved_filename
+    # 기존 파일을 덮어쓰면 실패 정리의 unlink가 기존 지도안을 지우므로 새 경로를 잡는다 (#466)
+    try:
+        file_path.touch(exist_ok=False)
+    except FileExistsError:
+        saved_filename = f"{timestamp}_{uuid.uuid4().hex[:8]}_{safe_original}"
+        file_path = user_upload_dir / saved_filename
+        file_path.touch(exist_ok=False)
 
     try:
         hasher = hashlib.sha256()
@@ -261,7 +269,30 @@ async def upload_document(
 
         # 기존 스토어 정리 (새 문서 업로드 시 이전 스토어 삭제)
         store_name = f"user-{current_user.id}-store"
-        await file_search_service.delete_store_by_display_name(store_name)
+        try:
+            await file_search_service.delete_store_by_display_name(store_name)
+        except Exception as e:
+            # 옛 문서가 남은 스토어에 새 문서를 더하지 않는다.
+            # 옛 업로드 행의 문서 id도 그대로 둔다 (#466)
+            file_path.unlink(missing_ok=True)
+            # 원문에는 응답 헤더 줄이 섞일 수 있어 종류만 남긴다 (#368)
+            logger.warning(
+                "재업로드 전 스토어 삭제 실패: user_id=%s, %s",
+                current_user.id,
+                type(e).__name__,
+            )
+            return templates.TemplateResponse(
+                "error.html",
+                {
+                    "request": request,
+                    "status_code": 503,
+                    "detail": (
+                        "지도안 저장소를 정리하지 못했습니다. "
+                        "잠시 후 다시 업로드해 주세요."
+                    ),
+                },
+                status_code=503,
+            )
         # 커밋까지 하므로 뒤 업로드 실패의 rollback이 되살리지 않는다 (#173)
         await lessonplan_source.forget_file_search_ids(db, current_user.id)
 
@@ -341,8 +372,14 @@ async def cleanup_dashboard(
         logger.info(f"대시보드 정리 완료: user={current_user.username}")
         return {"status": "success", "message": "Cleanup completed"}
     except Exception as e:
-        logger.error(f"대시보드 정리 실패: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        # 스토어 삭제 실패가 여기로 온다. 문서 id는 비우지 않는다 (#466)
+        # 원문에는 응답 헤더 줄이 섞일 수 있어 종류만 남긴다 (#368)
+        logger.error(
+            "대시보드 정리 실패: user_id=%s, %s",
+            current_user.id,
+            type(e).__name__,
+        )
+        return {"status": "error", "message": "Cleanup failed"}
 
 
 @router.get(
