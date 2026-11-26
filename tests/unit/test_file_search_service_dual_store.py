@@ -10,7 +10,7 @@ import httpx
 import pytest
 from google.genai import errors as genai_errors
 
-from app.config import settings
+from app.config import Settings, settings
 from app.services.file_search_service import FileSearchService
 from app.utils.gemini_retry import GeminiQuotaExhausted, GeminiServerOverloaded
 
@@ -31,7 +31,7 @@ class TestGetDualStoreIds:
 
                 # Mock stores
                 mock_rubric = Mock()
-                mock_rubric.display_name = "rubricstore"
+                mock_rubric.display_name = settings.FS_RUBRIC_STORE_NAME
                 mock_rubric.name = "fileSearchStores/rubric123"
 
                 mock_user = Mock()
@@ -83,7 +83,7 @@ class TestGetDualStoreIds:
 
                 # rubricstore만 있음
                 mock_rubric = Mock()
-                mock_rubric.display_name = "rubricstore"
+                mock_rubric.display_name = settings.FS_RUBRIC_STORE_NAME
                 mock_rubric.name = "fileSearchStores/rubric"
 
                 service.client.file_search_stores.list = Mock(
@@ -114,7 +114,7 @@ class TestGetDualStoreIds:
 
                 # Mock stores
                 mock_rubric = Mock()
-                mock_rubric.display_name = "rubricstore"
+                mock_rubric.display_name = settings.FS_RUBRIC_STORE_NAME
                 mock_rubric.name = "fileSearchStores/rubric"
 
                 mock_user = Mock()
@@ -178,7 +178,7 @@ def _store(display_name, name):
     return store
 
 
-RUBRIC = _store("rubricstore", "fileSearchStores/rubric")
+RUBRIC = _store(settings.FS_RUBRIC_STORE_NAME, "fileSearchStores/rubric")
 USER = _store("user-7-store", "fileSearchStores/user7")
 
 
@@ -370,3 +370,53 @@ def test_store_creation_is_not_retried(service, sleeps):
 
     assert service.client.file_search_stores.create.call_count == 1
     assert service._store_cache == {}
+
+
+# 평가기준 스토어는 설정 이름과 정확히 같은 것만 쓴다 (#470)
+PROD_RUBRIC = _store("rubric-store", "fileSearchStores/prod-rubric")
+DEV_RUBRIC = _store("dev-rubric-store", "fileSearchStores/dev-rubric")
+BOTH_ORDERS = pytest.mark.parametrize(
+    "listing",
+    [[PROD_RUBRIC, DEV_RUBRIC, USER], [USER, DEV_RUBRIC, PROD_RUBRIC]],
+)
+
+
+@BOTH_ORDERS
+def test_rubric_store_is_the_one_named_in_settings(
+    service, monkeypatch, listing
+):
+    monkeypatch.setattr(settings, "FS_RUBRIC_STORE_NAME", "dev-rubric-store")
+    service.client.file_search_stores.list.return_value = listing
+
+    assert service.get_dual_store_ids(7) == [USER.name, DEV_RUBRIC.name]
+
+
+@BOTH_ORDERS
+def test_default_setting_uses_rubric_store(service, monkeypatch, listing):
+    default = Settings.model_fields["FS_RUBRIC_STORE_NAME"].default
+    monkeypatch.setattr(settings, "FS_RUBRIC_STORE_NAME", default)
+    service.client.file_search_stores.list.return_value = listing
+
+    assert service.get_dual_store_ids(7) == [USER.name, PROD_RUBRIC.name]
+
+
+def test_missing_rubric_store_does_not_fall_back_to_a_similar_name(
+    service, monkeypatch
+):
+    monkeypatch.setattr(settings, "FS_RUBRIC_STORE_NAME", "dev-rubric-store")
+    similar = [
+        "rubric-store",
+        "rubricstore",
+        "Dev-Rubric-Store",
+        "dev_rubric_store",
+    ]
+    service.client.file_search_stores.list.return_value = [
+        _store(name, f"fileSearchStores/other{i}")
+        for i, name in enumerate(similar)
+    ] + [USER]
+
+    with pytest.raises(ValueError, match="평가기준 스토어"):
+        service.get_dual_store_ids(7)
+
+    assert service._store_cache == {}
+    service.client.file_search_stores.create.assert_not_called()

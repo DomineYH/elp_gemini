@@ -11,6 +11,7 @@ import httpx
 import pytest
 from google.genai import types
 
+from app.config import settings
 from app.services import lessonplan_analysis_service as svc_mod
 from app.services.criteria_vector_service import CriteriaVectorService
 from app.services.lessonplan_analysis_service import (
@@ -55,7 +56,7 @@ class TestLessonPlanAnalysisService:
         # Given
         user_id = 123
         # name=은 Mock 자신의 이름이라 .name 속성은 따로 지정한다
-        rubric = MagicMock(display_name="rubricstore")
+        rubric = MagicMock(display_name=settings.FS_RUBRIC_STORE_NAME)
         rubric.name = "fileSearchStores/rubric123"
         user_store = MagicMock(display_name="user-123-store")
         user_store.name = "fileSearchStores/user123"

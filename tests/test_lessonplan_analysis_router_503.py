@@ -10,6 +10,7 @@ import pytest_asyncio
 from google.genai import errors as genai_errors
 from httpx import ASGITransport, AsyncClient
 
+from app.config import settings
 from app.dependencies import get_current_user, get_db
 from app.main import app
 from app.models.users import User
@@ -82,7 +83,7 @@ def _store(display_name, name):
 
 
 STORES = [
-    _store("rubricstore", "fileSearchStores/r"),
+    _store(settings.FS_RUBRIC_STORE_NAME, "fileSearchStores/r"),
     _store("user-1-store", "fileSearchStores/u"),
 ]
 
