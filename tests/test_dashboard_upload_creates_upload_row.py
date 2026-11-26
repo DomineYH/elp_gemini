@@ -59,7 +59,8 @@ async def client(session_factory, tmp_path, monkeypatch):
     with patch("app.routers.views.FileSearchService") as mock_fss:
         instance = mock_fss.return_value
         instance.upload_document = AsyncMock(return_value=fake_result)
-        instance.delete_store_by_display_name = AsyncMock(return_value=None)
+        instance.delete_store = AsyncMock(return_value=None)
+        instance.discard_store = AsyncMock(return_value=None)
 
         async with session_factory() as s:
             u = User(
@@ -192,7 +193,7 @@ async def test_dashboard_upload_failure_removes_file_and_hides_error(
     files = {"file": ("plan.pdf", BytesIO(text_pdf()), "application/pdf")}
 
     with patch("app.routers.views.FileSearchService") as mock_fss:
-        mock_fss.return_value.delete_store_by_display_name = AsyncMock()
+        mock_fss.return_value.delete_store = AsyncMock()
         mock_fss.return_value.upload_document = AsyncMock(
             side_effect=RuntimeError("secret internal detail")
         )
@@ -227,8 +228,9 @@ async def test_reupload_stops_when_old_store_delete_fails(
     # 삭제 코드는 진짜를 쓰고 SDK 클라이언트만 가짜로 둔다
     service = FileSearchService.__new__(FileSearchService)
     service.client = Mock()
+    # 옛 업로드 행의 fs_store_id 와 같은 자원 이름 (#470)
     store = Mock(display_name=f"user-{user_id}-store")
-    store.name = "fileSearchStores/old"
+    store.name = "store-1"
     timeout = httpx.ReadTimeout("The read operation timed out")
     if failing == "delete":
         service.client.file_search_stores.list.return_value = [store]
@@ -277,7 +279,7 @@ async def test_same_name_same_time_failed_reupload_keeps_old_file(
     old_bytes = old_file.read_bytes()
 
     service = views_mod.FileSearchService.return_value
-    service.delete_store_by_display_name.side_effect = RuntimeError("failed")
+    service.delete_store.side_effect = RuntimeError("failed")
     second = {"file": ("plan.pdf", BytesIO(text_pdf()), "application/pdf")}
     res = await c.post("/dashboard/upload", files=second)
 
@@ -290,19 +292,23 @@ async def test_same_name_same_time_failed_reupload_keeps_old_file(
 
 
 @pytest.mark.asyncio
-async def test_first_upload_without_store_still_succeeds(client, monkeypatch):
-    # 지울 스토어가 없는 것은 실패가 아니다 (#466)
+async def test_reupload_when_old_store_is_gone_still_succeeds(
+    client, monkeypatch
+):
+    # 행이 가리키는 스토어가 클라우드에 없는 것은 실패가 아니다 (#466, #470)
     from unittest.mock import Mock
 
     from app.routers import views as views_mod
     from app.services.file_search_service import FileSearchService
 
     c, session_factory = client
+    first = {"file": ("planA.pdf", BytesIO(text_pdf()), "application/pdf")}
+    assert (await c.post("/dashboard/upload", files=first)).status_code == 303
     service = FileSearchService.__new__(FileSearchService)
     service.client = Mock()
     service.client.file_search_stores.list.return_value = []
     service.upload_document = AsyncMock(
-        return_value={"document_id": "doc-1", "store_id": "store-1"}
+        return_value={"document_id": "doc-2", "store_id": "store-2"}
     )
     monkeypatch.setattr(views_mod.FileSearchService, "return_value", service)
 
@@ -310,10 +316,14 @@ async def test_first_upload_without_store_still_succeeds(client, monkeypatch):
     res = await c.post("/dashboard/upload", files=files)
 
     assert res.status_code == 303
+    service.client.file_search_stores.list.assert_called_once()
     service.client.file_search_stores.delete.assert_not_called()
     async with session_factory() as s:
         rows = (await s.execute(select(LessonPlanUpload))).scalars().all()
-    assert len(rows) == 1
+    assert [(r.fs_document_id, r.fs_store_id) for r in rows] == [
+        (None, None),
+        ("doc-2", "store-2"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -343,6 +353,11 @@ async def test_dashboard_upload_failure_after_flush_rolls_back_row(
     assert failed
     assert res.status_code == 500
     assert _uploaded_files(tmp_path) == []
+    # 행에 적히지 못한 새 스토어는 지운다 (#470)
+    from app.routers import views as views_mod
+
+    service = views_mod.FileSearchService.return_value
+    service.discard_store.assert_awaited_once_with("store-1")
     async with session_factory() as s:
         rows = (await s.execute(select(LessonPlanUpload))).scalars().all()
         assert rows == []
@@ -360,13 +375,13 @@ async def test_dashboard_upload_rejects_textless_pdf_before_store_delete(
     files = {"file": ("scan.pdf", BytesIO(payload), "application/pdf")}
 
     with patch("app.routers.views.FileSearchService") as mock_fss:
-        mock_fss.return_value.delete_store_by_display_name = AsyncMock()
+        mock_fss.return_value.delete_store = AsyncMock()
         mock_fss.return_value.upload_document = AsyncMock()
         res = await c.post("/dashboard/upload", files=files)
 
     assert res.status_code == 400
     assert "이미지(스캔)로만 된 PDF는 올릴 수 없습니다." in res.text
-    mock_fss.return_value.delete_store_by_display_name.assert_not_called()
+    mock_fss.return_value.delete_store.assert_not_called()
     mock_fss.return_value.upload_document.assert_not_called()
     assert _uploaded_files(tmp_path) == []
     async with session_factory() as s:

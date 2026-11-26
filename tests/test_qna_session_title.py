@@ -98,6 +98,7 @@ async def test_new_session_uses_upload_filename_and_is_reused(client, user):
                 filename="title_user_lesson.pdf",
                 original_filename="lesson.pdf",
                 fs_document_id="documents/d1",
+                fs_store_id="fileSearchStores/d1",
             )
         )
         await db.commit()
@@ -121,6 +122,7 @@ async def _seed_indexed_upload(user, original_filename="lesson.pdf"):
                 filename="title_user_lesson.pdf",
                 original_filename=original_filename,
                 fs_document_id="documents/d1",
+                fs_store_id="fileSearchStores/d1",
             )
         )
         await db.commit()
@@ -167,6 +169,7 @@ async def test_new_session_stores_upload_id(client, user):
             filename="title_user_lesson.pdf",
             original_filename="lesson.pdf",
             fs_document_id="documents/d1",
+            fs_store_id="fileSearchStores/d1",
         )
         db.add(upload)
         await db.commit()

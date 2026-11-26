@@ -29,7 +29,10 @@ from app.repositories.app_state_repository import (
     AppStateRepository,
 )
 from app.services.criteria_vector_service import CriteriaVectorService
-from app.services.file_search_service import FileSearchService
+from app.services.file_search_service import (
+    FileSearchService,
+    RubricStoreNotFound,
+)
 from app.services.prompt_loader_service import PromptLoaderService
 from app.services.report_storage_service import ReportStorageService
 from app.utils.gemini_retry import (
@@ -302,9 +305,8 @@ class LessonPlanAnalysisService:
 
                 # 색인 id 가 비면 스토어가 지워졌거나 재업로드 중이다. 대시보드가
                 # '분석 시작'을 숨기는 기준을 API 에도 적용한다 (#450)
-                if (
-                    latest_upload is not None
-                    and not latest_upload.fs_document_id
+                if latest_upload is not None and not (
+                    latest_upload.fs_document_id and latest_upload.fs_store_id
                 ):
                     return {
                         "success": False,
@@ -323,7 +325,15 @@ class LessonPlanAnalysisService:
                     }
 
                 # 1. File Search Store ID 조회 (Phase 1 활용)
-                store_ids = await self._get_store_ids(user_id)
+                store_ids = await self._get_store_ids(latest_upload.fs_store_id)
+                if store_ids is None:
+                    # 행이 가리키는 스토어가 클라우드에서 지워졌다.
+                    # 빈 스토어를 만들지 않고 다시 올리게 한다 (#470)
+                    return {
+                        "success": False,
+                        "error_code": "LESSONPLAN_INDEX_MISSING",
+                        "error": _INDEX_MISSING_MESSAGE,
+                    }
                 if not store_ids:
                     return {
                         "success": False,
@@ -603,28 +613,32 @@ class LessonPlanAnalysisService:
             logger.error(f"분석 실패: {e}", exc_info=True)
             return {"success": False, "error": "분석 중 오류 발생"}
 
-    async def _get_store_ids(self, user_id: int) -> list[str]:
+    async def _get_store_ids(self, user_store_id: str) -> list[str] | None:
         """
-        File Search Store ID 조회 (Phase 1 공통 유틸 사용)
+        분석에 쓸 Store ID 두 개
 
         Args:
-            user_id: 사용자 ID (User.id)
+            user_store_id: 최신 업로드 행의 fs_store_id. 사용자 스토어는
+                이 id 로만 쓴다. 이름으로 찾거나 만들지 않는다 (#470)
 
         Returns:
-            Store ID 리스트 [user-{user_id}-store, rubricstore]
-            (실제 반환 순서: 사용자 문서, 평가기준 문서)
+            [user_store_id, 평가기준 스토어 ID].
+            사용자 스토어가 클라우드에 없으면 None, 평가기준 스토어가 없으면 []
         """
+        if not await asyncio.to_thread(
+            self.file_search_service.store_exists, user_store_id
+        ):
+            return None
         try:
-            # Phase 1의 get_dual_store_ids() 사용
-            store_ids = await asyncio.to_thread(
-                self.file_search_service.get_dual_store_ids, user_id
+            rubric_store_id = await asyncio.to_thread(
+                self.file_search_service.get_rubric_store_id
             )
-            logger.info(f"✅ Store ID 조회 완료: {len(store_ids)}개")
-            return store_ids
-        except ValueError as e:
-            # rubricstore 없음. 그 밖의 조회 오류는 호출부가 가른다 (#464)
+        except RubricStoreNotFound as e:
+            # 그 밖의 조회 오류는 호출부가 가른다 (#464)
             logger.error(f"❌ Store ID 조회 실패: {e}")
             return []
+        logger.info("✅ Store ID 조회 완료")
+        return [user_store_id, rubric_store_id]
 
     async def _find_existing_report_for_latest_upload(self, user_id: int):
         """

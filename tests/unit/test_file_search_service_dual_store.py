@@ -1,6 +1,6 @@
 """
-FileSearchService - get_dual_store_ids() 메서드 테스트
-Phase 1에서 추가된 공통 유틸리티 메서드 검증
+FileSearchService - 스토어 조회·삭제 테스트
+평가기준 스토어는 설정 이름으로, 사용자 스토어는 자원 이름으로만 다룬다 (#470)
 """
 
 import time
@@ -11,19 +11,21 @@ import pytest
 from google.genai import errors as genai_errors
 
 from app.config import Settings, settings
-from app.services.file_search_service import FileSearchService
+from app.services.file_search_service import (
+    FileSearchService,
+    RubricStoreNotFound,
+)
 from app.utils.gemini_retry import GeminiQuotaExhausted, GeminiServerOverloaded
 
 
-class TestGetDualStoreIds:
+class TestGetRubricStoreId:
     """
-    get_dual_store_ids() 메서드 테스트 (Phase 1)
-    rubricstore와 사용자 스토어 조회/생성 로직 검증
+    get_rubric_store_id() 메서드 테스트
     """
 
-    def test_get_dual_store_ids_success(self):
+    def test_get_rubric_store_id_success(self):
         """
-        rubricstore + 사용자 스토어 조회 성공
+        같은 이름표의 사용자 스토어가 있어도 평가기준 스토어만 돌려준다
         """
         with patch.object(settings, "GOOGLE_API_KEY", "test-key"):
             with patch("app.services.file_search_service.genai.Client"):
@@ -43,16 +45,14 @@ class TestGetDualStoreIds:
                 )
 
                 # When
-                result = service.get_dual_store_ids(user_key=123)
+                result = service.get_rubric_store_id()
 
                 # Then
-                assert len(result) == 2
-                assert "fileSearchStores/rubric123" in result
-                assert "fileSearchStores/user123" in result
+                assert result == "fileSearchStores/rubric123"
 
-    def test_get_dual_store_ids_no_rubricstore(self):
+    def test_get_rubric_store_id_no_rubricstore(self):
         """
-        rubricstore 없을 시 ValueError 발생
+        rubricstore 없을 시 RubricStoreNotFound 발생
         """
         with patch.object(settings, "GOOGLE_API_KEY", "test-key"):
             with patch("app.services.file_search_service.genai.Client"):
@@ -68,43 +68,12 @@ class TestGetDualStoreIds:
                 )
 
                 # When & Then
-                with pytest.raises(ValueError) as exc_info:
-                    service.get_dual_store_ids(user_key=123)
+                with pytest.raises(RubricStoreNotFound) as exc_info:
+                    service.get_rubric_store_id()
 
                 assert "rubricstore" in str(exc_info.value)
 
-    def test_get_dual_store_ids_create_user_store(self):
-        """
-        사용자 스토어 없을 시 자동 생성
-        """
-        with patch.object(settings, "GOOGLE_API_KEY", "test-key"):
-            with patch("app.services.file_search_service.genai.Client"):
-                service = FileSearchService()
-
-                # rubricstore만 있음
-                mock_rubric = Mock()
-                mock_rubric.display_name = settings.FS_RUBRIC_STORE_NAME
-                mock_rubric.name = "fileSearchStores/rubric"
-
-                service.client.file_search_stores.list = Mock(
-                    return_value=[mock_rubric]
-                )
-
-                # 사용자 스토어 생성 Mock
-                mock_created = Mock()
-                mock_created.name = "fileSearchStores/user999"
-                service._get_or_create_store = Mock(return_value=mock_created)
-
-                # When
-                result = service.get_dual_store_ids(user_key=999)
-
-                # Then
-                assert len(result) == 2
-                service._get_or_create_store.assert_called_once_with(
-                    "user-999-store"
-                )
-
-    def test_get_dual_store_ids_caching(self):
+    def test_get_rubric_store_id_caching(self):
         """
         60초 이내 재호출 시 캐시 사용
         """
@@ -126,11 +95,11 @@ class TestGetDualStoreIds:
                 )
 
                 # When
-                result1 = service.get_dual_store_ids(user_key=123)
+                result1 = service.get_rubric_store_id()
                 calls_after_first = (
                     service.client.file_search_stores.list.call_count
                 )
-                result2 = service.get_dual_store_ids(user_key=123)
+                result2 = service.get_rubric_store_id()
 
                 # Then
                 assert result1 == result2
@@ -141,9 +110,9 @@ class TestGetDualStoreIds:
                 )
 
     @pytest.mark.asyncio
-    async def test_delete_store_by_display_name_force_true(self):
+    async def test_delete_store_force_true(self):
         """
-        delete_store_by_display_name() force=True 사용 확인
+        delete_store() 는 자원 이름으로, force=True 로 지운다
         """
         with patch.object(settings, "GOOGLE_API_KEY", "test-key"):
             with patch("app.services.file_search_service.genai.Client"):
@@ -160,7 +129,7 @@ class TestGetDualStoreIds:
                 service.client.file_search_stores.delete = Mock()
 
                 # When
-                await service.delete_store_by_display_name("test-store")
+                await service.delete_store("fileSearchStores/test123")
 
                 # Then
                 service.client.file_search_stores.delete.assert_called_once_with(
@@ -202,10 +171,10 @@ def _timeout():
     return httpx.ReadTimeout("The read operation timed out")
 
 
-def test_dual_lookup_lists_once_with_request_timeout(service, sleeps):
+def test_rubric_lookup_lists_once_with_request_timeout(service, sleeps):
     service.client.file_search_stores.list.return_value = [RUBRIC, USER]
 
-    assert service.get_dual_store_ids(7) == [USER.name, RUBRIC.name]
+    assert service.get_rubric_store_id() == RUBRIC.name
 
     service.client.file_search_stores.list.assert_called_once_with(
         config=LIST_CONFIG
@@ -213,14 +182,51 @@ def test_dual_lookup_lists_once_with_request_timeout(service, sleeps):
     assert sleeps == []
 
 
-def test_user_lookup_lists_once_with_request_timeout(service, sleeps):
-    service.client.file_search_stores.list.return_value = [RUBRIC, USER]
+# 사용자 스토어: 행의 자원 이름으로 GET 1회. 목록 조회도 생성도 없다 (#470)
+def test_store_exists_gets_once_with_request_timeout(service, sleeps):
+    assert service.store_exists(USER.name) is True
 
-    assert service.get_user_store_id(7) == USER.name
-
-    service.client.file_search_stores.list.assert_called_once_with(
-        config=LIST_CONFIG
+    service.client.file_search_stores.get.assert_called_once_with(
+        name=USER.name, config=LIST_CONFIG
     )
+    service.client.file_search_stores.list.assert_not_called()
+    service.client.file_search_stores.create.assert_not_called()
+    assert sleeps == []
+
+
+@pytest.mark.parametrize("code", [404, 403])
+def test_store_exists_is_false_for_a_store_gone_in_the_cloud(
+    service, sleeps, code
+):
+    service.client.file_search_stores.get.side_effect = (
+        genai_errors.ClientError(code, {"error": {"code": code}})
+    )
+
+    assert service.store_exists(USER.name) is False
+
+    assert service.client.file_search_stores.get.call_count == 1
+    service.client.file_search_stores.create.assert_not_called()
+
+
+def test_store_exists_raises_other_client_errors(service, sleeps):
+    service.client.file_search_stores.get.side_effect = (
+        genai_errors.ClientError(400, {"error": {"code": 400}})
+    )
+
+    with pytest.raises(genai_errors.ClientError):
+        service.store_exists(USER.name)
+
+
+def test_store_exists_retries_a_timeout_then_gives_up(service, sleeps):
+    service.client.file_search_stores.get.side_effect = lambda **kw: (
+        _ for _ in ()
+    ).throw(_timeout())
+
+    with pytest.raises(httpx.ReadTimeout):
+        service.store_exists(USER.name)
+
+    assert service.client.file_search_stores.get.call_count == 3
+    assert sleeps == [2.0, 4.0]
 
 
 def test_lookup_timeout_once_is_retried_after_2s(service, sleeps):
@@ -229,7 +235,7 @@ def test_lookup_timeout_once_is_retried_after_2s(service, sleeps):
         [RUBRIC, USER],
     ]
 
-    assert service.get_dual_store_ids(7) == [USER.name, RUBRIC.name]
+    assert service.get_rubric_store_id() == RUBRIC.name
 
     assert service.client.file_search_stores.list.call_count == 2
     assert sleeps == [2.0]
@@ -245,11 +251,10 @@ def test_lookup_failure_on_a_later_page_is_retried(service, sleeps):
         [RUBRIC, USER],
     ]
 
-    assert service.get_user_store_id(7) == USER.name
+    assert service.get_rubric_store_id() == RUBRIC.name
     assert service.client.file_search_stores.list.call_count == 2
 
 
-@pytest.mark.parametrize("method", ["get_dual_store_ids", "get_user_store_id"])
 @pytest.mark.parametrize(
     "error, raised",
     [
@@ -269,14 +274,14 @@ def test_lookup_failure_on_a_later_page_is_retried(service, sleeps):
     ],
 )
 def test_lookup_gives_up_after_three_tries_and_caches_nothing(
-    service, sleeps, method, error, raised
+    service, sleeps, error, raised
 ):
     service.client.file_search_stores.list.side_effect = lambda **kw: (
         _ for _ in ()
     ).throw(error())
 
     with pytest.raises(raised):
-        getattr(service, method)(7)
+        service.get_rubric_store_id()
 
     assert service.client.file_search_stores.list.call_count == 3
     assert sleeps == [2.0, 4.0]
@@ -290,7 +295,7 @@ def test_lookup_does_not_retry_permission_error(service, sleeps):
     )
 
     with pytest.raises(genai_errors.ClientError):
-        service.get_dual_store_ids(7)
+        service.get_rubric_store_id()
 
     assert service.client.file_search_stores.list.call_count == 1
 
@@ -310,7 +315,7 @@ async def test_delete_store_raises_when_delete_fails(service, sleeps, error):
     service.client.file_search_stores.delete.side_effect = error()
 
     with pytest.raises(type(error())):
-        await service.delete_store_by_display_name("user-7-store")
+        await service.delete_store(USER.name)
 
     service.client.file_search_stores.delete.assert_called_once_with(
         name=USER.name, config={"force": True}
@@ -325,7 +330,7 @@ async def test_delete_store_raises_when_lookup_fails(service, sleeps):
     ).throw(_timeout())
 
     with pytest.raises(httpx.ReadTimeout):
-        await service.delete_store_by_display_name("user-7-store")
+        await service.delete_store(USER.name)
 
     assert service.client.file_search_stores.list.call_count == 3
     service.client.file_search_stores.list.assert_called_with(
@@ -342,7 +347,7 @@ async def test_delete_store_retries_lookup_then_deletes_once(service, sleeps):
         [RUBRIC, USER],
     ]
 
-    await service.delete_store_by_display_name("user-7-store")
+    await service.delete_store(USER.name)
 
     service.client.file_search_stores.delete.assert_called_once_with(
         name=USER.name, config={"force": True}
@@ -354,22 +359,69 @@ async def test_delete_store_retries_lookup_then_deletes_once(service, sleeps):
 async def test_delete_store_without_store_does_not_raise(service, sleeps):
     service.client.file_search_stores.list.return_value = [RUBRIC]
 
-    assert await service.delete_store_by_display_name("user-7-store") is None
+    assert await service.delete_store(USER.name) is None
 
     service.client.file_search_stores.delete.assert_not_called()
 
 
-def test_store_creation_is_not_retried(service, sleeps):
-    service.client.file_search_stores.list.return_value = [RUBRIC]
-    service.client.file_search_stores.create.side_effect = (
-        httpx.RemoteProtocolError("Server disconnected")
+@pytest.mark.asyncio
+async def test_delete_store_ignores_a_same_name_store_of_another_deployment(
+    service, sleeps
+):
+    # 표시 이름이 같아도 자원 이름이 다르면 남의 스토어다 (#470)
+    other = _store("user-7-store", "fileSearchStores/other-deployment")
+    service.client.file_search_stores.list.return_value = [RUBRIC, other]
+
+    await service.delete_store(USER.name)
+
+    service.client.file_search_stores.delete.assert_not_called()
+
+
+# 사용자 업로드: 같은 이름의 스토어가 있어도 새로 만든다 (#470)
+@pytest.mark.asyncio
+async def test_user_upload_creates_a_store_without_listing(service, tmp_path):
+    service.main_store_name = "main"
+    created = _store("user-7-store", "fileSearchStores/new")
+    service.client.file_search_stores.create.return_value = created
+    operation = Mock(done=True, error=None)
+    operation.response.document_name = "fileSearchStores/new/documents/d"
+    operation.response.parent = "fileSearchStores/new"
+    upload = service.client.file_search_stores.upload_to_file_search_store
+    upload.return_value = operation
+    path = tmp_path / "plan.txt"
+    path.write_text("x")
+
+    result = await service.upload_document(
+        str(path), "plan.txt", {"user_id": 7}
     )
 
-    with pytest.raises(httpx.RemoteProtocolError):
-        service.get_dual_store_ids(7)
+    assert result["store_id"] == "fileSearchStores/new"
+    service.client.file_search_stores.create.assert_called_once_with(
+        config={"display_name": "user-7-store"}
+    )
+    assert upload.call_args.kwargs["file_search_store_name"] == created.name
+    service.client.file_search_stores.list.assert_not_called()
+    service.client.file_search_stores.delete.assert_not_called()
 
-    assert service.client.file_search_stores.create.call_count == 1
-    assert service._store_cache == {}
+
+@pytest.mark.asyncio
+async def test_rubric_upload_still_reuses_the_named_store(service, tmp_path):
+    service.rubric_store_name = RUBRIC.display_name
+    service.client.file_search_stores.list.return_value = [RUBRIC]
+    upload = service.client.file_search_stores.upload_to_file_search_store
+    upload.side_effect = RuntimeError("stop here")
+    path = tmp_path / "criteria.txt"
+    path.write_text("x")
+
+    with pytest.raises(RuntimeError, match="stop here"):
+        await service.upload_document(
+            str(path), "criteria.txt", {"user_id": 7}, store_type="rubric"
+        )
+
+    assert upload.call_args.kwargs["file_search_store_name"] == RUBRIC.name
+    service.client.file_search_stores.create.assert_not_called()
+    # 평가기준 스토어는 실패해도 지우지 않는다
+    service.client.file_search_stores.delete.assert_not_called()
 
 
 # 평가기준 스토어는 설정 이름과 정확히 같은 것만 쓴다 (#470)
@@ -388,7 +440,7 @@ def test_rubric_store_is_the_one_named_in_settings(
     monkeypatch.setattr(settings, "FS_RUBRIC_STORE_NAME", "dev-rubric-store")
     service.client.file_search_stores.list.return_value = listing
 
-    assert service.get_dual_store_ids(7) == [USER.name, DEV_RUBRIC.name]
+    assert service.get_rubric_store_id() == DEV_RUBRIC.name
 
 
 @BOTH_ORDERS
@@ -397,7 +449,7 @@ def test_default_setting_uses_rubric_store(service, monkeypatch, listing):
     monkeypatch.setattr(settings, "FS_RUBRIC_STORE_NAME", default)
     service.client.file_search_stores.list.return_value = listing
 
-    assert service.get_dual_store_ids(7) == [USER.name, PROD_RUBRIC.name]
+    assert service.get_rubric_store_id() == PROD_RUBRIC.name
 
 
 def test_missing_rubric_store_does_not_fall_back_to_a_similar_name(
@@ -415,8 +467,8 @@ def test_missing_rubric_store_does_not_fall_back_to_a_similar_name(
         for i, name in enumerate(similar)
     ] + [USER]
 
-    with pytest.raises(ValueError, match="평가기준 스토어"):
-        service.get_dual_store_ids(7)
+    with pytest.raises(RubricStoreNotFound, match="평가기준 스토어"):
+        service.get_rubric_store_id()
 
     assert service._store_cache == {}
     service.client.file_search_stores.create.assert_not_called()

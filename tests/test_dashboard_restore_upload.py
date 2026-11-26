@@ -84,7 +84,8 @@ async def env(tmp_path, monkeypatch):
     with patch("app.routers.views.FileSearchService") as mock_fss:
         inst = mock_fss.return_value
         inst.upload_document = AsyncMock(return_value=fake)
-        inst.delete_store_by_display_name = AsyncMock(return_value=None)
+        inst.delete_store = AsyncMock(return_value=None)
+        inst.discard_store = AsyncMock(return_value=None)
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as c:
@@ -195,7 +196,7 @@ async def test_logout_deletes_store_and_forgets_fs_ids(env):
     with patch(
         "app.services.file_search_service.FileSearchService"
     ) as mock_fss:
-        mock_fss.return_value.delete_store_by_display_name = AsyncMock()
+        mock_fss.return_value.delete_store = AsyncMock()
         res = await c.post("/auth/logout", follow_redirects=False)
     assert res.status_code == 302
     c.cookies.clear()
@@ -230,7 +231,7 @@ async def test_cleanup_keeps_fs_ids_when_store_delete_fails(env):
     from app.routers import views as views_mod
 
     fss = views_mod.FileSearchService.return_value
-    fss.delete_store_by_display_name.side_effect = RuntimeError("raw detail")
+    fss.delete_store.side_effect = RuntimeError("raw detail")
 
     res = await c.post("/dashboard/cleanup")
 
@@ -255,7 +256,8 @@ async def test_failed_replacement_upload_forgets_deleted_doc(env):
         files={"file": ("new.pdf", BytesIO(PDF_BYTES), "application/pdf")},
     )
     assert res.status_code == 500
-    assert fss.delete_store_by_display_name.await_count == 2
+    # 첫 업로드는 지울 것이 없고, 재업로드는 옛 행의 스토어만 지운다 (#470)
+    fss.delete_store.assert_awaited_once_with("fileSearchStores/user1store-abc")
 
     async with factory() as s:
         row = (await s.execute(select(LessonPlanUpload))).scalar_one()

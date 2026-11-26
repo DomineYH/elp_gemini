@@ -67,7 +67,9 @@ class TestFileSearchService:
 
                 # Mock 메서드 설정
                 with patch.object(
-                    service, "_get_or_create_store", return_value=mock_store
+                    service.client.file_search_stores,
+                    "create",
+                    return_value=mock_store,
                 ):
                     with patch.object(
                         service.client.file_search_stores,
@@ -110,7 +112,9 @@ class TestFileSearchService:
                 mock_operation.done = False
 
                 with patch.object(
-                    service, "_get_or_create_store", return_value=mock_store
+                    service.client.file_search_stores,
+                    "create",
+                    return_value=mock_store,
                 ):
                     with patch.object(
                         service.client.file_search_stores,
@@ -153,21 +157,31 @@ class TestFileSearchService:
                 mock_store.name = "fileSearchStores/test-store-123"
 
                 with patch.object(
-                    service, "_get_or_create_store", return_value=mock_store
+                    service.client.file_search_stores,
+                    "create",
+                    return_value=mock_store,
                 ):
                     with patch.object(
                         service.client.file_search_stores,
                         "upload_to_file_search_store",
                         side_effect=Exception("API Error"),
                     ):
-                        with pytest.raises(Exception) as exc_info:
-                            await service.upload_document(
-                                file_path="/tmp/test.pdf",
-                                display_name="Test Document",
-                                metadata={"user_id": "123"},
-                            )
+                        with patch.object(
+                            service.client.file_search_stores, "delete"
+                        ) as delete:
+                            with pytest.raises(Exception) as exc_info:
+                                await service.upload_document(
+                                    file_path="/tmp/test.pdf",
+                                    display_name="Test Document",
+                                    metadata={"user_id": "123"},
+                                )
 
                         assert "API Error" in str(exc_info.value)
+                        # 방금 만든 사용자 스토어는 지운다 (#470)
+                        delete.assert_called_once_with(
+                            name="fileSearchStores/test-store-123",
+                            config={"force": True},
+                        )
 
 
 class TestRouterIntegration:

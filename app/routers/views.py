@@ -61,7 +61,11 @@ def _document_from_upload(upload: LessonPlanUpload) -> dict | None:
     원본 PDF가 없으면 None → 지금처럼 업로드 안내를 보인다.
     """
     path = lessonplan_source.UPLOADS_DIR / str(upload.user_id) / upload.filename
-    if not upload.fs_document_id or not path.is_file():
+    if (
+        not upload.fs_document_id
+        or not upload.fs_store_id
+        or not path.is_file()
+    ):
         return None
     return {
         "id": upload.fs_document_id,
@@ -196,6 +200,8 @@ async def upload_document(
         file_path = user_upload_dir / saved_filename
         file_path.touch(exist_ok=False)
 
+    # 행에 적히기 전의 새 스토어. 실패하면 지운다 (#470)
+    new_store_id = None
     try:
         hasher = hashlib.sha256()
         total_size = 0
@@ -268,9 +274,11 @@ async def upload_document(
         file_search_service = FileSearchService()
 
         # 기존 스토어 정리 (새 문서 업로드 시 이전 스토어 삭제)
-        store_name = f"user-{current_user.id}-store"
+        # 업로드 행이 가리키는 스토어만 지운다 (#470)
+        store_ids = await lessonplan_source.get_store_ids(db, current_user.id)
         try:
-            await file_search_service.delete_store_by_display_name(store_name)
+            for store_id in store_ids:
+                await file_search_service.delete_store(store_id)
         except Exception as e:
             # 옛 문서가 남은 스토어에 새 문서를 더하지 않는다.
             # 옛 업로드 행의 문서 id도 그대로 둔다 (#466)
@@ -310,6 +318,7 @@ async def upload_document(
             display_name=file.filename,
             metadata=metadata,
         )
+        new_store_id = result.get("store_id")
 
         upload_row = LessonPlanUpload(
             user_id=current_user.id,
@@ -336,6 +345,9 @@ async def upload_document(
         # get_db 가 정상 반환을 commit 하므로 flush 된 업로드 행을 되돌린다.
         await db.rollback()
         file_path.unlink(missing_ok=True)
+        if new_store_id:
+            # 행이 없으면 앱이 이 스토어를 다시 찾지 못한다 (#470)
+            await file_search_service.discard_store(new_store_id)
         logger.error(f"문서 처리 실패: {str(e)}", exc_info=True)
         return templates.TemplateResponse(
             "error.html",
@@ -363,10 +375,12 @@ async def cleanup_dashboard(
     """
     try:
         file_search_service = FileSearchService()
-        store_name = f"user-{current_user.id}-store"
 
-        # 사용자 스토어 삭제
-        await file_search_service.delete_store_by_display_name(store_name)
+        # 사용자 스토어 삭제: 업로드 행이 가리키는 것만 (#470)
+        for store_id in await lessonplan_source.get_store_ids(
+            db, current_user.id
+        ):
+            await file_search_service.delete_store(store_id)
         await lessonplan_source.forget_file_search_ids(db, current_user.id)
 
         logger.info(f"대시보드 정리 완료: user={current_user.username}")

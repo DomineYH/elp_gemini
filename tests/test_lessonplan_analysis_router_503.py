@@ -98,6 +98,7 @@ async def test_analyze_returns_503_without_retry_after_on_criteria_sync(client):
 UPLOAD = SimpleNamespace(
     id=27,
     fs_document_id="fileSearchStores/u/documents/d",
+    fs_store_id="fileSearchStores/u",
     filename="a.pdf",
     original_filename="lessonplan_ko.pdf",
 )
@@ -121,9 +122,10 @@ def analyze(client, monkeypatch):
     """(응답, list 호출 수, generate 호출 수, 응답 뒤 in_progress)를 돌려준다."""
     monkeypatch.setattr(time, "sleep", lambda s: None)
 
-    async def run(list_effect):
+    async def run(list_effect, get_effect=None):
         fake = MagicMock()
         fake.file_search_stores.list.side_effect = list_effect
+        fake.file_search_stores.get.side_effect = get_effect
         generate = MagicMock(return_value=None)
         with (
             patch.object(FileSearchService, "_client", fake),
@@ -214,6 +216,22 @@ async def test_store_lookup_timeout_once_then_analysis_goes_on(analyze):
     assert generates > 0
     assert "분석할 문서가 없습니다" not in res.text
     assert in_progress is False
+
+
+@pytest.mark.asyncio
+async def test_user_store_check_timeout_is_503_retry_later(analyze):
+    """행의 스토어 확인(GET)도 목록 조회와 같은 재시도·안내를 쓴다 (#464, #470)"""
+
+    res, lists, generates, in_progress = await analyze(
+        STORES,
+        get_effect=_raising(
+            lambda: httpx.ReadTimeout("The read operation timed out")
+        ),
+    )
+
+    assert res.status_code == 503, res.text
+    assert res.json()["detail"] == DELAYED
+    assert (lists, generates, in_progress) == (0, 0, False)
 
 
 @pytest.mark.asyncio

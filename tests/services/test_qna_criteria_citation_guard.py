@@ -63,7 +63,9 @@ async def test_qna_uses_only_user_store_when_criteria_sync_not_ok():
     db = AsyncMock()
     # 색인된 최신 업로드가 있다 (#468)
     db.execute.return_value.scalar_one_or_none = MagicMock(
-        return_value=MagicMock(fs_document_id="documents/d")
+        return_value=MagicMock(
+            fs_document_id="documents/d", fs_store_id="fileSearchStores/user"
+        )
     )
     client = MagicMock()
     response = MagicMock()
@@ -80,10 +82,7 @@ async def test_qna_uses_only_user_store_when_criteria_sync_not_ok():
         ),
     ):
         file_search = file_search_cls.return_value
-        file_search.get_user_store_id = MagicMock(
-            return_value="fileSearchStores/user"
-        )
-        file_search.get_dual_store_ids = MagicMock(
+        file_search.get_rubric_store_id = MagicMock(
             side_effect=AssertionError("rubric store must not be used")
         )
 

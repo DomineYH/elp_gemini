@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from app.config import settings
@@ -129,6 +130,19 @@ def list_stores(client) -> list:
     )
 
 
+@retry_on_resource_exhausted(retry_timeouts=True)
+def _get_store(client, store_id: str):
+    """스토어 하나 조회(GET). 제한과 재시도는 list_stores 와 같다 (#464)."""
+    return client.file_search_stores.get(
+        name=store_id,
+        config={"http_options": {"timeout": _STORE_LIST_TIMEOUT_MS}},
+    )
+
+
+class RubricStoreNotFound(ValueError):
+    """설정 이름(FS_RUBRIC_STORE_NAME)의 평가기준 스토어가 클라우드에 없다."""
+
+
 class FileSearchService:
     """File Search 서비스 클래스"""
 
@@ -213,137 +227,66 @@ class FileSearchService:
             logger.error(f"스토어 처리 실패: {str(e)}")
             raise
 
-    def get_dual_store_ids(self, user_key: str | int) -> list[str]:
+    def get_rubric_store_id(self) -> str:
         """
-        rubricstore와 사용자 스토어 ID 조회/생성
-
-        Args:
-            user_key: 사용자 ID (User.id, int 또는 str)
+        평가기준 스토어 ID 조회
 
         Returns:
-            [user_store_id, rubricstore_id]  # 사용자 문서 우선 검색
+            rubric_store_id
 
         Raises:
-            ValueError: rubricstore를 찾을 수 없는 경우
+            RubricStoreNotFound: 설정 이름의 스토어가 없는 경우
         """
         import time
 
-        store_ids = []
-
         # 1. 캐시 확인 (60초 TTL)
-        cache_key = f"dual_store_{user_key}"
+        cache_key = "rubric_store"
         cached = self._store_cache.get(cache_key)
         if cached and time.time() - cached["time"] < 60:
-            logger.debug(f"캐시에서 Store ID 조회: {user_key}")
-            return cached["ids"]
+            logger.debug("캐시에서 평가기준 Store ID 조회")
+            return cached["id"]
 
-        # 2. 평가기준 스토어 조회 (목록은 한 번만 읽어 아래에서도 쓴다)
-        stores = list_stores(self.client)
+        # 2. 평가기준 스토어 조회
         # 설정 이름과 정확히 같은 스토어만 쓴다. 비슷한 이름은 다른 배포의 것일 수 있다 (#470)
         rubric_store_name = settings.FS_RUBRIC_STORE_NAME
         rubric_store_id = next(
-            (s.name for s in stores if s.display_name == rubric_store_name),
+            (
+                s.name
+                for s in list_stores(self.client)
+                if s.display_name == rubric_store_name
+            ),
             None,
         )
 
         if not rubric_store_id:
             logger.error(f"❌ 평가기준 스토어 없음: {rubric_store_name}")
-            raise ValueError(
+            raise RubricStoreNotFound(
                 "평가기준 스토어(rubricstore)를 찾을 수 없습니다. "
                 "관리자에게 문의하세요."
             )
 
-        # 3. 사용자 스토어 조회 또는 생성
-        user_store_name = f"user-{user_key}-store"
-        # 검색 시에도 sanitized name 사용
-        safe_user_store_name = _sanitize_display_name(user_store_name)
-        user_store_id = None
-
-        for store in stores:
-            if safe_user_store_name == store.display_name:
-                user_store_id = store.name
-                logger.info(
-                    f"✅ 사용자 스토어 발견: {store.name} "
-                    f"(user_key={user_key})"
-                )
-                break
-
-        if not user_store_id:
-            # 생성 (_get_or_create_store에서 자동으로 sanitize됨)
-            logger.info(
-                f"📦 사용자 스토어 생성 시작: {user_store_name} -> {safe_user_store_name}"
-            )
-            created_store = self._get_or_create_store(user_store_name)
-            user_store_id = created_store.name
-            logger.info(f"✅ 사용자 스토어 생성 완료: {user_store_id}")
-
-        # 사용자 문서 우선 검색을 위해 user store를 먼저 추가
-        store_ids.append(user_store_id)
-        store_ids.append(rubric_store_id)
-
-        # 4. 캐싱
-        self._store_cache[cache_key] = {"ids": store_ids, "time": time.time()}
-
-        logger.info(
-            f"🎯 Store ID 조회 완료 (우선순위 순): "
-            f"user-{user_key}-store (1순위) + rubricstore (2순위)"
-        )
-        return store_ids
-
-    def get_user_store_id(self, user_key: str | int) -> str:
-        """
-        사용자 스토어 ID만 조회/생성
-
-        Args:
-            user_key: 사용자 ID (User.id, int 또는 str)
-
-        Returns:
-            user_store_id
-
-        Raises:
-            ValueError: 사용자 스토어를 찾거나 생성할 수 없는 경우
-        """
-        import time
-
-        # 1. 캐시 확인 (60초 TTL)
-        cache_key = f"user_store_{user_key}"
-        cached = self._store_cache.get(cache_key)
-        if cached and time.time() - cached["time"] < 60:
-            logger.debug(f"캐시에서 사용자 Store ID 조회: {user_key}")
-            return cached["id"]
-
-        # 2. 사용자 스토어 조회 또는 생성
-        user_store_name = f"user-{user_key}-store"
-        # 검색 시에도 sanitized name 사용
-        safe_user_store_name = _sanitize_display_name(user_store_name)
-        user_store_id = None
-
-        for store in list_stores(self.client):
-            if safe_user_store_name == store.display_name:
-                user_store_id = store.name
-                logger.info(
-                    f"✅ 사용자 스토어 발견: {store.name} "
-                    f"(user_key={user_key})"
-                )
-                break
-
-        if not user_store_id:
-            # 생성 (_get_or_create_store에서 자동으로 sanitize됨)
-            logger.info(
-                f"📦 사용자 스토어 생성 시작: {user_store_name} -> {safe_user_store_name}"
-            )
-            created_store = self._get_or_create_store(user_store_name)
-            user_store_id = created_store.name
-            logger.info(f"✅ 사용자 스토어 생성 완료: {user_store_id}")
-
         # 3. 캐싱
         self._store_cache[cache_key] = {
-            "id": user_store_id,
+            "id": rubric_store_id,
             "time": time.time(),
         }
+        return rubric_store_id
 
-        logger.info(f"🎯 사용자 Store ID 조회 완료: {safe_user_store_name}")
-        return user_store_id
+    def store_exists(self, store_id: str) -> bool:
+        """업로드 행이 가리키는 스토어가 클라우드에 남아 있는지 (GET 1회).
+
+        없는 스토어는 404 또는 403(없거나 접근할 수 없음)으로 온다.
+        그 밖의 오류는 그대로 올린다.
+        """
+        try:
+            _get_store(self.client, store_id)
+        except genai_errors.ClientError as e:
+            code = getattr(e, "code", None)
+            if code in (403, 404):
+                logger.info("스토어가 클라우드에 없음: %s (%s)", store_id, code)
+                return False
+            raise
+        return True
 
     async def upload_document(
         self,
@@ -364,8 +307,11 @@ class FileSearchService:
         Returns:
             document_id와 store_id 포함 딕셔너리
         """
+        # 이 호출이 만든 사용자 스토어. 실패하면 지운다 (#470)
+        new_store_id = None
         try:
             # 스토어 선택
+            per_upload_store = False
             if store_type == "rubric":
                 store_name = self.rubric_store_name
             elif isinstance(metadata, dict):
@@ -375,14 +321,24 @@ class FileSearchService:
                 )  # user_id 키에 User.id 저장됨
                 if user_key:
                     store_name = f"user-{user_key}-store"
+                    per_upload_store = True
                 else:
                     store_name = self.main_store_name
             else:
                 store_name = self.main_store_name
 
-            store = await asyncio.to_thread(
-                self._get_or_create_store, store_name
-            )
+            if per_upload_store:
+                # 사용자 스토어는 이름으로 찾지 않고 업로드마다 새로 만든다.
+                # 같은 이름의 스토어는 다른 배포의 것일 수 있다 (#470)
+                store = await asyncio.to_thread(
+                    self.client.file_search_stores.create,
+                    config={"display_name": _sanitize_display_name(store_name)},
+                )
+                new_store_id = store.name
+            else:
+                store = await asyncio.to_thread(
+                    self._get_or_create_store, store_name
+                )
 
             document_type = (
                 "rubric" if store_type == "rubric" else "user_document"
@@ -467,6 +423,8 @@ class FileSearchService:
             }
         except Exception as e:
             logger.error(f"문서 업로드 실패: {str(e)}")
+            if new_store_id:
+                await self.discard_store(new_store_id)
             raise
 
     async def delete_document(self, file_id: str) -> None:
@@ -486,43 +444,46 @@ class FileSearchService:
                 f"문서 삭제 실패 (이미 삭제되었을 수 있음): {str(e)}"
             )
 
-    async def delete_store_by_display_name(self, display_name: str) -> None:
+    async def delete_store(self, store_id: str) -> None:
         """
-        Display Name으로 File Search Store 삭제
+        자원 이름(fileSearchStores/...)으로 File Search Store 삭제
 
         Note:
             force=True 옵션을 사용하면 스토어 내의 모든 문서가 자동으로 삭제됩니다.
-            documents.list()와 documents.delete()는 Python SDK에 존재하지 않는 메서드입니다.
-
-        Args:
-            display_name: 스토어 표시 이름
+            표시 이름으로는 지우지 않는다. 같은 이름의 스토어는 다른 배포의
+            것일 수 있다 (#470)
 
         Raises:
             조회·삭제 실패를 그대로 올린다. 스토어가 없으면 조용히 끝난다 (#466)
         """
-        await asyncio.to_thread(
-            self._delete_store_by_display_name_sync, display_name
-        )
+        await asyncio.to_thread(self._delete_store_sync, store_id)
 
-    def _delete_store_by_display_name_sync(self, display_name: str) -> None:
-        target_store = None
-        # 스토어 목록에서 이름으로 검색
-        for store in list_stores(self.client):
-            if store.display_name == display_name:
-                target_store = store
-                break
-
-        if target_store:
-            # Store 삭제 (force=True로 내부 문서와 함께 삭제)
+    def _delete_store_sync(self, store_id: str) -> None:
+        # 이미 지워진 스토어는 목록에 없다. 없는 것을 지우다 실패로 끝나지 않게 한다
+        if any(store.name == store_id for store in list_stores(self.client)):
             self.client.file_search_stores.delete(
-                name=target_store.name,
+                name=store_id,
                 config={"force": True},  # 내부 문서와 함께 강제 삭제
             )
-            logger.info(
-                f"스토어 삭제 완료: {display_name} ({target_store.name})"
-            )
+            logger.info(f"스토어 삭제 완료: {store_id}")
         else:
-            logger.info(f"삭제할 스토어를 찾지 못함 (무시): {display_name}")
+            logger.info(f"삭제할 스토어를 찾지 못함 (무시): {store_id}")
+
+    async def discard_store(self, store_id: str) -> None:
+        """행에 적히지 못한 새 스토어를 지운다. 실패는 경고만 남긴다 (#470)"""
+        try:
+            await asyncio.to_thread(
+                self.client.file_search_stores.delete,
+                name=store_id,
+                config={"force": True},
+            )
+        except Exception as e:
+            # 원문에는 응답 헤더 줄이 섞일 수 있어 종류만 남긴다 (#368)
+            logger.warning(
+                "새 스토어 정리 실패 (남은 스토어): %s, %s",
+                store_id,
+                type(e).__name__,
+            )
 
     async def search_in_store(
         self,

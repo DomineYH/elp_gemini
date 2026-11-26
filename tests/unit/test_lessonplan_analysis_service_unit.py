@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from app.services.file_search_service import RubricStoreNotFound
 from app.services.lessonplan_analysis_service import LessonPlanAnalysisService
 
 # #439: 저장 전 검사를 통과하는 1~5절 제목 본문
@@ -31,6 +32,7 @@ def _indexed_upload(original_filename="plan.pdf"):
         filename="u_plan.pdf",
         original_filename=original_filename,
         fs_document_id="documents/d",
+        fs_store_id="fileSearchStores/user123",
     )
 
 
@@ -59,36 +61,49 @@ class TestLessonPlanAnalysisService:
     @pytest.mark.asyncio
     async def test_get_store_ids_success(self, service):
         """
-        Store 조회 성공 - get_dual_store_ids() 사용
+        Store 조회 성공 - 행의 스토어 id + get_rubric_store_id()
         """
-        # Mock get_dual_store_ids
-        service.file_search_service.get_dual_store_ids = Mock(
-            return_value=["fileSearchStores/rubric", "fileSearchStores/user123"]
+        service.file_search_service.store_exists = Mock(return_value=True)
+        service.file_search_service.get_rubric_store_id = Mock(
+            return_value="fileSearchStores/rubric"
         )
 
         # When
-        result = await service._get_store_ids(user_id=123)
+        result = await service._get_store_ids("fileSearchStores/user123")
 
         # Then
-        assert len(result) == 2
-        assert "fileSearchStores/rubric" in result
-        assert "fileSearchStores/user123" in result
+        assert result == ["fileSearchStores/user123", "fileSearchStores/rubric"]
 
     @pytest.mark.asyncio
     async def test_get_store_ids_not_found(self, service):
         """
-        Store 조회 실패 시 빈 리스트 반환
+        평가기준 스토어가 없으면 빈 리스트 반환
         """
-        # Mock get_dual_store_ids - ValueError 발생
-        service.file_search_service.get_dual_store_ids = Mock(
-            side_effect=ValueError("rubricstore를 찾을 수 없습니다")
+        service.file_search_service.store_exists = Mock(return_value=True)
+        service.file_search_service.get_rubric_store_id = Mock(
+            side_effect=RubricStoreNotFound("rubricstore를 찾을 수 없습니다")
         )
 
         # When
-        result = await service._get_store_ids(user_id=123)
+        result = await service._get_store_ids("fileSearchStores/user123")
 
         # Then
         assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_store_ids_does_not_swallow_other_value_errors(
+        self, service
+    ):
+        """
+        SDK 응답 파싱 오류(ValueError)는 '평가기준 스토어 없음'이 아니다
+        """
+        service.file_search_service.store_exists = Mock(return_value=True)
+        service.file_search_service.get_rubric_store_id = Mock(
+            side_effect=ValueError("응답을 읽지 못했다")
+        )
+
+        with pytest.raises(ValueError, match="응답을 읽지 못했다"):
+            await service._get_store_ids("fileSearchStores/user123")
 
     def test_build_analysis_prompt(self, service):
         """
@@ -262,7 +277,13 @@ class TestLessonPlanAnalysisService:
         # 최신 업로드 존재 가정 → no-document 조기 반환을 건너뛰고
         # _get_store_ids(실제 await 지점)까지 제어가 도달하도록 한다.
         service._find_existing_report_for_latest_upload = AsyncMock(
-            return_value=(Mock(fs_document_id="documents/test"), None)
+            return_value=(
+                Mock(
+                    fs_document_id="documents/test",
+                    fs_store_id="fileSearchStores/test",
+                ),
+                None,
+            )
         )
 
         # _get_store_ids - 마감을 초과하는 지연

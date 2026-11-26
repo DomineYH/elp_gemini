@@ -519,20 +519,22 @@ async def login(
     )
 
 
-async def _delete_user_store(user_id) -> None:
+async def _delete_user_stores(user_id, store_ids: list[str]) -> None:
     """클라우드 user store 삭제 (최대 120초라 응답 뒤에 실행, #247)"""
     try:
         from app.services.file_search_service import FileSearchService
 
-        await FileSearchService().delete_store_by_display_name(
-            f"user-{user_id}-store"
-        )
+        service = FileSearchService()
+        for store_id in store_ids:
+            await service.delete_store(store_id)
     except Exception as e:
         # 원문에는 응답 헤더 줄이 섞일 수 있어 종류만 남긴다 (#368)
+        # 행의 id 는 이미 비웠다. 남은 스토어는 이 로그의 id 로만 찾는다 (#470)
         logger.warning(
-            "로그아웃 시 스토어 정리 실패: user_id=%s, %s",
+            "로그아웃 시 스토어 정리 실패: user_id=%s, %s, stores=%s",
             user_id,
             type(e).__name__,
+            store_ids,
         )
 
 
@@ -571,11 +573,15 @@ async def logout(
         )
 
         # 지워질 문서로 대시보드가 QnA 버튼을 복원하지 않게 (#173)
+        store_ids = []
         try:
             from app.services.simulation.lessonplan_source import (
                 forget_file_search_ids,
+                get_store_ids,
             )
 
+            # 비우기 전에 읽어 둔다. 삭제는 이 id 로만 한다 (#470)
+            store_ids = await get_store_ids(db, user_id)
             await forget_file_search_ids(db, user_id)
         except Exception as e:
             # DB 오류 원문에는 쿼리나 값이 섞일 수 있어 종류만 남긴다 (#466)
@@ -585,7 +591,8 @@ async def logout(
                 type(e).__name__,
             )
 
-        background_tasks.add_task(_delete_user_store, user_id)
+        if store_ids:
+            background_tasks.add_task(_delete_user_stores, user_id, store_ids)
 
     request.session.clear()
 

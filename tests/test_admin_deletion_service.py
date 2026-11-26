@@ -31,6 +31,24 @@ def _isolate_file_dirs(tmp_path, monkeypatch):
         )
 
 
+STORE_ID = "fileSearchStores/stu1store-abc"
+
+
+async def _seed_upload_store(user_id):
+    """사용자 스토어는 업로드 행의 fs_store_id 로만 지운다 (#470)."""
+    async with TestingSessionLocal() as db:
+        db.add(
+            LessonPlanUpload(
+                user_id=user_id,
+                filename="plan.pdf",
+                original_filename="plan.pdf",
+                fs_document_id=f"{STORE_ID}/documents/d",
+                fs_store_id=STORE_ID,
+            )
+        )
+        await db.commit()
+
+
 @pytest_asyncio.fixture
 async def db_tables():
     async with engine.begin() as conn:
@@ -45,7 +63,7 @@ def _stub_file_search_service(monkeypatch):
     import app.services.file_search_service as fss_module
 
     class _NoopFSS:
-        async def delete_store_by_display_name(self, display_name):
+        async def delete_store(self, store_id):
             return None
 
     monkeypatch.setattr(
@@ -276,12 +294,13 @@ async def test_delete_user_calls_file_search_cleanup(seeded, monkeypatch):
     called_with = []
 
     class FakeFSS:
-        async def delete_store_by_display_name(self, display_name):
-            called_with.append(display_name)
+        async def delete_store(self, store_id):
+            called_with.append(store_id)
 
     monkeypatch.setattr(
         fss_module, "FileSearchService", lambda *a, **k: FakeFSS()
     )
+    await _seed_upload_store(seeded["user_id"])
 
     async with TestingSessionLocal() as db:
         service = AdminDeletionService(db)
@@ -290,7 +309,7 @@ async def test_delete_user_calls_file_search_cleanup(seeded, monkeypatch):
             current_admin_id=seeded["admin_id"],
         )
 
-    assert called_with == [f"user-{seeded['user_id']}-store"]
+    assert called_with == [STORE_ID]
 
 
 @pytest.mark.asyncio
@@ -302,12 +321,13 @@ async def test_delete_user_stops_before_db_when_store_delete_fails(
     from app.services.admin_deletion_service import StoreCleanupError
 
     class FailingFSS:
-        async def delete_store_by_display_name(self, display_name):
+        async def delete_store(self, store_id):
             raise RuntimeError("raw detail")
 
     monkeypatch.setattr(
         fss_module, "FileSearchService", lambda *a, **k: FailingFSS()
     )
+    await _seed_upload_store(seeded["user_id"])
 
     async with TestingSessionLocal() as db:
         service = AdminDeletionService(db)
@@ -339,13 +359,14 @@ async def test_delete_user_deletes_store_before_db_rows(seeded, monkeypatch):
     user_seen = []
 
     class FakeFSS:
-        async def delete_store_by_display_name(self, display_name):
+        async def delete_store(self, store_id):
             async with TestingSessionLocal() as other:
                 user_seen.append(await other.get(User, seeded["user_id"]))
 
     monkeypatch.setattr(
         fss_module, "FileSearchService", lambda *a, **k: FakeFSS()
     )
+    await _seed_upload_store(seeded["user_id"])
 
     async with TestingSessionLocal() as db:
         await AdminDeletionService(db).delete_user(
@@ -365,8 +386,8 @@ async def test_delete_user_rejects_admin_target_before_store_delete(
     called = []
 
     class FakeFSS:
-        async def delete_store_by_display_name(self, display_name):
-            called.append(display_name)
+        async def delete_store(self, store_id):
+            called.append(store_id)
 
     monkeypatch.setattr(
         fss_module, "FileSearchService", lambda *a, **k: FakeFSS()

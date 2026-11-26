@@ -1,10 +1,10 @@
-"""Tests verifying QnA File Search store lookups use user_id (issue #91 §0).
+"""Tests verifying which File Search store QnA searches.
 
-The QnA service must resolve stores as ``user-{user_id}-store``, not
-``user-{username}-store``, so grounding matches the upload path.
+The QnA service searches the store named in the latest upload row
+(``fs_store_id``). It never looks a user store up by display name (#470;
+before that the store was resolved as ``user-{user_id}-store``, #91 §0).
 
-These tests exercise the real ``ask_question`` code path to ensure the
-store-lookup call receives the int ``user_id``, not the string ``username``.
+These tests exercise the real ``ask_question`` code path.
 """
 
 from collections import Counter
@@ -28,6 +28,8 @@ from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
 from app.routers import qna
 
+ROW_STORE = "fileSearchStores/row42"
+
 
 def _mock_db():
     """Build a mock AsyncSession: valid session, indexed upload, empty history."""
@@ -38,7 +40,7 @@ def _mock_db():
     # 색인된 최신 업로드 (#468)
     upload_result = Mock()
     upload_result.scalar_one_or_none.return_value = Mock(
-        fs_document_id="documents/d"
+        fs_document_id="documents/d", fs_store_id=ROW_STORE
     )
     history_result = Mock()
     history_result.scalars.return_value.all.return_value = []
@@ -76,23 +78,19 @@ _COMMON_PATCHES = [
 
 
 class TestQnAStoreUserIdKeying:
-    """Verify QnA passes user_id (int) to store lookups via ask_question."""
+    """Verify QnA searches the upload row's store via ask_question."""
 
     @pytest.mark.asyncio
-    async def test_general_question_uses_int_user_id_for_store(self):
+    async def test_general_question_searches_the_upload_row_store(self):
         """
         Full ask_question path for a general question:
-        ``get_user_store_id`` must receive ``user_key=42`` (int),
-        NOT ``user_key="testuser"`` (str).
+        the only File Search tool must name the row's ``fs_store_id``.
         """
         with patch.object(settings, "GOOGLE_API_KEY", "test-key"):
             db = _mock_db()
             svc = _make_service(db)
 
-            # Spy on the store lookup
-            svc.file_search_service.get_user_store_id = Mock(
-                return_value="fileSearchStores/user42"
-            )
+            svc.file_search_service.store_exists = Mock(return_value=True)
 
             with (
                 patch(_COMMON_PATCHES[0], Mock()),
@@ -112,31 +110,29 @@ class TestQnAStoreUserIdKeying:
                     username="testuser",
                 )
 
-            # THE critical assertion
-            svc.file_search_service.get_user_store_id.assert_called_once()
-            call_kwargs = svc.file_search_service.get_user_store_id.call_args
-            assert call_kwargs.kwargs["user_key"] == 42
-            assert isinstance(call_kwargs.kwargs["user_key"], int)
+            # THE critical assertion: 업로드 행의 fs_store_id 로 검색한다 (#470)
+            call = svc.client.models.generate_content.call_args
+            assert _store_names(call.kwargs["config"]) == [[ROW_STORE]]
+            svc.file_search_service.store_exists.assert_called_once_with(
+                ROW_STORE
+            )
             # Sanity
             assert result["answer"] == "answer"
 
     @pytest.mark.asyncio
-    async def test_eval_question_uses_int_user_id_for_store(self):
+    async def test_eval_question_searches_the_upload_row_store(self):
         """
         Full ask_question path for an evaluation question:
-        ``get_dual_store_ids`` must receive ``user_key=42`` (int),
-        NOT ``user_key="testuser"`` (str).
+        pass 1 must search the row's ``fs_store_id``; the rubric store
+        comes from ``get_rubric_store_id``.
         """
         with patch.object(settings, "GOOGLE_API_KEY", "test-key"):
             db = _mock_db()
             svc = _make_service(db)
 
-            # Spy on the store lookup
-            svc.file_search_service.get_dual_store_ids = Mock(
-                return_value=[
-                    "fileSearchStores/user42",
-                    "fileSearchStores/rubric",
-                ]
+            svc.file_search_service.store_exists = Mock(return_value=True)
+            svc.file_search_service.get_rubric_store_id = Mock(
+                return_value="fileSearchStores/rubric"
             )
 
             with (
@@ -162,11 +158,10 @@ class TestQnAStoreUserIdKeying:
                     username="testuser",
                 )
 
-            # THE critical assertion
-            svc.file_search_service.get_dual_store_ids.assert_called_once()
-            call_kwargs = svc.file_search_service.get_dual_store_ids.call_args
-            assert call_kwargs.kwargs["user_key"] == 42
-            assert isinstance(call_kwargs.kwargs["user_key"], int)
+            # THE critical assertion: 1패스는 업로드 행의 fs_store_id 로 검색한다 (#470)
+            pass1 = svc.client.models.generate_content.call_args_list[0]
+            assert _store_names(pass1.kwargs["config"]) == [[ROW_STORE]]
+            svc.file_search_service.get_rubric_store_id.assert_called_once_with()
             # Sanity
             assert result["answer"] == "answer"
 
@@ -252,6 +247,7 @@ class FakeGenai:
         )
         self.file_search_stores = SimpleNamespace(
             list=count("stores.list", stores),
+            get=count("stores.get", SimpleNamespace(name=self.user_store)),
             create=count(
                 "stores.create",
                 SimpleNamespace(
@@ -456,6 +452,7 @@ async def _seed_indexed_upload(factory, user, original="plan.pdf"):
             filename="newcomer_plan.pdf",
             original_filename=original,
             fs_document_id="documents/new",
+            fs_store_id=f"fileSearchStores/u{user.id}",
         )
         db.add(upload)
         await db.commit()

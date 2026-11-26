@@ -284,7 +284,7 @@ async def test_auth_cache_control(seeded):
         _assert_no_store(await anon.get(path, headers=HTML))
     user = seeded["client"](seeded["user"])
     with patch("app.services.file_search_service.FileSearchService") as fss:
-        fss.return_value.delete_store_by_display_name = AsyncMock()
+        fss.return_value.delete_store = AsyncMock()
         _assert_no_store(await user.post("/auth/logout", headers=HTML), 302)
 
 

@@ -18,6 +18,7 @@ from starlette.requests import Request
 from app.routers.auth import logout
 
 USER_ID = 247
+STORE_ID = "fileSearchStores/user247store-abc"
 
 
 def _request() -> Request:
@@ -44,6 +45,11 @@ def patched():
             "forget_file_search_ids",
             new=AsyncMock(),
         ) as forget,
+        # 비우기 전에 읽은 업로드 행의 스토어 id (#470)
+        patch(
+            "app.services.simulation.lessonplan_source.get_store_ids",
+            new=AsyncMock(return_value=[STORE_ID]),
+        ),
         patch("app.services.file_search_service.FileSearchService") as fss,
     ):
         yield forget, fss.return_value
@@ -57,7 +63,7 @@ async def test_logout_returns_before_store_delete(patched):
     async def slow_delete(_name):
         await release.wait()
 
-    service.delete_store_by_display_name = AsyncMock(side_effect=slow_delete)
+    service.delete_store = AsyncMock(side_effect=slow_delete)
     request = _request()
     tasks = BackgroundTasks()
 
@@ -71,21 +77,17 @@ async def test_logout_returns_before_store_delete(patched):
     assert request.session == {}
     # 지워진 문서의 QnA 버튼이 남지 않도록 DB 정리는 요청 안에서 끝난다 (#173)
     forget.assert_awaited_once()
-    service.delete_store_by_display_name.assert_not_awaited()
+    service.delete_store.assert_not_awaited()
 
     release.set()
     await asyncio.wait_for(tasks(), timeout=1)
-    service.delete_store_by_display_name.assert_awaited_once_with(
-        f"user-{USER_ID}-store"
-    )
+    service.delete_store.assert_awaited_once_with(STORE_ID)
 
 
 @pytest.mark.asyncio
 async def test_background_delete_failure_only_warns(patched, caplog):
     _, service = patched
-    service.delete_store_by_display_name = AsyncMock(
-        side_effect=RuntimeError("boom")
-    )
+    service.delete_store = AsyncMock(side_effect=RuntimeError("boom"))
     tasks = BackgroundTasks()
 
     res = await logout(_request(), tasks, db=MagicMock())

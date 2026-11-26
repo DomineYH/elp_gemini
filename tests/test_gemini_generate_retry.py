@@ -115,6 +115,7 @@ async def user():
                 filename="plan.pdf",
                 original_filename="plan.pdf",
                 fs_document_id="documents/d",
+                fs_store_id="fileSearchStores/d",
             )
         )
         await db.commit()
@@ -152,9 +153,7 @@ async def ask(user):
             ),
         ):
             store = fs_cls.return_value
-            store.get_dual_store_ids = Mock(
-                return_value=["fileSearchStores/u", "fileSearchStores/r"]
-            )
+            store.get_rubric_store_id = Mock(return_value="fileSearchStores/r")
             pl_cls.return_value.get_prompt = Mock(return_value="system")
             async with AsyncClient(
                 transport=ASGITransport(app=test_app),
@@ -192,7 +191,7 @@ async def test_qna_transient_error_once_is_retried(ask, stage, error):
     other = "final" if stage == "pass1" else "pass1"
     assert models.calls == {stage: 2, other: 1}
     # 재시도는 앞선 스토어 조회·세션 생성을 다시 하지 않는다
-    store.get_dual_store_ids.assert_called_once()
+    store.get_rubric_store_id.assert_called_once()
     assert len(await _rows(ChatSession)) == 1
     assert len(await _rows(ChatMessage)) == 2
 
@@ -425,6 +424,7 @@ async def test_qna_exhausted_first_request_keeps_session_another_tab_used(
                 filename="plan.pdf",
                 original_filename="plan.pdf",
                 fs_document_id="documents/d",
+                fs_store_id="fileSearchStores/d",
             )
         )
         await db.commit()
@@ -472,8 +472,8 @@ async def test_qna_exhausted_first_request_keeps_session_another_tab_used(
                 AsyncMock(return_value='stable_id="A"'),
             ),
         ):
-            fs_cls.return_value.get_dual_store_ids = Mock(
-                return_value=["fileSearchStores/u", "fileSearchStores/r"]
+            fs_cls.return_value.get_rubric_store_id = Mock(
+                return_value="fileSearchStores/r"
             )
             pl_cls.return_value.get_prompt = Mock(return_value="system")
             async with AsyncClient(

@@ -10,6 +10,7 @@ from app.main import app
 from app.models.analysis_reports import AnalysisReport
 from app.models.chat_messages import ChatMessage, MessageRole
 from app.models.chat_sessions import ChatSession
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
 from app.utils.admin_csrf import ADMIN_CSRF_HEADER
 from tests.conftest import (
@@ -51,7 +52,7 @@ async def seeded(db_tables, tmp_path, monkeypatch):
     import app.services.file_search_service as fss_module
 
     class _NoopFSS:
-        async def delete_store_by_display_name(self, display_name):
+        async def delete_store(self, store_id):
             return None
 
     monkeypatch.setattr(
@@ -192,12 +193,24 @@ async def test_delete_user_store_failure_returns_503_and_keeps_user(
     import app.services.file_search_service as fss_module
 
     class FailingFSS:
-        async def delete_store_by_display_name(self, display_name):
+        async def delete_store(self, store_id):
             raise RuntimeError("raw detail")
 
     monkeypatch.setattr(
         fss_module, "FileSearchService", lambda *a, **k: FailingFSS()
     )
+    # 사용자 스토어는 업로드 행의 fs_store_id 로만 지운다 (#470)
+    async with TestingSessionLocal() as db:
+        db.add(
+            LessonPlanUpload(
+                user_id=seeded["user_id"],
+                filename="plan.pdf",
+                original_filename="plan.pdf",
+                fs_document_id="fileSearchStores/s/documents/d",
+                fs_store_id="fileSearchStores/s",
+            )
+        )
+        await db.commit()
 
     with caplog.at_level("INFO"):
         with TestClient(app) as client:
@@ -224,7 +237,7 @@ async def test_delete_user_store_failure_returns_503_and_keeps_user(
 
     # 스토어가 지워지면 같은 버튼으로 끝난다
     class OkFSS:
-        async def delete_store_by_display_name(self, display_name):
+        async def delete_store(self, store_id):
             return None
 
     monkeypatch.setattr(

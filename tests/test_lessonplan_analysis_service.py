@@ -29,6 +29,7 @@ def _reach_store_lookup(service):
         filename="u_plan.pdf",
         original_filename="plan.pdf",
         fs_document_id="documents/d",
+        fs_store_id="fileSearchStores/u",
     )
     service._find_existing_report_for_latest_upload = AsyncMock(
         return_value=(upload, None)
@@ -54,29 +55,41 @@ class TestLessonPlanAnalysisService:
     async def test_get_store_ids_success(self, service):
         """Store ID 조회 성공"""
         # Given
-        user_id = 123
         # name=은 Mock 자신의 이름이라 .name 속성은 따로 지정한다
         rubric = MagicMock(display_name=settings.FS_RUBRIC_STORE_NAME)
         rubric.name = "fileSearchStores/rubric123"
-        user_store = MagicMock(display_name="user-123-store")
-        user_store.name = "fileSearchStores/user123"
         service.file_search_service.client.file_search_stores.list = MagicMock(
-            return_value=[rubric, user_store]
+            return_value=[rubric]
         )
+        service.file_search_service.store_exists = MagicMock(return_value=True)
 
         # When
-        result = await service._get_store_ids(user_id)
+        result = await service._get_store_ids("fileSearchStores/user123")
 
-        # Then
-        assert len(result) == 2
-        assert "fileSearchStores/rubric123" in result
-        assert "fileSearchStores/user123" in result
+        # Then: 사용자 스토어는 받은 id 그대로다. 이름으로 찾지 않는다 (#470)
+        assert result == [
+            "fileSearchStores/user123",
+            "fileSearchStores/rubric123",
+        ]
+        service.file_search_service.store_exists.assert_called_once_with(
+            "fileSearchStores/user123"
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_store_ids_user_store_gone(self, service):
+        """행의 스토어가 클라우드에 없으면 None, 평가기준 조회는 하지 않는다"""
+        service.file_search_service.store_exists = MagicMock(return_value=False)
+        service.file_search_service.get_rubric_store_id = MagicMock()
+
+        result = await service._get_store_ids("fileSearchStores/gone")
+
+        assert result is None
+        service.file_search_service.get_rubric_store_id.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_get_store_ids_not_found(self, service):
         """Store 없을 시 빈 리스트 반환"""
         # Given
-        user_id = 999
         mock_stores = [
             MagicMock(
                 display_name="other-store", name="fileSearchStores/other"
@@ -86,8 +99,10 @@ class TestLessonPlanAnalysisService:
             return_value=mock_stores
         )
 
+        service.file_search_service.store_exists = MagicMock(return_value=True)
+
         # When
-        result = await service._get_store_ids(user_id)
+        result = await service._get_store_ids("fileSearchStores/user999")
 
         # Then
         assert result == []
@@ -162,7 +177,7 @@ class TestLessonPlanAnalysisService:
         result = await service.analyze_lesson_plan(session_id, user_id)
 
         # Then
-        service._get_store_ids.assert_awaited_once_with(user_id)
+        service._get_store_ids.assert_awaited_once_with("fileSearchStores/u")
         assert result["success"] is False
         assert "평가기준 스토어를 찾을 수 없습니다" in result["error"]
 
