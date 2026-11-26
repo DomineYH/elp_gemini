@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
 from app.db import Base, get_db
@@ -47,12 +47,14 @@ ADMIN_CSRF_TOKEN = "test-admin-login-csrf-token"
 
 
 @pytest_asyncio.fixture
-async def db_engine():
-    """각 테스트마다 격리된 in-memory DB 엔진."""
+async def db_engine(tmp_path):
+    """각 테스트마다 격리된 파일 DB 엔진.
+
+    운영처럼 세션마다 연결이 따로다. 연결 하나를 나눠 쓰면(StaticPool)
+    한 세션의 close 가 다른 세션의 커밋 전 UPDATE 를 되돌린다 (#467).
+    """
     engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+        f"sqlite+aiosqlite:///{tmp_path / 'bf.db'}", poolclass=NullPool
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

@@ -22,6 +22,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from limits import parse
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -29,12 +30,17 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
+import app.rate_limit as rate_limit
 from app.config import settings
 from app.db import Base, get_db
 from app.main import app
 from app.models.users import User
 from app.rate_limit import limiter
 from app.services.auth_service import AuthService
+from tests.test_user_id_password_auth import (
+    _assert_off_loop,
+    _record_pwd_calls,
+)
 
 ADMIN = "ts_admin"
 ADMIN_PASSWORD = "correct horse battery staple"
@@ -523,3 +529,84 @@ async def test_failure_paths_wallclock_parity(
         f"medians_ms={best_medians_ms}, "
         f"samples_ms={best_samples_ms}"
     )
+
+
+# ---------------------------------------------------------------------
+# #467 — 경로마다 bcrypt 1회, 이벤트 루프 밖 스레드에서
+# ---------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path, kind, status_code",
+    [
+        ("missing_user", "dummy", 401),
+        ("non_admin", "dummy", 401),
+        ("locked", "dummy", 401),
+        ("no_password", "dummy", 401),
+        ("invalid_password", "verify", 401),
+        ("success", "verify", 302),
+    ],
+)
+async def test_each_path_hashes_once_off_event_loop(
+    http_client,
+    admin_user,
+    session_factory,
+    disable_rate_limit,
+    monkeypatch,
+    path,
+    kind,
+    status_code,
+):
+    monkeypatch.setattr(settings, "ADMIN_LOGIN_FAILURE_MIN_SECONDS", 0.6)
+    admin_id = {"missing_user": "no_such_user", "non_admin": "regular_467"}.get(
+        path, ADMIN
+    )
+    password = ADMIN_PASSWORD if path == "success" else "wrong"
+    async with session_factory() as s:
+        s.add(
+            User(
+                username="regular_467",
+                nickname="regular",
+                hashed_password=admin_user.hashed_password,
+                is_admin=False,
+            )
+        )
+        u = await s.get(User, admin_user.id)
+        if path == "locked":
+            u.locked_until = datetime.utcnow() + timedelta(minutes=5)
+        if path == "no_password":
+            u.hashed_password = None
+        await s.commit()
+    calls = _record_pwd_calls(monkeypatch)
+
+    started = time.monotonic()
+    response = await _post_admin_login(http_client, admin_id, password)
+    elapsed = time.monotonic() - started
+
+    assert response.status_code == status_code
+    _assert_off_loop(calls, kind)
+    if status_code == 401:
+        # 실패 응답의 최소 시간과 문구는 그대로다
+        assert elapsed >= 0.6
+        assert "ID 또는 비밀번호" in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "limit_item", ["_admin_login_ip_limit_item", "_admin_id_limit_item"]
+)
+async def test_rate_limited_admin_login_does_not_hash(
+    http_client, monkeypatch, limit_item
+):
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
+    monkeypatch.setattr(limiter, "enabled", True)
+    monkeypatch.setattr(rate_limit, limit_item, parse("1/minute"))
+    monkeypatch.setattr(settings, "ADMIN_LOGIN_FAILURE_MIN_SECONDS", 0.0)
+    calls = _record_pwd_calls(monkeypatch)
+
+    first = await _post_admin_login(http_client, "no_such_user", "x")
+    second = await _post_admin_login(http_client, "no_such_user", "x")
+
+    assert (first.status_code, second.status_code) == (401, 429)
+    assert [kind for kind, _ in calls] == ["dummy"]
