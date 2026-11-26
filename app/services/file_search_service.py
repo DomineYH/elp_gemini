@@ -237,24 +237,17 @@ class FileSearchService:
             logger.debug(f"캐시에서 Store ID 조회: {user_key}")
             return cached["ids"]
 
-        # 2. rubricstore 조회 (목록은 한 번만 읽어 아래에서도 쓴다)
+        # 2. 평가기준 스토어 조회 (목록은 한 번만 읽어 아래에서도 쓴다)
         stores = list_stores(self.client)
-        rubric_store_id = None
-        for store in stores:
-            # 하이픈, 언더스코어 제거 후 비교
-            normalized_name = (
-                store.display_name.lower().replace("-", "").replace("_", "")
-            )
-            if "rubricstore" in normalized_name:
-                rubric_store_id = store.name
-                logger.info(
-                    f"✅ rubricstore 발견: "
-                    f"{store.display_name} -> {store.name}"
-                )
-                break
+        # 설정 이름과 정확히 같은 스토어만 쓴다. 비슷한 이름은 다른 배포의 것일 수 있다 (#470)
+        rubric_store_name = settings.FS_RUBRIC_STORE_NAME
+        rubric_store_id = next(
+            (s.name for s in stores if s.display_name == rubric_store_name),
+            None,
+        )
 
         if not rubric_store_id:
-            logger.error("❌ rubricstore를 찾을 수 없습니다")
+            logger.error(f"❌ 평가기준 스토어 없음: {rubric_store_name}")
             raise ValueError(
                 "평가기준 스토어(rubricstore)를 찾을 수 없습니다. "
                 "관리자에게 문의하세요."

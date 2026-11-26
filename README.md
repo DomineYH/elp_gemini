@@ -194,7 +194,7 @@ uv run --frozen python -m pytest tests -k _js
 
 실제 Gemini 호출과 실제 브라우저로 시뮬레이션을 끝까지 돌리는 검사입니다. CI에서는 돌지 않고 저장소에 스크립트도 없으며, 병합 후 사람이 직접 돌립니다.
 
-1. `data/app.db` 사본을 쓰는 작업 트리에서 실제 `GOOGLE_API_KEY`로 서버를 띄웁니다 (`uvicorn app.main:app --host 127.0.0.1 --port 8000`).
+1. `data/app.db` 사본을 쓰는 작업 트리에서 실제 `GOOGLE_API_KEY`로 서버를 띄웁니다 (`uvicorn app.main:app --host 127.0.0.1 --port 8000`). 이 작업 트리의 .env에는 FS_RUBRIC_STORE_NAME을 운영과 다른 이름(예: dev-rubric-store)으로 넣습니다(아래 "환경 변수" 참고).
 2. 브라우저로 로그인 → 지도안 업로드 → 시뮬레이션 설정 → 장면별 발화 → 피드백까지 진행합니다.
 3. 서버 로그와 DB 사본에서 실패, 재시도, 차단된 입력을 확인합니다.
 
@@ -228,6 +228,8 @@ GEMINI_SIM_MODEL=gemini-3.1-flash-lite   # 수업 시뮬레이션
 FS_MAIN_STORE_NAME=main-store
 FS_RUBRIC_STORE_NAME=rubric-store
 ```
+
+`FS_RUBRIC_STORE_NAME`은 평가기준 File Search 스토어의 표시 이름입니다. 앱은 이 이름과 정확히 같은 스토어만 쓰고, 없으면 비슷한 이름의 스토어로 넘어가지 않습니다. 운영은 기본값 `rubric-store`를 씁니다. 운영이 아닌 배포(개발, E2E, live 검사)는 반드시 다른 이름(예: `dev-rubric-store`)을 주고 관리자 화면에서 평가기준을 한 번 올립니다. 같은 이름을 쓰면 그 배포의 평가기준 업로드·별칭 변경·비활성화·삭제가 운영의 평가기준을 바꿉니다. 가능하면 `GOOGLE_API_KEY`도 운영과 다른 키를 씁니다. 이름에는 영문, 숫자, 하이픈만 씁니다.
 
 ## 배포 / 보안 헤더
 
