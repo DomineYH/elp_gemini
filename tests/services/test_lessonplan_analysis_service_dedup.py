@@ -1728,3 +1728,127 @@ async def test_analyze_during_and_after_reindex(session):
     (row,) = await _report_rows(session, upload_b_id)
     assert row.lessonplan_filename == "alice_plan_b.pdf"
     assert row.lessonplan_original_name == "plan_b.pdf"
+
+
+# --- #468 B: 업로드 행이 없으면 남은 스토어가 있어도 분석하지 않는다 ---------
+
+
+@pytest_asyncio.fixture
+async def analyze_post(session, tmp_path, monkeypatch):
+    """가짜 SDK 로 실제 분석 라우트·서비스를 부른다. (응답, fake)."""
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from app.db import get_db
+    from app.dependencies import get_current_user
+    from app.routers import lessonplan_analysis
+    from app.services.file_search_service import FileSearchService
+    from tests.unit.test_qna_store_user_id_keying import FakeGenai
+
+    # 보고서·옛 지도안 폴더(상대 경로)를 tmp 안에 둔다
+    monkeypatch.chdir(tmp_path)
+    user = User(username="newcomer", nickname="newcomer", hashed_password="x")
+    session.add(user)
+    await session.commit()
+    factory = async_sessionmaker(session.bind, expire_on_commit=False)
+    test_app = FastAPI()
+    test_app.include_router(lessonplan_analysis.router)
+
+    async def override_get_db():
+        async with factory() as db:
+            yield db
+
+    test_app.dependency_overrides[get_db] = override_get_db
+    test_app.dependency_overrides[get_current_user] = lambda: user
+
+    async def _post():
+        fake = FakeGenai(user.id, answer=VALID_SECTIONS)
+        monkeypatch.setattr(FileSearchService, "_client", fake)
+        with (
+            patch(
+                "app.services.lessonplan_analysis_service.genai.Client",
+                return_value=fake,
+            ),
+            patch(
+                "app.services.prompt_loader_service.PromptLoaderService.get_prompt",
+                return_value="SYS",
+            ),
+            patch(
+                "app.services.criteria_vector_service."
+                "CriteriaVectorService.active_stable_id_filter",
+                new=AsyncMock(return_value='stable_id="A"'),
+            ),
+            patch.object(
+                LessonPlanAnalysisService,
+                "_collect_active_criteria_display_names",
+                new=AsyncMock(return_value=[]),
+            ),
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=test_app),
+                base_url="http://testserver",
+            ) as client:
+                response = await client.post(
+                    "/api/lessonplan/analyze", json={"session_id": 1}
+                )
+        return response, fake
+
+    return user, _post
+
+
+async def _user_rows(session, model, user_id):
+    # 요청이 쓴 별도 세션의 결과를 새 세션으로 읽는다
+    async with async_sessionmaker(session.bind)() as db:
+        return (
+            (await db.execute(select(model).where(model.user_id == user_id)))
+            .scalars()
+            .all()
+        )
+
+
+@pytest.mark.asyncio
+async def test_analyze_rejects_orphan_store_without_upload(
+    session, analyze_post
+):
+    user, post = analyze_post
+
+    response, fake = await post()
+
+    assert response.status_code == 500, response.text
+    assert response.json() == {
+        "detail": "분석할 문서가 없습니다. 수업 지도안을 먼저 업로드해주세요."
+    }
+    assert fake.calls == {}
+    assert await _user_rows(session, AnalysisReport, user.id) == []
+    assert await _user_rows(session, LessonPlanUpload, user.id) == []
+
+
+@pytest.mark.asyncio
+async def test_indexed_upload_keeps_analysis_search(session, analyze_post):
+    user, post = analyze_post
+    upload = LessonPlanUpload(
+        user_id=user.id,
+        filename="newcomer_plan.pdf",
+        original_filename="plan.pdf",
+        fs_document_id="documents/new",
+    )
+    session.add(upload)
+    await session.commit()
+
+    response, fake = await post()
+
+    assert response.status_code == 200, response.text
+    assert fake.calls["stores.create"] == 0
+    pass1, final = fake.configs
+    assert [t.file_search.file_search_store_names for t in pass1.tools] == [
+        [fake.user_store]
+    ]
+    assert [
+        (t.file_search.file_search_store_names, t.file_search.metadata_filter)
+        for t in final.tools
+    ] == [(["fileSearchStores/rubric"], 'stable_id="A"')]
+    (row,) = await _user_rows(session, AnalysisReport, user.id)
+    assert (row.upload_id, row.lessonplan_original_name) == (
+        upload.id,
+        "plan.pdf",
+    )
