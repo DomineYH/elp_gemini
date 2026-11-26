@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 import httpx
 from google import genai
 from google.api_core import exceptions
+from google.genai import errors as genai_errors
 from google.genai import types
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -363,6 +364,9 @@ class LessonPlanAnalysisService:
                 except Exception as e:
                     # 일시 오류는 이번 요청만 실패시키고 전역 상태는 그대로 둔다 (#465)
                     if is_transient_lookup_error(e):
+                        # 재시도 집합 밖의 5xx(예: 520)도 503 혼잡 안내와 같게 끝낸다 (#465)
+                        if isinstance(e, genai_errors.ServerError):
+                            raise GeminiServerOverloaded(str(e)) from e
                         raise
                     logger.warning(
                         f"활성 평가기준 필터 조회 실패 (무시): {e}",

@@ -7,6 +7,7 @@ from google.genai import errors as genai_errors
 from app.utils.gemini_retry import (
     GeminiQuotaExhausted,
     GeminiServerOverloaded,
+    is_transient_lookup_error,
     retry_on_resource_exhausted,
 )
 
@@ -169,3 +170,17 @@ def test_opted_in_timeout_once_then_succeeds():
 
     assert flaky() == "ok"
     assert calls["n"] == 2
+
+
+@pytest.mark.parametrize(
+    "error_cls, code, transient",
+    [
+        (genai_errors.ServerError, 520, True),
+        (genai_errors.ClientError, 400, False),
+    ],
+)
+def test_transient_lookup_error_any_5xx(error_cls, code, transient):
+    exc = error_cls(
+        code, {"error": {"code": code, "message": "x"}}, MagicMock()
+    )
+    assert is_transient_lookup_error(exc) is transient

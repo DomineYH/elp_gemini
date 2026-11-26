@@ -546,7 +546,12 @@ def _protocol():
 
 
 def _sdk(code):
-    status = {503: "UNAVAILABLE", 429: "RESOURCE_EXHAUSTED", 403: "DENIED"}
+    status = {
+        503: "UNAVAILABLE",
+        520: "UNKNOWN",
+        429: "RESOURCE_EXHAUSTED",
+        403: "DENIED",
+    }
     error_cls = (
         genai_errors.ServerError if code >= 500 else genai_errors.ClientError
     )
@@ -741,18 +746,17 @@ async def env465(tmp_path, monkeypatch):
             "file_path": str(tmp_path / f"r{len(saved)}.md"),
         }
 
-    marks = {
-        "analysis": MagicMock(wraps=lpa_mod._mark_criteria_filter_needs_resync),
-        "qna": MagicMock(wraps=qna_mod._mark_criteria_filter_needs_resync),
-    }
+    marks = {"analysis": MagicMock(), "qna": MagicMock()}
+    real_mark_analysis = lpa_mod._mark_criteria_filter_needs_resync
+    real_mark_qna = qna_mod._mark_criteria_filter_needs_resync
 
     async def mark_analysis(*a):
         marks["analysis"](*a)
-        return await marks["analysis"]._mock_wraps(*a)
+        return await real_mark_analysis(*a)
 
     async def mark_qna(*a):
         marks["qna"](*a)
-        return await marks["qna"]._mock_wraps(*a)
+        return await real_mark_qna(*a)
 
     session = SimpleNamespace(id=1, user_id=None)
 
@@ -911,6 +915,24 @@ async def test_analysis_active_lookup_exhausted(env465, make, code, detail):
 
 
 @pytest.mark.asyncio
+async def test_analysis_active_lookup_other_5xx(env465):
+    env = env465
+    env.fake.active_fail = ("stores", 99, _sdk(520))
+
+    res, in_progress = await _analyze(env)
+
+    assert res.status_code == 503, res.text
+    assert res.headers["retry-after"] == "30"
+    assert "혼잡" in res.json()["detail"]
+    # 공유 재시도 집합(500/502/503/504)은 그대로라 520 은 한 번만 부른다
+    assert len(env.fake.active_calls("stores")) == 1
+    assert (env.analysis_gens, env.saved, in_progress) == ([], [], False)
+    assert await env.report_rows() == 0
+    assert await env.state() == ("ok", None)
+    env.marks["analysis"].assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_evaluation_active_lookup_retry(env465):
     env = env465
     env.fake.active_fail = ("docs", 1, _protocol)
@@ -955,6 +977,21 @@ async def test_evaluation_active_lookup_exhausted(env465, make, code, detail):
     # 앞선 기준 컨텍스트 검색의 생성은 남고, 최종 답변 생성만 없다
     assert [g["scope"] for g in env.fake.gens] == [("context",)]
     assert len(env.fake.active_calls("stores")) == 3
+    assert await env.state() == ("ok", None)
+    env.marks["qna"].assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_evaluation_active_lookup_other_5xx(env465):
+    env = env465
+    env.fake.active_fail = (None, 99, _sdk(520))
+
+    res = await _ask(env)
+
+    assert res.status_code == 500, res.text
+    assert res.json()["detail"] == "질문 처리 중 오류가 발생했습니다."
+    assert [g["scope"] for g in env.fake.gens] == [("context",)]
+    assert len(env.fake.active_calls("stores")) == 1
     assert await env.state() == ("ok", None)
     env.marks["qna"].assert_not_called()
 
