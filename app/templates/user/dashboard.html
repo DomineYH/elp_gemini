@@ -687,7 +687,7 @@
                 }
 
                 const data = await response.json();
-                updateMessage(loadingId, data.answer, 'ai', data.sources);
+                updateMessage(loadingId, data.answer, 'ai', data.sources, data.criteria_notice);
 
             } catch (error) {
                 updateMessage(loadingId, '오류가 발생했습니다.', 'error');
@@ -734,7 +734,7 @@
         return id;
     }
 
-    function updateMessage(id, text, type, sources) {
+    function updateMessage(id, text, type, sources, notice) {
         const div = document.getElementById(id);
         if (div) {
             let classes = "p-3 rounded-lg max-w-[80%] text-sm ";
@@ -746,7 +746,8 @@
             div.className = classes;
             if (type === 'ai') {
                 div.innerHTML =
-                    '<div class="prose prose-sm max-w-none">'
+                    renderCriteriaNotice(notice)
+                    + '<div class="prose prose-sm max-w-none">'
                     + renderSafeMarkdown(text)
                     + '</div>'
                     + renderSourcesLine(sources);
@@ -772,6 +773,14 @@
         if (!sources || !sources.length) return '';
         return '<div class="text-xs text-gray-500 mt-2 pt-2 border-t">'
             + '참고 문서: ' + sources.map(escapeHtml).join(' · ')
+            + '</div>';
+    }
+
+    // 평가기준 없이 답한 평가성 질문의 안내 (#469)
+    function renderCriteriaNotice(notice) {
+        if (!notice) return '';
+        return '<div class="text-xs text-yellow-700 mb-2 pb-2 border-b">'
+            + escapeHtml(notice) + ' 지도안 내용만으로 답했습니다.'
             + '</div>';
     }
 

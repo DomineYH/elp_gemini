@@ -106,6 +106,12 @@ async def analyze_lesson_plan(
                     ),
                     headers={"Retry-After": "30"},
                 )
+            if result.get("error_code") == "CRITERIA_SYNC_REQUIRED":
+                # 관리자가 고칠 때까지 가는 상태라 Retry-After 를 주지 않는다 (#469)
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=result.get("error"),
+                )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=result.get("error", "분석 중 오류 발생"),
