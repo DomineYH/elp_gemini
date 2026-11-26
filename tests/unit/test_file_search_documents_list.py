@@ -11,7 +11,6 @@ import pytest
 from google.genai.documents import Documents
 from google.genai.file_search_stores import FileSearchStores
 
-from app.services.lessonplan_analysis_service import LessonPlanAnalysisService
 from app.services.lessonplan_vector_service import LessonPlanVectorService
 
 
@@ -30,12 +29,6 @@ def _fake_service(store_display_name, docs):
     return SimpleNamespace(client=SimpleNamespace(file_search_stores=stores))
 
 
-def _analysis_service(fake):
-    svc = LessonPlanAnalysisService.__new__(LessonPlanAnalysisService)
-    svc.file_search_service = fake
-    return svc
-
-
 def _vector_service(fake):
     svc = LessonPlanVectorService.__new__(LessonPlanVectorService)
     svc.file_search_service = fake
@@ -46,20 +39,6 @@ def test_fake_client_has_no_list_documents():
     stores = _fake_service("user-1-store", []).client.file_search_stores
     with pytest.raises(AttributeError):
         stores.list_documents
-
-
-def test_user_store_has_documents_true_with_one_document():
-    fake = _fake_service("user-1-store", [_doc("d1", "a.pdf")])
-    assert _analysis_service(fake)._user_file_search_store_has_documents(1)
-    fake.client.file_search_stores.documents.list.assert_called_once_with(
-        parent="fileSearchStores/s1"
-    )
-
-
-def test_user_store_has_documents_false_with_empty_page():
-    fake = _fake_service("user-1-store", [])
-    svc = _analysis_service(fake)
-    assert svc._user_file_search_store_has_documents(1) is False
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.db import Base, get_db
 from app.dependencies import get_current_user
 from app.models.chat_sessions import ChatSession
+from app.models.lessonplan_uploads import LessonPlanUpload
 from app.models.users import User
 from app.routers import qna
 from tests.test_qna_session_title import (
@@ -37,6 +38,16 @@ async def user():
             is_admin=False,
         )
         db.add(row)
+        await db.commit()
+        # 색인된 업로드가 있어야 질문할 수 있다 (#468)
+        db.add(
+            LessonPlanUpload(
+                user_id=row.id,
+                filename="plan.pdf",
+                original_filename="plan.pdf",
+                fs_document_id="documents/d",
+            )
+        )
         await db.commit()
     yield row
     async with engine.begin() as conn:

@@ -133,17 +133,6 @@ async def test_analyze_proceeds_when_no_existing_report(session):
             return_value=fake_response,
         ),
         patch.object(
-            svc.lessonplan_storage,
-            "list_lessonplans",
-            return_value=[
-                {
-                    "filename": up.filename,
-                    "original_filename": up.original_filename,
-                    "created_at": "2026-05-13T00:00:00",
-                }
-            ],
-        ),
-        patch.object(
             svc.report_storage,
             "save_report",
             return_value={"filename": "r.md", "file_path": "/tmp/r.md"},
@@ -164,16 +153,16 @@ async def test_analyze_proceeds_when_no_existing_report(session):
     assert saved.upload_id == up.id
 
 
-@pytest.mark.asyncio
-async def test_analyze_returns_upload_required_when_no_upload_or_legacy_file(
-    tmp_path,
-):
-    lessonplan_dir = tmp_path / "lessonplans"
-    lessonplan_dir.mkdir()
+NO_DOCUMENT = {
+    "success": False,
+    "error": "분석할 문서가 없습니다. 수업 지도안을 먼저 업로드해주세요.",
+}
 
+
+@pytest.mark.asyncio
+async def test_analyze_returns_upload_required_when_no_upload_or_legacy_file():
     db = MagicMock()
     svc = LessonPlanAnalysisService(db=db)
-    svc.lessonplan_storage.base_dir = lessonplan_dir
 
     with (
         patch.object(
@@ -181,11 +170,6 @@ async def test_analyze_returns_upload_required_when_no_upload_or_legacy_file(
             "_find_existing_report_for_latest_upload",
             return_value=(None, None),
         ) as mock_existing,
-        patch.object(
-            svc.lessonplan_storage,
-            "list_lessonplans",
-            return_value=[],
-        ) as mock_lessonplans,
         patch.object(svc, "_get_store_ids") as mock_stores,
         patch(
             "app.services.lessonplan_analysis_service."
@@ -197,52 +181,38 @@ async def test_analyze_returns_upload_required_when_no_upload_or_legacy_file(
             user_id=1,
         )
 
-    assert result == {
-        "success": False,
-        "error": "분석할 문서가 없습니다. 수업 지도안을 먼저 업로드해주세요.",
-    }
+    assert result == NO_DOCUMENT
     mock_existing.assert_called_once_with(1)
-    mock_lessonplans.assert_called_once_with(1)
     assert mock_stores.call_count == 0
     assert mock_gemini.call_count == 0
     db.add.assert_not_called()
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "documents", [["doc1"], []], ids=["문서 있음", "빈 스토어"]
+)
 async def test_analyze_allows_premigration_file_search_upload_without_row(
-    tmp_path,
+    documents,
 ):
-    lessonplan_dir = tmp_path / "lessonplans"
-    lessonplan_dir.mkdir()
-
+    """업로드 행이 없으면 user-{id}-store 에 문서가 남아 있어도 거부한다 (#468)."""
     db = MagicMock()
     svc = LessonPlanAnalysisService(db=db)
-    svc.lessonplan_storage.base_dir = lessonplan_dir
 
     store = MagicMock()
     store.display_name = "user-1-store"
     store.name = "fileSearchStores/user-store"
-    doc = MagicMock()
-    doc.name = "fileSearchStores/user-store/documents/doc1"
-    doc.display_name = "premigration.pdf"
+    docs = []
+    for name in documents:
+        doc = MagicMock()
+        doc.name = f"fileSearchStores/user-store/documents/{name}"
+        doc.display_name = "premigration.pdf"
+        docs.append(doc)
 
-    svc.file_search_service.client.file_search_stores.list = MagicMock(
-        return_value=[store]
-    )
-    svc.file_search_service.client.file_search_stores.documents.list = (
-        MagicMock(return_value=[doc])
-    )
-
-    fake_response = MagicMock()
-    fake_response.text = VALID_SECTIONS
-    fake_response.candidates = []
-    real_to_thread = asyncio.to_thread
-
-    async def fake_to_thread(func, *args, **kwargs):
-        # 문서 확인은 실제로 돌리고 Gemini 호출만 가짜 응답
-        if func == svc._user_file_search_store_has_documents:
-            return await real_to_thread(func, *args, **kwargs)
-        return fake_response
+    svc.file_search_service.client = MagicMock()
+    stores = svc.file_search_service.client.file_search_stores
+    stores.list = MagicMock(return_value=[store])
+    stores.documents.list = MagicMock(return_value=docs)
 
     with (
         patch.object(
@@ -250,41 +220,23 @@ async def test_analyze_allows_premigration_file_search_upload_without_row(
             "_find_existing_report_for_latest_upload",
             return_value=(None, None),
         ),
-        patch.object(
-            svc.lessonplan_storage,
-            "list_lessonplans",
-            return_value=[],
-        ),
-        patch.object(
-            svc, "_get_store_ids", return_value=["user-store", "rubric-store"]
-        ) as mock_stores,
-        # alias fetch도 to_thread를 쓰므로 호출 횟수 검사에서 뺀다.
-        patch.object(
-            svc,
-            "_collect_active_criteria_display_names",
-            new=AsyncMock(return_value=[]),
-        ),
-        patch.object(svc.prompt_loader, "get_prompt", return_value="SYS"),
+        patch.object(svc, "_get_store_ids") as mock_stores,
         patch(
-            "app.services.criteria_vector_service."
-            "CriteriaVectorService.active_stable_id_filter",
-            new=AsyncMock(return_value='stable_id="active"'),
-            create=True,
-        ),
-        patch(
-            "app.services.lessonplan_analysis_service.asyncio.to_thread",
-            side_effect=fake_to_thread,
-        ) as mock_to_thread,
+            "app.services.lessonplan_analysis_service."
+            "_call_gemini_with_file_search"
+        ) as mock_gemini,
     ):
         result = await svc.analyze_lesson_plan(
             session_id=1,
             user_id=1,
         )
 
-    assert result["success"] is True
-    assert "upload" not in result.get("error", "").lower()
-    mock_stores.assert_called_once_with(1)
-    assert mock_to_thread.call_count == 2
+    assert result == NO_DOCUMENT
+    stores.list.assert_not_called()
+    stores.documents.list.assert_not_called()
+    mock_stores.assert_not_called()
+    mock_gemini.assert_not_called()
+    db.add.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -390,9 +342,6 @@ async def test_analyze_uses_upload_row_for_report_metadata(session, tmp_path):
     await session.commit()
 
     svc = LessonPlanAnalysisService(db=session)
-    empty_lessonplan_dir = tmp_path / "lessonplan"
-    empty_lessonplan_dir.mkdir()
-    svc.lessonplan_storage.base_dir = empty_lessonplan_dir
 
     fake_response = MagicMock()
     fake_response.text = "# Report\n\nbody\n\n" + VALID_SECTIONS
@@ -494,17 +443,6 @@ async def test_analyze_race_fallback_on_integrity_error(session):
             return_value=fake_response,
         ),
         patch.object(
-            svc.lessonplan_storage,
-            "list_lessonplans",
-            return_value=[
-                {
-                    "filename": up.filename,
-                    "original_filename": up.original_filename,
-                    "created_at": "2026-05-13T00:00:00",
-                }
-            ],
-        ),
-        patch.object(
             svc.report_storage,
             "save_report",
             return_value={"filename": "r.md", "file_path": "/tmp/r.md"},
@@ -573,17 +511,6 @@ async def test_analyze_race_fallback_does_not_delete_winner_when_paths_collide(
             "app.services.lessonplan_analysis_service."
             "_call_gemini_with_file_search",
             return_value=fake_response,
-        ),
-        patch.object(
-            svc.lessonplan_storage,
-            "list_lessonplans",
-            return_value=[
-                {
-                    "filename": up.filename,
-                    "original_filename": up.original_filename,
-                    "created_at": "2026-05-13T00:00:00",
-                }
-            ],
         ),
         patch.object(
             svc.report_storage,
@@ -667,17 +594,6 @@ async def test_analyze_race_loser_does_not_overwrite_winner_file(
             "_call_gemini_with_file_search",
             return_value=fake_response,
         ),
-        patch.object(
-            svc.lessonplan_storage,
-            "list_lessonplans",
-            return_value=[
-                {
-                    "filename": up.filename,
-                    "original_filename": up.original_filename,
-                    "created_at": "2026-05-13T00:00:00",
-                }
-            ],
-        ),
         patch(
             "app.services.report_storage_service.datetime",
             FixedDatetime,
@@ -753,17 +669,6 @@ async def test_analyze_race_fallback_cleans_up_orphan_report(session, tmp_path):
             return_value=fake_response,
         ),
         patch.object(
-            svc.lessonplan_storage,
-            "list_lessonplans",
-            return_value=[
-                {
-                    "filename": up.filename,
-                    "original_filename": up.original_filename,
-                    "created_at": "2026-05-13T00:00:00",
-                }
-            ],
-        ),
-        patch.object(
             svc.report_storage,
             "save_report",
             side_effect=save_orphan_report,
@@ -780,13 +685,20 @@ async def test_analyze_race_fallback_cleans_up_orphan_report(session, tmp_path):
     assert not orphan_path.exists()
 
 
+def _legacy_lessonplan_file(tmp_path, monkeypatch, user_id):
+    """옛 경로 data/lessonplan/{id}/ 에 업로드 행 없는 지도안 파일을 둔다."""
+    monkeypatch.chdir(tmp_path)
+    user_lp_dir = tmp_path / "data" / "lessonplan" / str(user_id)
+    user_lp_dir.mkdir(parents=True)
+    (user_lp_dir / "alice_legacy_plan.pdf").write_bytes(b"legacy lesson plan")
+    return tmp_path / "reports"
+
+
 @pytest.mark.asyncio
 async def test_analyze_creates_synthetic_upload_for_legacy_user(
-    session, tmp_path
+    session, tmp_path, monkeypatch
 ):
-    """Legacy user has no LessonPlanUpload row. First analysis must create
-    a synthetic one so that subsequent clicks are correctly blocked by the
-    dedup invariant."""
+    """업로드 행 없이 옛 폴더에만 파일이 있으면 합성 행을 만들지 않고 거부한다 (#468)."""
     u = User(
         username="alice",
         nickname="alice",
@@ -795,92 +707,38 @@ async def test_analyze_creates_synthetic_upload_for_legacy_user(
     session.add(u)
     await session.flush()
     await session.commit()
-
-    lessonplan_dir = tmp_path / "lessonplans"
-    user_lp_dir = lessonplan_dir / str(u.id)
-    user_lp_dir.mkdir(parents=True)
-    lessonplan_path = user_lp_dir / "alice_legacy_plan.pdf"
-    lessonplan_path.write_bytes(b"legacy lesson plan")
-
-    report_path = tmp_path / "reports" / "r.md"
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-
-    def save_report(**kwargs):
-        report_path.write_text(kwargs["report_content"], encoding="utf-8")
-        return {
-            "filename": report_path.name,
-            "file_path": str(report_path),
-        }
+    user_id = u.id
+    reports_dir = _legacy_lessonplan_file(tmp_path, monkeypatch, user_id)
 
     svc = LessonPlanAnalysisService(db=session)
-    svc.lessonplan_storage.base_dir = lessonplan_dir
-
-    fake_response = MagicMock()
-    fake_response.text = "# Report\n\nbody\n\n" + VALID_SECTIONS
-    fake_response.candidates = []
+    svc.report_storage = ReportStorageService(base_dir=str(reports_dir))
 
     with (
-        patch.object(
-            svc, "_get_store_ids", return_value=["user-store", "rubric-store"]
-        ) as mock_stores,
-        patch.object(svc.prompt_loader, "get_prompt", return_value="SYS"),
-        patch(
-            "app.services.criteria_vector_service."
-            "CriteriaVectorService.active_stable_id_filter",
-            new=AsyncMock(return_value='stable_id="active"'),
-            create=True,
-        ),
+        patch.object(svc, "_get_store_ids") as mock_stores,
         patch(
             "app.services.lessonplan_analysis_service."
-            "_call_gemini_with_file_search",
-            return_value=fake_response,
-        ),
-        patch.object(
-            svc.report_storage,
-            "save_report",
-            side_effect=save_report,
-        ),
+            "_call_gemini_with_file_search"
+        ) as mock_gemini,
     ):
         result = await svc.analyze_lesson_plan(
             session_id=1,
-            user_id=u.id,
+            user_id=user_id,
         )
 
-    assert result["success"] is True
-
-    # Synthetic upload row was created
-    upload = (
+    assert result == NO_DOCUMENT
+    mock_stores.assert_not_called()
+    mock_gemini.assert_not_called()
+    assert (
         await session.execute(
-            select(LessonPlanUpload).where(LessonPlanUpload.user_id == u.id)
+            select(LessonPlanUpload).where(LessonPlanUpload.user_id == user_id)
         )
-    ).scalar_one()
-    assert upload.filename == lessonplan_path.name
-    assert upload.original_filename == "alice_legacy_plan.pdf"
-    assert upload.file_hash is None
-
-    # Report is linked to the synthetic upload
-    saved = (
-        await session.execute(
-            select(AnalysisReport).where(AnalysisReport.upload_id == upload.id)
-        )
-    ).scalar_one()
-    assert saved.upload_id == upload.id
-
-    # Second call is blocked by dedup
-    second = await svc.analyze_lesson_plan(
-        session_id=1,
-        user_id=u.id,
-    )
-    assert second["success"] is False
-    assert second["error_code"] == "ALREADY_ANALYZED"
-    assert second["report_id"] == saved.id
-    # Gemini was only called once (first call)
-    assert mock_stores.call_count == 1
+    ).scalars().all() == []
+    assert list(reports_dir.rglob("*.md")) == []
 
 
 @pytest.mark.asyncio
 async def test_legacy_concurrent_analyze_does_not_create_duplicate_reports(
-    session, tmp_path
+    session, tmp_path, monkeypatch
 ):
     u = User(
         username="alice",
@@ -890,107 +748,33 @@ async def test_legacy_concurrent_analyze_does_not_create_duplicate_reports(
     session.add(u)
     await session.flush()
     await session.commit()
-    lessonplan_dir = tmp_path / "lessonplans"
-    user_lp_dir = lessonplan_dir / str(u.id)
-    user_lp_dir.mkdir(parents=True)
-    lessonplan_path = user_lp_dir / "alice_legacy_plan.pdf"
-    lessonplan_path.write_bytes(b"legacy lesson plan")
-
-    reports_dir = tmp_path / "reports"
-    reports_dir.mkdir()
-    save_count = {"n": 0}
-
-    def save_report(**kwargs):
-        save_count["n"] += 1
-        report_path = reports_dir / f"r{save_count['n']}.md"
-        report_path.write_text(kwargs["report_content"], encoding="utf-8")
-        return {
-            "filename": report_path.name,
-            "file_path": str(report_path),
-        }
+    user_id = u.id
+    reports_dir = _legacy_lessonplan_file(tmp_path, monkeypatch, user_id)
 
     svc = LessonPlanAnalysisService(db=session)
-    svc.lessonplan_storage.base_dir = lessonplan_dir
-
-    fake_response = MagicMock()
-    fake_response.text = "# Report\n\nbody\n\n" + VALID_SECTIONS
-    fake_response.candidates = []
+    svc.report_storage = ReportStorageService(base_dir=str(reports_dir))
 
     with (
-        patch.object(
-            svc, "_get_store_ids", return_value=["user-store", "rubric-store"]
-        ),
-        patch.object(svc.prompt_loader, "get_prompt", return_value="SYS"),
-        patch(
-            "app.services.criteria_vector_service."
-            "CriteriaVectorService.active_stable_id_filter",
-            new=AsyncMock(return_value='stable_id="active"'),
-            create=True,
-        ),
+        patch.object(svc, "_get_store_ids") as mock_stores,
         patch(
             "app.services.lessonplan_analysis_service."
-            "_call_gemini_with_file_search",
-            return_value=fake_response,
-        ),
-        patch.object(
-            svc.report_storage,
-            "save_report",
-            side_effect=save_report,
-        ),
+            "_call_gemini_with_file_search"
+        ) as mock_gemini,
     ):
-        first = await svc.analyze_lesson_plan(
-            session_id=1,
-            user_id=u.id,
+        first, second = await asyncio.gather(
+            svc.analyze_lesson_plan(session_id=1, user_id=user_id),
+            svc.analyze_lesson_plan(session_id=1, user_id=user_id),
         )
-        await session.commit()
 
-        real_find = svc._find_existing_report_for_latest_upload
-        call_count = {"n": 0}
-
-        async def stale_preflight(username):
-            call_count["n"] += 1
-            if call_count["n"] == 1:
-                return (None, None)
-            return await real_find(username)
-
-        with patch.object(
-            svc,
-            "_find_existing_report_for_latest_upload",
-            side_effect=stale_preflight,
-        ):
-            second = await svc.analyze_lesson_plan(
-                session_id=1,
-                user_id=u.id,
-            )
-    await session.refresh(u)
-
-    assert first["success"] is True
-    assert second["success"] is False
-    assert second["error_code"] == "ALREADY_ANALYZED"
-
-    uploads = (
-        (
-            await session.execute(
-                select(LessonPlanUpload).where(LessonPlanUpload.user_id == u.id)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    reports = (
-        (
-            await session.execute(
-                select(AnalysisReport).where(AnalysisReport.user_id == u.id)
-            )
-        )
-        .scalars()
-        .all()
-    )
-
-    assert len(uploads) == 1
-    assert uploads[0].file_hash is None
-    assert len(reports) == 1
-    assert second["report_id"] == reports[0].id
+    assert first == second == NO_DOCUMENT
+    mock_stores.assert_not_called()
+    mock_gemini.assert_not_called()
+    for model in (LessonPlanUpload, AnalysisReport):
+        rows = (
+            await session.execute(select(model).where(model.user_id == user_id))
+        ).scalars()
+        assert rows.all() == []
+    assert list(reports_dir.rglob("*.md")) == []
 
 
 @pytest.mark.asyncio
@@ -1696,14 +1480,16 @@ async def test_analyze_during_and_after_reindex(session):
     _assert_stopped_before_model(svc, mock_stores, mock_gemini, mock_save)
 
     # B 의 외부 색인은 끝났지만 B 행 commit 전: 스토어에는 B 문서가 있다
-    with patch.object(
-        svc, "_user_file_search_store_has_documents", return_value=True
-    ):
+    from tests.unit.test_qna_store_user_id_keying import FakeGenai
+
+    fake = FakeGenai(user_id)
+    with patch.object(svc.file_search_service, "client", fake):
         result, mock_stores, mock_gemini, mock_save = await _analyze_tracked(
             svc, user_id, [_response("BMARK\n\n" + VALID_SECTIONS)]
         )
     assert result == INDEX_MISSING
     _assert_stopped_before_model(svc, mock_stores, mock_gemini, mock_save)
+    assert fake.calls == {}
     assert await _report_rows(session, upload_a_id) == []
 
     # B 행 commit 뒤: B 로 분석되고 B 행에 저장된다

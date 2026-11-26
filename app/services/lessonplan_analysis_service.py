@@ -29,11 +29,7 @@ from app.repositories.app_state_repository import (
     AppStateRepository,
 )
 from app.services.criteria_vector_service import CriteriaVectorService
-from app.services.file_search_service import (
-    FileSearchService,
-    _sanitize_display_name,
-)
-from app.services.lessonplan_storage_service import LessonPlanStorageService
+from app.services.file_search_service import FileSearchService
 from app.services.prompt_loader_service import PromptLoaderService
 from app.services.report_storage_service import ReportStorageService
 from app.utils.gemini_retry import (
@@ -235,7 +231,6 @@ class LessonPlanAnalysisService:
         )
         self.prompt_loader = PromptLoaderService()
         self.file_search_service = FileSearchService()
-        self.lessonplan_storage = LessonPlanStorageService()
         self.report_storage = ReportStorageService()
 
     async def analyze_lesson_plan(
@@ -315,22 +310,15 @@ class LessonPlanAnalysisService:
                         "error": _INDEX_MISSING_MESSAGE,
                     }
 
-                legacy_lessonplans = []
+                # 남은 user-{id}-store 는 같은 id 의 다른 사람 것일 수 있다 (#468)
                 if latest_upload is None:
-                    legacy_lessonplans = (
-                        self.lessonplan_storage.list_lessonplans(user_id)
-                    )
-                    has_file_search_documents = await asyncio.to_thread(
-                        self._user_file_search_store_has_documents, user_id
-                    )
-                    if not legacy_lessonplans and not has_file_search_documents:
-                        return {
-                            "success": False,
-                            "error": (
-                                "분석할 문서가 없습니다. "
-                                "수업 지도안을 먼저 업로드해주세요."
-                            ),
-                        }
+                    return {
+                        "success": False,
+                        "error": (
+                            "분석할 문서가 없습니다. "
+                            "수업 지도안을 먼저 업로드해주세요."
+                        ),
+                    }
 
                 # 1. File Search Store ID 조회 (Phase 1 활용)
                 store_ids = await self._get_store_ids(user_id)
@@ -446,16 +434,10 @@ class LessonPlanAnalysisService:
                 criteria_aliases = (
                     await self._collect_active_criteria_display_names()
                 )
-                lessonplan_original_filename = (
-                    self._resolve_lessonplan_original_filename(
-                        latest_upload=latest_upload,
-                        legacy_lessonplans=legacy_lessonplans,
-                    )
-                )
                 report = self._post_process_report(
                     raw_report,
                     criteria_aliases=criteria_aliases,
-                    lessonplan_original_filename=lessonplan_original_filename,
+                    lessonplan_original_filename=latest_upload.original_filename,
                 )
 
                 # 5. Citation 추출
@@ -470,77 +452,10 @@ class LessonPlanAnalysisService:
                 saved_report = None
                 if report:
                     try:
-                        if latest_upload is not None:
-                            original_filename = (
-                                latest_upload.original_filename or "unknown"
-                            )
-                            lessonplan_filename = latest_upload.filename
-                        else:
-                            # Legacy path: no LessonPlanUpload row yet. Derive
-                            # filename + original from on-disk metadata, then
-                            # create a synthetic upload row so the dedup
-                            # invariant (1:1 upload<->report) holds for
-                            # subsequent clicks.
-                            lessonplans = legacy_lessonplans
-                            if lessonplans:
-                                latest = max(
-                                    lessonplans, key=lambda x: x["created_at"]
-                                )
-                                original_filename = latest["original_filename"]
-                                lessonplan_filename = latest["filename"]
-                            else:
-                                original_filename = "unknown"
-                                lessonplan_filename = "unknown"
-
-                            latest_upload = LessonPlanUpload(
-                                user_id=user_id,
-                                filename=lessonplan_filename,
-                                original_filename=original_filename,
-                                file_hash=None,
-                            )
-                            try:
-                                self.db.add(latest_upload)
-                                await self.db.flush()
-                            except IntegrityError:
-                                await self.db.rollback()
-                                (
-                                    latest_upload,
-                                    existing_report,
-                                ) = await self._find_existing_report_for_latest_upload(
-                                    user_id
-                                )
-                                if existing_report is not None:
-                                    logger.warning(
-                                        "legacy synthetic upload race 감지 "
-                                        f"→ ALREADY_ANALYZED 폴백 "
-                                        f"(winner report_id="
-                                        f"{existing_report.id})"
-                                    )
-                                    return {
-                                        "success": False,
-                                        "error_code": "ALREADY_ANALYZED",
-                                        "error": "이미 분석된 문서입니다.",
-                                        "report_id": existing_report.id,
-                                    }
-                                if latest_upload is None:
-                                    raise
-                                original_filename = (
-                                    latest_upload.original_filename
-                                    or original_filename
-                                )
-                                lessonplan_filename = latest_upload.filename
-                                logger.warning(
-                                    "legacy synthetic upload race 감지 "
-                                    f"→ 기존 upload_id={latest_upload.id} "
-                                    "재사용"
-                                )
-                            else:
-                                logger.info(
-                                    f"legacy 사용자에 대해 synthetic "
-                                    f"LessonPlanUpload 생성: "
-                                    f"id={latest_upload.id}, "
-                                    f"filename={lessonplan_filename}"
-                                )
+                        original_filename = (
+                            latest_upload.original_filename or "unknown"
+                        )
+                        lessonplan_filename = latest_upload.filename
 
                         # 보고서 파일 저장
                         saved_report = self.report_storage.save_report(
@@ -553,11 +468,7 @@ class LessonPlanAnalysisService:
                         )
 
                         # DB에 분석 기록 저장
-                        analysis_upload_id = (
-                            latest_upload.id
-                            if latest_upload is not None
-                            else None
-                        )
+                        analysis_upload_id = latest_upload.id
                         analysis_record = AnalysisReport(
                             user_id=user_id,
                             lessonplan_filename=lessonplan_filename,
@@ -707,22 +618,6 @@ class LessonPlanAnalysisService:
             # rubricstore 없음. 그 밖의 조회 오류는 호출부가 가른다 (#464)
             logger.error(f"❌ Store ID 조회 실패: {e}")
             return []
-
-    def _user_file_search_store_has_documents(self, user_id: int) -> bool:
-        store_name = f"user-{user_id}-store"
-        safe_store_name = _sanitize_display_name(store_name)
-        try:
-            file_search_stores = (
-                self.file_search_service.client.file_search_stores
-            )
-            for store in file_search_stores.list():
-                if store.display_name not in {store_name, safe_store_name}:
-                    continue
-                documents = file_search_stores.documents.list(parent=store.name)
-                return any(True for _ in documents)
-        except Exception as exc:
-            logger.warning(f"사용자 File Search Store 문서 확인 실패: {exc}")
-        return False
 
     async def _find_existing_report_for_latest_upload(self, user_id: int):
         """
@@ -1057,25 +952,6 @@ class LessonPlanAnalysisService:
                 continue
             names.append(alias)
         return names
-
-    @staticmethod
-    def _resolve_lessonplan_original_filename(
-        latest_upload,
-        legacy_lessonplans: list,
-    ) -> Optional[str]:
-        """분석 대상 수업지도안의 원본 파일명을 결정한다.
-
-        - latest_upload 가 있으면 그 original_filename
-        - 없으면 legacy_lessonplans 중 created_at 최댓값 항목의
-          original_filename
-        - 둘 다 없으면 None
-        """
-        if latest_upload is not None:
-            return getattr(latest_upload, "original_filename", None)
-        if legacy_lessonplans:
-            latest = max(legacy_lessonplans, key=lambda x: x["created_at"])
-            return latest.get("original_filename")
-        return None
 
     @staticmethod
     def _render_file_search_references_section(

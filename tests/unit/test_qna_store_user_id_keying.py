@@ -30,14 +30,21 @@ from app.routers import qna
 
 
 def _mock_db():
-    """Build a mock AsyncSession returning a valid session and empty history."""
+    """Build a mock AsyncSession: valid session, indexed upload, empty history."""
     db = AsyncMock()
     mock_session = Mock()
     session_result = Mock()
     session_result.scalar_one_or_none.return_value = mock_session
+    # 색인된 최신 업로드 (#468)
+    upload_result = Mock()
+    upload_result.scalar_one_or_none.return_value = Mock(
+        fs_document_id="documents/d"
+    )
     history_result = Mock()
     history_result.scalars.return_value.all.return_value = []
-    db.execute = AsyncMock(side_effect=[session_result, history_result])
+    db.execute = AsyncMock(
+        side_effect=[session_result, upload_result, history_result]
+    )
     return db
 
 
@@ -487,3 +494,29 @@ async def test_indexed_upload_keeps_qna_search(qna_db, qna_post):
         for t in final.tools
     ] == [(["fileSearchStores/rubric"], 'stable_id="A"')]
     assert len(await _qna_rows(factory, ChatMessage)) == 4
+
+
+@pytest.mark.asyncio
+async def test_index_lost_after_session_created_drops_empty_session(
+    qna_db, qna_post
+):
+    from app.services import qna_service
+
+    factory, user, _ = qna_db
+    await _seed_indexed_upload(factory, user)
+    real = qna_service.require_indexed_upload
+    checks = []
+
+    async def lost_after_first(db, user_id):
+        # 라우터 검사 뒤 서비스 검사 전에 색인이 비워진 경우
+        checks.append(user_id)
+        if len(checks) == 1:
+            return await real(db, user_id)
+        raise qna_service.QnAIndexMissing(INDEX_MISSING_DETAIL)
+
+    with patch.object(qna_service, "require_indexed_upload", lost_after_first):
+        response, fake = await qna_post("/api/qna/documents/x")
+
+    _assert_rejected(response, fake)
+    assert len(checks) == 2
+    assert await _snapshot(factory) == ([], [])
