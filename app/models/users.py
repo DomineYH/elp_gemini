@@ -14,6 +14,8 @@ class User(Base):
     """사용자 모델"""
 
     __tablename__ = "users"
+    # 지운 사용자의 id가 다음 가입자에게 다시 나오지 않게 한다 (#468)
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     username = Column(String(255), unique=True, nullable=False, index=True)

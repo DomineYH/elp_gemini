@@ -48,6 +48,7 @@ from app.migrations import (
     ensure_lessonplan_uploads_fs_id_columns,
     ensure_lessonplan_uploads_table,
     ensure_simulation_tables,
+    ensure_users_id_autoincrement,
     ensure_users_lockout_columns,
     ensure_users_session_version_column,
     rename_chat_session_in_service_teacher_label,
@@ -326,6 +327,10 @@ async def startup_event():
     # email 제거의 테이블 재구성이 session_version을 빠뜨리므로 그 뒤에 보정
     if await ensure_users_session_version_column(engine):
         logger.info("users.session_version 컬럼 자동 추가")
+
+    # 모델의 열로 표를 다시 만들므로 users 열 보정이 모두 끝난 뒤에 돌린다 (#468)
+    if await ensure_users_id_autoincrement(engine):
+        logger.info("users.id AUTOINCREMENT 자동 전환")
 
     uploads_patched = await ensure_lessonplan_uploads_table(engine)
     if uploads_patched:
