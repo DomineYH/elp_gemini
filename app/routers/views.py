@@ -181,7 +181,8 @@ async def upload_document(
 
     # 파일명 안전하게 처리 (ASCII 변환으로 Google API 호환성 보장)
     safe_original = _sanitize_display_name(file.filename)
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    # 같은 초·같은 이름의 동시 업로드가 한 경로를 나눠 쓰지 않게 한다 (#453)
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
     user_upload_dir = upload_dir / str(current_user.id)
     user_upload_dir.mkdir(parents=True, exist_ok=True)
     saved_filename = f"{timestamp}_{safe_original}"
