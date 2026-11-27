@@ -78,10 +78,11 @@ def _now_iso_utc() -> str:
 async def _mark_criteria_needs_resync(db: AsyncSession, exc: Exception) -> None:
     try:
         await db.rollback()
-    except Exception:
+    except Exception as rollback_exc:
         logger.warning(
-            "criteria sync_state 표시 전 rollback 실패",
-            exc_info=True,
+            "criteria sync_state 표시 전 rollback 실패: %s",
+            safe_error_text(rollback_exc),
+            exc_info=safe_exc_info(rollback_exc),
         )
 
     try:
@@ -90,10 +91,11 @@ async def _mark_criteria_needs_resync(db: AsyncSession, exc: Exception) -> None:
         # 전송·SDK·DB 오류는 원문 대신 종류(와 코드)만 저장한다 (#469, #485)
         await state_repo.set(KEY_SYNC_ERROR, safe_error_text(exc))
         await db.commit()
-    except Exception:
+    except Exception as mark_exc:
         logger.error(
-            "criteria sync_state needs_resync 표시 실패",
-            exc_info=True,
+            "criteria sync_state needs_resync 표시 실패: %s",
+            safe_error_text(mark_exc),
+            exc_info=safe_exc_info(mark_exc),
         )
 
 
@@ -174,10 +176,11 @@ async def _recover_status_mutation_from_cloud(
 ) -> bool:
     try:
         await db.rollback()
-    except Exception:
+    except Exception as rollback_exc:
         logger.warning(
-            "평가기준 상태 변경 복구 전 rollback 실패",
-            exc_info=True,
+            "평가기준 상태 변경 복구 전 rollback 실패: %s",
+            safe_error_text(rollback_exc),
+            exc_info=safe_exc_info(rollback_exc),
         )
 
     try:
@@ -208,10 +211,11 @@ async def _recover_status_mutation_from_cloud(
             db,
             cloud_alias_map.entries,
         )
-    except Exception:
+    except Exception as sync_exc:
         logger.warning(
-            "평가기준 상태 변경 cloud 반영 후 DB 캐시 복구 실패",
-            exc_info=True,
+            "평가기준 상태 변경 cloud 반영 후 DB 캐시 복구 실패: %s",
+            safe_error_text(sync_exc),
+            exc_info=safe_exc_info(sync_exc),
         )
         return False
 

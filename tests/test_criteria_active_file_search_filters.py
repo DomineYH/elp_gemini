@@ -1256,7 +1256,14 @@ async def test_qna_failure_service_logs_hide_sdk_text(env465, caplog):
     res = await _ask(env)
 
     assert res.status_code == 500, res.text
-    # 라우터 로그와 1패스 폴백 WARNING(traceback)은 이 이슈 범위 밖이다
+    # 라우터 로그는 이 이슈 범위 밖이다. 서비스의 WARNING(traceback 포함)까지 본다
+    service_text = "\n".join(
+        logging.Formatter().format(r)
+        for r in caplog.records
+        if r.name.startswith("app.services.") and r.levelno >= logging.WARNING
+    )
+    assert "sensitive-marker" not in service_text
+    assert "QnA 1패스 실패, 이중 도구로 폴백: ClientError 403" in service_text
     errors = {
         r.name.removeprefix("app.services."): logging.Formatter().format(r)
         for r in caplog.records
@@ -1270,3 +1277,52 @@ async def test_qna_failure_service_logs_hide_sdk_text(env465, caplog):
         ),
         "qna_service": "QnA 처리 실패: ClientError 403",
     }
+
+
+@pytest.mark.asyncio
+async def test_qna_rubric_store_lookup_failure_hides_sdk_text(env465, caplog):
+    """#485: 평가성 QnA 에서 평가기준 스토어 목록이 SDK 403 이어도 서비스 로그에 원문이 없다."""
+    env = env465
+    stores = env.fake.file_search_stores
+    real_list = stores.list
+
+    def denied_outside_scopes(**kwargs):
+        if _SCOPE.get() == ():
+            raise _sdk(403)()
+        return real_list(**kwargs)
+
+    stores.list = denied_outside_scopes
+
+    res = await _ask(env)
+
+    assert res.status_code == 500, res.text
+    service_text = "\n".join(
+        logging.Formatter().format(r)
+        for r in caplog.records
+        if r.name.startswith("app.services.") and r.levelno >= logging.WARNING
+    )
+    assert "예상치 못한 오류: ClientError 403" in service_text
+    assert "sensitive-marker" not in service_text
+
+
+@pytest.mark.asyncio
+async def test_analysis_display_lookup_failure_hides_sdk_text(env465, caplog):
+    """#485: 분석의 활성 평가기준 표시 이름 조회가 SDK 403 이어도 로그에 원문이 없다."""
+    env = env465
+    stores = env.fake.file_search_stores
+    real_list = stores.list
+
+    def denied_in_display(**kwargs):
+        if _SCOPE.get()[:1] == ("display",):
+            raise _sdk(403)()
+        return real_list(**kwargs)
+
+    stores.list = denied_in_display
+
+    res = await env.client.post(
+        "/api/lessonplan/analyze", json={"session_id": 1}
+    )
+
+    assert res.status_code == 200, res.text
+    assert "(참고 문서 표시 생략): ClientError 403" in caplog.text
+    assert "sensitive-marker" not in caplog.text

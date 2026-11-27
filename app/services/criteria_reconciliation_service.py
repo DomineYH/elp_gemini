@@ -178,7 +178,8 @@ class CriteriaReconciliationService:
                         pass  # Task 13 will add this module
                     except Exception as e:
                         logger.warning(
-                            "legacy migration 실패 (계속 진행): %s", e
+                            "legacy migration 실패 (계속 진행): %s",
+                            safe_error_text(e),
                         )
 
                     docs = await self._vec.list_criteria_documents()

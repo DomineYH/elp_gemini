@@ -16,7 +16,7 @@ from app.services.analysis_storage_service import AnalysisStorageService
 from app.services.criteria_vector_service import CriteriaVectorService
 from app.services.eval_prompt_builder import EvaluationPromptBuilder
 from app.services.prompt_loader_service import PromptLoaderService
-from app.utils.gemini_retry import retry_on_resource_exhausted
+from app.utils.gemini_retry import retry_on_resource_exhausted, safe_error_text
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +137,7 @@ class EvaluationService:
             raise
 
         except Exception as e:
-            logger.error(f"평가 실행 실패: {str(e)}")
+            logger.error("평가 실행 실패: %s", safe_error_text(e))
             raise
 
     async def _execute_evaluation(self, prompt: str) -> Dict[str, Any]:

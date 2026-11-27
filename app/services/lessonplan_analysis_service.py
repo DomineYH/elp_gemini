@@ -123,8 +123,12 @@ async def _mark_criteria_filter_needs_resync(
         await state_repo.set(KEY_SYNC_ERROR, safe_error_text(exc))
         # 요청이 503 으로 끝나면 get_db 가 롤백하므로 여기서 남긴다 (#469)
         await db.commit()
-    except Exception:
-        logger.warning("평가기준 동기화 필요 상태 표시 실패", exc_info=True)
+    except Exception as e:
+        logger.warning(
+            "평가기준 동기화 필요 상태 표시 실패: %s",
+            safe_error_text(e),
+            exc_info=safe_exc_info(e),
+        )
 
 
 # Issue #118: 긴 평가 지시 프롬프트는 File Search retrieval 쿼리로서 품질이
@@ -943,8 +947,8 @@ class LessonPlanAnalysisService:
             fetched = await alias_svc.fetch()
         except Exception as exc:
             logger.warning(
-                "활성 평가기준 alias 목록 조회 실패 "
-                f"(참고 문서 표시 생략): {exc}"
+                "활성 평가기준 alias 목록 조회 실패 (참고 문서 표시 생략): %s",
+                safe_error_text(exc),
             )
             return []
 

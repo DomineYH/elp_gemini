@@ -255,6 +255,7 @@ async def _run_criteria_reconcile_in_background():
         CriteriaReconciliationService,
     )
     from app.services.criteria_vector_service import CriteriaVectorService
+    from app.utils.gemini_retry import safe_error_text, safe_exc_info
 
     async def _task():
         try:
@@ -280,8 +281,12 @@ async def _run_criteria_reconcile_in_background():
                     result.count,
                     result.error,
                 )
-        except Exception:
-            logger.exception("startup reconcile 실패")
+        except Exception as e:
+            logger.error(
+                "startup reconcile 실패: %s",
+                safe_error_text(e),
+                exc_info=safe_exc_info(e),
+            )
 
     task = asyncio.create_task(_task())
     _background_tasks.add(task)

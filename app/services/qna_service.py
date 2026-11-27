@@ -56,8 +56,12 @@ async def _mark_criteria_filter_needs_resync(
     try:
         await app_state_repo.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
         await app_state_repo.set(KEY_SYNC_ERROR, safe_error_text(exc))
-    except Exception:
-        logger.warning("평가기준 동기화 필요 상태 표시 실패", exc_info=True)
+    except Exception as e:
+        logger.warning(
+            "평가기준 동기화 필요 상태 표시 실패: %s",
+            safe_error_text(e),
+            exc_info=safe_exc_info(e),
+        )
 
 
 # 답변에 새어 나온 File Search 내부 식별자 (#174)
@@ -334,12 +338,12 @@ class QnAService:
                     logger.info(f"🎯 Store 조회 완료: {store_ids}")
 
             except ValueError as e:
-                logger.error(f"❌ Store 조회 실패: {e}")
+                logger.error("❌ Store 조회 실패: %s", safe_error_text(e))
                 raise Exception(
                     "문서 스토어를 찾을 수 없습니다. " "관리자에게 문의하세요."
                 )
             except Exception as e:
-                logger.error(f"❌ 예상치 못한 오류: {e}")
+                logger.error("❌ 예상치 못한 오류: %s", safe_error_text(e))
                 raise
 
             # Store 역할 명시 프롬프트 구성
@@ -454,9 +458,11 @@ class QnAService:
                         "QnA 1패스 grounding titles: %s",
                         _chunk_titles(pass1_citations),
                     )
-                except Exception:
+                except Exception as e:
                     logger.warning(
-                        "QnA 1패스 실패, 이중 도구로 폴백", exc_info=True
+                        "QnA 1패스 실패, 이중 도구로 폴백: %s",
+                        safe_error_text(e),
+                        exc_info=safe_exc_info(e),
                     )
                 if lesson_text:
                     contents += (
