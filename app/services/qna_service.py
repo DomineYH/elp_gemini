@@ -32,6 +32,8 @@ from app.services.prompt_loader_service import PromptLoaderService
 from app.utils.gemini_retry import (
     is_transient_lookup_error,
     retry_on_resource_exhausted,
+    safe_error_text,
+    safe_exc_info,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,7 +55,7 @@ async def _mark_criteria_filter_needs_resync(
 ) -> None:
     try:
         await app_state_repo.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
-        await app_state_repo.set(KEY_SYNC_ERROR, str(exc))
+        await app_state_repo.set(KEY_SYNC_ERROR, safe_error_text(exc))
     except Exception:
         logger.warning("평가기준 동기화 필요 상태 표시 실패", exc_info=True)
 
@@ -293,8 +295,9 @@ class QnAService:
                     if is_transient_lookup_error(e):
                         raise
                     logger.warning(
-                        f"활성 평가기준 필터 조회 실패 (무시): {e}",
-                        exc_info=True,
+                        "활성 평가기준 필터 조회 실패 (무시): %s",
+                        safe_error_text(e),
+                        exc_info=safe_exc_info(e),
                     )
                     criteria_notice = "평가기준 동기화가 필요합니다."
                     await _mark_criteria_filter_needs_resync(app_state_repo, e)
@@ -561,7 +564,7 @@ class QnAService:
             # 정상 거부(404)다. 기록은 라우터가 WARNING 으로 한다 (#488)
             raise
         except Exception as e:
-            logger.error(f"QnA 처리 실패: {str(e)}")
+            logger.error("QnA 처리 실패: %s", safe_error_text(e))
             raise
 
     def _extract_citations(self, grounding_metadata: Any) -> Optional[dict]:

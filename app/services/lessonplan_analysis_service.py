@@ -40,6 +40,8 @@ from app.utils.gemini_retry import (
     GeminiServerOverloaded,
     is_transient_lookup_error,
     retry_on_resource_exhausted,
+    safe_error_text,
+    safe_exc_info,
 )
 
 logger = logging.getLogger(__name__)
@@ -118,7 +120,7 @@ async def _mark_criteria_filter_needs_resync(
     try:
         state_repo = AppStateRepository(db=db)
         await state_repo.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
-        await state_repo.set(KEY_SYNC_ERROR, str(exc))
+        await state_repo.set(KEY_SYNC_ERROR, safe_error_text(exc))
         # 요청이 503 으로 끝나면 get_db 가 롤백하므로 여기서 남긴다 (#469)
         await db.commit()
     except Exception:
@@ -370,8 +372,9 @@ class LessonPlanAnalysisService:
                             ) from None
                         raise
                     logger.warning(
-                        f"활성 평가기준 필터 조회 실패 (분석 중단): {e}",
-                        exc_info=True,
+                        "활성 평가기준 필터 조회 실패 (분석 중단): %s",
+                        safe_error_text(e),
+                        exc_info=safe_exc_info(e),
                     )
                     await _mark_criteria_filter_needs_resync(self.db, e)
                     # 기준을 확인하지 못한 보고서는 저장되면 409 로 굳는다 (#469)

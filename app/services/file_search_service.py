@@ -19,7 +19,10 @@ from google.genai import types
 
 from app.config import settings
 from app.services.operation_polling import poll_operation
-from app.utils.gemini_retry import retry_on_resource_exhausted
+from app.utils.gemini_retry import (
+    retry_on_resource_exhausted,
+    safe_error_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +202,7 @@ class FileSearchService:
                 "rubric": rubric_store.name,
             }
         except Exception as e:
-            logger.error(f"스토어 초기화 실패: {str(e)}")
+            logger.error("스토어 초기화 실패: %s", safe_error_text(e))
             raise
 
     def _get_or_create_store(self, store_name: str):
@@ -224,7 +227,7 @@ class FileSearchService:
             logger.info(f"새 스토어 생성: {safe_store_name} (ID: {store.name})")
             return store
         except Exception as e:
-            logger.error(f"스토어 처리 실패: {str(e)}")
+            logger.error("스토어 처리 실패: %s", safe_error_text(e))
             raise
 
     def get_rubric_store_id(self) -> str:
@@ -422,7 +425,7 @@ class FileSearchService:
                 "store_id": store_id,
             }
         except Exception as e:
-            logger.error(f"문서 업로드 실패: {str(e)}")
+            logger.error("문서 업로드 실패: %s", safe_error_text(e))
             if new_store_id:
                 await self.discard_store(new_store_id)
             raise
@@ -441,7 +444,8 @@ class FileSearchService:
             logger.info(f"문서 삭제 완료: {file_id}")
         except Exception as e:
             logger.warning(
-                f"문서 삭제 실패 (이미 삭제되었을 수 있음): {str(e)}"
+                "문서 삭제 실패 (이미 삭제되었을 수 있음): %s",
+                safe_error_text(e),
             )
 
     async def delete_store(self, store_id: str) -> None:
@@ -550,7 +554,7 @@ class FileSearchService:
                 "sources_count": len(citations),
             }
         except Exception as e:
-            logger.error(f"검색 실패: {str(e)}")
+            logger.error("검색 실패: %s", safe_error_text(e))
             raise
 
     async def get_or_create_store(self, store_name: str) -> tuple[str, bool]:

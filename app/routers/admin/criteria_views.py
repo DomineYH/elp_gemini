@@ -22,6 +22,7 @@ from app.repositories.app_state_repository import (
 from app.repositories.criteria_repository import CriteriaRepository
 from app.services.criteria_freshness import ensure_criteria_cache_fresh
 from app.templating import templates
+from app.utils.gemini_retry import safe_error_text, safe_exc_info
 
 router = APIRouter(prefix="/admin/criteria", tags=["관리자-평가기준-뷰"])
 logger = logging.getLogger(__name__)
@@ -101,7 +102,11 @@ async def criteria_list(
             },
         )
     except Exception as e:
-        logger.error(f"평가기준 목록 조회 실패: {str(e)}", exc_info=True)
+        logger.error(
+            "평가기준 목록 조회 실패: %s",
+            safe_error_text(e),
+            exc_info=safe_exc_info(e),
+        )
         # 오류 발생 시 빈 목록 표시
         return templates.TemplateResponse(
             "admin/criteria_list.html",
@@ -196,7 +201,11 @@ async def criteria_detail(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"평가기준 상세 조회 실패: {str(e)}", exc_info=True)
+        logger.error(
+            "평가기준 상세 조회 실패: %s",
+            safe_error_text(e),
+            exc_info=safe_exc_info(e),
+        )
         raise HTTPException(
             status_code=500, detail="평가기준 조회 중 오류가 발생했습니다."
         )

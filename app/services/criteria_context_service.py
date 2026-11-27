@@ -16,6 +16,7 @@ from app.repositories.app_state_repository import (
     AppStateRepository,
 )
 from app.services.criteria_vector_service import CriteriaVectorService
+from app.utils.gemini_retry import safe_error_text
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +162,7 @@ class CriteriaContextService:
             }
 
         except Exception as e:
-            logger.error(f"평가 기준 컨텍스트 검색 실패: {str(e)}")
+            logger.error("평가 기준 컨텍스트 검색 실패: %s", safe_error_text(e))
             # 오류 발생 시 빈 컨텍스트 반환 (QnA 진행에는 영향 없도록)
             return {
                 "context_text": "",
