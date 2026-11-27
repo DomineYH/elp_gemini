@@ -77,6 +77,14 @@ async def _sessions():
         return (await db.execute(select(ChatSession))).scalars().all()
 
 
+def _router_errors(caplog):
+    return [
+        r
+        for r in caplog.records
+        if r.name == "app.routers.qna" and r.levelname == "ERROR"
+    ]
+
+
 async def _existing_session(user):
     async with SessionLocal() as db:
         row = ChatSession(user_id=user.id, title="lesson.pdf", document_id=DOC)
@@ -86,12 +94,18 @@ async def _existing_session(user):
 
 
 @pytest.mark.asyncio
-async def test_first_question_timeout_returns_504_and_no_session(client):
+async def test_first_question_timeout_returns_504_and_no_session(
+    client, caplog
+):
     response = await client.post(f"/api/qna/{DOC}", json={"question": "질문"})
 
     assert response.status_code == 504, response.text
     assert response.json()["detail"] == DETAIL
     assert await _sessions() == []
+    # 종류가 알려진 시간 초과는 트레이스백 없이 종류만 남긴다 (#488)
+    (record,) = _router_errors(caplog)
+    assert not record.exc_info
+    assert record.getMessage() == "문서 대화 처리 실패: ReadTimeout"
 
 
 @pytest.mark.asyncio
@@ -119,7 +133,7 @@ async def test_session_ask_timeout_returns_504(client, user):
 
 
 @pytest.mark.asyncio
-async def test_first_question_error_hides_internal_detail(client):
+async def test_first_question_error_hides_internal_detail(client, caplog):
     error = RuntimeError("fileSearchStores/user3store-abc/documents/x")
     with patch(
         "app.services.qna_service.QnAService.ask_question",
@@ -132,3 +146,7 @@ async def test_first_question_error_hides_internal_detail(client):
     assert response.status_code == 500, response.text
     assert "fileSearchStores" not in response.json()["detail"]
     assert await _sessions() == []
+    # 원인을 모르는 오류는 트레이스백을 남기고, 메시지에는 종류만 쓴다 (#488)
+    (record,) = _router_errors(caplog)
+    assert record.exc_info
+    assert record.getMessage() == "문서 대화 처리 실패: RuntimeError"

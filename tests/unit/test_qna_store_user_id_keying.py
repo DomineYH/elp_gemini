@@ -335,10 +335,21 @@ async def _qna_rows(factory, model):
         )
 
 
-def _assert_rejected(response, fake):
+def _assert_rejected(response, fake, caplog):
     assert response.status_code == 404, response.text
     assert response.json() == {"detail": INDEX_MISSING_DETAIL}
     assert fake.calls == {}
+    # 색인 없음은 정상 거부다. 라우터 WARNING 한 줄만 남고
+    # ERROR 와 트레이스백은 없다 (#488)
+    records = [
+        r
+        for r in caplog.records
+        if r.name in ("app.routers.qna", "app.services.qna_service")
+        and r.levelname in ("WARNING", "ERROR", "CRITICAL")
+    ]
+    assert [(r.name, r.levelname, bool(r.exc_info)) for r in records] == [
+        ("app.routers.qna", "WARNING", False)
+    ]
 
 
 async def _seed_owned_session(factory, user):
@@ -369,24 +380,26 @@ async def _snapshot(factory):
 
 
 @pytest.mark.asyncio
-async def test_document_ask_rejects_missing_upload(qna_db, qna_post):
+async def test_document_ask_rejects_missing_upload(qna_db, qna_post, caplog):
     factory, _, _ = qna_db
 
     response, fake = await qna_post("/api/qna/no-such-document")
 
-    _assert_rejected(response, fake)
+    _assert_rejected(response, fake, caplog)
     assert await _snapshot(factory) == ([], [])
 
 
 @pytest.mark.asyncio
-async def test_owned_session_ask_rejects_missing_upload(qna_db, qna_post):
+async def test_owned_session_ask_rejects_missing_upload(
+    qna_db, qna_post, caplog
+):
     factory, user, _ = qna_db
     sid = await _seed_owned_session(factory, user)
     before = await _snapshot(factory)
 
     response, fake = await qna_post(f"/api/qna/sessions/{sid}/ask")
 
-    _assert_rejected(response, fake)
+    _assert_rejected(response, fake, caplog)
     assert await _snapshot(factory) == before
 
 
@@ -394,7 +407,7 @@ async def test_owned_session_ask_rejects_missing_upload(qna_db, qna_post):
 @pytest.mark.parametrize("document_id", [None, ""], ids=["None", "빈 문자열"])
 @pytest.mark.parametrize("route", ["document", "session"])
 async def test_qna_rejects_latest_unindexed_upload(
-    qna_db, qna_post, document_id, route
+    qna_db, qna_post, caplog, document_id, route
 ):
     factory, user, other = qna_db
     same_time = datetime(2026, 11, 26, 9, 0, 0)
@@ -443,7 +456,7 @@ async def test_qna_rejects_latest_unindexed_upload(
 
     response, fake = await qna_post(path)
 
-    _assert_rejected(response, fake)
+    _assert_rejected(response, fake, caplog)
     assert await _snapshot(factory) == before
     assert len(await _qna_rows(factory, LessonPlanUpload)) == uploads_before
 
@@ -498,7 +511,7 @@ async def test_indexed_upload_keeps_qna_search(qna_db, qna_post):
 
 @pytest.mark.asyncio
 async def test_index_lost_after_session_created_drops_empty_session(
-    qna_db, qna_post
+    qna_db, qna_post, caplog
 ):
     from app.services import qna_service
 
@@ -517,6 +530,6 @@ async def test_index_lost_after_session_created_drops_empty_session(
     with patch.object(qna_service, "require_indexed_upload", lost_after_first):
         response, fake = await qna_post("/api/qna/documents/x")
 
-    _assert_rejected(response, fake)
+    _assert_rejected(response, fake, caplog)
     assert len(checks) == 2
     assert await _snapshot(factory) == ([], [])
