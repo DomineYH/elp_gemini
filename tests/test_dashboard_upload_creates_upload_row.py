@@ -9,8 +9,10 @@ import time
 from io import BytesIO
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 import pytest_asyncio
+from google.genai import errors as genai_errors
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import (
@@ -202,6 +204,40 @@ async def test_dashboard_upload_failure_removes_file_and_hides_error(
     assert res.status_code == 500
     assert "secret internal detail" not in res.text
     assert _uploaded_files(tmp_path) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "make, kind",
+    [
+        (lambda: httpx.ConnectError("sensitive-marker"), "ConnectError"),
+        (
+            lambda: genai_errors.ClientError(
+                403, {"error": {"code": 403, "message": "sensitive-marker"}}
+            ),
+            "ClientError 403",
+        ),
+    ],
+    ids=["transport", "sdk403"],
+)
+async def test_dashboard_upload_failure_log_hides_cloud_error_text(
+    client, tmp_path, caplog, make, kind
+):
+    # 재전파된 SDK·전송 오류 원문이 로그·traceback 에 남지 않는다 (#485)
+    c, _ = client
+    files = {"file": ("plan.pdf", BytesIO(text_pdf()), "application/pdf")}
+
+    with patch("app.routers.views.FileSearchService") as mock_fss:
+        mock_fss.return_value.delete_store = AsyncMock()
+        mock_fss.return_value.upload_document = AsyncMock(side_effect=make())
+        res = await c.post("/dashboard/upload", files=files)
+
+    assert res.status_code == 500
+    assert "문서 처리 중 오류가 발생했습니다." in res.text
+    assert "sensitive-marker" not in res.text
+    assert _uploaded_files(tmp_path) == []
+    assert "sensitive-marker" not in caplog.text
+    assert f"문서 처리 실패: {kind}" in caplog.text
 
 
 @pytest.mark.asyncio
