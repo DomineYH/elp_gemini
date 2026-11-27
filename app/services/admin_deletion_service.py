@@ -286,7 +286,7 @@ class AdminDeletionService:
                 user_id,
                 type(exc).__name__,
             )
-            raise StoreCleanupError(f"user-{user_id}-store") from None
+            raise StoreCleanupError(f"user_id={user_id}") from None
 
     async def _remove_report_md_files(
         self, reports: list[AnalysisReport]

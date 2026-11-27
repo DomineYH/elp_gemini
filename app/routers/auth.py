@@ -521,21 +521,21 @@ async def login(
 
 async def _delete_user_stores(user_id, store_ids: list[str]) -> None:
     """클라우드 user store 삭제 (최대 120초라 응답 뒤에 실행, #247)"""
-    try:
-        from app.services.file_search_service import FileSearchService
+    # 행의 id 는 이미 비웠다. 남은 스토어는 이 로그의 id 로만 찾으므로
+    # 하나가 실패해도 나머지를 시도하고 실패한 id 만 남긴다 (#470, #486)
+    for store_id in store_ids:
+        try:
+            from app.services.file_search_service import FileSearchService
 
-        service = FileSearchService()
-        for store_id in store_ids:
-            await service.delete_store(store_id)
-    except Exception as e:
-        # 원문에는 응답 헤더 줄이 섞일 수 있어 종류만 남긴다 (#368)
-        # 행의 id 는 이미 비웠다. 남은 스토어는 이 로그의 id 로만 찾는다 (#470)
-        logger.warning(
-            "로그아웃 시 스토어 정리 실패: user_id=%s, %s, stores=%s",
-            user_id,
-            type(e).__name__,
-            store_ids,
-        )
+            await FileSearchService().delete_store(store_id)
+        except Exception as e:
+            # 원문에는 응답 헤더 줄이 섞일 수 있어 종류만 남긴다 (#368)
+            logger.warning(
+                "로그아웃 시 스토어 정리 실패: user_id=%s, %s, store=%s",
+                user_id,
+                type(e).__name__,
+                store_id,
+            )
 
 
 # T025: POST /auth/logout - 로그아웃 처리
