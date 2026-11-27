@@ -507,3 +507,20 @@ async def test_qna_exhausted_first_request_keeps_session_another_tab_used(
     finally:
         resume.set()
         await file_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_evaluation_criteria_search_failure_hides_sdk_text(caplog):
+    """#485: 평가의 search_criteria() 가 스토어 목록 SDK 403 으로 실패해도 로그에 원문이 없다."""
+    service, _ = _eval_service()
+    service.criteria_vector.file_search_service.client.file_search_stores.list = Mock(
+        side_effect=genai_errors.ClientError(
+            403, {"error": {"code": 403, "message": "sensitive-marker"}}
+        )
+    )
+
+    with pytest.raises(Exception):
+        await service.run_evaluation(user_id=1, lessonplan_filename="plan.pdf")
+
+    assert "평가 실행 실패: ClientError 403" in caplog.text
+    assert "sensitive-marker" not in caplog.text

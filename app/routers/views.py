@@ -34,6 +34,7 @@ from app.services.file_validator import (
 )
 from app.services.simulation import lessonplan_source
 from app.templating import templates
+from app.utils.gemini_retry import safe_error_text, safe_exc_info
 
 router = APIRouter(tags=["뷰"])
 logger = logging.getLogger(__name__)
@@ -348,7 +349,10 @@ async def upload_document(
         if new_store_id:
             # 행이 없으면 앱이 이 스토어를 다시 찾지 못한다 (#470)
             await file_search_service.discard_store(new_store_id)
-        logger.error(f"문서 처리 실패: {str(e)}", exc_info=True)
+        # 재전파된 SDK·전송 오류 원문을 로그·traceback 에 남기지 않는다 (#485)
+        logger.error(
+            "문서 처리 실패: %s", safe_error_text(e), exc_info=safe_exc_info(e)
+        )
         return templates.TemplateResponse(
             "error.html",
             {

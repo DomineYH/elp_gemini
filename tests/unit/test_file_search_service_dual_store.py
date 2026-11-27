@@ -523,3 +523,31 @@ def test_missing_rubric_store_does_not_fall_back_to_a_similar_name(
 
     assert service._store_cache == {}
     service.client.file_search_stores.create.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "make, text",
+    [
+        (lambda: httpx.ConnectError("sensitive-marker"), "ConnectError"),
+        (
+            lambda: genai_errors.ClientError(
+                403, {"error": {"code": 403, "message": "sensitive-marker"}}
+            ),
+            "ClientError 403",
+        ),
+    ],
+    ids=["transport", "sdk403"],
+)
+def test_get_or_create_store_failure_log_hides_raw_error_text(
+    service, caplog, make, text
+):
+    # 예외는 그대로 오르고 로그에는 종류(와 코드)만 남는다 (#485)
+    error = make()
+    service.client.file_search_stores.list.side_effect = error
+
+    with pytest.raises(type(error)) as excinfo:
+        service._get_or_create_store("rubricstore")
+
+    assert excinfo.value is error
+    assert f"스토어 처리 실패: {text}" in caplog.text
+    assert "sensitive-marker" not in caplog.text

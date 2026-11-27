@@ -12,6 +12,7 @@ from app.services.file_search_service import (
     _MANIFEST_PAYLOAD_CHUNK_SIZE,
     FileSearchService,
 )
+from app.utils.gemini_retry import safe_error_text
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +164,7 @@ class CriteriaVectorService:
 
             return result
         except Exception as e:
-            logger.error(f"평가기준 검색 실패: {str(e)}")
+            logger.error("평가기준 검색 실패: %s", safe_error_text(e))
             raise
 
     @staticmethod

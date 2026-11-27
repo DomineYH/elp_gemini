@@ -3,8 +3,10 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from fastapi import HTTPException
+from google.genai import errors as genai_errors
 
 from app.repositories.app_state_repository import KEY_SYNC_STATE
 from app.routers.admin.criteria import upload_criteria
@@ -335,3 +337,74 @@ async def test_upload_poll_connection_error_hides_message(caplog):
         if c.args[0] == KEY_SYNC_ERROR
     ]
     assert stored and all("SECRET-MARKER" not in v for v in stored)
+
+
+_MARKER = "sensitive-marker"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "make, detail, stored, traceback_logged",
+    [
+        (
+            lambda: httpx.ConnectError(_MARKER),
+            "ConnectError",
+            "ConnectError",
+            False,
+        ),
+        (
+            lambda: genai_errors.ClientError(
+                403, {"error": {"code": 403, "message": _MARKER}}
+            ),
+            "ClientError 403",
+            "ClientError 403",
+            False,
+        ),
+        # 앱이 만든 글은 그대로 나가고 traceback 도 남는다
+        (
+            lambda: RuntimeError("파일 업로드 rubric.pdf: 작업 실패: boom"),
+            "RuntimeError - 파일 업로드 rubric.pdf: 작업 실패: boom",
+            "파일 업로드 rubric.pdf: 작업 실패: boom",
+            True,
+        ),
+    ],
+    ids=["transport", "sdk403", "app"],
+)
+async def test_upload_failure_500_hides_raw_error_text(
+    caplog, make, detail, stored, traceback_logged
+):
+    """#485: 업로드 500 detail·저장값·로그에 전송/SDK 오류 원문이 없다."""
+    from app.repositories.app_state_repository import KEY_SYNC_ERROR
+
+    file = SimpleNamespace(
+        filename="rubric.pdf",
+        read=AsyncMock(return_value=b"%PDF-1.4 rubric"),
+    )
+    with (
+        patch("app.routers.admin.criteria.FileValidator") as validator_cls,
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as state_cls,
+    ):
+        validator_cls.return_value.validate_file = AsyncMock(
+            return_value={"valid": True}
+        )
+        vector_cls.return_value.upload_criteria = AsyncMock(side_effect=make())
+        state = state_cls.return_value
+        state.set = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await upload_criteria(
+                file=file,
+                current_admin=SimpleNamespace(username="admin"),
+                db=AsyncMock(),
+                _sync_ready=None,
+            )
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == (
+        f"파일 업로드 중 오류가 발생했습니다: {detail}"
+    )
+    state.set.assert_any_await(KEY_SYNC_ERROR, stored)
+    assert _MARKER not in caplog.text
+    assert f"메시지: {stored}" in caplog.text
+    assert ("Traceback" in caplog.text) is traceback_logged

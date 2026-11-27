@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import get_db
+from app.utils.gemini_retry import safe_error_text, safe_exc_info
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +86,9 @@ async def ensure_criteria_cache_fresh(
 
     try:
         await _run_reconcile_once(db)
-    except Exception:
+    except Exception as e:
         logger.warning(
-            "평가기준 freshness 확인 실패 (cache 그대로 응답)",
-            exc_info=True,
+            "평가기준 freshness 확인 실패 (cache 그대로 응답): %s",
+            safe_error_text(e),
+            exc_info=safe_exc_info(e),
         )

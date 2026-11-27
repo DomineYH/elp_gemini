@@ -3,8 +3,10 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from fastapi import HTTPException
+from google.genai import errors as genai_errors
 
 from app.routers.admin.criteria import (
     replace_legacy_criteria,
@@ -226,3 +228,86 @@ async def test_replace_creates_active_without_demoting_others():
     assert insert_kwargs["activated_at"] is not None
     # 올린 바이트 수를 저장한다 (#446)
     assert insert_kwargs["file_size"] == len(b"%PDF-1.4 r")
+
+
+_MARKER = "sensitive-marker"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "make, detail",
+    [
+        (lambda: httpx.ConnectError(_MARKER), "ConnectError"),
+        (
+            lambda: genai_errors.ClientError(
+                403, {"error": {"code": 403, "message": _MARKER}}
+            ),
+            "ClientError 403",
+        ),
+    ],
+    ids=["transport", "sdk403"],
+)
+async def test_replace_cleanup_failure_log_hides_cloud_error_text(
+    caplog, make, detail
+):
+    """#485: 클라우드 삭제 실패 뒤 임시 파일 정리도 실패하면 경고 traceback 에 원문이 없다."""
+    legacy_sid = "legacy_0123456789abcdef"
+    file = SimpleNamespace(
+        filename="rubric.pdf",
+        read=AsyncMock(return_value=b"%PDF-1.4 r"),
+    )
+
+    with (
+        patch("app.routers.admin.criteria.FileValidator") as validator_cls,
+        patch("app.routers.admin.criteria.CriteriaVectorService") as vector_cls,
+        patch(
+            "app.routers.admin.criteria.CriteriaAliasMapService"
+        ) as alias_cls,
+        patch("app.routers.admin.criteria.CriteriaRepository") as repo_cls,
+        patch("app.routers.admin.criteria.AppStateRepository") as state_cls,
+        patch(
+            "app.routers.admin.criteria.os.remove",
+            side_effect=PermissionError("read-only"),
+        ),
+    ):
+        validator_cls.return_value.validate_file = AsyncMock(
+            return_value={"valid": True}
+        )
+        vec = vector_cls.return_value
+        vec.upload_criteria = AsyncMock(return_value={"document_id": "d/new"})
+        vec.delete_criteria = AsyncMock(side_effect=make())
+        alias_cls.return_value.fetch = AsyncMock(
+            return_value=(
+                "docs/alias-map",
+                AliasMap(
+                    schema_version=1,
+                    updated_at="2026-05-15T00:00:00Z",
+                    entries={
+                        legacy_sid: AliasMapEntry(
+                            alias=None, status="uploaded", activated_at=None
+                        )
+                    },
+                ),
+            )
+        )
+        alias_cls.return_value.replace = AsyncMock()
+        repo_cls.return_value.get_criteria_by_stable_id = AsyncMock(
+            return_value=SimpleNamespace(
+                stable_id=legacy_sid, document_id="d/old", display_alias=None
+            )
+        )
+        state_cls.return_value.set = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc:
+            await replace_legacy_criteria(
+                stable_id=legacy_sid,
+                file=file,
+                current_admin=SimpleNamespace(username="admin"),
+                _sync_ready=None,
+                db=AsyncMock(),
+            )
+
+    assert exc.value.status_code == 500
+    assert exc.value.detail == f"평가기준 변경 중 오류가 발생했습니다: {detail}"
+    assert "임시 파일 삭제 실패" in caplog.text
+    assert _MARKER not in caplog.text

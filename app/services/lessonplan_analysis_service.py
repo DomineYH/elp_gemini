@@ -40,6 +40,8 @@ from app.utils.gemini_retry import (
     GeminiServerOverloaded,
     is_transient_lookup_error,
     retry_on_resource_exhausted,
+    safe_error_text,
+    safe_exc_info,
 )
 
 logger = logging.getLogger(__name__)
@@ -118,11 +120,15 @@ async def _mark_criteria_filter_needs_resync(
     try:
         state_repo = AppStateRepository(db=db)
         await state_repo.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
-        await state_repo.set(KEY_SYNC_ERROR, str(exc))
+        await state_repo.set(KEY_SYNC_ERROR, safe_error_text(exc))
         # 요청이 503 으로 끝나면 get_db 가 롤백하므로 여기서 남긴다 (#469)
         await db.commit()
-    except Exception:
-        logger.warning("평가기준 동기화 필요 상태 표시 실패", exc_info=True)
+    except Exception as e:
+        logger.warning(
+            "평가기준 동기화 필요 상태 표시 실패: %s",
+            safe_error_text(e),
+            exc_info=safe_exc_info(e),
+        )
 
 
 # Issue #118: 긴 평가 지시 프롬프트는 File Search retrieval 쿼리로서 품질이
@@ -370,8 +376,9 @@ class LessonPlanAnalysisService:
                             ) from None
                         raise
                     logger.warning(
-                        f"활성 평가기준 필터 조회 실패 (분석 중단): {e}",
-                        exc_info=True,
+                        "활성 평가기준 필터 조회 실패 (분석 중단): %s",
+                        safe_error_text(e),
+                        exc_info=safe_exc_info(e),
                     )
                     await _mark_criteria_filter_needs_resync(self.db, e)
                     # 기준을 확인하지 못한 보고서는 저장되면 409 로 굳는다 (#469)
@@ -604,7 +611,7 @@ class LessonPlanAnalysisService:
             }
 
         except exceptions.GoogleAPIError as e:
-            logger.error(f"Google API 오류: {e}")
+            logger.error("Google API 오류: %s", safe_error_text(e))
             return {
                 "success": False,
                 "error": "AI 서비스 호출 중 오류가 발생했습니다. "
@@ -612,7 +619,9 @@ class LessonPlanAnalysisService:
             }
 
         except Exception as e:
-            logger.error(f"분석 실패: {e}", exc_info=True)
+            logger.error(
+                "분석 실패: %s", safe_error_text(e), exc_info=safe_exc_info(e)
+            )
             return {"success": False, "error": "분석 중 오류 발생"}
 
     async def _get_store_ids(self, user_store_id: str) -> list[str] | None:
@@ -940,8 +949,8 @@ class LessonPlanAnalysisService:
             fetched = await alias_svc.fetch()
         except Exception as exc:
             logger.warning(
-                "활성 평가기준 alias 목록 조회 실패 "
-                f"(참고 문서 표시 생략): {exc}"
+                "활성 평가기준 alias 목록 조회 실패 (참고 문서 표시 생략): %s",
+                safe_error_text(exc),
             )
             return []
 

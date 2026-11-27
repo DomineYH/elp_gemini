@@ -8,7 +8,6 @@ import os
 import tempfile
 from typing import Optional
 
-import httpx
 from fastapi import (
     APIRouter,
     Depends,
@@ -49,6 +48,11 @@ from app.services.criteria_reconciliation_service import (
 )
 from app.services.criteria_vector_service import CriteriaVectorService
 from app.services.file_validator import FileValidator
+from app.utils.gemini_retry import (
+    RAW_TEXT_ERRORS,
+    safe_error_text,
+    safe_exc_info,
+)
 
 router = APIRouter(prefix="/api/admin/criteria", tags=["관리자-평가기준"])
 logger = logging.getLogger(__name__)
@@ -74,29 +78,24 @@ def _now_iso_utc() -> str:
 async def _mark_criteria_needs_resync(db: AsyncSession, exc: Exception) -> None:
     try:
         await db.rollback()
-    except Exception:
+    except Exception as rollback_exc:
         logger.warning(
-            "criteria sync_state 표시 전 rollback 실패",
-            exc_info=True,
+            "criteria sync_state 표시 전 rollback 실패: %s",
+            safe_error_text(rollback_exc),
+            exc_info=safe_exc_info(rollback_exc),
         )
 
     try:
         state_repo = AppStateRepository(db=db)
         await state_repo.set(KEY_SYNC_STATE, SYNC_STATE_NEEDS_RESYNC)
-        # 전송 오류 원문에는 헤더 값이 들어갈 수 있다 (#469)
-        await state_repo.set(
-            KEY_SYNC_ERROR,
-            (
-                type(exc).__name__
-                if isinstance(exc, httpx.TransportError)
-                else str(exc)
-            ),
-        )
+        # 전송·SDK·DB 오류는 원문 대신 종류(와 코드)만 저장한다 (#469, #485)
+        await state_repo.set(KEY_SYNC_ERROR, safe_error_text(exc))
         await db.commit()
-    except Exception:
+    except Exception as mark_exc:
         logger.error(
-            "criteria sync_state needs_resync 표시 실패",
-            exc_info=True,
+            "criteria sync_state needs_resync 표시 실패: %s",
+            safe_error_text(mark_exc),
+            exc_info=safe_exc_info(mark_exc),
         )
 
 
@@ -121,6 +120,14 @@ async def _raise_alias_map_missing_conflict(db: AsyncSession) -> None:
     )
 
 
+def _failure_detail(prefix: str, exc: Exception) -> str:
+    """500 응답 글. 원문을 싣는 종류는 종류(와 코드)만, 그 밖은 지금처럼 '종류 - 글' (#485)."""
+    text = safe_error_text(exc)
+    if isinstance(exc, RAW_TEXT_ERRORS):
+        return f"{prefix}: {text}"
+    return f"{prefix}: {type(exc).__name__} - {text}"
+
+
 async def _raise_criteria_mutation_failed(
     db: AsyncSession,
     exc: Exception,
@@ -129,13 +136,14 @@ async def _raise_criteria_mutation_failed(
 ) -> None:
     if cloud_write_started:
         await _mark_criteria_needs_resync(db, exc)
-    logger.error("평가기준 변경 실패: %s", exc, exc_info=True)
+    logger.error(
+        "평가기준 변경 실패: %s",
+        safe_error_text(exc),
+        exc_info=safe_exc_info(exc),
+    )
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail=(
-            "평가기준 변경 중 오류가 발생했습니다: "
-            f"{type(exc).__name__} - {exc}"
-        ),
+        detail=_failure_detail("평가기준 변경 중 오류가 발생했습니다", exc),
     )
 
 
@@ -168,18 +176,20 @@ async def _recover_status_mutation_from_cloud(
 ) -> bool:
     try:
         await db.rollback()
-    except Exception:
+    except Exception as rollback_exc:
         logger.warning(
-            "평가기준 상태 변경 복구 전 rollback 실패",
-            exc_info=True,
+            "평가기준 상태 변경 복구 전 rollback 실패: %s",
+            safe_error_text(rollback_exc),
+            exc_info=safe_exc_info(rollback_exc),
         )
 
     try:
         fetched = await alias_svc.fetch()
-    except Exception:
+    except Exception as fetch_exc:
         logger.warning(
-            "평가기준 상태 변경 실패 후 alias_map 재조회 실패",
-            exc_info=True,
+            "평가기준 상태 변경 실패 후 alias_map 재조회 실패: %s",
+            safe_error_text(fetch_exc),
+            exc_info=safe_exc_info(fetch_exc),
         )
         return False
 
@@ -201,10 +211,11 @@ async def _recover_status_mutation_from_cloud(
             db,
             cloud_alias_map.entries,
         )
-    except Exception:
+    except Exception as sync_exc:
         logger.warning(
-            "평가기준 상태 변경 cloud 반영 후 DB 캐시 복구 실패",
-            exc_info=True,
+            "평가기준 상태 변경 cloud 반영 후 DB 캐시 복구 실패: %s",
+            safe_error_text(sync_exc),
+            exc_info=safe_exc_info(sync_exc),
         )
         return False
 
@@ -213,7 +224,7 @@ async def _recover_status_mutation_from_cloud(
         "stable_id=%s status=%s original_error=%s",
         stable_id,
         target_status,
-        exc,
+        safe_error_text(exc),
     )
     return True
 
@@ -362,20 +373,15 @@ async def upload_criteria(
             await db.rollback()
             if cloud_write_started:
                 await _mark_criteria_needs_resync(db, e)
-            error_type = type(e).__name__
-            error_msg = str(e)
             logger.error(
-                f"평가기준 업로드 실패 - "
-                f"유형: {error_type}, "
-                f"메시지: {error_msg}",
-                exc_info=True,
+                "평가기준 업로드 실패 - 유형: %s, 메시지: %s",
+                type(e).__name__,
+                safe_error_text(e),
+                exc_info=safe_exc_info(e),
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=(
-                    "파일 업로드 중 오류가 발생했습니다: "
-                    f"{error_type} - {error_msg}"
-                ),
+                detail=_failure_detail("파일 업로드 중 오류가 발생했습니다", e),
             )
         finally:
             # 임시 파일 삭제
@@ -599,8 +605,12 @@ async def replace_legacy_criteria(
             if temp_file_path and os.path.exists(temp_file_path):
                 try:
                     os.remove(temp_file_path)
-                except Exception:
-                    logger.warning("임시 파일 삭제 실패", exc_info=True)
+                except Exception as cleanup_exc:
+                    # 전파 중인 클라우드 오류가 __context__ 로 함께 찍히지 않게 한다 (#485)
+                    logger.warning(
+                        "임시 파일 삭제 실패",
+                        exc_info=safe_exc_info(cleanup_exc),
+                    )
 
 
 class _AliasPatch(BaseModel):

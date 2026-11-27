@@ -26,7 +26,11 @@ from app.services.alias_map_codec import (
 )
 from app.services.file_search_service import list_stores
 from app.services.operation_polling import poll_operation
-from app.utils.gemini_retry import retry_on_resource_exhausted
+from app.utils.gemini_retry import (
+    retry_on_resource_exhausted,
+    safe_error_text,
+    safe_exc_info,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -224,11 +228,12 @@ class CriteriaAliasMapService:
                     name=doc_name,
                     config={"force": True},
                 )
-            except Exception:
+            except Exception as e:
                 logger.warning(
-                    "stale alias_map cleanup failed for %s",
+                    "stale alias_map cleanup failed for %s: %s",
                     doc_name,
-                    exc_info=True,
+                    safe_error_text(e),
+                    exc_info=safe_exc_info(e),
                 )
 
         return newest.name, newest.alias_map

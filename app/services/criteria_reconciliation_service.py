@@ -15,8 +15,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-import httpx
-
 from app.config import settings
 from app.repositories.app_state_repository import (
     KEY_API_KEY_HASH,
@@ -34,6 +32,7 @@ from app.services.criteria_alias_map_service import (
     alias_map_mutation_lock,
 )
 from app.services.criteria_vector_service import CriteriaVectorService
+from app.utils.gemini_retry import safe_error_text, safe_exc_info
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +178,8 @@ class CriteriaReconciliationService:
                         pass  # Task 13 will add this module
                     except Exception as e:
                         logger.warning(
-                            "legacy migration 실패 (계속 진행): %s", e
+                            "legacy migration 실패 (계속 진행): %s",
+                            safe_error_text(e),
                         )
 
                     docs = await self._vec.list_criteria_documents()
@@ -333,29 +333,30 @@ class CriteriaReconciliationService:
                     return ReconcileResult(ok=True, count=len(criteria_docs))
 
                 except Exception as e:
-                    logger.error(f"reconcile 실패: {e}", exc_info=True)
+                    # 원문 대신 종류(와 코드)만 응답·저장값·로그에 쓴다 (#485)
+                    error_text = safe_error_text(e)
+                    logger.error(
+                        "reconcile 실패: %s",
+                        error_text,
+                        exc_info=safe_exc_info(e),
+                    )
                     # 파싱 실패는 일시 오류가 아니다: 자동 검사도 표시한다 (#471)
                     if (
                         swallow_errors
                         and not key_changed
                         and not isinstance(e, AliasMapParseError)
                     ):
-                        return ReconcileResult(error=str(e))
+                        return ReconcileResult(error=error_text)
                     async with _transaction_if_needed(self._db):
                         await self._state.set_many(
                             {
                                 KEY_SYNC_STATE: (
                                     "error" if key_changed else "needs_resync"
                                 ),
-                                # 전송 오류 원문에는 헤더 값이 들어갈 수 있다 (#469)
-                                KEY_SYNC_ERROR: (
-                                    type(e).__name__
-                                    if isinstance(e, httpx.TransportError)
-                                    else str(e)
-                                ),
+                                KEY_SYNC_ERROR: error_text,
                             }
                         )
-                    return ReconcileResult(error=str(e))
+                    return ReconcileResult(error=error_text)
 
 
 def _kv_string(doc: dict, key: str) -> Optional[str]:
