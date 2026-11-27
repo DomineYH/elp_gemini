@@ -605,8 +605,12 @@ async def replace_legacy_criteria(
             if temp_file_path and os.path.exists(temp_file_path):
                 try:
                     os.remove(temp_file_path)
-                except Exception:
-                    logger.warning("임시 파일 삭제 실패", exc_info=True)
+                except Exception as cleanup_exc:
+                    # 전파 중인 클라우드 오류가 __context__ 로 함께 찍히지 않게 한다 (#485)
+                    logger.warning(
+                        "임시 파일 삭제 실패",
+                        exc_info=safe_exc_info(cleanup_exc),
+                    )
 
 
 class _AliasPatch(BaseModel):
