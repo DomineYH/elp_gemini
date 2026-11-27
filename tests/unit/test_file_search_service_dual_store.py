@@ -348,6 +348,29 @@ async def test_delete_store_raises_when_lookup_fails(service, sleeps):
 
 
 @pytest.mark.asyncio
+async def test_delete_store_lookup_503_keeps_sdk_text_out_of_log(
+    service, sleeps, caplog
+):
+    # 조회 재시도가 소진돼도 SDK 오류 원문은 로그에 남지 않는다 (#484)
+    service.client.file_search_stores.list.side_effect = lambda **kw: (
+        _ for _ in ()
+    ).throw(
+        genai_errors.ServerError(
+            503, {"error": {"code": 503, "message": "sensitive-marker"}}
+        )
+    )
+
+    with caplog.at_level("DEBUG"):
+        with pytest.raises(GeminiServerOverloaded):
+            await service.delete_store(USER.name)
+
+    assert service.client.file_search_stores.list.call_count == 3
+    assert "ServerError 503" in caplog.text
+    assert "sensitive-marker" not in caplog.text
+    service.client.file_search_stores.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_delete_store_retries_lookup_then_deletes_once(service, sleeps):
     service.client.file_search_stores.list.side_effect = [
         _timeout(),

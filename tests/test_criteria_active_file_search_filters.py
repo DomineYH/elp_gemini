@@ -932,12 +932,20 @@ async def test_analysis_active_lookup_exhausted(env465, make, code, detail):
 
 
 @pytest.mark.asyncio
-async def test_analysis_active_lookup_other_5xx(env465):
+async def test_analysis_active_lookup_other_5xx(env465, caplog):
     env = env465
-    env.fake.active_fail = ("stores", 99, _sdk(520))
+    body = {"error": {"code": 520, "message": "sensitive-marker"}}
+    env.fake.active_fail = (
+        "stores",
+        99,
+        lambda: genai_errors.ServerError(520, body),
+    )
 
     res, in_progress = await _analyze(env)
 
+    # SDK 오류 원문은 로그에 남지 않고 종류와 상태 코드만 남는다 (#484)
+    assert "sensitive-marker" not in caplog.text
+    assert "ServerError 520" in caplog.text
     assert res.status_code == 503, res.text
     assert res.headers["retry-after"] == "30"
     assert "혼잡" in res.json()["detail"]

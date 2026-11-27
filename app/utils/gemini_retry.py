@@ -121,21 +121,24 @@ def retry_on_resource_exhausted(
                 return tenacity_retry(fn)(*args, **kwargs)
             except genai_errors.ClientError as e:
                 if _is_resource_exhausted(e):
+                    # str(e) 는 응답 본문 전체다. 종류와 상태 코드만 남긴다 (#484)
+                    label = f"{type(e).__name__} {e.code}"
                     logger.error(
                         "Gemini 429 RESOURCE_EXHAUSTED after %d attempts: %s",
                         max_attempts,
-                        e,
+                        label,
                     )
-                    raise GeminiQuotaExhausted(str(e)) from e
+                    raise GeminiQuotaExhausted(label) from None
                 raise
             except genai_errors.ServerError as e:
                 if _is_server_overloaded(e):
+                    label = f"{type(e).__name__} {e.code}"
                     logger.error(
                         "Gemini 5xx server overload after %d attempts: %s",
                         max_attempts,
-                        e,
+                        label,
                     )
-                    raise GeminiServerOverloaded(str(e)) from e
+                    raise GeminiServerOverloaded(label) from None
                 raise
 
         return wrapper
