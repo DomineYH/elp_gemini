@@ -8,6 +8,7 @@ from contextlib import suppress
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from google.genai import errors as genai_errors
 from sqlalchemy import select
@@ -933,3 +934,80 @@ async def test_reconcile_stores_transport_error_type_not_message():
 
     assert state_values["criteria_sync_state"] == "needs_resync"
     assert state_values["criteria_sync_error"] == "LocalProtocolError"
+
+
+_MARKER = "sensitive-marker"
+
+
+def _parse_error():
+    from app.services.criteria_alias_map_service import AliasMapParseError
+
+    return AliasMapParseError("stores/s/documents/a", ValueError("bad"))
+
+
+@pytest.mark.parametrize("swallow", [False, True], ids=["button", "auto"])
+@pytest.mark.parametrize(
+    "make, text, traceback_logged",
+    [
+        (lambda: httpx.ConnectError(_MARKER), "ConnectError", False),
+        (
+            lambda: genai_errors.ClientError(
+                403, {"error": {"code": 403, "message": _MARKER}}
+            ),
+            "ClientError 403",
+            False,
+        ),
+        (
+            _parse_error,
+            "alias_map parse failed for stores/s/documents/a: bad",
+            True,
+        ),
+    ],
+    ids=["transport", "sdk403", "parse"],
+)
+async def test_reconcile_failure_keeps_raw_error_text_out(
+    caplog, make, text, traceback_logged, swallow
+):
+    """#485: 결과·저장값·로그에는 종류(와 코드)만, 앱이 만든 글은 그대로."""
+    from app.services.criteria_reconciliation_service import (
+        CriteriaReconciliationService,
+    )
+
+    fake_vec = MagicMock()
+    fake_vec.list_criteria_documents = AsyncMock(side_effect=make())
+    state_values = {
+        "criteria_api_key_hash": "samehash",
+        "criteria_sync_state": "ok",
+        "criteria_migration_v2_done": "true",
+    }
+    fake_state = MagicMock()
+    fake_state.get = AsyncMock(side_effect=lambda key: state_values.get(key))
+    fake_state.set_many = AsyncMock(side_effect=state_values.update)
+
+    db = MagicMock()
+    db.begin.return_value.__aenter__ = AsyncMock(return_value=None)
+    db.begin.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    with patch(
+        "app.services.criteria_reconciliation_service.sha256_hex_of_api_key",
+        return_value="samehash",
+    ):
+        svc = CriteriaReconciliationService(
+            db=db,
+            vector_service=fake_vec,
+            alias_map_service=MagicMock(),
+            criteria_repo=MagicMock(),
+            app_state_repo=fake_state,
+        )
+        result = await svc.reconcile(swallow_errors=swallow)
+
+    assert result.error == text
+    # 자동 검사는 일시 오류에 상태를 건드리지 않는다. 파싱 실패만 표시한다 (#471)
+    marked = not swallow or traceback_logged
+    assert state_values["criteria_sync_state"] == (
+        "needs_resync" if marked else "ok"
+    )
+    assert state_values.get("criteria_sync_error") == (text if marked else None)
+    assert _MARKER not in caplog.text
+    assert f"reconcile 실패: {text}" in caplog.text
+    assert ("Traceback" in caplog.text) is traceback_logged

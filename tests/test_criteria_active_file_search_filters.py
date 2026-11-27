@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import contextvars
+import logging
 import threading
 import time
 from types import SimpleNamespace
@@ -572,7 +573,14 @@ def _sdk(code):
         genai_errors.ServerError if code >= 500 else genai_errors.ClientError
     )
     return lambda: error_cls(
-        code, {"error": {"code": code, "message": "x", "status": status[code]}}
+        code,
+        {
+            "error": {
+                "code": code,
+                "message": "sensitive-marker",
+                "status": status[code],
+            }
+        },
     )
 
 
@@ -1048,7 +1056,7 @@ async def test_other_user_after_active_lookup_failure(env465):
 
 _PERSISTENT = [
     ("corrupt", "parse failed"),
-    ("sdk403", "403"),
+    ("sdk403", "ClientError 403"),
     ("runtime", "boom"),
 ]
 
@@ -1063,7 +1071,7 @@ def _arm_persistent(env, cause):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cause, stored", _PERSISTENT)
-async def test_persistent_active_lookup_failure(env465, cause, stored):
+async def test_persistent_active_lookup_failure(env465, caplog, cause, stored):
     env = env465
     _arm_persistent(env, cause)
 
@@ -1074,6 +1082,9 @@ async def test_persistent_active_lookup_failure(env465, cause, stored):
     sync_state, sync_error = await env.state()
     assert sync_state == "needs_resync"
     assert stored in sync_error
+    # SDK 오류 원문은 저장값과 로그에 남지 않는다 (#485)
+    assert "sensitive-marker" not in sync_error
+    assert "sensitive-marker" not in caplog.text
 
     res = await _ask(env, _Q_PLAIN)
     assert res.status_code == 200, res.text
@@ -1087,7 +1098,7 @@ async def test_persistent_active_lookup_failure(env465, cause, stored):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cause, stored", _PERSISTENT)
 async def test_analysis_stops_on_persistent_lookup_failure(
-    env465, cause, stored
+    env465, caplog, cause, stored
 ):
     """#469: 멈추고 저장하지 않으며 표시는 실패 응답 뒤에도 남는다."""
     env = env465
@@ -1106,6 +1117,9 @@ async def test_analysis_stops_on_persistent_lookup_failure(
     sync_state, sync_error = await env.state()
     assert sync_state == "needs_resync"
     assert stored in sync_error
+    # SDK 오류 원문은 저장값과 로그에 남지 않는다 (#485)
+    assert "sensitive-marker" not in sync_error
+    assert "sensitive-marker" not in caplog.text
 
     # 관리자가 고친 뒤(상태는 needs_resync 그대로) 같은 업로드가 분석된다
     env.fake.corrupt, env.fake.active_fail = False, None
@@ -1227,3 +1241,32 @@ async def test_analysis_deadline_during_display_lookup(env465, monkeypatch):
     assert await env.report_rows() == 0
     assert await env.state() == ("ok", None)
     assert status_res.json()["in_progress"] is False
+
+
+@pytest.mark.asyncio
+async def test_qna_failure_service_logs_hide_sdk_text(env465, caplog):
+    """#485: 생성 호출이 SDK 403 으로 실패해도 서비스 ERROR 로그에는 종류와 코드만 남는다."""
+    env = env465
+
+    def denied(**kwargs):
+        raise _sdk(403)()
+
+    env.fake.models.generate_content = denied
+
+    res = await _ask(env)
+
+    assert res.status_code == 500, res.text
+    # 라우터 로그와 1패스 폴백 WARNING(traceback)은 이 이슈 범위 밖이다
+    errors = {
+        r.name.removeprefix("app.services."): logging.Formatter().format(r)
+        for r in caplog.records
+        if r.name.startswith("app.services.") and r.levelname == "ERROR"
+    }
+    assert errors == {
+        "file_search_service": "검색 실패: ClientError 403",
+        "criteria_vector_service": "평가기준 검색 실패: ClientError 403",
+        "criteria_context_service": (
+            "평가 기준 컨텍스트 검색 실패: ClientError 403"
+        ),
+        "qna_service": "QnA 처리 실패: ClientError 403",
+    }

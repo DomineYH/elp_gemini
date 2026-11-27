@@ -19,6 +19,7 @@ from typing import Callable, TypeVar
 
 import httpx
 from google.genai import errors as genai_errors
+from sqlalchemy.exc import SQLAlchemyError
 from tenacity import (
     retry,
     retry_if_exception,
@@ -82,6 +83,38 @@ def is_transient_lookup_error(exc: BaseException) -> bool:
             GeminiServerOverloaded,
         ),
     )
+
+
+# str() 에 응답 본문(SDK), 헤더 값(전송), SQL 과 바인딩 값(DB)이 실리는 종류 (#485)
+RAW_TEXT_ERRORS = (genai_errors.APIError, httpx.HTTPError, SQLAlchemyError)
+
+
+def safe_error_text(exc: BaseException) -> str:
+    """응답·저장값·로그에 넣는 오류 글 (#485).
+
+    SDK 오류는 "종류 상태코드", 전송·DB 오류는 종류 이름, 그 밖(앱이 만든 글)은 그대로.
+    """
+    if isinstance(exc, genai_errors.APIError):
+        return f"{type(exc).__name__} {exc.code}"
+    if isinstance(exc, RAW_TEXT_ERRORS):
+        return type(exc).__name__
+    return str(exc)
+
+
+def safe_exc_info(exc: BaseException) -> bool:
+    """logger 의 exc_info= 값: traceback 에 원문이 찍히지 않을 때만 True (#485).
+
+    traceback 은 원인 예외(__cause__, 숨기지 않은 __context__)도 그리므로 끝까지 본다.
+    """
+    seen: set[int] = set()
+    while exc is not None and id(exc) not in seen:
+        if isinstance(exc, RAW_TEXT_ERRORS):
+            return False
+        seen.add(id(exc))
+        exc = exc.__cause__ or (
+            None if exc.__suppress_context__ else exc.__context__
+        )
+    return True
 
 
 def retry_on_resource_exhausted(

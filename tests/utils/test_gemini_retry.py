@@ -4,12 +4,16 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 from google.genai import errors as genai_errors
+from sqlalchemy.exc import IntegrityError
 
+from app.services.criteria_alias_map_service import AliasMapParseError
 from app.utils.gemini_retry import (
     GeminiQuotaExhausted,
     GeminiServerOverloaded,
     is_transient_lookup_error,
     retry_on_resource_exhausted,
+    safe_error_text,
+    safe_exc_info,
 )
 
 
@@ -223,3 +227,102 @@ def test_exhausted_error_keeps_sdk_text_out_of_log_and_message(
     ]
     assert record.levelname == "ERROR"
     assert record.getMessage().endswith(f"after 2 attempts: {label}")
+
+
+def _chained(cause, *, suppress=False, explicit=False):
+    """cause 를 처리하다 올린 앱 예외. traceback 에 cause 가 함께 찍힌다."""
+    try:
+        try:
+            raise cause
+        except Exception as e:
+            if suppress:
+                raise RuntimeError("app text") from None
+            if explicit:
+                raise RuntimeError("app text") from e
+            raise RuntimeError("app text")
+    except RuntimeError as wrapped:
+        return wrapped
+
+
+_MARKER = "sensitive-marker"
+_SDK_BODY = {"error": {"code": 403, "message": _MARKER, "status": _MARKER}}
+
+
+@pytest.mark.parametrize(
+    "make, text, traceback_ok",
+    [
+        (lambda: httpx.ConnectError(_MARKER), "ConnectError", False),
+        (lambda: httpx.ReadTimeout(_MARKER), "ReadTimeout", False),
+        (
+            lambda: httpx.LocalProtocolError(
+                f"Illegal header value b'{_MARKER}'"
+            ),
+            "LocalProtocolError",
+            False,
+        ),
+        (
+            lambda: genai_errors.ClientError(403, _SDK_BODY),
+            "ClientError 403",
+            False,
+        ),
+        (
+            lambda: genai_errors.ServerError(520, _SDK_BODY),
+            "ServerError 520",
+            False,
+        ),
+        (
+            # 글에 SQL 과 바인딩 값이 들어간다
+            lambda: IntegrityError(
+                "INSERT INTO t VALUES (?)", (_MARKER,), Exception(_MARKER)
+            ),
+            "IntegrityError",
+            False,
+        ),
+        # 앱이 만든 글은 그대로 두고 traceback 도 남긴다
+        (lambda: RuntimeError("cloud 503"), "cloud 503", True),
+        (
+            lambda: GeminiServerOverloaded("ServerError 503"),
+            "ServerError 503",
+            True,
+        ),
+        (
+            lambda: AliasMapParseError(
+                "stores/s/documents/a", ValueError("bad")
+            ),
+            "alias_map parse failed for stores/s/documents/a: bad",
+            True,
+        ),
+        # 앱 예외라도 원인으로 원문 예외가 함께 찍히면 traceback 을 뺀다
+        (
+            lambda: _chained(httpx.ReadTimeout(_MARKER), explicit=True),
+            "app text",
+            False,
+        ),
+        (
+            lambda: _chained(genai_errors.ClientError(403, _SDK_BODY)),
+            "app text",
+            False,
+        ),
+        (
+            lambda: _chained(httpx.ReadTimeout(_MARKER), suppress=True),
+            "app text",
+            True,
+        ),
+    ],
+)
+def test_safe_error_text_and_exc_info(caplog, make, text, traceback_ok):
+    """응답·저장값·로그에 쓰는 글과 traceback 여부 (#485)."""
+    exc = make()
+
+    assert safe_error_text(exc) == text
+    assert safe_exc_info(exc) is traceback_ok
+
+    # 호출부가 쓰는 모양 그대로 찍어 본다
+    try:
+        raise exc
+    except Exception as e:
+        logging.getLogger("caller").error(
+            "failed: %s", safe_error_text(e), exc_info=safe_exc_info(e)
+        )
+    assert _MARKER not in caplog.text
+    assert ("Traceback" in caplog.text) is traceback_ok
