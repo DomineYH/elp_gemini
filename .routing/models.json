@@ -20,24 +20,24 @@
       "effort": "high"
     },
     "task-verifier": {
-      "harness": "codex",
-      "model": "gpt-6.1-terra",
+      "harness": "agy",
+      "model": "gemini-4-neon",
       "effort": "high"
     },
     "inspector": {
       "harness": "agy",
-      "model": "gemini-4-neon",
-      "effort": "xhigh"
+      "model": "gemini-4-hydrogen",
+      "effort": "high"
     },
     "researcher": {
       "harness": "agy",
       "model": "gemini-4-neon",
-      "effort": "xhigh"
+      "effort": "medium"
     },
     "tester": {
       "harness": "agy",
       "model": "gemini-4-hydrogen",
-      "effort": "xhigh"
+      "effort": "high"
     },
     "advisor": {
       "harness": "codex",
