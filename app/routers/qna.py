@@ -535,7 +535,16 @@ async def chat_with_document(
 
     except Exception as e:
         await db.rollback()
-        logger.error(f"문서 대화 처리 실패: {str(e)}", exc_info=True)
+        if isinstance(e, QnAIndexMissing):
+            # 정상 거부(404)다. ERROR 와 트레이스백을 남기지 않는다 (#488)
+            logger.warning("문서 대화 거부 (색인 없음)")
+        else:
+            # 종류가 알려진 시간 초과만 트레이스백을 뺀다 (#488)
+            logger.error(
+                "문서 대화 처리 실패: %s",
+                type(e).__name__,
+                exc_info=not isinstance(e, httpx.TimeoutException),
+            )
         # 질문 실패로 빈 세션이 목록에 남지 않게 보상 삭제한다.
         # 그사이 다른 탭이 이 세션에 대화를 남겼으면 지우지 않는다.
         if created_session_id is not None:
