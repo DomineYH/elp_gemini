@@ -15,10 +15,11 @@ from fastapi import BackgroundTasks
 from fastapi.responses import RedirectResponse
 from starlette.requests import Request
 
-from app.routers.auth import logout
+from app.routers.auth import _delete_user_stores, logout
 
 USER_ID = 247
 STORE_ID = "fileSearchStores/user247store-abc"
+OTHER_STORE_ID = "fileSearchStores/user247store-def"
 
 
 def _request() -> Request:
@@ -114,4 +115,55 @@ async def test_forget_ids_failure_logs_type_only(patched, caplog):
     assert res.status_code == 302
     assert "로그아웃 시 스토어 정리 실패" in caplog.text
     assert "RuntimeError" in caplog.text
+    assert "sensitive-marker" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failing",
+    [[STORE_ID], [STORE_ID, OTHER_STORE_ID]],
+    ids=["첫 스토어만 실패", "둘 다 실패"],
+)
+async def test_delete_tries_every_store_and_logs_only_failed_ids(
+    caplog, failing
+):
+    # 행의 id 는 이미 비웠다. 남은 스토어는 이 로그의 id 로만 찾는다 (#486)
+    calls = []
+
+    async def delete_store(store_id):
+        calls.append(store_id)
+        if store_id in failing:
+            raise RuntimeError("boom")
+
+    with (
+        patch("app.services.file_search_service.FileSearchService") as fss,
+        caplog.at_level("WARNING", logger="app.routers.auth"),
+    ):
+        fss.return_value.delete_store = delete_store
+        await _delete_user_stores(USER_ID, [STORE_ID, OTHER_STORE_ID])
+
+    assert calls == [STORE_ID, OTHER_STORE_ID]
+    logged = [r.getMessage() for r in caplog.records]
+    assert len(logged) == len(failing)
+    for store_id, message in zip(failing, logged):
+        assert message == (
+            f"로그아웃 시 스토어 정리 실패: user_id={USER_ID}, "
+            f"RuntimeError, store={store_id}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_service_construction_failure_logs_every_store(caplog):
+    with (
+        patch(
+            "app.services.file_search_service.FileSearchService",
+            side_effect=ValueError("sensitive-marker"),
+        ),
+        caplog.at_level("WARNING", logger="app.routers.auth"),
+    ):
+        await _delete_user_stores(USER_ID, [STORE_ID, OTHER_STORE_ID])
+
+    assert "ValueError" in caplog.text
+    assert STORE_ID in caplog.text
+    assert OTHER_STORE_ID in caplog.text
     assert "sensitive-marker" not in caplog.text

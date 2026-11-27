@@ -339,6 +339,8 @@ async def test_delete_user_stops_before_db_when_store_delete_fails(
                 )
 
     assert excinfo.value.__cause__ is None
+    # 옛 표시 이름(user-<id>-store)은 삭제 대상이 아니다 (#487)
+    assert str(excinfo.value) == f"user_id={seeded['user_id']}"
     assert f"user_id={seeded['user_id']}" in caplog.text
     assert "RuntimeError" in caplog.text
     assert "raw detail" not in caplog.text
