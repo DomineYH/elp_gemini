@@ -365,7 +365,9 @@ class LessonPlanAnalysisService:
                     if is_transient_lookup_error(e):
                         # 재시도 집합 밖의 5xx(예: 520)도 503 혼잡 안내와 같게 끝낸다 (#465)
                         if isinstance(e, genai_errors.ServerError):
-                            raise GeminiServerOverloaded(str(e)) from e
+                            raise GeminiServerOverloaded(
+                                f"{type(e).__name__} {e.code}"
+                            ) from None
                         raise
                     logger.warning(
                         f"활성 평가기준 필터 조회 실패 (분석 중단): {e}",
