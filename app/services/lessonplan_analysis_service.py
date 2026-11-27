@@ -611,7 +611,7 @@ class LessonPlanAnalysisService:
             }
 
         except exceptions.GoogleAPIError as e:
-            logger.error(f"Google API 오류: {e}")
+            logger.error("Google API 오류: %s", safe_error_text(e))
             return {
                 "success": False,
                 "error": "AI 서비스 호출 중 오류가 발생했습니다. "
@@ -619,7 +619,9 @@ class LessonPlanAnalysisService:
             }
 
         except Exception as e:
-            logger.error(f"분석 실패: {e}", exc_info=True)
+            logger.error(
+                "분석 실패: %s", safe_error_text(e), exc_info=safe_exc_info(e)
+            )
             return {"success": False, "error": "분석 중 오류 발생"}
 
     async def _get_store_ids(self, user_store_id: str) -> list[str] | None:

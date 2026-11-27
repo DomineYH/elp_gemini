@@ -271,7 +271,9 @@ class QnAService:
                             f"{len(criteria_ids)}개 평가기준"
                         )
             except Exception as e:
-                logger.warning(f"평가 기준 검색 중 오류 (무시): {e}")
+                logger.warning(
+                    "평가 기준 검색 중 오류 (무시): %s", safe_error_text(e)
+                )
 
             # 질문 유형 분석 및 메타데이터 필터 결정
             from app.services.question_analyzer import QuestionAnalyzer

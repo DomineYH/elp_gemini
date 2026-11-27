@@ -1326,3 +1326,25 @@ async def test_analysis_display_lookup_failure_hides_sdk_text(env465, caplog):
     assert res.status_code == 200, res.text
     assert "(참고 문서 표시 생략): ClientError 403" in caplog.text
     assert "sensitive-marker" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_analysis_generate_failure_hides_sdk_text(env465, caplog):
+    """#485: 분석 생성 호출이 SDK 403 으로 실패해도 로그(traceback 포함)에 원문이 없고 응답은 그대로다."""
+    from app.services import lessonplan_analysis_service as lpa_mod
+
+    env = env465
+
+    def denied(*args, **kwargs):
+        raise _sdk(403)()
+
+    with patch.object(lpa_mod, "_call_gemini_with_file_search", denied):
+        res = await env.client.post(
+            "/api/lessonplan/analyze", json={"session_id": 1}
+        )
+
+    assert res.status_code == 500, res.text
+    assert res.json() == {"detail": "분석 중 오류 발생"}
+    assert "분석 실패: ClientError 403" in caplog.text
+    assert "sensitive-marker" not in caplog.text
+    assert env.saved == []
