@@ -557,6 +557,9 @@ class QnAService:
                 },
             }
 
+        except QnAIndexMissing:
+            # 정상 거부(404)다. 기록은 라우터가 WARNING 으로 한다 (#488)
+            raise
         except Exception as e:
             logger.error(f"QnA 처리 실패: {str(e)}")
             raise
