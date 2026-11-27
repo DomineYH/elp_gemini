@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import MagicMock
 
 import httpx
@@ -184,3 +185,41 @@ def test_transient_lookup_error_any_5xx(error_cls, code, transient):
         code, {"error": {"code": code, "message": "x"}}, MagicMock()
     )
     assert is_transient_lookup_error(exc) is transient
+
+
+@pytest.mark.parametrize(
+    "error_cls, code, raised",
+    [
+        (genai_errors.ClientError, 429, GeminiQuotaExhausted),
+        (genai_errors.ServerError, 503, GeminiServerOverloaded),
+    ],
+    ids=["429", "503"],
+)
+def test_exhausted_error_keeps_sdk_text_out_of_log_and_message(
+    caplog, error_cls, code, raised
+):
+    """소진 로그와 올라가는 예외에는 종류와 상태 코드만 남는다 (#484)."""
+    marker = "sensitive-marker"
+    body = {"error": {"code": code, "message": marker, "status": marker}}
+
+    @retry_on_resource_exhausted(max_attempts=2, initial_wait=0.0)
+    def always_fails():
+        raise error_cls(code, body, MagicMock())
+
+    with caplog.at_level("DEBUG"):
+        with pytest.raises(raised) as excinfo:
+            always_fails()
+        # 호출부의 exc_info=True 로거가 그리는 traceback 에도 원문이 없어야 한다
+        logging.getLogger("caller").error("failed", exc_info=excinfo.value)
+
+    exc = excinfo.value
+    label = f"{error_cls.__name__} {code}"
+    assert str(exc) == label
+    assert exc.__cause__ is None
+    assert exc.__suppress_context__ is True
+    assert marker not in caplog.text
+    (record,) = [
+        r for r in caplog.records if r.name == "app.utils.gemini_retry"
+    ]
+    assert record.levelname == "ERROR"
+    assert record.getMessage().endswith(f"after 2 attempts: {label}")
